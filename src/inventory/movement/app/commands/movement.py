@@ -61,7 +61,7 @@ class CreateMovementCommandHandler(CommandHandler[CreateMovementCommand, dict]):
 
         self.event_publisher.publish(
             MovementCreated(
-                aggregate_id=movement.id,
+                aggregate_id=movement.require_id(),
                 product_id=movement.product_id,
                 quantity=movement.quantity,
                 type=movement.type.value,

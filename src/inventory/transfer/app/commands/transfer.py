@@ -203,8 +203,8 @@ class ConfirmStockTransferCommandHandler(
         saved = self.repo.update(confirmed)
         self.event_publisher.publish(
             StockTransferConfirmed(
-                aggregate_id=saved.id,
-                transfer_id=saved.id,
+                aggregate_id=saved.require_id(),
+                transfer_id=saved.require_id(),
                 source_location_id=saved.source_location_id,
                 destination_location_id=saved.destination_location_id,
                 items_reserved=len(items),
@@ -285,8 +285,8 @@ class ReceiveStockTransferCommandHandler(
         saved = self.repo.update(received)
         self.event_publisher.publish(
             StockTransferReceived(
-                aggregate_id=saved.id,
-                transfer_id=saved.id,
+                aggregate_id=saved.require_id(),
+                transfer_id=saved.require_id(),
                 source_location_id=saved.source_location_id,
                 destination_location_id=saved.destination_location_id,
                 items_transferred=len(items),
@@ -336,8 +336,8 @@ class CancelStockTransferCommandHandler(
         saved = self.repo.update(cancelled)
         self.event_publisher.publish(
             StockTransferCancelled(
-                aggregate_id=saved.id,
-                transfer_id=saved.id,
+                aggregate_id=saved.require_id(),
+                transfer_id=saved.require_id(),
                 was_confirmed=was_confirmed,
             )
         )

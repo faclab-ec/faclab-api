@@ -42,7 +42,7 @@ class GetLowStockAlertsQueryHandler(QueryHandler[GetLowStockAlertsQuery, list[di
                 continue
             alert = StockAlert(
                 type=AlertType.LOW_STOCK,
-                product_id=product.id,
+                product_id=product.require_id(),
                 product_name=product.name,
                 sku=product.sku,
                 current_quantity=stock.quantity,
@@ -81,7 +81,7 @@ class GetOutOfStockAlertsQueryHandler(
                 continue
             alert = StockAlert(
                 type=AlertType.OUT_OF_STOCK,
-                product_id=product.id,
+                product_id=product.require_id(),
                 product_name=product.name,
                 sku=product.sku,
                 current_quantity=0,
@@ -120,7 +120,7 @@ class GetReorderPointAlertsQueryHandler(
                 continue
             alert = StockAlert(
                 type=AlertType.REORDER_POINT,
-                product_id=product.id,
+                product_id=product.require_id(),
                 product_name=product.name,
                 sku=product.sku,
                 current_quantity=stock.quantity,
@@ -159,7 +159,7 @@ class GetExpiringLotsAlertsQueryHandler(
                 continue
             alert = StockAlert(
                 type=AlertType.EXPIRING_SOON,
-                product_id=product.id,
+                product_id=product.require_id(),
                 product_name=product.name,
                 sku=product.sku,
                 current_quantity=lot.current_quantity,

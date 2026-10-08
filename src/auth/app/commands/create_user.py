@@ -59,8 +59,8 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
 
         self.event_publisher.publish(
             UserCreated(
-                aggregate_id=user.id,
-                user_id=user.id,
+                aggregate_id=user.require_id(),
+                user_id=user.require_id(),
                 username=user.username,
                 email=user.email,
                 role=user.role.value,

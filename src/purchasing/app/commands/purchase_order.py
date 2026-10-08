@@ -49,8 +49,8 @@ class CreatePurchaseOrderCommandHandler(
 
         self.event_publisher.publish(
             PurchaseOrderCreated(
-                aggregate_id=purchase_order.id,
-                purchase_order_id=purchase_order.id,
+                aggregate_id=purchase_order.require_id(),
+                purchase_order_id=purchase_order.require_id(),
                 order_number=purchase_order.order_number,
                 supplier_id=purchase_order.supplier_id,
             )
@@ -136,8 +136,8 @@ class SendPurchaseOrderCommandHandler(CommandHandler[SendPurchaseOrderCommand, d
 
         self.event_publisher.publish(
             PurchaseOrderSent(
-                aggregate_id=sent.id,
-                purchase_order_id=sent.id,
+                aggregate_id=sent.require_id(),
+                purchase_order_id=sent.require_id(),
                 order_number=sent.order_number,
             )
         )
@@ -167,8 +167,8 @@ class CancelPurchaseOrderCommandHandler(
 
         self.event_publisher.publish(
             PurchaseOrderCancelled(
-                aggregate_id=cancelled.id,
-                purchase_order_id=cancelled.id,
+                aggregate_id=cancelled.require_id(),
+                purchase_order_id=cancelled.require_id(),
                 order_number=cancelled.order_number,
             )
         )

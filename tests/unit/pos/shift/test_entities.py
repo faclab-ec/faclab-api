@@ -33,13 +33,14 @@ def test_shift_close_changes_status():
 def test_shift_close_calculates_discrepancy():
     """Test que cerrar un turno calcula la discrepancia"""
     shift = Shift(cashier_name="Juan", opening_balance=Decimal("500.00"))
-    shift.close(
+    discrepancy = shift.close(
         closing_balance=Decimal("600.00"),
         expected_balance=Decimal("550.00"),
     )
     assert shift.closing_balance == Decimal("600.00")
     assert shift.expected_balance == Decimal("550.00")
     assert shift.discrepancy == Decimal("50.00")
+    assert discrepancy == Decimal("50.00")
 
 
 def test_shift_close_negative_discrepancy():

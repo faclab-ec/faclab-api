@@ -98,8 +98,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             tax_amount = item_subtotal * product.tax_code.rate / Decimal("100")
 
             sale_item = SaleItem(
-                sale_id=sale.id,
-                product_id=product.id,
+                sale_id=sale.require_id(),
+                product_id=product.require_id(),
                 quantity=quantity,
                 unit_price=unit_price,
                 discount=discount,
@@ -121,7 +121,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 raise InsufficientStockError(item.product_id, item.quantity, available)
 
         # 7. Validar pagos cubren el total
-        total_payment = sum(Decimal(str(p["amount"])) for p in command.payments)
+        total_payment = sum(
+            (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
+        )
         if total_payment < sale.total:
             raise ValidationError(
                 message="Payment amount is insufficient",
@@ -143,6 +145,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             self.movement_repo.create(movement)
 
             stock = self.stock_repo.first(product_id=item.product_id)
+            if stock is None:
+                raise InsufficientStockError(item.product_id, item.quantity, 0)
             stock.update_quantity(-abs(item.quantity))
             self.stock_repo.update(stock)
 
@@ -158,7 +162,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 ) from None
 
             payment = Payment(
-                sale_id=sale.id,
+                sale_id=sale.require_id(),
                 amount=Decimal(str(payment_data["amount"])),
                 payment_method=payment_method,
                 reference=payment_data.get("reference"),
@@ -194,8 +198,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
 
         self.event_publisher.publish(
             SaleConfirmed(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
                 customer_id=sale.customer_id,
                 items=items_data,
                 subtotal=sale.subtotal,

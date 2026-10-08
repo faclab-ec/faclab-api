@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -34,7 +34,7 @@ class ReceiveItemInput:
 @dataclass
 class CreatePurchaseReceiptCommand(Command):
     purchase_order_id: int = 0
-    items: list[ReceiveItemInput] = None  # type: ignore[assignment]
+    items: list[ReceiveItemInput] = field(default_factory=list)
     notes: str | None = None
     received_at: datetime | None = None
 
@@ -113,7 +113,7 @@ class CreatePurchaseReceiptCommandHandler(
             po_item = po_items_by_id[receive_item.purchase_order_item_id]
 
             receipt_item = PurchaseReceiptItem(
-                purchase_receipt_id=receipt.id,
+                purchase_receipt_id=receipt.require_id(),
                 purchase_order_item_id=receive_item.purchase_order_item_id,
                 product_id=po_item.product_id,
                 quantity_received=receive_item.quantity_received,
@@ -139,7 +139,7 @@ class CreatePurchaseReceiptCommandHandler(
                 + receive_item.quantity_received,
             )
             self.item_repo.update(updated_item)
-            po_items_by_id[po_item.id] = updated_item
+            po_items_by_id[po_item.require_id()] = updated_item
 
         # Determine new PO status
         all_received = all(
@@ -153,8 +153,8 @@ class CreatePurchaseReceiptCommandHandler(
 
         self.event_publisher.publish(
             PurchaseOrderReceived(
-                aggregate_id=updated_po.id,
-                purchase_order_id=updated_po.id,
+                aggregate_id=updated_po.require_id(),
+                purchase_order_id=updated_po.require_id(),
                 order_number=updated_po.order_number,
                 is_complete=all_received,
                 items=receipt_items_data,

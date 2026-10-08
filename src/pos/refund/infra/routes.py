@@ -165,7 +165,7 @@ class POSRefundRouter:
             data=[RefundResponse.model_validate(r) for r in result["items"]],
             meta=meta.with_pagination(
                 total=result["total"],
-                limit=params.limit,
-                offset=params.offset,
+                limit=result["limit"],
+                offset=result["offset"],
             ),
         )

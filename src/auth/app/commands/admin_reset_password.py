@@ -47,8 +47,8 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
 
         self.event_publisher.publish(
             UserPasswordReset(
-                aggregate_id=user.id,
-                user_id=user.id,
+                aggregate_id=user.require_id(),
+                user_id=user.require_id(),
                 username=user.username,
                 reset_by_user_id=command.reset_by_user_id,
             )

@@ -62,8 +62,8 @@ class CreateSupplierCommandHandler(CommandHandler[CreateSupplierCommand, dict]):
 
         self.event_publisher.publish(
             SupplierCreated(
-                aggregate_id=supplier.id,
-                supplier_id=supplier.id,
+                aggregate_id=supplier.require_id(),
+                supplier_id=supplier.require_id(),
                 name=supplier.name,
                 tax_id=supplier.tax_id,
             )
@@ -153,8 +153,8 @@ class ActivateSupplierCommandHandler(CommandHandler[ActivateSupplierCommand, dic
 
         self.event_publisher.publish(
             SupplierActivated(
-                aggregate_id=updated_supplier.id,
-                supplier_id=updated_supplier.id,
+                aggregate_id=updated_supplier.require_id(),
+                supplier_id=updated_supplier.require_id(),
             )
         )
         return updated_supplier.dict()
@@ -182,8 +182,8 @@ class DeactivateSupplierCommandHandler(CommandHandler[DeactivateSupplierCommand,
 
         self.event_publisher.publish(
             SupplierDeactivated(
-                aggregate_id=updated_supplier.id,
-                supplier_id=updated_supplier.id,
+                aggregate_id=updated_supplier.require_id(),
+                supplier_id=updated_supplier.require_id(),
                 reason=command.reason,
             )
         )

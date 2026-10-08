@@ -60,7 +60,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
         item_dict = sale_item.dict()
 
         # Eliminar el item
-        self.sale_item_repo.delete(sale_item.id)
+        self.sale_item_repo.delete(sale_item.require_id())
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
@@ -70,9 +70,9 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
         # Publicar evento
         self.event_publisher.publish(
             SaleItemRemoved(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
-                sale_item_id=sale_item.id,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
+                sale_item_id=sale_item.require_id(),
                 product_id=sale_item.product_id,
                 quantity=sale_item.quantity,
             )

@@ -44,8 +44,8 @@ class LoginCommandHandler(CommandHandler[LoginCommand, TokenPair]):
 
         self.event_publisher.publish(
             UserLoggedIn(
-                aggregate_id=user.id,
-                user_id=user.id,
+                aggregate_id=user.require_id(),
+                user_id=user.require_id(),
                 username=user.username,
             )
         )

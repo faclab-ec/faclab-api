@@ -1,5 +1,7 @@
 import copy
 import json
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import APIRouter, FastAPI
@@ -60,6 +62,20 @@ origins = ["http://localhost:3000", "http://localhost:5173"]
 
 _docs = config.get_docs_config()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    yield
+
+    from src.shared.infra.kafka.event_handlers import _get_producer
+
+    producer = _get_producer()
+    if producer:
+        producer.close()
+
+    otel.shutdown()
+
+
 app = FastAPI(
     title=_docs.title,
     version=_docs.version,
@@ -67,6 +83,7 @@ app = FastAPI(
     openapi_tags=_docs.openapi_tags,
     docs_url=None,
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 
@@ -98,7 +115,7 @@ def _custom_openapi() -> dict:
     return schema
 
 
-app.openapi = _custom_openapi  # type: ignore[method-assign]
+app.openapi = _custom_openapi  # ty: ignore[invalid-assignment]
 
 # ---------------------------------------------------------------------------
 # Scalar docs helpers
@@ -338,24 +355,13 @@ if _docs.enabled:
 
 
 # ---------------------------------------------------------------------------
-# Root + lifecycle
+# Root
 # ---------------------------------------------------------------------------
 
 
 @app.get("/", include_in_schema=False)
 async def root():
     return RedirectResponse("/docs")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    from src.shared.infra.kafka.event_handlers import _get_producer
-
-    producer = _get_producer()
-    if producer:
-        producer.close()
-
-    otel.shutdown()
 
 
 wireup_fastapi_setup(wireup_container, app)

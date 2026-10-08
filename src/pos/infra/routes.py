@@ -90,7 +90,7 @@ class POSProductRouter:
         """Search products by SKU, barcode, or name fragment. Returns up to `limit` matches."""
         result = handler.handle(SearchProductsQuery(search_term=term, limit=limit))
         return ListResponse(
-            data=[ProductResponse.model_validate(p) for p in result["items"]], meta=meta
+            data=[ProductResponse.model_validate(p) for p in result], meta=meta
         )
 
     def get_by_id(

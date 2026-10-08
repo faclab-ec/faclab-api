@@ -30,8 +30,8 @@ class CreateCategoryCommandHandler(CommandHandler[CreateCategoryCommand, dict]):
 
         self.event_publisher.publish(
             CategoryCreated(
-                aggregate_id=category.id,
-                category_id=category.id,
+                aggregate_id=category.require_id(),
+                category_id=category.require_id(),
                 name=category.name,
             )
         )

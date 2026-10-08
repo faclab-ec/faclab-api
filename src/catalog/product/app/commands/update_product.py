@@ -88,8 +88,8 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
 
         self.event_publisher.publish(
             ProductUpdated(
-                aggregate_id=product.id,
-                product_id=product.id,
+                aggregate_id=product.require_id(),
+                product_id=product.require_id(),
                 changes=changes,
             )
         )

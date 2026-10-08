@@ -80,6 +80,8 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             self.movement_repo.create(movement)
 
             stock = self.stock_repo.first(product_id=item.product_id)
+            if stock is None:
+                raise InsufficientStockError(item.product_id, item.quantity, 0)
             stock.update_quantity(-abs(item.quantity))
             self.stock_repo.update(stock)
 
@@ -107,8 +109,8 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
 
         self.event_publisher.publish(
             SaleConfirmed(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
                 customer_id=sale.customer_id,
                 items=items_data,
                 subtotal=sale.subtotal,
