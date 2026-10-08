@@ -5,6 +5,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from src.pos.refund.domain.entities import RefundStatus
 from src.sales.domain.entities import PaymentMethod
+from src.shared.domain.tax import TaxCode
 from src.shared.infra.validators import DecimalNumber, QueryParams
 
 
@@ -87,10 +88,10 @@ class RefundItemResponse(BaseModel):
         serialization_alias="unitPrice",
     )
     discount: DecimalNumber
-    tax_rate: DecimalNumber = Field(
+    tax_code: TaxCode = Field(
         ...,
-        validation_alias=AliasChoices("taxRate", "tax_rate"),
-        serialization_alias="taxRate",
+        validation_alias=AliasChoices("taxCode", "tax_code"),
+        serialization_alias="taxCode",
     )
     tax_amount: DecimalNumber = Field(
         ...,

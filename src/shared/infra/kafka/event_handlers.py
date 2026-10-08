@@ -64,7 +64,7 @@ def _build_enriched_payload(event: SaleConfirmed, session: Any = None) -> dict:
                 "quantity": item["quantity"],
                 "unit_price": item["unit_price"],
                 "discount": item.get("discount", 0),
-                "tax_rate": item.get("tax_rate", 0),
+                "tax_code": item.get("tax_code"),
                 "tax_amount": item.get("tax_amount", 0),
                 "subtotal": item.get("subtotal", 0),
             }

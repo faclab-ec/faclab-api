@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
 from src.shared.domain.entities import Entity
+from src.shared.domain.tax import TaxCode
 
 
 class SaleStatus(StrEnum):
@@ -43,7 +44,7 @@ class SaleItem(Entity):
     quantity: int
     unit_price: Decimal
     discount: Decimal = Decimal("0")
-    tax_rate: Decimal = Decimal("0")
+    tax_code: TaxCode = TaxCode.VAT_15
     tax_amount: Decimal = Decimal("0")
     price_override: Decimal | None = None
     override_reason: str | None = None

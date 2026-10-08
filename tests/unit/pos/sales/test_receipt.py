@@ -9,6 +9,7 @@ from src.pos.sales.app.queries.generate_receipt import (
     GenerateReceiptQueryHandler,
 )
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_sale_model(**overrides):
@@ -33,7 +34,7 @@ def _make_item_model(**overrides):
     item.unit_price = overrides.get("unit_price", Decimal("100"))
     item.quantity = overrides.get("quantity", 1)
     item.discount = overrides.get("discount", Decimal("0"))
-    item.tax_rate = overrides.get("tax_rate", Decimal("12"))
+    item.tax_code = overrides.get("tax_code", TaxCode.VAT_12)
     item.tax_amount = overrides.get("tax_amount", Decimal("12"))
     item.price_override = overrides.get("price_override")
     item.override_reason = overrides.get("override_reason")
@@ -156,10 +157,12 @@ class TestGenerateReceiptQueryHandler:
             total=Decimal("212"),
         )
         item_12 = _make_item_model(
-            unit_price=Decimal("100"), tax_rate=Decimal("12"), tax_amount=Decimal("12")
+            unit_price=Decimal("100"),
+            tax_code=TaxCode.VAT_12,
+            tax_amount=Decimal("12"),
         )
         item_0 = _make_item_model(
-            unit_price=Decimal("100"), tax_rate=Decimal("0"), tax_amount=Decimal("0")
+            unit_price=Decimal("100"), tax_code=TaxCode.VAT_0, tax_amount=Decimal("0")
         )
         payment = _make_payment_model(amount=Decimal("212"))
 
@@ -195,6 +198,47 @@ class TestGenerateReceiptQueryHandler:
         assert breakdown_0["tax_amount"] == Decimal("0")
         assert breakdown_12["taxable_base"] == Decimal("100")
         assert breakdown_12["tax_amount"] == Decimal("12")
+
+    def test_receipt_tax_breakdown_sorted_by_rate(self):
+        """El desglose se ordena por tarifa (no alfabético) y luego por código."""
+        handler = _build_handler()
+        sale = _make_sale_model()
+        items = [
+            (_make_item_model(tax_code=TaxCode.VAT_15), "P15"),
+            (_make_item_model(tax_code=TaxCode.VAT_5), "P5"),
+            (_make_item_model(tax_code=TaxCode.VAT_0), "P0"),
+            (_make_item_model(tax_code=TaxCode.EXEMPT), "PEX"),
+        ]
+        payment = _make_payment_model()
+
+        def query_side_effect(model, *args):
+            mock = MagicMock()
+            model_name = getattr(model, "__name__", str(model))
+
+            if model_name == "SaleModel":
+                mock.filter_by.return_value.first.return_value = sale
+            elif model_name == "PaymentModel":
+                mock.filter_by.return_value.all.return_value = [payment]
+            else:
+                mock.join.return_value.filter.return_value.all.return_value = items
+            return mock
+
+        handler.session.query.side_effect = query_side_effect
+
+        result = handler._handle(GenerateReceiptQuery(sale_id=1))
+
+        assert [t["tax_code"] for t in result["tax_breakdown"]] == [
+            TaxCode.EXEMPT,
+            TaxCode.VAT_0,
+            TaxCode.VAT_5,
+            TaxCode.VAT_15,
+        ]
+        assert [t["tax_rate"] for t in result["tax_breakdown"]] == [
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("5"),
+            Decimal("15"),
+        ]
 
     def test_receipt_change_calculation(self):
         handler = _build_handler()

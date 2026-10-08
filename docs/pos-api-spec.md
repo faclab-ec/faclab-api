@@ -98,7 +98,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | quantity | int | Cantidad |
 | unitPrice | decimal | Precio unitario |
 | discount | decimal | Descuento % (0-100) |
-| taxRate | decimal | Tasa de impuesto % (ej: 15) |
+| taxCode | string | Código semántico de IVA (ej: VAT_15) |
 | taxAmount | decimal | Monto de impuesto calculado |
 | subtotal | decimal | (unitPrice × quantity) × (1 - discount/100) |
 | priceOverride | decimal? | Precio sobrescrito |
@@ -271,7 +271,7 @@ Efectos:
         "unitPrice": 10.50,
         "discount": 0,
         "discountAmount": 0,
-        "taxRate": 15,
+        "taxCode": "VAT_15",
         "taxAmount": 3.15,
         "subtotal": 21.00,
         "priceOverride": null,
@@ -279,7 +279,7 @@ Efectos:
       }
     ],
     "taxBreakdown": [
-      { "taxRate": 15, "taxableBase": 21.00, "taxAmount": 3.15 }
+      { "taxCode": "VAT_15", "taxRate": 15, "taxableBase": 21.00, "taxAmount": 3.15 }
     ],
     "subtotal": 21.00,
     "discount": 0,
@@ -326,7 +326,7 @@ Efectos:
 | quantity | int | Cantidad devuelta |
 | unitPrice | decimal | Precio (copiado del original) |
 | discount | decimal | Descuento % (copiado) |
-| taxRate | decimal | Tasa impuesto (copiada) |
+| taxCode | string | Código de IVA (copiado del original) |
 | taxAmount | decimal | Impuesto calculado |
 | subtotal | decimal | Calculado |
 
@@ -593,7 +593,7 @@ Formato de error estándar:
 
 9. **Cierre de caja**: El Z-Report da la reconciliación completa. La discrepancia (diferencia entre esperado y declarado) se registra automáticamente.
 
-10. **Campos camelCase**: La API usa camelCase en JSON (ej: `cashierName`, `paymentMethod`, `taxRate`).
+10. **Campos camelCase**: La API usa camelCase en JSON (ej: `cashierName`, `paymentMethod`, `taxCode`).
 
 ---
 

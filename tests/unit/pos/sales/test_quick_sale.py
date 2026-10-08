@@ -12,6 +12,7 @@ from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InsufficientStockError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_shift(**overrides) -> Shift:
@@ -29,7 +30,7 @@ def _make_product(**overrides):
     product = MagicMock()
     product.id = overrides.get("id", 1)
     product.sale_price = overrides.get("sale_price", Decimal("50.00"))
-    product.tax_rate = overrides.get("tax_rate", Decimal("12.00"))
+    product.tax_code = overrides.get("tax_code", TaxCode.VAT_12)
     return product
 
 
@@ -73,7 +74,7 @@ def _make_sale_item(**overrides) -> SaleItem:
         "quantity": 2,
         "unit_price": Decimal("50.00"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("12.00"),
+        "tax_code": TaxCode.VAT_12,
         "tax_amount": Decimal("12.00"),
     }
     defaults.update(overrides)

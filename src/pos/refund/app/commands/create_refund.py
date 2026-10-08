@@ -102,7 +102,7 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
             item_subtotal = sale_item.unit_price * quantity
             discount_amount = item_subtotal * (sale_item.discount / Decimal("100"))
             item_subtotal = item_subtotal - discount_amount
-            tax_amount = item_subtotal * sale_item.tax_rate / Decimal("100")
+            tax_amount = item_subtotal * sale_item.tax_code.rate / Decimal("100")
 
             refund_item = RefundItem(
                 refund_id=refund.id,
@@ -111,7 +111,7 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
                 quantity=quantity,
                 unit_price=sale_item.unit_price,
                 discount=sale_item.discount,
-                tax_rate=sale_item.tax_rate,
+                tax_code=sale_item.tax_code,
                 tax_amount=tax_amount,
             )
             refund_item = self.refund_item_repo.create(refund_item)

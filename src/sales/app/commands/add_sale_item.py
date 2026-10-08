@@ -52,7 +52,7 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         if sale.status.value != "DRAFT":
             raise InvalidSaleStatusError(sale.status.value, "add items to")
 
-        # Obtener tax_rate del producto
+        # Obtener tax_code del producto
         product = self.product_repo.get_by_id(command.product_id)
         if not product:
             raise NotFoundError(f"Product with id {command.product_id} not found")
@@ -63,7 +63,7 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         base = unit_price * command.quantity
         discount_amount = base * (discount / Decimal("100"))
         item_subtotal = base - discount_amount
-        tax_amount = item_subtotal * product.tax_rate / Decimal("100")
+        tax_amount = item_subtotal * product.tax_code.rate / Decimal("100")
 
         # Crear el item
         sale_item = SaleItem(
@@ -72,7 +72,7 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
             quantity=command.quantity,
             unit_price=command.unit_price,
             discount=command.discount,
-            tax_rate=product.tax_rate,
+            tax_code=product.tax_code,
             tax_amount=tax_amount,
         )
 

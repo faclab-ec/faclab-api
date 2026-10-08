@@ -55,7 +55,7 @@ class OverrideItemPriceCommandHandler(CommandHandler[OverrideItemPriceCommand, d
         item.unit_price = command.new_price
         item.price_override = command.new_price
         item.override_reason = command.reason
-        item.tax_amount = item.subtotal * item.tax_rate / Decimal("100")
+        item.tax_amount = item.subtotal * item.tax_code.rate / Decimal("100")
 
         self.sale_item_repo.update(item)
 

@@ -57,7 +57,9 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
             sale_item.discount = command.discount
 
         # Recalcular tax_amount del item
-        sale_item.tax_amount = sale_item.subtotal * sale_item.tax_rate / Decimal("100")
+        sale_item.tax_amount = (
+            sale_item.subtotal * sale_item.tax_code.rate / Decimal("100")
+        )
 
         self.sale_item_repo.update(sale_item)
 

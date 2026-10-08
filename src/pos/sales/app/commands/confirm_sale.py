@@ -89,7 +89,7 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "discount": item.discount,
-                "tax_rate": item.tax_rate,
+                "tax_code": item.tax_code,
                 "tax_amount": item.tax_amount,
                 "subtotal": item.subtotal,
             }

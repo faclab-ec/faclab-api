@@ -6,6 +6,7 @@ from enum import StrEnum
 from src.pos.refund.domain.exceptions import InvalidRefundStatusError
 from src.sales.domain.entities import PaymentMethod
 from src.shared.domain.entities import Entity
+from src.shared.domain.tax import TaxCode
 
 
 class RefundStatus(StrEnum):
@@ -48,7 +49,7 @@ class RefundItem(Entity):
     quantity: int
     unit_price: Decimal
     discount: Decimal = Decimal("0")
-    tax_rate: Decimal = Decimal("0")
+    tax_code: TaxCode = TaxCode.VAT_15
     tax_amount: Decimal = Decimal("0")
     id: int | None = None
 
