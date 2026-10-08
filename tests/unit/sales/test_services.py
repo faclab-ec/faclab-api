@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.services import recalculate_sale_totals
@@ -6,7 +7,7 @@ from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 10,
         "status": SaleStatus.DRAFT,
@@ -28,7 +29,7 @@ def _make_item(
     discount_amount = base * (discount / Decimal("100"))
     subtotal = base - discount_amount
     tax_amount = subtotal * tax_code.rate / Decimal("100")
-    defaults = {
+    defaults: dict[str, Any] = {
         "sale_id": 1,
         "product_id": 100,
         "quantity": quantity,

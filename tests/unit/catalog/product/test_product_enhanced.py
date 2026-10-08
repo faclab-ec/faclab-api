@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -22,7 +23,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_product(**overrides) -> Product:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "sku": "SKU-001",
         "name": "Test Product",

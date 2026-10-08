@@ -1,5 +1,7 @@
 """Unit tests for InventoryAdjustment and AdjustmentItem entities"""
 
+from typing import Any
+
 import pytest
 
 from src.inventory.adjustment.domain.entities import (
@@ -12,7 +14,7 @@ from src.shared.domain.exceptions import DomainError
 
 
 def _make_adjustment(**overrides) -> InventoryAdjustment:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "warehouse_id": 10,
         "reason": AdjustmentReason.PHYSICAL_COUNT,
@@ -23,7 +25,7 @@ def _make_adjustment(**overrides) -> InventoryAdjustment:
 
 
 def _make_item(**overrides) -> AdjustmentItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "adjustment_id": 1,
         "product_id": 5,

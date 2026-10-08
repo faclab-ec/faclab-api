@@ -11,7 +11,9 @@ from src.pos.infra.validators import QuickCustomerRequest
 
 def test_quick_customer_request_minimal_fields():
     """Test QuickCustomerRequest accepts minimal fields."""
-    request = QuickCustomerRequest(name="Juan Perez", taxId="0912345678", taxType=2)
+    request = QuickCustomerRequest.model_validate(
+        {"name": "Juan Perez", "taxId": "0912345678", "taxType": 2}
+    )
 
     assert request.name == "Juan Perez"
     assert request.tax_id == "0912345678"
@@ -20,7 +22,9 @@ def test_quick_customer_request_minimal_fields():
 
 def test_quick_customer_request_default_tax_type():
     """Test QuickCustomerRequest defaults tax_type to 1 (RUC)."""
-    request = QuickCustomerRequest(name="Empresa SA", taxId="0912345678001")
+    request = QuickCustomerRequest.model_validate(
+        {"name": "Empresa SA", "taxId": "0912345678001"}
+    )
 
     assert request.tax_type == 1
 

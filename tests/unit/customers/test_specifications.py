@@ -1,9 +1,11 @@
+from typing import Any
+
 from src.customers.domain.entities import Customer, TaxType
 from src.customers.domain.specifications import ActiveCustomers, CustomersByType
 
 
 def _make_customer(**overrides) -> Customer:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "name": "Test Customer",
         "tax_id": "1710034065001",

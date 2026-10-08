@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -13,7 +14,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_user(**overrides):
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "username": "testuser",
         "email": "test@example.com",

@@ -1,5 +1,6 @@
 """Unit tests for UnitOfMeasure command handlers."""
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -23,7 +24,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_uom(**overrides) -> UnitOfMeasure:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "name": "Kilogram",
         "symbol": "kg",

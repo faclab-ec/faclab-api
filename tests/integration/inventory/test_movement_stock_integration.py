@@ -1,5 +1,6 @@
 """Integration tests for Movement-Stock event-driven flow"""
 
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 import pytest
@@ -143,7 +144,7 @@ def test_sale_confirmed_creates_movement_and_updates_stock(
     def mock_handle(command):
         EventBus.publish(
             MovementCreated(
-                aggregate_id=created_movement.id,
+                aggregate_id=created_movement.require_id(),
                 product_id=created_movement.product_id,
                 quantity=created_movement.quantity,
                 type=created_movement.type.value,
@@ -184,7 +185,7 @@ def test_sale_confirmed_creates_movement_and_updates_stock(
         sale_id=123,
         customer_id=1,
         items=[{"product_id": 10, "quantity": 5, "unit_price": 10.0}],
-        total=50.0,
+        total=Decimal("50.0"),
     )
 
     # Act
@@ -239,7 +240,7 @@ def test_sale_cancelled_reverts_stock_via_event(mock_inv_scope, mock_stock_scope
     def mock_handle(command):
         EventBus.publish(
             MovementCreated(
-                aggregate_id=reversal_movement.id,
+                aggregate_id=reversal_movement.require_id(),
                 product_id=reversal_movement.product_id,
                 quantity=reversal_movement.quantity,
                 type=reversal_movement.type.value,

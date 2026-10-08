@@ -1,5 +1,7 @@
 """Unit tests for Stock entity domain logic."""
 
+from typing import Any
+
 import pytest
 
 from src.inventory.stock.domain.entities import Stock
@@ -9,7 +11,7 @@ from src.inventory.stock.domain.exceptions import InsufficientStockError
 
 
 def _make_stock(**overrides) -> Stock:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 10,
         "quantity": 100,

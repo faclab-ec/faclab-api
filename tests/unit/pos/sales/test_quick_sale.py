@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,7 +17,7 @@ from src.shared.domain.tax import TaxCode
 
 
 def _make_shift(**overrides) -> Shift:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "cashier_name": "Test Cashier",
         "status": ShiftStatus.OPEN,
@@ -53,7 +54,7 @@ def _mock_repo(entity=None, entities=None):
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": None,
         "is_final_consumer": True,
@@ -67,7 +68,7 @@ def _make_sale(**overrides) -> Sale:
 
 
 def _make_sale_item(**overrides) -> SaleItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "sale_id": 1,
         "product_id": 1,
@@ -120,7 +121,7 @@ def _build_handler(
 
 
 def _quick_sale_command(**overrides):
-    defaults = {
+    defaults: dict[str, Any] = {
         "items": [{"product_id": 1, "quantity": 2, "unit_price": 50.00}],
         "payments": [{"amount": 112.00, "payment_method": "CASH"}],
         "customer_id": None,

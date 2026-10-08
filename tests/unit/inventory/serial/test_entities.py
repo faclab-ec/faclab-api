@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 from src.inventory.serial.domain.entities import SerialNumber, SerialStatus
@@ -5,7 +7,7 @@ from src.shared.domain.exceptions import DomainError
 
 
 def _make_serial(**overrides) -> SerialNumber:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 5,
         "serial_number": "SN-001",

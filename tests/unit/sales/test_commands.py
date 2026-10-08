@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,7 +22,7 @@ from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 10,
         "status": SaleStatus.DRAFT,
@@ -33,7 +34,7 @@ def _make_sale(**overrides) -> Sale:
 
 
 def _make_sale_item(**overrides) -> SaleItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "sale_id": 1,
         "product_id": 100,
@@ -48,7 +49,7 @@ def _make_sale_item(**overrides) -> SaleItem:
 
 
 def _make_product(**overrides) -> Product:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 100,
         "name": "Test Product",
         "sku": "TST-001",
@@ -59,7 +60,7 @@ def _make_product(**overrides) -> Product:
 
 
 def _make_payment(**overrides) -> Payment:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "sale_id": 1,
         "amount": Decimal("500.00"),
@@ -132,8 +133,8 @@ def test_add_sale_item_command_handler():
         sale_id=1,
         product_id=100,
         quantity=10,
-        unit_price=100.0,
-        discount=0.0,
+        unit_price=Decimal("100.0"),
+        discount=Decimal("0.0"),
     )
     result = handler.handle(command)
 
@@ -154,7 +155,7 @@ def test_add_sale_item_only_draft():
     handler = AddSaleItemCommandHandler(sale_repo, item_repo, product_repo, MagicMock())
 
     command = AddSaleItemCommand(
-        sale_id=1, product_id=100, quantity=10, unit_price=100.0
+        sale_id=1, product_id=100, quantity=10, unit_price=Decimal("100.0")
     )
 
     with pytest.raises(InvalidSaleStatusError):
@@ -170,7 +171,7 @@ def test_add_sale_item_sale_not_found():
     handler = AddSaleItemCommandHandler(sale_repo, item_repo, product_repo, MagicMock())
 
     command = AddSaleItemCommand(
-        sale_id=999, product_id=100, quantity=10, unit_price=100.0
+        sale_id=999, product_id=100, quantity=10, unit_price=Decimal("100.0")
     )
 
     with pytest.raises(NotFoundError):
@@ -203,7 +204,7 @@ def test_register_payment_command_handler():
 
     command = RegisterPaymentCommand(
         sale_id=1,
-        amount=500.0,
+        amount=Decimal("500.0"),
         payment_method="CASH",
         reference="REF-001",
     )
@@ -223,7 +224,7 @@ def test_register_payment_invalid_method():
 
     command = RegisterPaymentCommand(
         sale_id=1,
-        amount=500.0,
+        amount=Decimal("500.0"),
         payment_method="BITCOIN",  # Método inválido
     )
 
@@ -238,7 +239,9 @@ def test_register_payment_sale_not_found():
     payment_repo = _mock_repo()
     handler = RegisterPaymentCommandHandler(sale_repo, payment_repo, MagicMock())
 
-    command = RegisterPaymentCommand(sale_id=999, amount=500.0, payment_method="CASH")
+    command = RegisterPaymentCommand(
+        sale_id=999, amount=Decimal("500.0"), payment_method="CASH"
+    )
 
     with pytest.raises(NotFoundError):
         handler.handle(command)

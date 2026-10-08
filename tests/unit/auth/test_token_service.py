@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import patch
 
 import jwt
@@ -10,7 +11,7 @@ from src.auth.infra.token_service import JwtTokenService
 
 
 def _user(**overrides) -> User:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 42,
         "username": "alice",
         "email": "alice@example.com",
@@ -23,7 +24,7 @@ def _user(**overrides) -> User:
 
 
 def _service(**config_overrides) -> JwtTokenService:
-    defaults = {
+    defaults: dict[str, Any] = {
         "JWT_SECRET": "test-secret",
         "JWT_ACCESS_TTL_SECONDS": 900,
         "JWT_REFRESH_TTL_SECONDS": 7200,

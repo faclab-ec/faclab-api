@@ -1,3 +1,5 @@
+from typing import Any
+
 from src.inventory.stock.domain.entities import Stock
 from src.inventory.stock.domain.specifications import (
     LowStockProducts,
@@ -7,7 +9,7 @@ from src.inventory.stock.domain.specifications import (
 
 
 def _make_stock(**overrides) -> Stock:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 10,
         "quantity": 5,

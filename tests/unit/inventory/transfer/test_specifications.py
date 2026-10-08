@@ -1,5 +1,7 @@
 """Unit tests for TransfersByStatus and TransfersBySourceLocation specifications"""
 
+from typing import Any
+
 from src.inventory.transfer.domain.entities import StockTransfer, TransferStatus
 from src.inventory.transfer.domain.specifications import (
     TransfersBySourceLocation,
@@ -8,7 +10,7 @@ from src.inventory.transfer.domain.specifications import (
 
 
 def _make_transfer(**overrides) -> StockTransfer:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "source_location_id": 10,
         "destination_location_id": 20,

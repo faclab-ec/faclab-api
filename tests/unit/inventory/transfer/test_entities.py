@@ -1,5 +1,7 @@
 """Unit tests for StockTransfer and StockTransferItem entities"""
 
+from typing import Any
+
 import pytest
 
 from src.inventory.transfer.domain.entities import (
@@ -11,7 +13,7 @@ from src.shared.domain.exceptions import DomainError
 
 
 def _make_transfer(**overrides) -> StockTransfer:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "source_location_id": 10,
         "destination_location_id": 20,
@@ -22,7 +24,7 @@ def _make_transfer(**overrides) -> StockTransfer:
 
 
 def _make_item(**overrides) -> StockTransferItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "transfer_id": 1,
         "product_id": 5,

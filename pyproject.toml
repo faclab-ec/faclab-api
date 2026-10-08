@@ -56,5 +56,4 @@ line-ending = "auto"
 python-version = "3.11"
 
 [tool.ty.src]
-# tests/ is excluded until fixtures are typed
-include = ["src", "main.py", "config", "scripts"]
+include = ["src", "main.py", "config", "scripts", "tests"]

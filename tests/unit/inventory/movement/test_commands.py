@@ -132,7 +132,7 @@ def test_create_movement_in_with_negative_quantity_raises(
     with pytest.raises(InvalidMovementTypeError) as exc_info:
         handler.handle(command)
 
-    assert hasattr(exc_info.value, "detail")
+    assert exc_info.value.detail is not None
     assert "positiva" in exc_info.value.detail.lower()
     mock_movement_repo.create.assert_not_called()
 
@@ -152,7 +152,7 @@ def test_create_movement_out_with_positive_quantity_raises(
     with pytest.raises(InvalidMovementTypeError) as exc_info:
         handler.handle(command)
 
-    assert hasattr(exc_info.value, "detail")
+    assert exc_info.value.detail is not None
     assert "negativa" in exc_info.value.detail.lower()
     mock_movement_repo.create.assert_not_called()
 
@@ -170,7 +170,7 @@ def test_create_movement_zero_quantity_raises(mock_movement_repo, event_publishe
     with pytest.raises(InvalidMovementTypeError) as exc_info:
         handler.handle(command)
 
-    assert hasattr(exc_info.value, "detail")
+    assert exc_info.value.detail is not None
     assert "cero" in exc_info.value.detail.lower()
     mock_movement_repo.create.assert_not_called()
 

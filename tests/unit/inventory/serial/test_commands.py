@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,7 +14,7 @@ from src.shared.domain.exceptions import DomainError, NotFoundError
 
 
 def _make_serial(**overrides) -> SerialNumber:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 5,
         "serial_number": "SN-001",

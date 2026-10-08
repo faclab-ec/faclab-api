@@ -1,10 +1,11 @@
 from datetime import date, timedelta
+from typing import Any
 
 from src.inventory.lot.domain.entities import Lot, MovementLotItem
 
 
 def _make_lot(**overrides) -> Lot:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 5,
         "lot_number": "LOT-2026-001",

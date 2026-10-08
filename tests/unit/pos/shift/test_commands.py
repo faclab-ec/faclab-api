@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,7 +28,7 @@ _ZERO_SUMMARY = {
 
 
 def _make_shift(**overrides) -> Shift:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "cashier_name": "Juan",
         "opening_balance": Decimal("500.00"),

@@ -1,5 +1,6 @@
 """Unit tests for inventory adjustment command handlers"""
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -32,7 +33,7 @@ from src.shared.domain.exceptions import DomainError, NotFoundError
 
 
 def _make_adjustment(**overrides) -> InventoryAdjustment:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "warehouse_id": 10,
         "reason": AdjustmentReason.PHYSICAL_COUNT,
@@ -43,7 +44,7 @@ def _make_adjustment(**overrides) -> InventoryAdjustment:
 
 
 def _make_item(**overrides) -> AdjustmentItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "adjustment_id": 1,
         "product_id": 5,

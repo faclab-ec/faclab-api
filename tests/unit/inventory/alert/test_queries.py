@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 from src.catalog.product.domain.entities import Product
@@ -18,7 +19,7 @@ from src.inventory.stock.domain.entities import Stock
 
 
 def _make_product(**overrides) -> Product:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "name": "Test Product",
         "sku": "SKU-001",
@@ -31,7 +32,7 @@ def _make_product(**overrides) -> Product:
 
 
 def _make_stock(**overrides) -> Stock:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 1,
         "quantity": 5,
@@ -41,7 +42,7 @@ def _make_stock(**overrides) -> Stock:
 
 
 def _make_lot(**overrides) -> Lot:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 1,
         "lot_number": "LOT-001",

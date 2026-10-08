@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -17,7 +18,7 @@ from src.shared.domain.exceptions import DomainError
 
 
 def _make_po(**overrides) -> PurchaseOrder:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "supplier_id": 10,
         "order_number": "PO-2026-0001",
@@ -28,7 +29,7 @@ def _make_po(**overrides) -> PurchaseOrder:
 
 
 def _make_item(**overrides) -> PurchaseOrderItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "purchase_order_id": 1,
         "product_id": 5,

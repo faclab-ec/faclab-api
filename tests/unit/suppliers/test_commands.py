@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ from src.suppliers.domain.entities import Supplier, SupplierContact, SupplierPro
 
 
 def _make_supplier(**overrides) -> Supplier:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "name": "ACME Corp",
         "tax_id": "1710034065001",
@@ -53,7 +54,7 @@ def _make_supplier(**overrides) -> Supplier:
 
 
 def _make_contact(**overrides) -> SupplierContact:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "supplier_id": 1,
         "name": "Jane Doe",
@@ -63,7 +64,7 @@ def _make_contact(**overrides) -> SupplierContact:
 
 
 def _make_supplier_product(**overrides) -> SupplierProduct:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "supplier_id": 1,
         "product_id": 10,
