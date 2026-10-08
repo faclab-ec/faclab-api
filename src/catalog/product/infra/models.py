@@ -5,7 +5,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base
-from src.shared.infra.precision import MoneyColumn, PercentageColumn
+from src.shared.infra.precision import MoneyColumn
 
 
 class CategoryModel(Base):
@@ -28,9 +28,7 @@ class ProductModel(Base):
     barcode: Mapped[str | None] = mapped_column(String(64), unique=True)
     purchase_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     sale_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
-    tax_rate: Mapped[Decimal] = mapped_column(
-        PercentageColumn, nullable=False, default=Decimal("12.00")
-    )
+    tax_code: Mapped[str] = mapped_column(String(16), nullable=False, default="VAT_15")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_service: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     min_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

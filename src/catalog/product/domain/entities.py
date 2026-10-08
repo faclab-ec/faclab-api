@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from src.shared.domain.entities import Entity
+from src.shared.domain.tax import TaxCode
 
 
 @dataclass
@@ -24,7 +25,7 @@ class Product(Entity):
     sale_price: Decimal | None = None
     unit_of_measure_id: int | None = None
     is_active: bool = True
-    tax_rate: Decimal = Decimal("15.00")
+    tax_code: TaxCode = TaxCode.VAT_15
     is_service: bool = False
     min_stock: int = 0
     max_stock: int | None = None

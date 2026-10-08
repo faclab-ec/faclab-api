@@ -79,9 +79,7 @@ class SaleItemModel(Base):
     discount: Mapped[Decimal] = mapped_column(
         PercentageColumn, nullable=False, default=Decimal("0")
     )
-    tax_rate: Mapped[Decimal] = mapped_column(
-        PercentageColumn, nullable=False, default=Decimal("0")
-    )
+    tax_code: Mapped[str] = mapped_column(String(16), nullable=False, default="VAT_15")
     tax_amount: Mapped[Decimal] = mapped_column(
         MoneyColumn, nullable=False, default=Decimal("0")
     )

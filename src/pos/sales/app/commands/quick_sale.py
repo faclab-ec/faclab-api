@@ -95,7 +95,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             base = unit_price * quantity
             discount_amount = base * (discount / Decimal("100"))
             item_subtotal = base - discount_amount
-            tax_amount = item_subtotal * product.tax_rate / Decimal("100")
+            tax_amount = item_subtotal * product.tax_code.rate / Decimal("100")
 
             sale_item = SaleItem(
                 sale_id=sale.id,
@@ -103,7 +103,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 quantity=quantity,
                 unit_price=unit_price,
                 discount=discount,
-                tax_rate=product.tax_rate,
+                tax_code=product.tax_code,
                 tax_amount=tax_amount,
             )
             sale_item = self.sale_item_repo.create(sale_item)
@@ -177,7 +177,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "discount": item.discount,
-                "tax_rate": item.tax_rate,
+                "tax_code": item.tax_code,
                 "tax_amount": item.tax_amount,
                 "subtotal": item.subtotal,
             }

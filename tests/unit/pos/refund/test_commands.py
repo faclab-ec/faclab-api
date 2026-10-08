@@ -26,6 +26,7 @@ from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
@@ -49,7 +50,7 @@ def _make_sale_item(**overrides) -> SaleItem:
         "quantity": 5,
         "unit_price": Decimal("20.00"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("15"),
+        "tax_code": TaxCode.VAT_15,
         "tax_amount": Decimal("15.00"),
     }
     defaults.update(overrides)
@@ -89,7 +90,7 @@ def _make_refund_item(**overrides) -> RefundItem:
         "quantity": 2,
         "unit_price": Decimal("20.00"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("15"),
+        "tax_code": TaxCode.VAT_15,
         "tax_amount": Decimal("6.00"),
     }
     defaults.update(overrides)

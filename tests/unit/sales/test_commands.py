@@ -17,6 +17,7 @@ from src.sales.app.commands import (
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
@@ -39,7 +40,7 @@ def _make_sale_item(**overrides) -> SaleItem:
         "quantity": 10,
         "unit_price": Decimal("100.00"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("12.00"),
+        "tax_code": TaxCode.VAT_12,
         "tax_amount": Decimal("120.00"),
     }
     defaults.update(overrides)
@@ -51,7 +52,7 @@ def _make_product(**overrides) -> Product:
         "id": 100,
         "name": "Test Product",
         "sku": "TST-001",
-        "tax_rate": Decimal("12.00"),
+        "tax_code": TaxCode.VAT_12,
     }
     defaults.update(overrides)
     return Product(**defaults)

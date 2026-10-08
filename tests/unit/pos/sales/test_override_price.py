@@ -10,6 +10,7 @@ from src.pos.sales.app.commands.override_price import (
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
@@ -32,7 +33,7 @@ def _make_item(**overrides) -> SaleItem:
         "quantity": 2,
         "unit_price": Decimal("50"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("12"),
+        "tax_code": TaxCode.VAT_12,
         "tax_amount": Decimal("12"),
     }
     defaults.update(overrides)
@@ -82,7 +83,9 @@ class TestOverrideItemPriceCommandHandler:
 
     def test_override_recalculates_tax_amount(self):
         sale = _make_sale()
-        item = _make_item(quantity=1, unit_price=Decimal("100"), tax_rate=Decimal("12"))
+        item = _make_item(
+            quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_12
+        )
         handler = _build_handler(sale=sale, item=item, items=[item])
 
         handler._handle(
@@ -99,7 +102,9 @@ class TestOverrideItemPriceCommandHandler:
 
     def test_override_recalculates_sale_totals(self):
         sale = _make_sale()
-        item = _make_item(quantity=1, unit_price=Decimal("100"), tax_rate=Decimal("12"))
+        item = _make_item(
+            quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_12
+        )
         handler = _build_handler(sale=sale, item=item, items=[item])
 
         handler._handle(

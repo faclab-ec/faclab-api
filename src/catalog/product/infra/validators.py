@@ -1,8 +1,7 @@
-from decimal import Decimal
-
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
+from src.shared.domain.tax import TaxCode
 from src.shared.infra.validators import DecimalNumber, QueryParams
 
 
@@ -25,7 +24,7 @@ class ProductRequest(BaseModel):
         if isinstance(v, str) and v.strip() == "":
             return None
         return v
-    
+
     barcode: str | None = Field(None, description="Barcode (EAN/UPC)")
     category_id: int | None = Field(None, ge=1, description="Category ID")
     unit_of_measure_id: int | None = Field(None, ge=1, description="Unit of measure ID")
@@ -35,8 +34,8 @@ class ProductRequest(BaseModel):
     sale_price: DecimalNumber | None = Field(
         None, ge=0, description="Sale price per unit"
     )
-    tax_rate: DecimalNumber = Field(
-        Decimal("15.00"), ge=0, le=100, description="Tax rate percentage (0-100)"
+    tax_code: TaxCode = Field(
+        TaxCode.VAT_15, description="Semantic VAT code (see TaxCode enum)"
     )
     is_active: bool = Field(True, description="Whether the product is active")
     is_service: bool = Field(
@@ -67,7 +66,7 @@ class ProductRequest(BaseModel):
                     "unitOfMeasureId": 1,
                     "purchasePrice": 650.00,
                     "salePrice": 899.99,
-                    "taxRate": 15.00,
+                    "taxCode": "VAT_15",
                     "isActive": True,
                     "isService": False,
                     "minStock": 5,

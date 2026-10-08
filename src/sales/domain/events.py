@@ -32,7 +32,7 @@ class SaleConfirmed(DomainEvent):
     customer_id: int = 0
     items: list[dict[str, Any]] = field(
         default_factory=list
-    )  # [{product_id, quantity, unit_price}]
+    )  # [{product_id, quantity, unit_price, discount, tax_code, tax_amount, subtotal}]
     subtotal: Decimal = Decimal("0")
     total_discount: Decimal = Decimal("0")
     total: Decimal = Decimal("0")

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from src.sales.domain.entities import PaymentMethod, SaleStatus
+from src.shared.domain.tax import TaxCode
 from src.shared.infra.validators import DecimalNumber
 
 
@@ -158,10 +159,10 @@ class ReceiptItemResponse(BaseModel):
         validation_alias=AliasChoices("discountAmount", "discount_amount"),
         serialization_alias="discountAmount",
     )
-    tax_rate: DecimalNumber = Field(
+    tax_code: TaxCode = Field(
         ...,
-        validation_alias=AliasChoices("taxRate", "tax_rate"),
-        serialization_alias="taxRate",
+        validation_alias=AliasChoices("taxCode", "tax_code"),
+        serialization_alias="taxCode",
     )
     tax_amount: DecimalNumber = Field(
         ...,
@@ -182,10 +183,15 @@ class ReceiptItemResponse(BaseModel):
 
 
 class TaxBreakdownResponse(BaseModel):
-    """Tax breakdown by rate."""
+    """Tax breakdown by VAT code."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    tax_code: TaxCode = Field(
+        ...,
+        validation_alias=AliasChoices("taxCode", "tax_code"),
+        serialization_alias="taxCode",
+    )
     tax_rate: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("taxRate", "tax_rate"),

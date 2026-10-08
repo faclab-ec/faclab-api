@@ -11,6 +11,7 @@ from src.pos.shift.infra.models import ShiftModel
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxCode
 
 
 @dataclass
@@ -55,7 +56,7 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
                     "unit_price": item_model.unit_price,
                     "discount": item_model.discount,
                     "discount_amount": discount_amount,
-                    "tax_rate": item_model.tax_rate,
+                    "tax_code": item_model.tax_code,
                     "tax_amount": item_model.tax_amount,
                     "subtotal": subtotal,
                     "price_override": item_model.price_override,
@@ -63,17 +64,20 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
                 }
             )
 
-            group = tax_groups[item_model.tax_rate]
+            group = tax_groups[item_model.tax_code]
             group["taxable_base"] += subtotal
             group["tax_amount"] += item_model.tax_amount
 
         tax_breakdown = [
             {
-                "tax_rate": rate,
+                "tax_code": code,
+                "tax_rate": TaxCode(code).rate,
                 "taxable_base": group["taxable_base"],
                 "tax_amount": group["tax_amount"],
             }
-            for rate, group in sorted(tax_groups.items())
+            for code, group in sorted(
+                tax_groups.items(), key=lambda kv: (TaxCode(kv[0]).rate, kv[0])
+            )
         ]
 
         # Fetch payments

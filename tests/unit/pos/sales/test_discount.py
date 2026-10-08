@@ -10,6 +10,7 @@ from src.pos.sales.app.commands.apply_discount import (
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
@@ -31,7 +32,7 @@ def _make_item(**overrides) -> SaleItem:
         "quantity": 1,
         "unit_price": Decimal("100"),
         "discount": Decimal("0"),
-        "tax_rate": Decimal("12"),
+        "tax_code": TaxCode.VAT_12,
         "tax_amount": Decimal("12"),
     }
     defaults.update(overrides)
