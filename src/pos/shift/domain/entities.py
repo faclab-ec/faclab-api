@@ -33,12 +33,13 @@ class Shift(Entity):
         if self.opened_at is None:
             self.opened_at = datetime.now()
 
-    def close(self, closing_balance: Decimal, expected_balance: Decimal) -> None:
-        """Cierra el turno calculando la discrepancia"""
+    def close(self, closing_balance: Decimal, expected_balance: Decimal) -> Decimal:
+        """Cierra el turno y devuelve la discrepancia calculada"""
         if self.status != ShiftStatus.OPEN:
-            raise ShiftAlreadyClosedError(self.id)
+            raise ShiftAlreadyClosedError(self.require_id())
         self.status = ShiftStatus.CLOSED
         self.closed_at = datetime.now()
         self.closing_balance = closing_balance
         self.expected_balance = expected_balance
         self.discrepancy = closing_balance - expected_balance
+        return self.discrepancy

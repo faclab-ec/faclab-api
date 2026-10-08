@@ -49,7 +49,7 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
             - summary["cash_out"]
         )
 
-        shift.close(
+        discrepancy = shift.close(
             closing_balance=command.closing_balance,
             expected_balance=expected_balance,
         )
@@ -61,12 +61,12 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
 
         self.event_publisher.publish(
             ShiftClosed(
-                aggregate_id=shift.id,
-                shift_id=shift.id,
+                aggregate_id=shift.require_id(),
+                shift_id=shift.require_id(),
                 cashier_name=shift.cashier_name,
-                closing_balance=shift.closing_balance,
-                expected_balance=shift.expected_balance,
-                discrepancy=shift.discrepancy,
+                closing_balance=command.closing_balance,
+                expected_balance=expected_balance,
+                discrepancy=discrepancy,
             )
         )
 

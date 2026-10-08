@@ -58,8 +58,8 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
 
         self.event_publisher.publish(
             ProductCreated(
-                aggregate_id=product.id,
-                product_id=product.id,
+                aggregate_id=product.require_id(),
+                product_id=product.require_id(),
                 sku=product.sku,
                 name=product.name,
                 category_id=product.category_id,

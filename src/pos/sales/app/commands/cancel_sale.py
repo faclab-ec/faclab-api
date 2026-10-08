@@ -73,8 +73,8 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
 
         self.event_publisher.publish(
             SaleCancelled(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
                 customer_id=sale.customer_id,
                 items=items_data,
                 reason=command.reason or "",

@@ -1,11 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base
 from src.shared.infra.precision import MoneyColumn
+
+if TYPE_CHECKING:
+    from src.inventory.movement.infra.models import MovementModel
+    from src.inventory.stock.infra.models import StockModel
 
 
 class CategoryModel(Base):
@@ -46,9 +51,9 @@ class ProductModel(Base):
         ForeignKey("units_of_measure.id"), nullable=True
     )
     category: Mapped["CategoryModel | None"] = relationship(back_populates="products")
-    movements: Mapped[list["MovementModel"]] = relationship(  # NOQA: F821
+    movements: Mapped[list["MovementModel"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
-    stocks: Mapped[list["StockModel"]] = relationship(  # NOQA: F821
+    stocks: Mapped[list["StockModel"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )

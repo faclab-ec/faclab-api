@@ -63,8 +63,8 @@ class CreateCustomerCommandHandler(CommandHandler[CreateCustomerCommand, dict]):
 
         self.event_publisher.publish(
             CustomerCreated(
-                aggregate_id=customer.id,
-                customer_id=customer.id,
+                aggregate_id=customer.require_id(),
+                customer_id=customer.require_id(),
                 name=customer.name,
                 tax_id=customer.tax_id,
             )
@@ -120,8 +120,8 @@ class UpdateCustomerCommandHandler(CommandHandler[UpdateCustomerCommand, dict]):
 
         self.event_publisher.publish(
             CustomerUpdated(
-                aggregate_id=customer.id,
-                customer_id=customer.id,
+                aggregate_id=customer.require_id(),
+                customer_id=customer.require_id(),
                 name=customer.name,
             )
         )
@@ -163,8 +163,8 @@ class ActivateCustomerCommandHandler(CommandHandler[ActivateCustomerCommand, dic
 
         self.event_publisher.publish(
             CustomerActivated(
-                aggregate_id=updated_customer.id,
-                customer_id=updated_customer.id,
+                aggregate_id=updated_customer.require_id(),
+                customer_id=updated_customer.require_id(),
             )
         )
         return updated_customer.dict()
@@ -191,8 +191,8 @@ class DeactivateCustomerCommandHandler(CommandHandler[DeactivateCustomerCommand,
 
         self.event_publisher.publish(
             CustomerDeactivated(
-                aggregate_id=updated_customer.id,
-                customer_id=updated_customer.id,
+                aggregate_id=updated_customer.require_id(),
+                customer_id=updated_customer.require_id(),
             )
         )
         return updated_customer.dict()

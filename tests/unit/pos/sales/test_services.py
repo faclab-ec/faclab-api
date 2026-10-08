@@ -333,7 +333,7 @@ class TestEventHandlerGuards:
             source="admin",
         )
 
-        with pytest.raises((AttributeError, TypeError)):
+        with pytest.raises(RuntimeError, match="wireup container is not initialized"):
             handle_sale_confirmed(event)
 
     def test_sale_confirmed_default_source_is_admin(self):

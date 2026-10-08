@@ -22,7 +22,7 @@ class ProductCreated(DomainEvent):
 @dataclass
 class ProductUpdated(DomainEvent):
     product_id: int = 0
-    changes: dict = None
+    changes: dict | None = None
 
     def _payload(self) -> dict:
         return {
@@ -54,7 +54,7 @@ class CategoryCreated(DomainEvent):
 @dataclass
 class CategoryUpdated(DomainEvent):
     category_id: int = 0
-    changes: dict = None
+    changes: dict | None = None
 
     def _payload(self) -> dict:
         return {

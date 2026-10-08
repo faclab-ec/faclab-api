@@ -1,5 +1,6 @@
 """Unit tests for enhanced Product fields introduced in Phase 1."""
 
+from dataclasses import replace
 from decimal import Decimal
 from unittest.mock import MagicMock, Mock
 
@@ -143,7 +144,7 @@ def test_create_product_defaults_for_new_fields():
 def test_create_product_passes_new_fields_to_entity():
     """Handler passes new fields correctly to the entity constructor."""
     repo = Mock()
-    repo.create.side_effect = lambda e: e  # return the same entity
+    repo.create.side_effect = lambda e: replace(e, id=1)  # simulate persistence
     handler = CreateProductCommandHandler(repo, MagicMock())
 
     handler.handle(

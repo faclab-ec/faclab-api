@@ -10,8 +10,8 @@ def event_handler(event_type: type[DomainEvent]) -> Callable:
         def wrapper(event: DomainEvent, session: Any = None) -> None:
             func(event, session=session)
 
-        wrapper.__name__ = func.__name__
-        wrapper.__qualname__ = func.__qualname__
+        wrapper.__name__ = getattr(func, "__name__", repr(func))
+        wrapper.__qualname__ = getattr(func, "__qualname__", repr(func))
         EventBus.subscribe(event_type, wrapper)
         return func
 

@@ -60,7 +60,7 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
 
                 EventBus.publish(
                     StockCreated(
-                        aggregate_id=stock.id,
+                        aggregate_id=stock.require_id(),
                         product_id=stock.product_id,
                         quantity=stock.quantity,
                         location_id=stock.location_id,
@@ -89,7 +89,7 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
 
                 EventBus.publish(
                     StockUpdated(
-                        aggregate_id=stock.id,
+                        aggregate_id=stock.require_id(),
                         product_id=stock.product_id,
                         old_quantity=old_quantity,
                         new_quantity=stock.quantity,

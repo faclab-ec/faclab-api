@@ -1,6 +1,6 @@
 import dataclasses
 from enum import Enum
-from typing import Any, ClassVar, Generic, TypeVar, get_args, get_type_hints
+from typing import Any, ClassVar, Generic, TypeVar, get_args, get_type_hints, overload
 
 E = TypeVar("E")  # Entity
 M = TypeVar("M")  # Model
@@ -24,7 +24,7 @@ class Mapper(Generic[E, M]):
       - __exclude_fields__: fields to omit from to_dict (e.g. auto-generated timestamps)
     """
 
-    __entity__: ClassVar[type]
+    __entity__: ClassVar[type[Any]]
     __exclude_fields__: ClassVar[frozenset[str]] = frozenset()
     _enum_fields: ClassVar[dict[str, type[Enum]]]
 
@@ -37,6 +37,12 @@ class Mapper(Generic[E, M]):
                 for name, hint in hints.items()
                 if (enum_type := _extract_enum_type(hint)) is not None
             }
+
+    @overload
+    def to_entity(self, model: M) -> E: ...
+
+    @overload
+    def to_entity(self, model: None) -> None: ...
 
     def to_entity(self, model: M | None) -> E | None:
         if model is None:
@@ -51,7 +57,7 @@ class Mapper(Generic[E, M]):
 
     def to_dict(self, entity: E) -> dict[str, Any]:
         result = {}
-        for field in dataclasses.fields(entity):
+        for field in dataclasses.fields(self.__entity__):
             if field.name in self.__exclude_fields__:
                 continue
             value = getattr(entity, field.name)

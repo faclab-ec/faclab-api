@@ -10,7 +10,7 @@ class SaleCreated(DomainEvent):
     """Evento emitido cuando se crea una venta"""
 
     sale_id: int = 0
-    customer_id: int = 0
+    customer_id: int | None = None
     total: Decimal = Decimal("0")
 
     def _payload(self) -> dict[str, Any]:
@@ -29,7 +29,7 @@ class SaleConfirmed(DomainEvent):
     """
 
     sale_id: int = 0
-    customer_id: int = 0
+    customer_id: int | None = None
     items: list[dict[str, Any]] = field(
         default_factory=list
     )  # [{product_id, quantity, unit_price, discount, tax_code, tax_amount, subtotal}]
@@ -60,7 +60,7 @@ class SaleCancelled(DomainEvent):
     """
 
     sale_id: int = 0
-    customer_id: int = 0
+    customer_id: int | None = None
     items: list[dict[str, Any]] = field(
         default_factory=list
     )  # [{product_id, quantity}]
@@ -86,7 +86,7 @@ class SaleInvoiced(DomainEvent):
     """Evento emitido cuando se factura una venta"""
 
     sale_id: int = 0
-    customer_id: int = 0
+    customer_id: int | None = None
     invoice_number: str = ""
     total: Decimal = Decimal("0")
 

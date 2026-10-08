@@ -43,8 +43,8 @@ class OpenShiftCommandHandler(CommandHandler[OpenShiftCommand, dict]):
 
         self.event_publisher.publish(
             ShiftOpened(
-                aggregate_id=shift.id,
-                shift_id=shift.id,
+                aggregate_id=shift.require_id(),
+                shift_id=shift.require_id(),
                 cashier_name=shift.cashier_name,
                 opening_balance=shift.opening_balance,
             )

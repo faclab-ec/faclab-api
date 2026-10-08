@@ -86,9 +86,9 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         # Publicar evento
         self.event_publisher.publish(
             SaleItemAdded(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
-                sale_item_id=sale_item.id,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
+                sale_item_id=sale_item.require_id(),
                 product_id=sale_item.product_id,
                 quantity=sale_item.quantity,
                 unit_price=sale_item.unit_price,

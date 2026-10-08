@@ -18,7 +18,10 @@ test:  ## Run tests
 	docker compose run --no-deps --rm api pytest --cov='src'
 
 lint:  ## Fix linter errors
-	source .venv/bin/activate && ruff check --fix . && ruff format .	
+	source .venv/bin/activate && ruff check --fix . && ruff format .
+
+typecheck:  ## Type check with ty
+	source .venv/bin/activate && ty check
 
 migrations:  ## Create a new migration with Alembic
 	docker compose run --no-deps --rm api alembic revision --autogenerate -m "$(m)"

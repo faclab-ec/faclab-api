@@ -50,7 +50,7 @@ class EventBus:
             events_published.add(1, {"event.type": event_type_name})
 
             for handler in handlers:
-                handler_name = handler.__name__
+                handler_name = getattr(handler, "__name__", repr(handler))
                 with tracer.start_as_current_span(
                     f"event.handle.{handler_name}",
                     attributes={

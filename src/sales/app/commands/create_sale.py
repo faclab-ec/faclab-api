@@ -50,9 +50,9 @@ class CreateSaleCommandHandler(CommandHandler[CreateSaleCommand, dict]):
         # Publicar evento
         self.event_publisher.publish(
             SaleCreated(
-                aggregate_id=sale.id,
-                sale_id=sale.id,
-                customer_id=sale.customer_id or 0,
+                aggregate_id=sale.require_id(),
+                sale_id=sale.require_id(),
+                customer_id=sale.customer_id,
                 total=sale.total,
             )
         )

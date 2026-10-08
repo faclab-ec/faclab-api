@@ -14,5 +14,10 @@ def create_sync_scope(session: Any = None) -> ScopedSyncContainer:
     """
     from src import wireup_container
 
-    provided = {Session: session} if session is not None else None
+    if wireup_container is None:
+        raise RuntimeError("wireup container is not initialized")
+
+    provided: dict[Any, Any] | None = (
+        {Session: session} if session is not None else None
+    )
     return async_container_force_sync_scope(wireup_container, provided)

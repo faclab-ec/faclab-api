@@ -65,7 +65,7 @@ class RegisterPaymentCommandHandler(CommandHandler[RegisterPaymentCommand, dict]
 
         # Calcular total pagado
         all_payments = self.payment_repo.filter_by(sale_id=command.sale_id)
-        total_paid = sum(p.amount for p in all_payments)
+        total_paid = sum((p.amount for p in all_payments), Decimal("0"))
 
         # Actualizar estado de pago de la venta
         sale.update_payment_status(total_paid)
@@ -74,9 +74,9 @@ class RegisterPaymentCommandHandler(CommandHandler[RegisterPaymentCommand, dict]
         # Publicar evento
         self.event_publisher.publish(
             PaymentReceived(
-                aggregate_id=payment.id,
-                payment_id=payment.id,
-                sale_id=sale.id,
+                aggregate_id=payment.require_id(),
+                payment_id=payment.require_id(),
+                sale_id=sale.require_id(),
                 amount=payment.amount,
                 payment_method=payment.payment_method.value,
                 reference=payment.reference or "",

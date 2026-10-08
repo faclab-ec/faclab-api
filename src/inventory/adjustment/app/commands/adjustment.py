@@ -188,8 +188,8 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
         confirmed = self.repo.update(confirmed)
         self.event_publisher.publish(
             AdjustmentConfirmed(
-                aggregate_id=confirmed.id,
-                adjustment_id=confirmed.id,
+                aggregate_id=confirmed.require_id(),
+                adjustment_id=confirmed.require_id(),
                 warehouse_id=confirmed.warehouse_id,
                 items_adjusted=adjusted_count,
             )

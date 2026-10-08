@@ -10,9 +10,6 @@ from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.specifications import Specification
 from src.shared.infra.mappers import Mapper
 
-from .database import Base
-
-M = TypeVar("T", bound="Base")
 E = TypeVar("E", bound="Entity")
 
 Criteria = list[BinaryExpression | BooleanClauseList | Any]
@@ -20,9 +17,9 @@ OrderCriteria = str | Any
 
 
 class SqlAlchemyRepository(Repository[E], Generic[E]):
-    __model__: ClassVar[type[M]]
+    __model__: ClassVar[type[Any]]
 
-    def __init__(self, session: Session, mapper: Mapper[E, M]):
+    def __init__(self, session: Session, mapper: Mapper[E, Any]):
         self.session = session
         self.mapper = mapper
 

@@ -101,10 +101,10 @@ def handle_purchase_order_received_lots(
                     None,
                 )
                 if movement is not None:
-                    used_movement_ids.add(movement.id)
+                    used_movement_ids.add(movement.require_id())
                     movement_lot_item = MovementLotItem(
-                        movement_id=movement.id,
-                        lot_id=lot.id,
+                        movement_id=movement.require_id(),
+                        lot_id=lot.require_id(),
                         quantity=quantity,
                     )
                     movement_lot_item_repo.create(movement_lot_item)

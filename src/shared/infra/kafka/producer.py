@@ -8,6 +8,7 @@ import structlog
 from aiokafka import AIOKafkaProducer
 from opentelemetry import trace
 from opentelemetry.propagate import inject
+from opentelemetry.propagators.textmap import Setter
 
 from src.shared.domain.events import DomainEvent
 from src.shared.infra.telemetry_instruments import (
@@ -19,8 +20,8 @@ logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-class _KafkaHeaderSetter:
-    def set(self, carrier: list, key: str, value: str) -> None:
+class _KafkaHeaderSetter(Setter[list[tuple[str, bytes]]]):
+    def set(self, carrier: list[tuple[str, bytes]], key: str, value: str) -> None:
         carrier.append((key, value.encode("utf-8")))
 
 
@@ -55,16 +56,19 @@ class KafkaEventProducer:
 
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
-            target=self._run_loop, daemon=True, name="kafka-producer"
+            target=self._run_loop,
+            args=(self._loop,),
+            daemon=True,
+            name="kafka-producer",
         )
         self._thread.start()
         self._started.wait(timeout=10)
 
-    def _run_loop(self) -> None:
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_until_complete(self._start_producer())
+    def _run_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(self._start_producer())
         self._started.set()
-        self._loop.run_forever()
+        loop.run_forever()
 
     async def _start_producer(self) -> None:
         self._producer = AIOKafkaProducer(

@@ -71,7 +71,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
                 ) from None
 
             payment = RefundPayment(
-                refund_id=refund.id,
+                refund_id=refund.require_id(),
                 amount=Decimal(str(payment_data["amount"])),
                 payment_method=payment_method,
                 reference=payment_data.get("reference"),
@@ -106,8 +106,8 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         self.event_publisher.publish(
             RefundCompleted(
-                aggregate_id=refund.id,
-                refund_id=refund.id,
+                aggregate_id=refund.require_id(),
+                refund_id=refund.require_id(),
                 original_sale_id=refund.original_sale_id,
                 items=items_data,
                 total=refund.total,

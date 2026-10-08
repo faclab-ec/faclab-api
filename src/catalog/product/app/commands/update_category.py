@@ -48,8 +48,8 @@ class UpdateCategoryCommandHandler(CommandHandler[UpdateCategoryCommand, dict]):
 
         self.event_publisher.publish(
             CategoryUpdated(
-                aggregate_id=category.id,
-                category_id=category.id,
+                aggregate_id=category.require_id(),
+                category_id=category.require_id(),
                 changes=changes,
             )
         )
