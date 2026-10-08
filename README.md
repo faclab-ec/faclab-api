@@ -252,7 +252,8 @@ make upgrade                    # Aplicar migraciones
 make downgrade d=revision_id    # Revertir migracion
 
 # Testing y calidad
-make tests                      # Tests con cobertura (Docker)
+make test                       # Tests con cobertura (Docker)
+make test-integration           # Tests contra PostgreSQL en una BD <db>_test desechable
 make lint                       # Formatear y validar codigo (ruff)
 ```
 
@@ -267,7 +268,8 @@ make lint                       # Formatear y validar codigo (ruff)
 
 La suite incluye:
 - **Tests unitarios**: Entidades, value objects, specifications, commands, queries, event handlers
-- **Tests de integracion**: Flujos cross-module (Movement → Stock, Sale → Movement → Stock, PO → Movement → Stock)
+- **Tests de integracion**: Flujos cross-module (Movement → Stock, Sale → Movement → Stock, PO → Movement → Stock) y guards de autorizacion sobre las rutas reales de `main.app`
+- **Tests contra PostgreSQL** (`tests/integration/postgres/`): recorren la API con `TestClient` sobre una base real migrada con Alembic (rutas, specifications, reportes y flujos de inventario, POS y compras). Solo corren con `TEST_DATABASE_URL`; sin ella se saltan. `make test-integration` la arma a partir de `DATABASE_URL` y recrea la base `<db>_test` en cada corrida.
 
 ## Documentacion
 

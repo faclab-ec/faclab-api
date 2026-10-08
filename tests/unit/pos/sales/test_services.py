@@ -323,9 +323,13 @@ class TestEventHandlerGuards:
 
         handle_sale_cancelled(event)
 
-    def test_sale_confirmed_admin_source_processes_normally(self):
+    def test_sale_confirmed_admin_source_processes_normally(self, monkeypatch):
+        import src
         from src.inventory.infra.event_handlers import handle_sale_confirmed
         from src.sales.domain.events import SaleConfirmed
+
+        # Reaching the scope proves the handler didn't skip the event
+        monkeypatch.setattr(src, "wireup_container", None)
 
         event = SaleConfirmed(
             aggregate_id=1,
