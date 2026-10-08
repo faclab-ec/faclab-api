@@ -292,3 +292,78 @@ def test_does_not_reuse_movement_for_duplicate_product_items(mock_create_scope):
     second_call = movement_lot_item_repo.create.call_args_list[1][0][0]
     assert first_call.movement_id == 10
     assert second_call.movement_id == 11
+
+
+@patch("src.inventory.lot.infra.event_handlers.create_sync_scope")
+def test_links_movement_from_current_receipt_not_earlier_partial(mock_create_scope):
+    """A second partial receipt with the same product and quantity links its own
+    movement, not the one from the first receipt."""
+    from src.inventory.movement.domain.constants import MovementType
+    from src.inventory.movement.domain.entities import Movement
+
+    def _movement(movement_id: int) -> Movement:
+        return Movement(
+            id=movement_id,
+            product_id=5,
+            quantity=10,
+            type=MovementType.IN,
+            reference_type="purchase_order",
+            reference_id=1,
+        )
+
+    event = _make_event(
+        items=[
+            {
+                "product_id": 5,
+                "quantity": 10,
+                "location_id": None,
+                "lot_number": "LOT-002",
+                "serial_numbers": [],
+            }
+        ]
+    )
+
+    lot_repo = MagicMock()
+    lot_repo.first.return_value = None
+    lot_repo.create.return_value = _make_lot(id=2, lot_number="LOT-002")
+
+    movement_lot_item_repo = MagicMock()
+    movement_repo = MagicMock()
+    # movement 10 belongs to the first receipt, 25 to this one
+    movement_repo.filter_by.return_value = [_movement(25), _movement(10)]
+
+    mock_scope = _make_scope(lot_repo, movement_lot_item_repo, movement_repo)
+    mock_create_scope.return_value.__enter__.return_value = mock_scope
+
+    from src.inventory.lot.infra.event_handlers import (
+        handle_purchase_order_received_lots,
+    )
+
+    handle_purchase_order_received_lots(event)
+
+    created = movement_lot_item_repo.create.call_args[0][0]
+    assert created.movement_id == 25
+
+
+def test_lot_handler_subscribes_after_purchasing_handler():
+    """The lot handler links lots to movements created by the purchasing handler,
+    so it must run after it. Checked in a fresh interpreter because tests share
+    (and clear) the global EventBus."""
+    import subprocess
+    import sys
+
+    code = (
+        "import src.inventory.lot.infra.event_handlers\n"
+        "from src.purchasing.domain.events import PurchaseOrderReceived\n"
+        "from src.shared.infra.events.event_bus import EventBus\n"
+        "print(','.join(h.__name__ for h in "
+        "EventBus._subscribers[PurchaseOrderReceived]))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    names = result.stdout.strip().splitlines()[-1].split(",")
+
+    assert names.index("handle_purchase_order_received") < names.index(
+        "handle_purchase_order_received_lots"
+    )

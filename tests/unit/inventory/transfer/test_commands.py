@@ -533,7 +533,7 @@ def test_update_transfer_item_success():
     item_repo.get_by_id.return_value = item
     item_repo.update.return_value = updated_item
 
-    handler = UpdateTransferItemCommandHandler(item_repo)
+    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
     result = handler.handle(UpdateTransferItemCommand(id=1, quantity=20))
 
     item_repo.update.assert_called_once()
@@ -544,7 +544,7 @@ def test_update_transfer_item_not_found_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = None
 
-    handler = UpdateTransferItemCommandHandler(item_repo)
+    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
 
     with pytest.raises(NotFoundError):
         handler.handle(UpdateTransferItemCommand(id=99, quantity=5))
@@ -555,7 +555,7 @@ def test_update_transfer_item_zero_quantity_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = item
 
-    handler = UpdateTransferItemCommandHandler(item_repo)
+    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
 
     with pytest.raises(DomainError):
         handler.handle(UpdateTransferItemCommand(id=1, quantity=0))
@@ -571,7 +571,7 @@ def test_remove_transfer_item_success():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = item
 
-    handler = RemoveTransferItemCommandHandler(item_repo)
+    handler = RemoveTransferItemCommandHandler(_draft_parent_repo(), item_repo)
     handler.handle(RemoveTransferItemCommand(id=1))
 
     item_repo.delete.assert_called_once_with(1)
@@ -581,7 +581,41 @@ def test_remove_transfer_item_not_found_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = None
 
-    handler = RemoveTransferItemCommandHandler(item_repo)
+    handler = RemoveTransferItemCommandHandler(_draft_parent_repo(), item_repo)
 
     with pytest.raises(NotFoundError):
         handler.handle(RemoveTransferItemCommand(id=99))
+
+
+def _draft_parent_repo():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_transfer()
+    return repo
+
+
+@pytest.mark.parametrize("status", [TransferStatus.CONFIRMED, TransferStatus.CANCELLED])
+def test_update_item_requires_draft_parent(status):
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_transfer(status=status)
+    item_repo = MagicMock()
+    item_repo.get_by_id.return_value = _make_item()
+
+    handler = UpdateTransferItemCommandHandler(repo, item_repo)
+
+    with pytest.raises(DomainError):
+        handler.handle(UpdateTransferItemCommand(id=1, quantity=20))
+    item_repo.update.assert_not_called()
+
+
+@pytest.mark.parametrize("status", [TransferStatus.CONFIRMED, TransferStatus.CANCELLED])
+def test_remove_item_requires_draft_parent(status):
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_transfer(status=status)
+    item_repo = MagicMock()
+    item_repo.get_by_id.return_value = _make_item()
+
+    handler = RemoveTransferItemCommandHandler(repo, item_repo)
+
+    with pytest.raises(DomainError):
+        handler.handle(RemoveTransferItemCommand(id=1))
+    item_repo.delete.assert_not_called()

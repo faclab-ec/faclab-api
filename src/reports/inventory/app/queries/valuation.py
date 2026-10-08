@@ -2,13 +2,12 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
 
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.infra.models import ProductModel
 from src.inventory.location.infra.models import LocationModel
-from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.infra.models import MovementModel
 from src.inventory.stock.infra.models import StockModel
 from src.shared.app.queries import Query, QueryHandler
@@ -86,15 +85,8 @@ class GetInventoryValuationQueryHandler(QueryHandler[GetInventoryValuationQuery,
                 ProductModel.name,
                 ProductModel.sku,
                 ProductModel.purchase_price,
-                func.sum(
-                    case(
-                        (
-                            MovementModel.type == MovementType.IN,
-                            MovementModel.quantity,
-                        ),
-                        else_=-MovementModel.quantity,
-                    )
-                ).label("quantity"),
+                # Quantities are signed (OUT is negative), so the sum is the net stock
+                func.sum(MovementModel.quantity).label("quantity"),
             )
             .join(MovementModel, MovementModel.product_id == ProductModel.id)
             .filter(ProductModel.is_service == False)  # noqa: E712

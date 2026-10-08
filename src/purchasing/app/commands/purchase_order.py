@@ -35,9 +35,11 @@ class CreatePurchaseOrderCommandHandler(
         self.event_publisher = event_publisher
 
     def _handle(self, command: CreatePurchaseOrderCommand) -> dict:
-        year = datetime.now().year
-        count = self.repo.count_by_year(year)
-        order_number = f"PO-{year}-{count + 1:04d}"
+        # Derive the number from the highest existing one, not from a count:
+        # deleted drafts would otherwise make count+1 collide.
+        prefix = f"PO-{datetime.now().year}-"
+        last_sequence = self.repo.last_sequence_for_prefix(prefix)
+        order_number = f"{prefix}{last_sequence + 1:04d}"
 
         purchase_order = PurchaseOrder(
             supplier_id=command.supplier_id,

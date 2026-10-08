@@ -1,4 +1,4 @@
-from sqlalchemy import extract, func
+from sqlalchemy import Integer, cast, func
 from sqlalchemy.orm import Session
 from wireup import injectable
 
@@ -38,10 +38,12 @@ class SqlAlchemyPurchaseOrderRepository(
     def __init__(self, session: Session, mapper: PurchaseOrderMapper):
         super().__init__(session, mapper)
 
-    def count_by_year(self, year: int) -> int:
+    def last_sequence_for_prefix(self, prefix: str) -> int:
+        order_number = self.__model__.order_number
+        suffix = func.substr(order_number, len(prefix) + 1)
         return (
-            self.session.query(func.count(self.__model__.id))
-            .filter(extract("year", self.__model__.created_at) == year)
+            self.session.query(func.max(cast(suffix, Integer)))
+            .filter(order_number.like(f"{prefix}%"))
             .scalar()
             or 0
         )

@@ -1,10 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from wireup import injectable
 
 from src.customers.app.repositories import CustomerContactRepository
 from src.customers.domain.entities import CustomerContact
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -38,7 +39,6 @@ class CreateCustomerContactCommandHandler(
 @dataclass
 class UpdateCustomerContactCommand(Command):
     id: int = 0
-    customer_id: int = 0
     name: str = ""
     role: str | None = None
     email: str | None = None
@@ -53,9 +53,11 @@ class UpdateCustomerContactCommandHandler(
         self.repo = repo
 
     def _handle(self, command: UpdateCustomerContactCommand) -> dict:
-        contact = CustomerContact(
-            id=command.id,
-            customer_id=command.customer_id,
+        contact = self.repo.get_by_id(command.id)
+        if contact is None:
+            raise NotFoundError(f"Customer contact with id {command.id} not found")
+        contact = replace(
+            contact,
             name=command.name,
             role=command.role,
             email=command.email,

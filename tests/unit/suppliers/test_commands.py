@@ -267,17 +267,27 @@ def test_create_supplier_contact_command_handler():
 
 
 def test_update_supplier_contact_command_handler():
-    contact = _make_contact(name="Updated Name")
     repo = MagicMock()
-    repo.update.return_value = contact
+    repo.get_by_id.return_value = _make_contact(supplier_id=7)
+    repo.update.side_effect = lambda c: c
     handler = UpdateSupplierContactCommandHandler(repo)
 
-    result = handler.handle(
-        UpdateSupplierContactCommand(id=1, supplier_id=1, name="Updated Name")
-    )
+    result = handler.handle(UpdateSupplierContactCommand(id=1, name="Updated Name"))
 
     repo.update.assert_called_once()
     assert result["name"] == "Updated Name"
+    assert result["supplier_id"] == 7
+
+
+def test_update_supplier_contact_not_found():
+    repo = MagicMock()
+    repo.get_by_id.return_value = None
+    handler = UpdateSupplierContactCommandHandler(repo)
+
+    with pytest.raises(NotFoundError):
+        handler.handle(UpdateSupplierContactCommand(id=99, name="X"))
+
+    repo.update.assert_not_called()
 
 
 def test_delete_supplier_contact_command_handler():
@@ -315,15 +325,14 @@ def test_create_supplier_product_command_handler():
 
 
 def test_update_supplier_product_command_handler():
-    sp = _make_supplier_product(purchase_price=Decimal("30.00"))
     repo = MagicMock()
-    repo.update.return_value = sp
+    repo.get_by_id.return_value = _make_supplier_product(supplier_id=4)
+    repo.update.side_effect = lambda sp: sp
     handler = UpdateSupplierProductCommandHandler(repo)
 
     result = handler.handle(
         UpdateSupplierProductCommand(
             id=1,
-            supplier_id=1,
             product_id=10,
             purchase_price=Decimal("30.00"),
         )
@@ -331,6 +340,18 @@ def test_update_supplier_product_command_handler():
 
     repo.update.assert_called_once()
     assert result["purchase_price"] == Decimal("30.00")
+    assert result["supplier_id"] == 4
+
+
+def test_update_supplier_product_not_found():
+    repo = MagicMock()
+    repo.get_by_id.return_value = None
+    handler = UpdateSupplierProductCommandHandler(repo)
+
+    with pytest.raises(NotFoundError):
+        handler.handle(UpdateSupplierProductCommand(id=99, product_id=10))
+
+    repo.update.assert_not_called()
 
 
 def test_delete_supplier_product_command_handler():

@@ -7,6 +7,11 @@ from typing import Any
 
 import structlog
 
+# The lot handler links each lot to the IN movement created by purchasing's
+# PurchaseOrderReceived handler, so that handler must be subscribed first.
+# EventBus runs handlers in subscription order, and importing the module
+# subscribes it.
+import src.purchasing.infra.event_handlers  # noqa: F401
 from src.purchasing.domain.events import PurchaseOrderReceived
 from src.shared.infra.events.decorators import event_handler
 from src.shared.infra.events.scope import create_sync_scope
@@ -89,13 +94,24 @@ def handle_purchase_order_received_lots(
                         new_quantity=lot.current_quantity,
                     )
 
-                # Find the movement created for this item and link it
-                movements = movement_repo.filter_by(
-                    reference_type="purchase_order",
-                    reference_id=event.purchase_order_id,
-                    product_id=product_id,
-                    quantity=quantity,
+                # Find the movement created for this item and link it. Earlier
+                # partial receipts of the same order can match too; the purchasing
+                # handler created one movement per event item, in order, so this
+                # receipt's movements are the newest ones for the same item key.
+                same_key_items = sum(
+                    1
+                    for i in event.items
+                    if i["product_id"] == product_id and i["quantity"] == quantity
                 )
+                movements = sorted(
+                    movement_repo.filter_by(
+                        reference_type="purchase_order",
+                        reference_id=event.purchase_order_id,
+                        product_id=product_id,
+                        quantity=quantity,
+                    ),
+                    key=lambda m: m.require_id(),
+                )[-same_key_items:]
                 movement = next(
                     (m for m in movements if m.id not in used_movement_ids),
                     None,

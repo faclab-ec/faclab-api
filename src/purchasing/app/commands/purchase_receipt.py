@@ -70,12 +70,13 @@ class CreatePurchaseReceiptCommandHandler(
                 f"Purchase order with id {command.purchase_order_id} not found"
             )
 
-        if purchase_order.status in (
-            PurchaseOrderStatus.CANCELLED,
-            PurchaseOrderStatus.RECEIVED,
+        if purchase_order.status not in (
+            PurchaseOrderStatus.SENT,
+            PurchaseOrderStatus.PARTIAL,
         ):
             raise DomainError(
-                f"Cannot receive goods for a purchase order with status '{purchase_order.status.value}'."
+                f"Cannot receive goods for a purchase order with status '{purchase_order.status.value}'. "
+                "Only sent or partially received orders can be received."
             )
 
         # Validate quantities against pending amounts
@@ -87,15 +88,20 @@ class CreatePurchaseReceiptCommandHandler(
             if item.id is not None
         }
 
+        # The same item can appear in several lines (e.g. split across lots), so
+        # validate the total requested per item, not each line on its own.
+        requested: dict[int, int] = {}
         for receive_item in command.items:
-            po_item = po_items_by_id.get(receive_item.purchase_order_item_id)
+            item_id = receive_item.purchase_order_item_id
+            po_item = po_items_by_id.get(item_id)
             if po_item is None:
-                raise NotFoundError(
-                    f"Purchase order item with id {receive_item.purchase_order_item_id} not found"
-                )
-            if receive_item.quantity_received > po_item.quantity_pending:
+                raise NotFoundError(f"Purchase order item with id {item_id} not found")
+            requested[item_id] = (
+                requested.get(item_id, 0) + receive_item.quantity_received
+            )
+            if requested[item_id] > po_item.quantity_pending:
                 raise DomainError(
-                    f"Cannot receive {receive_item.quantity_received} units for item {receive_item.purchase_order_item_id}. "
+                    f"Cannot receive {requested[item_id]} units for item {item_id}. "
                     f"Only {po_item.quantity_pending} units are pending."
                 )
 

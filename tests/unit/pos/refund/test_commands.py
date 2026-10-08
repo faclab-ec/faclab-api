@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.inventory.stock.domain.entities import Stock
 from src.pos.refund.app.commands.cancel_refund import (
     CancelRefundCommand,
     CancelRefundCommandHandler,
@@ -260,9 +261,7 @@ class TestProcessRefund:
         refund_payment_repo.create.side_effect = lambda p: p
         movement_repo = MagicMock()
         stock_repo = MagicMock()
-        stock = MagicMock()
-        stock.update_quantity.return_value = stock
-        stock_repo.first.return_value = stock
+        stock_repo.first.return_value = Stock(id=1, product_id=100, quantity=10)
         event_publisher = MagicMock()
 
         handler = ProcessRefundCommandHandler(
@@ -295,6 +294,7 @@ class TestProcessRefund:
         movement_repo.create.assert_called_once()
         stock_repo.first.assert_called_once()
         stock_repo.update.assert_called_once()
+        assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()
 
     def test_refund_not_found(self):
