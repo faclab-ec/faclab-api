@@ -202,7 +202,7 @@ class CustomerRouter:
     def get_by_tax_id(
         self,
         handler: Injected[GetCustomerByTaxIdQueryHandler],
-        tax_id: str = Query(..., description="Tax ID to search for"),
+        tax_id: str = Query(..., alias="taxId", description="Tax ID to search for"),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[CustomerResponse]:
         """Retrieves a customer by tax ID."""

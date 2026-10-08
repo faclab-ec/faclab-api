@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.inventory.location.domain.entities import LocationType
+from src.shared.infra.validators import QueryParams
 
 
 class LocationRequest(BaseModel):
@@ -29,3 +30,8 @@ class LocationResponse(BaseModel):
     type: LocationType = Field(description="Location type / purpose")
     is_active: bool = Field(description="Whether the location is active")
     capacity: int | None = Field(None, description="Maximum storage capacity in units")
+
+
+class LocationQueryParams(QueryParams):
+    warehouse_id: int | None = Field(None, ge=1, description="Filter by warehouse ID")
+    is_active: bool | None = Field(None, description="Filter by active status")

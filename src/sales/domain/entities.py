@@ -1,11 +1,18 @@
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
 from src.shared.domain.entities import Entity
+from src.shared.domain.exceptions import ValidationError
 from src.shared.domain.tax import TaxCode
+
+CENT = Decimal("0.01")
+
+
+def _to_cents(amount: Decimal) -> Decimal:
+    return amount.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 class SaleStatus(StrEnum):
@@ -116,11 +123,30 @@ class Sale(Entity):
         self.parked_at = None
         self.park_reason = None
 
+    def apply_discount(self, discount_type: str, discount_value: Decimal) -> None:
+        """Aplica un descuento global (solo en DRAFT); luego hay que recalcular los totales"""
+        if self.status != SaleStatus.DRAFT:
+            raise InvalidSaleStatusError(self.status, "apply discount to")
+        if discount_type not in ("PERCENTAGE", "AMOUNT"):
+            raise ValidationError(
+                f"Invalid discount_type: {discount_type}. Must be PERCENTAGE or AMOUNT"
+            )
+        if discount_value < Decimal("0"):
+            raise ValidationError("discount_value must be non-negative")
+        if discount_type == "PERCENTAGE" and discount_value > Decimal("100"):
+            raise ValidationError("Percentage discount cannot exceed 100")
+        self.discount_type = discount_type
+        self.discount_value = discount_value
+
+    def is_covered_by(self, amount: Decimal) -> bool:
+        """Indica si el monto cubre el total, comparando al centavo"""
+        return _to_cents(amount) >= _to_cents(self.total)
+
     def update_payment_status(self, total_paid: Decimal) -> None:
         """Actualiza el estado de pago basándose en el monto pagado"""
         if total_paid <= Decimal("0"):
             self.payment_status = PaymentStatus.PENDING
-        elif total_paid >= self.total:
+        elif self.is_covered_by(total_paid):
             self.payment_status = PaymentStatus.PAID
         else:
             self.payment_status = PaymentStatus.PARTIAL

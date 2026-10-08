@@ -12,12 +12,24 @@ class StockResponse(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
+    product_name: str | None = Field(
+        None,
+        description="Product name",
+        validation_alias=AliasChoices("productName", "product_name"),
+        serialization_alias="productName",
+    )
     quantity: int = Field(description="Current stock quantity on hand")
     location_id: int | None = Field(
         None,
         description="Storage location ID",
         validation_alias=AliasChoices("locationId", "location_id"),
         serialization_alias="locationId",
+    )
+    location_name: str | None = Field(
+        None,
+        description="Storage location name",
+        validation_alias=AliasChoices("locationName", "location_name"),
+        serialization_alias="locationName",
     )
     reserved_quantity: int = Field(
         0,

@@ -11,22 +11,22 @@ from src.shared.domain.exceptions import NotFoundError
 class GetAllLocationsQuery(Query):
     warehouse_id: int | None = None
     is_active: bool | None = None
+    limit: int | None = None
+    offset: int | None = None
 
 
 @injectable(lifetime="scoped")
-class GetAllLocationsQueryHandler(QueryHandler[GetAllLocationsQuery, list[dict]]):
+class GetAllLocationsQueryHandler(QueryHandler[GetAllLocationsQuery, dict]):
     def __init__(self, repo: LocationRepository):
         self.repo = repo
 
-    def _handle(self, query: GetAllLocationsQuery) -> list[dict]:
+    def _handle(self, query: GetAllLocationsQuery) -> dict:
         filters = {}
         if query.warehouse_id is not None:
             filters["warehouse_id"] = query.warehouse_id
         if query.is_active is not None:
             filters["is_active"] = query.is_active
-
-        locations = self.repo.filter_by(**filters) if filters else self.repo.get_all()
-        return [loc.dict() for loc in locations]
+        return self.repo.paginate(limit=query.limit, offset=query.offset, **filters)
 
 
 @dataclass

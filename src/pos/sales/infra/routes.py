@@ -257,12 +257,16 @@ class POSSaleRouter:
 
         This is the fastest checkout flow: supply line items and payments, and the sale
         is created and confirmed atomically. Inventory movements are generated immediately.
+        An optional sale-level discount (`discountType`/`discountValue`) follows the same
+        rules as `POST /sales/{sale_id}/discount`; VAT is computed after the discount.
         """
         result = handler.handle(
             QuickSaleCommand(
                 items=[item.model_dump() for item in sale.items],
                 payments=[p.model_dump() for p in sale.payments],
                 customer_id=sale.customer_id,
+                discount_type=sale.discount_type,
+                discount_value=sale.discount_value,
                 notes=sale.notes,
                 created_by=sale.created_by,
             )

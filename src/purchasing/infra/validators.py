@@ -32,6 +32,12 @@ class PurchaseOrderResponse(BaseModel):
         validation_alias=AliasChoices("supplierId", "supplier_id"),
         serialization_alias="supplierId",
     )
+    supplier_name: str | None = Field(
+        None,
+        description="Supplier name",
+        validation_alias=AliasChoices("supplierName", "supplier_name"),
+        serialization_alias="supplierName",
+    )
     order_number: str = Field(
         validation_alias=AliasChoices("orderNumber", "order_number"),
         serialization_alias="orderNumber",

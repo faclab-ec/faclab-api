@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from typing import Generic, TypeVar
 
 from src.shared.domain.specifications import Specification
@@ -25,6 +26,10 @@ class Repository(Generic[T], ABC):
 
     @abstractmethod
     def get_by_id(self, id: int) -> T | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_by_ids(self, ids: Iterable[int]) -> list[T]:
         raise NotImplementedError
 
     @abstractmethod

@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from src.shared.infra.validators import QueryParams
+
 
 class WarehouseRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -31,3 +33,7 @@ class WarehouseResponse(BaseModel):
     manager: str | None = Field(None, description="Name of the warehouse manager")
     phone: str | None = Field(None, description="Contact phone number")
     email: str | None = Field(None, description="Contact email address")
+
+
+class WarehouseQueryParams(QueryParams):
+    is_active: bool | None = Field(None, description="Filter by active status")

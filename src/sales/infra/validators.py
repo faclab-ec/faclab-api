@@ -180,6 +180,12 @@ class SaleResponse(BaseModel):
         validation_alias=AliasChoices("customerId", "customer_id"),
         serialization_alias="customerId",
     )
+    customer_name: str | None = Field(
+        None,
+        description="Customer name (null for final consumers)",
+        validation_alias=AliasChoices("customerName", "customer_name"),
+        serialization_alias="customerName",
+    )
     is_final_consumer: bool = Field(
         False,
         validation_alias=AliasChoices("isFinalConsumer", "is_final_consumer"),

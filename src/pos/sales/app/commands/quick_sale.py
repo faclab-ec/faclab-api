@@ -31,6 +31,8 @@ class QuickSaleCommand(Command):
     items: list[dict]
     payments: list[dict]
     customer_id: int | None = None
+    discount_type: str | None = None
+    discount_value: Decimal = Decimal("0")
     notes: str | None = None
     created_by: str | None = None
 
@@ -77,6 +79,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             notes=command.notes,
             created_by=command.created_by,
         )
+        if command.discount_type is not None:
+            sale.apply_discount(command.discount_type, command.discount_value)
         sale = self.sale_repo.create(sale)
 
         # 4. Crear items
@@ -124,7 +128,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         total_payment = sum(
             (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
         )
-        if total_payment < sale.total:
+        if not sale.is_covered_by(total_payment):
             raise ValidationError(
                 message="Payment amount is insufficient",
                 detail=f"Total: {sale.total}, paid: {total_payment}",
