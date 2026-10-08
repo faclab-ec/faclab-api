@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 
@@ -14,7 +14,7 @@ from src.shared.app.queries import Query, QueryHandler
 
 @dataclass
 class GetDailySummaryQuery(Query):
-    date: date
+    date: date = field(default_factory=date.today)
 
 
 @injectable(lifetime="scoped")

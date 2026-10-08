@@ -109,11 +109,7 @@ class ReportRouter:
         total IN/OUT movements, current stock, turnover rate, and days of stock.
         """
         result = handler.handle(
-            GetProductRotationQuery(
-                from_date=query_params.from_date,
-                to_date=query_params.to_date,
-                warehouse_id=query_params.warehouse_id,
-            )
+            GetProductRotationQuery(**query_params.model_dump(exclude_none=True))
         )
         return ListResponse(
             data=[ProductRotationResponse.model_validate(r) for r in result],

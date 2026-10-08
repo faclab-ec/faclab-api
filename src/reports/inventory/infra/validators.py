@@ -67,13 +67,12 @@ class ProductRotationResponse(BaseModel):
 class RotationQueryParams(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    from_date: date = Field(
-        default_factory=lambda: date.today().replace(day=1),
-        description="Start date (defaults to first day of current month)",
+    # Defaults live in GetProductRotationQuery: FastAPI ignores default_factory
+    # on query models, so an omitted date would fail validation.
+    from_date: date | None = Field(
+        None, description="Start date (defaults to first day of current month)"
     )
-    to_date: date = Field(
-        default_factory=date.today, description="End date (defaults to today)"
-    )
+    to_date: date | None = Field(None, description="End date (defaults to today)")
     warehouse_id: int | None = Field(None, ge=1, description="Filter by warehouse ID")
 
 
