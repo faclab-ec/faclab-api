@@ -10,19 +10,20 @@ from src.shared.domain.exceptions import NotFoundError
 @dataclass
 class GetAllWarehousesQuery(Query):
     is_active: bool | None = None
+    limit: int | None = None
+    offset: int | None = None
 
 
 @injectable(lifetime="scoped")
-class GetAllWarehousesQueryHandler(QueryHandler[GetAllWarehousesQuery, list[dict]]):
+class GetAllWarehousesQueryHandler(QueryHandler[GetAllWarehousesQuery, dict]):
     def __init__(self, repo: WarehouseRepository):
         self.repo = repo
 
-    def _handle(self, query: GetAllWarehousesQuery) -> list[dict]:
+    def _handle(self, query: GetAllWarehousesQuery) -> dict:
+        filters = {}
         if query.is_active is not None:
-            warehouses = self.repo.filter_by(is_active=query.is_active)
-        else:
-            warehouses = self.repo.get_all()
-        return [w.dict() for w in warehouses]
+            filters["is_active"] = query.is_active
+        return self.repo.paginate(limit=query.limit, offset=query.offset, **filters)
 
 
 @dataclass

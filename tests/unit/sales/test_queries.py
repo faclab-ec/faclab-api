@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.customers.domain.entities import Customer
 from src.sales.app.queries import (
     GetAllSalesQuery,
     GetAllSalesQueryHandler,
@@ -64,6 +65,14 @@ def _mock_repo(entity=None, entities=None):
     return repo
 
 
+def _customer_repo(*customers: Customer) -> MagicMock:
+    by_id = {c.id: c for c in customers}
+    repo = MagicMock()
+    repo.get_by_ids.side_effect = lambda ids: [by_id[i] for i in ids if i in by_id]
+    repo.get_by_id.side_effect = by_id.get
+    return repo
+
+
 def test_get_all_sales_query_handler():
     """Test obtener todas las ventas"""
     sales = [
@@ -77,7 +86,7 @@ def test_get_all_sales_query_handler():
         "offset": None,
         "items": [s.dict() for s in sales],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery()
     result = handler.handle(query)
@@ -99,7 +108,7 @@ def test_get_all_sales_with_customer_filter():
         "offset": None,
         "items": [s.dict() for s in sales],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery(customer_id=10)
     result = handler.handle(query)
@@ -120,7 +129,7 @@ def test_get_all_sales_with_status_filter():
         "offset": None,
         "items": [s.dict() for s in sales],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery(status="CONFIRMED")
     result = handler.handle(query)
@@ -140,7 +149,7 @@ def test_get_all_sales_with_pagination():
         "offset": 0,
         "items": [s.dict() for s in sales],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery(limit=5, offset=0)
     result = handler.handle(query)
@@ -159,7 +168,7 @@ def test_get_all_sales_empty():
         "offset": None,
         "items": [],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery()
     result = handler.handle(query)
@@ -173,7 +182,7 @@ def test_get_sale_by_id_query_handler():
     """Test obtener una venta por ID"""
     sale = _make_sale(id=1, customer_id=10)
     repo = _mock_repo(entity=sale)
-    handler = GetSaleByIdQueryHandler(repo)
+    handler = GetSaleByIdQueryHandler(repo, _customer_repo())
 
     query = GetSaleByIdQuery(sale_id=1)
     result = handler.handle(query)
@@ -184,11 +193,52 @@ def test_get_sale_by_id_query_handler():
     assert result["customer_id"] == 10
 
 
+def test_get_all_sales_adds_customer_name():
+    sales = [
+        _make_sale(id=1, customer_id=10),
+        _make_sale(id=2, customer_id=None, is_final_consumer=True),
+    ]
+    repo = MagicMock()
+    repo.paginate.return_value = {
+        "total": 2,
+        "limit": None,
+        "offset": None,
+        "items": [sale.dict() for sale in sales],
+    }
+    customers = _customer_repo(Customer(id=10, name="Ana Pérez", tax_id="0102030405"))
+    handler = GetAllSalesQueryHandler(repo, customers)
+
+    result = handler.handle(GetAllSalesQuery())
+
+    assert [s["customer_name"] for s in result["items"]] == ["Ana Pérez", None]
+
+
+def test_get_sale_by_id_adds_customer_name():
+    repo = _mock_repo(entity=_make_sale(id=1, customer_id=10))
+    customers = _customer_repo(Customer(id=10, name="Ana Pérez", tax_id="0102030405"))
+    handler = GetSaleByIdQueryHandler(repo, customers)
+
+    result = handler.handle(GetSaleByIdQuery(sale_id=1))
+
+    assert result["customer_name"] == "Ana Pérez"
+
+
+def test_get_sale_by_id_final_consumer_has_no_customer_name():
+    repo = _mock_repo(entity=_make_sale(id=1, customer_id=None))
+    customers = _customer_repo()
+    handler = GetSaleByIdQueryHandler(repo, customers)
+
+    result = handler.handle(GetSaleByIdQuery(sale_id=1))
+
+    assert result["customer_name"] is None
+    customers.get_by_id.assert_not_called()
+
+
 def test_get_sale_by_id_not_found():
     """Test obtener una venta que no existe lanza NotFoundError"""
     repo = _mock_repo()
     repo.get_by_id.return_value = None
-    handler = GetSaleByIdQueryHandler(repo)
+    handler = GetSaleByIdQueryHandler(repo, _customer_repo())
 
     with pytest.raises(NotFoundError):
         handler.handle(GetSaleByIdQuery(sale_id=999))
@@ -262,7 +312,7 @@ def test_get_all_sales_multiple_filters():
         "offset": None,
         "items": [s.dict() for s in sales],
     }
-    handler = GetAllSalesQueryHandler(repo)
+    handler = GetAllSalesQueryHandler(repo, _customer_repo())
 
     query = GetAllSalesQuery(customer_id=10, status="CONFIRMED", limit=10)
     handler.handle(query)

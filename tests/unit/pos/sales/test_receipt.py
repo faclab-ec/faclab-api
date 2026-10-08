@@ -199,6 +199,47 @@ class TestGenerateReceiptQueryHandler:
         assert breakdown_12["taxable_base"] == Decimal("100")
         assert breakdown_12["tax_amount"] == Decimal("12")
 
+    def test_receipt_tax_breakdown_prorates_sale_discount(self):
+        """Un descuento global de 50 sobre 200 reduce cada base al 75%"""
+        handler = _build_handler()
+        sale = _make_sale_model(
+            subtotal=Decimal("200"),
+            discount=Decimal("50"),
+            discount_type="AMOUNT",
+            discount_value=Decimal("50"),
+            tax=Decimal("9"),
+            total=Decimal("159"),
+        )
+        item_12 = _make_item_model(tax_code=TaxCode.VAT_12, tax_amount=Decimal("12"))
+        item_0 = _make_item_model(tax_code=TaxCode.VAT_0, tax_amount=Decimal("0"))
+
+        def query_side_effect(model, *args):
+            mock = MagicMock()
+            model_name = getattr(model, "__name__", str(model))
+
+            if model_name == "SaleModel":
+                mock.filter_by.return_value.first.return_value = sale
+            elif model_name == "PaymentModel":
+                mock.filter_by.return_value.all.return_value = [
+                    _make_payment_model(amount=Decimal("159"))
+                ]
+            else:
+                mock.join.return_value.filter.return_value.all.return_value = [
+                    (item_0, "Product Zero"),
+                    (item_12, "Product IVA"),
+                ]
+            return mock
+
+        handler.session.query.side_effect = query_side_effect
+
+        result = handler._handle(GenerateReceiptQuery(sale_id=1))
+
+        breakdown = {t["tax_code"]: t for t in result["tax_breakdown"]}
+        assert breakdown[TaxCode.VAT_0]["taxable_base"] == Decimal("75")
+        assert breakdown[TaxCode.VAT_12]["taxable_base"] == Decimal("75")
+        assert breakdown[TaxCode.VAT_12]["tax_amount"] == Decimal("9")
+        assert sum(t["tax_amount"] for t in result["tax_breakdown"]) == result["tax"]
+
     def test_receipt_tax_breakdown_sorted_by_rate(self):
         """El desglose se ordena por tarifa (no alfabético) y luego por código."""
         handler = _build_handler()

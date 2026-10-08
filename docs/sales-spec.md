@@ -337,12 +337,21 @@ Ejemplo: unitPrice=100, quantity=2, discount=10 → `(100 × 2) × (1 - 0.10) = 
 ### Totales de venta
 
 ```
+item.taxAmount = item.subtotal × tasa del taxCode / 100
+
 sale.subtotal = Σ item.subtotal
-sale.tax = 0  (no implementado aún)
-sale.total = subtotal + tax
+sale.discount = subtotal × discountValue / 100    (discountType = PERCENTAGE)
+              = min(discountValue, subtotal)       (discountType = AMOUNT)
+factor        = (subtotal - discount) / subtotal
+sale.tax      = Σ item.taxAmount × factor
+sale.total    = subtotal - discount + tax
 ```
 
-**Nota:** `sale.discount` existe pero actualmente no se aplica en el cálculo automático. Los descuentos se aplican a nivel de item.
+El descuento global se prorratea sobre la base imponible de cada item, porque el IVA se calcula sobre el precio menos los descuentos que constan en la factura (art. 59 de la LORTI). `item.taxAmount` guarda el IVA del item antes del descuento global.
+
+Ejemplo: un item de 100 con IVA 15% y descuento global del 10% → descuento 10, IVA 15% de 90 = 13,50, total 103,50.
+
+El descuento global hoy se aplica desde el POS (`POST /api/pos/sales/{id}/discount` o `discountType`/`discountValue` en `POST /api/pos/sales/quick`).
 
 ### Payment status
 
@@ -352,3 +361,5 @@ if total_paid == 0:        PENDING
 elif total_paid < total:   PARTIAL
 else:                      PAID
 ```
+
+`total_paid` y `total` se comparan redondeados al centavo.

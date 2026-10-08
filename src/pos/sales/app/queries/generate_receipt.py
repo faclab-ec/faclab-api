@@ -8,6 +8,7 @@ from wireup import injectable
 from src.catalog.product.infra.models import ProductModel
 from src.customers.infra.models import CustomerModel
 from src.pos.shift.infra.models import ShiftModel
+from src.sales.domain.services import discount_factor
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -68,12 +69,14 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
             group["taxable_base"] += subtotal
             group["tax_amount"] += item_model.tax_amount
 
+        # The sale-level discount reduces each VAT base proportionally
+        factor = discount_factor(sale.subtotal, sale.discount)
         tax_breakdown = [
             {
                 "tax_code": code,
                 "tax_rate": TaxCode(code).rate,
-                "taxable_base": group["taxable_base"],
-                "tax_amount": group["tax_amount"],
+                "taxable_base": group["taxable_base"] * factor,
+                "tax_amount": group["tax_amount"] * factor,
             }
             for code, group in sorted(
                 tax_groups.items(), key=lambda kv: (TaxCode(kv[0]).rate, kv[0])

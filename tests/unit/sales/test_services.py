@@ -64,14 +64,14 @@ class TestRecalculateSaleTotals:
         items = [
             _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_12)
         ]
-        # subtotal = 100, tax = 12, discount = 10, total = 102
+        # subtotal = 100, discount = 10, tax = 12% of 90 = 10.8, total = 100.8
 
         recalculate_sale_totals(sale, items)
 
         assert sale.subtotal == Decimal("100")
-        assert sale.tax == Decimal("12")
         assert sale.discount == Decimal("10")
-        assert sale.total == Decimal("102")
+        assert sale.tax == Decimal("10.8")
+        assert sale.total == Decimal("100.8")
 
     def test_amount_discount(self):
         """Descuento de monto fijo a nivel de venta"""
@@ -79,14 +79,48 @@ class TestRecalculateSaleTotals:
         items = [
             _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_12)
         ]
-        # subtotal = 100, tax = 12, discount = 25, total = 87
+        # subtotal = 100, discount = 25, tax = 12% of 75 = 9, total = 84
 
         recalculate_sale_totals(sale, items)
 
         assert sale.subtotal == Decimal("100")
-        assert sale.tax == Decimal("12")
         assert sale.discount == Decimal("25")
-        assert sale.total == Decimal("87")
+        assert sale.tax == Decimal("9")
+        assert sale.total == Decimal("84")
+
+    def test_discount_is_prorated_across_tax_rates(self):
+        """El descuento global reduce la base de cada item en proporción a su subtotal"""
+        sale = _make_sale(discount_type="AMOUNT", discount_value=Decimal("30"))
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_15),
+            _make_item(
+                quantity=1,
+                unit_price=Decimal("50"),
+                tax_code=TaxCode.VAT_0,
+                product_id=200,
+            ),
+        ]
+        # factor = 120/150 = 0.8 → taxed base 80, tax = 12; exempt base 40, tax = 0
+
+        recalculate_sale_totals(sale, items)
+
+        assert sale.subtotal == Decimal("150")
+        assert sale.discount == Decimal("30")
+        assert sale.tax == Decimal("12")
+        assert sale.total == Decimal("132")
+
+    def test_amount_discount_is_capped_at_subtotal(self):
+        """Un descuento mayor al subtotal no deja la venta en negativo"""
+        sale = _make_sale(discount_type="AMOUNT", discount_value=Decimal("500"))
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_15)
+        ]
+
+        recalculate_sale_totals(sale, items)
+
+        assert sale.discount == Decimal("100")
+        assert sale.tax == Decimal("0")
+        assert sale.total == Decimal("0")
 
     def test_mixed_tax_rates(self):
         """Items con distintos tax_rates (12% y 0%)"""

@@ -71,7 +71,8 @@ class TestApplySaleDiscountCommandHandler:
         assert result["discount_type"] == "PERCENTAGE"
         assert result["discount_value"] == Decimal("10")
         assert result["discount"] == Decimal("10")  # 10% of 100
-        assert result["total"] == Decimal("102")  # 100 + 12 - 10
+        assert result["tax"] == Decimal("10.8")  # 12% of the discounted base (90)
+        assert result["total"] == Decimal("100.8")  # 100 - 10 + 10.8
         handler.sale_repo.update.assert_called_once()
 
     def test_apply_amount_discount(self):
@@ -89,7 +90,8 @@ class TestApplySaleDiscountCommandHandler:
 
         assert result["discount_type"] == "AMOUNT"
         assert result["discount"] == Decimal("25")
-        assert result["total"] == Decimal("87")  # 100 + 12 - 25
+        assert result["tax"] == Decimal("9")  # 12% of the discounted base (75)
+        assert result["total"] == Decimal("84")  # 100 - 25 + 9
 
     def test_reject_if_not_draft(self):
         sale = _make_sale(status=SaleStatus.CONFIRMED)

@@ -157,9 +157,12 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
   "payments": [
     { "amount": 25.00, "paymentMethod": "CASH" }
   ],
+  "discountType": "PERCENTAGE",
+  "discountValue": 10,
   "notes": "Venta rápida",
   "createdBy": "cajero1"
 }
+// discountType/discountValue son opcionales y siguen las reglas de POST /sales/{saleId}/discount
 ```
 
 Validaciones:
@@ -167,7 +170,8 @@ Validaciones:
 - Turno activo requerido
 - Productos deben existir
 - Stock suficiente para cada item
-- Total de pagos ≥ total de venta
+- Descuento global válido (PERCENTAGE: 0-100; AMOUNT: ≥0)
+- Total de pagos ≥ total de venta, comparados al centavo
 - `customerId=null` → `isFinalConsumer=true` automáticamente
 
 Response 201 — Sale CONFIRMED con items y pagos incluidos.
@@ -579,9 +583,9 @@ Formato de error estándar:
 
 2. **Consumidor final**: Si `isFinalConsumer=true`, no se necesita `customerId`. Si es `false`, el cliente es obligatorio.
 
-3. **Impuestos**: Se calculan por item automáticamente (la tasa viene del producto, Ecuador usa 15% o 0%). El frontend no calcula impuestos, solo muestra.
+3. **Impuestos**: Se calculan por item automáticamente (la tasa viene del producto, Ecuador usa 15% o 0%). El backend es la fuente de verdad; el frontend solo los muestra.
 
-4. **Descuentos**: Dos niveles — por item (porcentaje en el item) y por venta (porcentaje o monto fijo). Se aplican independientemente.
+4. **Descuentos**: Dos niveles — por item (porcentaje en el item) y por venta (porcentaje o monto fijo). El descuento de venta se prorratea sobre la base imponible, así que el IVA se calcula después de ambos descuentos (ver "Cálculos" en `sales-spec.md`).
 
 5. **Venta rápida vs normal**: Quick sale es ideal para ventas simples de 1 paso. La venta normal permite estacionar, agregar/quitar items, aplicar descuentos, etc.
 

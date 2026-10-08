@@ -127,6 +127,19 @@ class QuickSaleRequest(BaseModel):
     payments: list[QuickSalePaymentInput] = Field(
         ..., min_length=1, description="Payments (total must cover the sale amount)"
     )
+    discount_type: Literal["PERCENTAGE", "AMOUNT"] | None = Field(
+        None,
+        description="Sale-level discount type; omit for no discount",
+        validation_alias=AliasChoices("discountType", "discount_type"),
+        serialization_alias="discountType",
+    )
+    discount_value: Decimal = Field(
+        Decimal("0"),
+        ge=0,
+        description="Discount value (percentage or fixed amount depending on discountType)",
+        validation_alias=AliasChoices("discountValue", "discount_value"),
+        serialization_alias="discountValue",
+    )
     notes: str | None = Field(None, max_length=512, description="Additional notes")
     created_by: str | None = Field(
         None,

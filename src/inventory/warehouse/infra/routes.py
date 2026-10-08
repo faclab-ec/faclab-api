@@ -21,7 +21,11 @@ from src.inventory.warehouse.app.queries.get_warehouse import (
     GetWarehouseByIdQuery,
     GetWarehouseByIdQueryHandler,
 )
-from src.inventory.warehouse.infra.validators import WarehouseRequest, WarehouseResponse
+from src.inventory.warehouse.infra.validators import (
+    WarehouseQueryParams,
+    WarehouseRequest,
+    WarehouseResponse,
+)
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
@@ -29,8 +33,8 @@ from src.shared.infra.validators import (
     RESPONSES_LIST,
     RESPONSES_QUERY,
     DataResponse,
-    ListResponse,
     Meta,
+    PaginatedDataResponse,
 )
 
 
@@ -65,7 +69,7 @@ class WarehouseRouter:
         )(self.delete)
         self.router.get(
             "",
-            response_model=ListResponse[WarehouseResponse],
+            response_model=PaginatedDataResponse[WarehouseResponse],
             summary="Get all warehouses",
             responses=RESPONSES_LIST,
             dependencies=_read,
@@ -110,13 +114,20 @@ class WarehouseRouter:
     def get_all(
         self,
         handler: Injected[GetAllWarehousesQueryHandler],
-        is_active: bool | None = None,
+        query_params: WarehouseQueryParams = Depends(),
         meta: Meta = Depends(get_meta),
-    ) -> ListResponse[WarehouseResponse]:
-        """List all warehouses. Optionally filter by active status."""
-        result = handler.handle(GetAllWarehousesQuery(is_active=is_active))
-        return ListResponse(
-            data=[WarehouseResponse.model_validate(w) for w in result], meta=meta
+    ) -> PaginatedDataResponse[WarehouseResponse]:
+        """List warehouses. Optionally filter by active status."""
+        result = handler.handle(
+            GetAllWarehousesQuery(**query_params.model_dump(exclude_none=True))
+        )
+        return PaginatedDataResponse(
+            data=[WarehouseResponse.model_validate(w) for w in result["items"]],
+            meta=meta.with_pagination(
+                total=result["total"],
+                limit=result["limit"],
+                offset=result["offset"],
+            ),
         )
 
     def get_by_id(

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
+from src.catalog.product.app.repositories import ProductRepository
+from src.inventory.location.app.repositories import LocationRepository
 from src.inventory.stock.app.repositories import StockRepository
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -19,8 +21,15 @@ class GetAllStocksQuery(Query):
 
 @injectable(lifetime="scoped")
 class GetAllStocksQueryHandler(QueryHandler[GetAllStocksQuery, dict]):
-    def __init__(self, repo: StockRepository):
+    def __init__(
+        self,
+        repo: StockRepository,
+        product_repo: ProductRepository,
+        location_repo: LocationRepository,
+    ):
         self.repo = repo
+        self.product_repo = product_repo
+        self.location_repo = location_repo
 
     def _handle(self, query: GetAllStocksQuery) -> dict:
         filter_kwargs = {}
@@ -28,9 +37,25 @@ class GetAllStocksQueryHandler(QueryHandler[GetAllStocksQuery, dict]):
             filter_kwargs["product_id"] = query.product_id
         if query.location_id is not None:
             filter_kwargs["location_id"] = query.location_id
-        return self.repo.paginate(
+        result = self.repo.paginate(
             limit=query.limit, offset=query.offset, **filter_kwargs
         )
+
+        items = result["items"]
+        product_names = {
+            p.id: p.name
+            for p in self.product_repo.get_by_ids(s["product_id"] for s in items)
+        }
+        location_names = {
+            loc.id: loc.name
+            for loc in self.location_repo.get_by_ids(
+                s["location_id"] for s in items if s["location_id"] is not None
+            )
+        }
+        for item in items:
+            item["product_name"] = product_names.get(item["product_id"])
+            item["location_name"] = location_names.get(item["location_id"])
+        return result
 
 
 @dataclass

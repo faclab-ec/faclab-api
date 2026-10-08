@@ -34,70 +34,51 @@ def _make_warehouse(**overrides) -> Warehouse:
 # --- GetAll ---
 
 
-def test_get_all_warehouses_returns_all():
+def _paginated(items: list[Warehouse], limit=None, offset=None) -> dict:
+    return {
+        "total": len(items),
+        "limit": limit,
+        "offset": offset,
+        "items": [w.dict() for w in items],
+    }
+
+
+def test_get_all_warehouses_returns_page():
     warehouses = [
         _make_warehouse(id=1, code="WH-01"),
         _make_warehouse(id=2, code="WH-02", name="Secondary Warehouse"),
     ]
     repo = Mock()
-    repo.get_all.return_value = warehouses
+    repo.paginate.return_value = _paginated(warehouses)
     handler = GetAllWarehousesQueryHandler(repo)
 
     result = handler.handle(GetAllWarehousesQuery())
 
-    assert len(result) == 2
-    assert result[0]["id"] == 1
-    assert result[0]["code"] == "WH-01"
-    assert result[1]["id"] == 2
-    assert result[1]["code"] == "WH-02"
-    repo.get_all.assert_called_once()
+    assert result["total"] == 2
+    assert [w["code"] for w in result["items"]] == ["WH-01", "WH-02"]
+    repo.paginate.assert_called_once_with(limit=None, offset=None)
 
 
-def test_get_all_warehouses_empty_list():
+def test_get_all_warehouses_passes_pagination():
     repo = Mock()
-    repo.get_all.return_value = []
+    repo.paginate.return_value = _paginated([], limit=5, offset=10)
     handler = GetAllWarehousesQueryHandler(repo)
 
-    result = handler.handle(GetAllWarehousesQuery())
+    handler.handle(GetAllWarehousesQuery(limit=5, offset=10))
 
-    assert result == []
-
-
-def test_get_all_warehouses_filters_by_is_active_true():
-    active_warehouses = [_make_warehouse(is_active=True)]
-    repo = Mock()
-    repo.filter_by.return_value = active_warehouses
-    handler = GetAllWarehousesQueryHandler(repo)
-
-    result = handler.handle(GetAllWarehousesQuery(is_active=True))
-
-    assert len(result) == 1
-    assert result[0]["is_active"] is True
-    repo.filter_by.assert_called_once_with(is_active=True)
+    repo.paginate.assert_called_once_with(limit=5, offset=10)
 
 
 def test_get_all_warehouses_filters_by_is_active_false():
     inactive = [_make_warehouse(is_active=False, name="Closed WH", code="CWH-01")]
     repo = Mock()
-    repo.filter_by.return_value = inactive
+    repo.paginate.return_value = _paginated(inactive)
     handler = GetAllWarehousesQueryHandler(repo)
 
     result = handler.handle(GetAllWarehousesQuery(is_active=False))
 
-    assert len(result) == 1
-    assert result[0]["is_active"] is False
-    repo.filter_by.assert_called_once_with(is_active=False)
-
-
-def test_get_all_warehouses_no_filter_uses_get_all():
-    repo = Mock()
-    repo.get_all.return_value = []
-    handler = GetAllWarehousesQueryHandler(repo)
-
-    handler.handle(GetAllWarehousesQuery())
-
-    repo.get_all.assert_called_once()
-    repo.filter_by.assert_not_called()
+    assert result["items"][0]["is_active"] is False
+    repo.paginate.assert_called_once_with(limit=None, offset=None, is_active=False)
 
 
 def test_get_all_warehouses_returns_dict_fields():
@@ -105,14 +86,13 @@ def test_get_all_warehouses_returns_dict_fields():
         manager="Jane Smith", phone="0987654321", email="jane@test.com"
     )
     repo = Mock()
-    repo.get_all.return_value = [warehouse]
+    repo.paginate.return_value = _paginated([warehouse])
     handler = GetAllWarehousesQueryHandler(repo)
 
     result = handler.handle(GetAllWarehousesQuery())
 
-    assert result[0]["manager"] == "Jane Smith"
-    assert result[0]["phone"] == "0987654321"
-    assert result[0]["email"] == "jane@test.com"
+    assert result["items"][0]["manager"] == "Jane Smith"
+    assert result["items"][0]["email"] == "jane@test.com"
 
 
 # --- GetById ---

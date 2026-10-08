@@ -21,7 +21,11 @@ from src.inventory.location.app.queries.get_location import (
     GetLocationByIdQuery,
     GetLocationByIdQueryHandler,
 )
-from src.inventory.location.infra.validators import LocationRequest, LocationResponse
+from src.inventory.location.infra.validators import (
+    LocationQueryParams,
+    LocationRequest,
+    LocationResponse,
+)
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
@@ -29,8 +33,8 @@ from src.shared.infra.validators import (
     RESPONSES_LIST,
     RESPONSES_QUERY,
     DataResponse,
-    ListResponse,
     Meta,
+    PaginatedDataResponse,
 )
 
 
@@ -65,7 +69,7 @@ class LocationRouter:
         )(self.delete)
         self.router.get(
             "",
-            response_model=ListResponse[LocationResponse],
+            response_model=PaginatedDataResponse[LocationResponse],
             summary="Get all locations",
             responses=RESPONSES_LIST,
             dependencies=_read,
@@ -110,16 +114,20 @@ class LocationRouter:
     def get_all(
         self,
         handler: Injected[GetAllLocationsQueryHandler],
-        warehouse_id: int | None = None,
-        is_active: bool | None = None,
+        query_params: LocationQueryParams = Depends(),
         meta: Meta = Depends(get_meta),
-    ) -> ListResponse[LocationResponse]:
-        """List all storage locations. Optionally filter by warehouse or active status."""
+    ) -> PaginatedDataResponse[LocationResponse]:
+        """List storage locations. Optionally filter by warehouse or active status."""
         result = handler.handle(
-            GetAllLocationsQuery(warehouse_id=warehouse_id, is_active=is_active)
+            GetAllLocationsQuery(**query_params.model_dump(exclude_none=True))
         )
-        return ListResponse(
-            data=[LocationResponse.model_validate(loc) for loc in result], meta=meta
+        return PaginatedDataResponse(
+            data=[LocationResponse.model_validate(loc) for loc in result["items"]],
+            meta=meta.with_pagination(
+                total=result["total"],
+                limit=result["limit"],
+                offset=result["offset"],
+            ),
         )
 
     def get_by_id(

@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from typing import Any, ClassVar, Generic, TypeVar
 
 from sqlalchemy import asc, desc, func
@@ -83,6 +84,19 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         """
         model = self.session.query(self.__model__).get(id)
         return self.mapper.to_entity(model)
+
+    def get_by_ids(self, ids: Iterable[int]) -> list[E]:
+        """
+        Retrieves the entities with the given IDs in a single query.
+        Args:
+            ids: IDs to look up; missing IDs are skipped
+        Returns:
+            Entities found, in no particular order
+        """
+        unique_ids = set(ids)
+        if not unique_ids:
+            return []
+        return self.filter(criteria=[self.__model__.id.in_(unique_ids)])
 
     def get_all(self) -> list[E]:
         """

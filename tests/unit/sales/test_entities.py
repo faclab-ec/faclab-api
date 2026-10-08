@@ -12,6 +12,7 @@ from src.sales.domain.entities import (
     SaleStatus,
 )
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
+from src.shared.domain.exceptions import ValidationError
 
 
 def test_sale_item_subtotal_calculation():
@@ -115,6 +116,47 @@ def test_sale_update_payment_status_overpaid():
     sale = Sale(customer_id=1, total=Decimal("1000"))
     sale.update_payment_status(Decimal("1500"))
     assert sale.payment_status == PaymentStatus.PAID
+
+
+def test_sale_update_payment_status_paid_ignores_sub_cent_difference():
+    """El front cobra con float: 30.596999… cubre un total de 30.597"""
+    sale = Sale(customer_id=1, total=Decimal("30.597"))
+    sale.update_payment_status(Decimal("30.596999999999998"))
+    assert sale.payment_status == PaymentStatus.PAID
+
+
+def test_sale_is_covered_by_compares_to_the_cent():
+    sale = Sale(customer_id=1, total=Decimal("100.8"))
+    assert sale.is_covered_by(Decimal("100.79999999999998"))
+    assert not sale.is_covered_by(Decimal("100.79"))
+
+
+def test_sale_apply_discount_sets_type_and_value():
+    sale = Sale(customer_id=1)
+    sale.apply_discount("PERCENTAGE", Decimal("10"))
+    assert sale.discount_type == "PERCENTAGE"
+    assert sale.discount_value == Decimal("10")
+
+
+def test_sale_apply_discount_only_draft():
+    sale = Sale(customer_id=1, status=SaleStatus.CONFIRMED)
+    with pytest.raises(InvalidSaleStatusError):
+        sale.apply_discount("AMOUNT", Decimal("5"))
+
+
+@pytest.mark.parametrize(
+    ("discount_type", "value"),
+    [
+        ("FIXED", Decimal("5")),
+        ("AMOUNT", Decimal("-1")),
+        ("PERCENTAGE", Decimal("101")),
+    ],
+)
+def test_sale_apply_discount_rejects_invalid_values(discount_type, value):
+    sale = Sale(customer_id=1)
+    with pytest.raises(ValidationError):
+        sale.apply_discount(discount_type, value)
+    assert sale.discount_type is None
 
 
 def test_payment_validates_positive_amount():

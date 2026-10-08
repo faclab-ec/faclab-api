@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -194,6 +195,56 @@ class TestQuickSaleHappyPath:
         result = handler.handle(_quick_sale_command(customer_id=10))
 
         assert result["status"] == "CONFIRMED"
+
+    def test_quick_sale_applies_sale_discount_before_tax(self):
+        """El descuento global reduce la base del IVA y el total a cobrar"""
+        sale_repo = _mock_repo()
+        # Like the real repository: persist what the handler built and assign an id
+        sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
+        event_publisher = MagicMock()
+        handler = _build_handler(
+            sale_repo=sale_repo,
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=_mock_repo(entity=_make_stock(quantity=100)),
+            payment_repo=_mock_repo(entity=_make_payment(amount=Decimal("100.8"))),
+            shift_repo=_mock_repo(entity=_make_shift()),
+            event_publisher=event_publisher,
+        )
+
+        # subtotal 100 - 10% = 90 → IVA 12% = 10.8 → total 100.8; the front pays
+        # with float arithmetic, so the amount is a hair below the exact total
+        result = handler.handle(
+            _quick_sale_command(
+                discount_type="PERCENTAGE",
+                discount_value=Decimal("10"),
+                payments=[{"amount": 100.79999999999998, "payment_method": "CASH"}],
+            )
+        )
+
+        assert result["discount_type"] == "PERCENTAGE"
+        assert result["discount"] == Decimal("10")
+        assert result["tax"] == Decimal("10.8")
+        assert result["total"] == Decimal("100.8")
+        assert result["payment_status"] == "PAID"
+        assert sale_repo.create.call_args[0][0].discount_type == "PERCENTAGE"
+        event = event_publisher.publish.call_args[0][0]
+        assert event.total_discount == Decimal("10")
+        assert event.total == Decimal("100.8")
+
+    def test_quick_sale_rejects_invalid_discount_before_writing(self):
+        sale_repo = _mock_repo(entity=_make_sale())
+        handler = _build_handler(
+            sale_repo=sale_repo, shift_repo=_mock_repo(entity=_make_shift())
+        )
+
+        with pytest.raises(ValidationError):
+            handler.handle(
+                _quick_sale_command(
+                    discount_type="PERCENTAGE", discount_value=Decimal("150")
+                )
+            )
+        sale_repo.create.assert_not_called()
 
     def test_quick_sale_uses_product_price_when_not_provided(self):
         """Usa el precio del producto cuando no se proporciona unit_price"""

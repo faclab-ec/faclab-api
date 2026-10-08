@@ -25,6 +25,7 @@ from src.purchasing.domain.entities import (
     PurchaseReceipt,
 )
 from src.shared.domain.exceptions import NotFoundError
+from src.suppliers.domain.entities import Supplier
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -43,6 +44,14 @@ def _make_po(**overrides) -> PurchaseOrder:
     }
     defaults.update(overrides)
     return PurchaseOrder(**defaults)
+
+
+def _supplier_repo(*suppliers: Supplier) -> MagicMock:
+    by_id = {s.id: s for s in suppliers}
+    repo = MagicMock()
+    repo.get_by_ids.side_effect = lambda ids: [by_id[i] for i in ids if i in by_id]
+    repo.get_by_id.side_effect = by_id.get
+    return repo
 
 
 def _make_item(**overrides) -> PurchaseOrderItem:
@@ -82,7 +91,7 @@ def test_get_all_purchase_orders():
         "offset": None,
         "items": [po1.dict(), po2.dict()],
     }
-    handler = GetAllPurchaseOrdersQueryHandler(repo)
+    handler = GetAllPurchaseOrdersQueryHandler(repo, _supplier_repo())
 
     result = handler.handle(GetAllPurchaseOrdersQuery())
 
@@ -100,7 +109,7 @@ def test_get_all_purchase_orders_filter_by_status():
         "offset": None,
         "items": [po.dict()],
     }
-    handler = GetAllPurchaseOrdersQueryHandler(repo)
+    handler = GetAllPurchaseOrdersQueryHandler(repo, _supplier_repo())
 
     result = handler.handle(GetAllPurchaseOrdersQuery(status="sent"))
 
@@ -119,7 +128,7 @@ def test_get_all_purchase_orders_filter_by_supplier():
         "offset": None,
         "items": [po.dict()],
     }
-    handler = GetAllPurchaseOrdersQueryHandler(repo)
+    handler = GetAllPurchaseOrdersQueryHandler(repo, _supplier_repo())
 
     result = handler.handle(GetAllPurchaseOrdersQuery(supplier_id=5))
 
@@ -137,7 +146,7 @@ def test_get_all_purchase_orders_filter_by_status_and_supplier():
         "offset": None,
         "items": [po.dict()],
     }
-    handler = GetAllPurchaseOrdersQueryHandler(repo)
+    handler = GetAllPurchaseOrdersQueryHandler(repo, _supplier_repo())
 
     result = handler.handle(GetAllPurchaseOrdersQuery(status="sent", supplier_id=5))
 
@@ -157,7 +166,7 @@ def test_get_purchase_order_by_id():
     po = _make_po()
     repo = MagicMock()
     repo.get_by_id.return_value = po
-    handler = GetPurchaseOrderByIdQueryHandler(repo)
+    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo())
 
     result = handler.handle(GetPurchaseOrderByIdQuery(id=1))
 
@@ -165,10 +174,48 @@ def test_get_purchase_order_by_id():
     assert result["order_number"] == "PO-2026-0001"
 
 
+def test_get_all_purchase_orders_adds_supplier_name():
+    repo = MagicMock()
+    repo.paginate.return_value = {
+        "total": 2,
+        "limit": None,
+        "offset": None,
+        "items": [
+            _make_po(id=1, supplier_id=10).dict(),
+            _make_po(id=2, supplier_id=11, order_number="PO-2026-0002").dict(),
+        ],
+    }
+    suppliers = _supplier_repo(
+        Supplier(id=10, name="Distribuidora Andina", tax_id="0990000000001")
+    )
+    handler = GetAllPurchaseOrdersQueryHandler(repo, suppliers)
+
+    result = handler.handle(GetAllPurchaseOrdersQuery())
+
+    # Supplier 11 no longer exists: the order is still listed, without a name
+    assert [po["supplier_name"] for po in result["items"]] == [
+        "Distribuidora Andina",
+        None,
+    ]
+
+
+def test_get_purchase_order_by_id_adds_supplier_name():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_po(supplier_id=10)
+    suppliers = _supplier_repo(
+        Supplier(id=10, name="Distribuidora Andina", tax_id="0990000000001")
+    )
+    handler = GetPurchaseOrderByIdQueryHandler(repo, suppliers)
+
+    result = handler.handle(GetPurchaseOrderByIdQuery(id=1))
+
+    assert result["supplier_name"] == "Distribuidora Andina"
+
+
 def test_get_purchase_order_by_id_not_found_raises():
     repo = MagicMock()
     repo.get_by_id.return_value = None
-    handler = GetPurchaseOrderByIdQueryHandler(repo)
+    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo())
 
     with pytest.raises(NotFoundError, match="Purchase order with id 99 not found"):
         handler.handle(GetPurchaseOrderByIdQuery(id=99))

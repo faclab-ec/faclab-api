@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.catalog.product.domain.entities import Product
+from src.inventory.location.domain.entities import Location
 from src.inventory.stock.app.queries import (
     GetAllStocksQuery,
     GetAllStocksQueryHandler,
@@ -23,6 +25,14 @@ def mock_stock_repo():
     return repo
 
 
+def _list_handler(stock_repo) -> GetAllStocksQueryHandler:
+    product_repo = Mock()
+    product_repo.get_by_ids.return_value = []
+    location_repo = Mock()
+    location_repo.get_by_ids.return_value = []
+    return GetAllStocksQueryHandler(stock_repo, product_repo, location_repo)
+
+
 def test_get_all_stocks_query_handler(mock_stock_repo):
     """Test getting all stocks"""
     stocks = [
@@ -37,7 +47,7 @@ def test_get_all_stocks_query_handler(mock_stock_repo):
     }
 
     query = GetAllStocksQuery()
-    handler = GetAllStocksQueryHandler(mock_stock_repo)
+    handler = _list_handler(mock_stock_repo)
 
     result = handler.handle(query)
 
@@ -63,7 +73,7 @@ def test_get_all_stocks_with_product_filter(mock_stock_repo):
     }
 
     query = GetAllStocksQuery(product_id=1)
-    handler = GetAllStocksQueryHandler(mock_stock_repo)
+    handler = _list_handler(mock_stock_repo)
 
     result = handler.handle(query)
 
@@ -86,7 +96,7 @@ def test_get_all_stocks_empty(mock_stock_repo):
     }
 
     query = GetAllStocksQuery()
-    handler = GetAllStocksQueryHandler(mock_stock_repo)
+    handler = _list_handler(mock_stock_repo)
 
     result = handler.handle(query)
 
@@ -109,13 +119,46 @@ def test_get_all_stocks_with_pagination(mock_stock_repo):
     }
 
     query = GetAllStocksQuery(limit=10, offset=5)
-    handler = GetAllStocksQueryHandler(mock_stock_repo)
+    handler = _list_handler(mock_stock_repo)
 
     result = handler.handle(query)
 
     assert len(result["items"]) == 2
     assert result["total"] == 2
     mock_stock_repo.paginate.assert_called_once_with(limit=10, offset=5)
+
+
+def test_get_all_stocks_adds_product_and_location_names(mock_stock_repo):
+    stocks = [
+        Stock(id=1, product_id=1, quantity=100, location_id=5),
+        Stock(id=2, product_id=2, quantity=50),
+    ]
+    mock_stock_repo.paginate.return_value = {
+        "total": 2,
+        "limit": None,
+        "offset": None,
+        "items": [s.dict() for s in stocks],
+    }
+    product_repo = Mock()
+    product_repo.get_by_ids.return_value = [
+        Product(id=1, name="Cable HDMI", sku="HDMI-01")
+    ]
+    location_repo = Mock()
+    location_repo.get_by_ids.return_value = [
+        Location(id=5, warehouse_id=1, name="Estante A1", code="A1")
+    ]
+    handler = GetAllStocksQueryHandler(mock_stock_repo, product_repo, location_repo)
+
+    result = handler.handle(GetAllStocksQuery())
+
+    first, second = result["items"]
+    assert first["product_name"] == "Cable HDMI"
+    assert first["location_name"] == "Estante A1"
+    # Product 2 was not found and stock 2 has no location
+    assert second["product_name"] is None
+    assert second["location_name"] is None
+    # Stocks without a location don't add a None id to the lookup
+    assert list(location_repo.get_by_ids.call_args.args[0]) == [5]
 
 
 def test_get_stock_by_id_handler(mock_stock_repo):
