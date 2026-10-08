@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,7 +32,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_po(**overrides) -> PurchaseOrder:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "supplier_id": 10,
         "order_number": "PO-2026-0001",
@@ -45,7 +46,7 @@ def _make_po(**overrides) -> PurchaseOrder:
 
 
 def _make_item(**overrides) -> PurchaseOrderItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "purchase_order_id": 1,
         "product_id": 5,
@@ -58,7 +59,7 @@ def _make_item(**overrides) -> PurchaseOrderItem:
 
 
 def _make_receipt(**overrides) -> PurchaseReceipt:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "purchase_order_id": 1,
     }

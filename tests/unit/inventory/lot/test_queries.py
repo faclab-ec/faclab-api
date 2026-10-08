@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,7 +15,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_lot(**overrides) -> Lot:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 5,
         "lot_number": "LOT-001",

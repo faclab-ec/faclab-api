@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +13,7 @@ from src.auth.domain.exceptions import InvalidTokenError
 
 
 def _user(**overrides) -> User:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "username": "alice",
         "email": "alice@example.com",

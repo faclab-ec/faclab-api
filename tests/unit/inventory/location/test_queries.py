@@ -1,5 +1,6 @@
 """Unit tests for Location query handlers."""
 
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -17,7 +18,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_location(**overrides) -> Location:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "warehouse_id": 10,
         "name": "Pasillo A - Estante 1",

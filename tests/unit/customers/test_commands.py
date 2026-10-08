@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,7 +20,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_customer(**overrides) -> Customer:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "name": "Test Customer",
         "tax_id": "1710034065001",

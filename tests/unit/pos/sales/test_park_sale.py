@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,7 +14,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 10,
         "status": SaleStatus.DRAFT,

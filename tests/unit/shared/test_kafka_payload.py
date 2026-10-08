@@ -1,5 +1,6 @@
 import json
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from src.catalog.product.domain.entities import Product
@@ -10,7 +11,7 @@ from src.shared.infra.kafka.producer import _json_serializer
 
 
 def _make_event(**overrides) -> SaleConfirmed:
-    defaults = {
+    defaults: dict[str, Any] = {
         "aggregate_id": 1,
         "sale_id": 1,
         "customer_id": 0,

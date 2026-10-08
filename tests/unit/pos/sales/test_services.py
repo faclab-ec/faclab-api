@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,7 +11,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 10,
         "status": SaleStatus.DRAFT,
@@ -22,7 +23,7 @@ def _make_sale(**overrides) -> Sale:
 
 
 def _make_sale_item(**overrides) -> SaleItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "sale_id": 1,
         "product_id": 100,
@@ -35,7 +36,7 @@ def _make_sale_item(**overrides) -> SaleItem:
 
 
 def _make_stock(**overrides) -> Stock:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "product_id": 100,
         "quantity": 50,
@@ -298,7 +299,7 @@ class TestEventHandlerGuards:
             sale_id=1,
             customer_id=10,
             items=[{"product_id": 100, "quantity": 5}],
-            total=1000.0,
+            total=Decimal("1000.0"),
             source="pos",
         )
 
@@ -329,7 +330,7 @@ class TestEventHandlerGuards:
             sale_id=1,
             customer_id=10,
             items=[{"product_id": 100, "quantity": 5}],
-            total=1000.0,
+            total=Decimal("1000.0"),
             source="admin",
         )
 

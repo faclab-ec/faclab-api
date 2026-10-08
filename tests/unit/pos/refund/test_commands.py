@@ -1,4 +1,6 @@
+from dataclasses import replace
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,7 +32,7 @@ from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 1,
         "status": SaleStatus.CONFIRMED,
@@ -43,7 +45,7 @@ def _make_sale(**overrides) -> Sale:
 
 
 def _make_sale_item(**overrides) -> SaleItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 10,
         "sale_id": 1,
         "product_id": 100,
@@ -58,7 +60,7 @@ def _make_sale_item(**overrides) -> SaleItem:
 
 
 def _make_shift(**overrides) -> Shift:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "cashier_name": "Juan",
         "status": ShiftStatus.OPEN,
@@ -68,7 +70,7 @@ def _make_shift(**overrides) -> Shift:
 
 
 def _make_refund(**overrides) -> Refund:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "original_sale_id": 1,
         "shift_id": 1,
@@ -82,7 +84,7 @@ def _make_refund(**overrides) -> Refund:
 
 
 def _make_refund_item(**overrides) -> RefundItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "refund_id": 1,
         "original_sale_item_id": 10,
@@ -131,9 +133,7 @@ class TestCreateRefund:
         refund_repo.filter_by.return_value = prev_refunds or []
         refund_item_repo = MagicMock()
         refund_item_repo.filter_by.return_value = prev_refund_items or []
-        refund_item_repo.create.side_effect = lambda item: RefundItem(
-            **{**item.dict(), "id": 1}
-        )
+        refund_item_repo.create.side_effect = lambda item: replace(item, id=1)
         shift_repo = MagicMock()
         shift_repo.first.return_value = shift
 

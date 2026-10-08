@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 from src.inventory.lot.domain.entities import Lot
@@ -6,7 +7,7 @@ from src.purchasing.domain.events import PurchaseOrderReceived
 
 
 def _make_event(**overrides) -> PurchaseOrderReceived:
-    defaults = {
+    defaults: dict[str, Any] = {
         "aggregate_id": 1,
         "purchase_order_id": 1,
         "order_number": "PO-2026-0001",

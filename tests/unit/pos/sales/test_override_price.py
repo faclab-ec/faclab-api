@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,7 +15,7 @@ from src.shared.domain.tax import TaxCode
 
 
 def _make_sale(**overrides) -> Sale:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "customer_id": 10,
         "status": SaleStatus.DRAFT,
@@ -26,7 +27,7 @@ def _make_sale(**overrides) -> Sale:
 
 
 def _make_item(**overrides) -> SaleItem:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 5,
         "sale_id": 1,
         "product_id": 100,

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from src.sales.domain.events import (
@@ -25,7 +27,7 @@ def test_sale_created_event_to_dict():
         aggregate_id=1,
         sale_id=1,
         customer_id=10,
-        total=1500.50,
+        total=Decimal("1500.50"),
     )
     event_dict = event.to_dict()
 
@@ -47,7 +49,7 @@ def test_sale_confirmed_event_to_dict():
         sale_id=1,
         customer_id=10,
         items=items,
-        total=1250.0,
+        total=Decimal("1250.0"),
     )
     event_dict = event.to_dict()
 
@@ -83,7 +85,7 @@ def test_sale_invoiced_event_to_dict():
         sale_id=1,
         customer_id=10,
         invoice_number="INV-001",
-        total=1500.0,
+        total=Decimal("1500.0"),
     )
     event_dict = event.to_dict()
 
@@ -97,7 +99,7 @@ def test_payment_received_event_to_dict():
         aggregate_id=1,
         payment_id=1,
         sale_id=1,
-        amount=500.0,
+        amount=Decimal("500.0"),
         payment_method="CASH",
         reference="REF-001",
     )
@@ -118,7 +120,7 @@ def test_sale_item_added_event_to_dict():
         sale_item_id=1,
         product_id=10,
         quantity=5,
-        unit_price=100.0,
+        unit_price=Decimal("100.0"),
     )
     event_dict = event.to_dict()
 
@@ -151,7 +153,9 @@ def test_event_bus_publishes_sale_created():
 
     EventBus.subscribe(SaleCreated, handler)
 
-    event = SaleCreated(aggregate_id=1, sale_id=1, customer_id=10, total=1000.0)
+    event = SaleCreated(
+        aggregate_id=1, sale_id=1, customer_id=10, total=Decimal("1000.0")
+    )
     EventBus.publish(event)
 
     assert len(published_events) == 1

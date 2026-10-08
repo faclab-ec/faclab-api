@@ -1,5 +1,7 @@
 """Unit tests for AdjustmentsByStatus and AdjustmentsByWarehouse specifications"""
 
+from typing import Any
+
 from src.inventory.adjustment.domain.entities import (
     AdjustmentReason,
     AdjustmentStatus,
@@ -12,7 +14,7 @@ from src.inventory.adjustment.domain.specifications import (
 
 
 def _make_adjustment(**overrides) -> InventoryAdjustment:
-    defaults = {
+    defaults: dict[str, Any] = {
         "id": 1,
         "warehouse_id": 10,
         "reason": AdjustmentReason.PHYSICAL_COUNT,
