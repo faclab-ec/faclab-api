@@ -60,7 +60,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Raises:
             ValueError: If entity with given ID does not exist
         """
-        model = self.session.query(self.__model__).get(entity.id)
+        model = self.session.get(self.__model__, entity.id)
         if not model:
             raise NotFoundError(f"Entity with id {entity.id} not found")
 
@@ -77,7 +77,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Raises:
             ValueError: If entity with given ID does not exist
         """
-        model = self.session.query(self.__model__).get(id)
+        model = self.session.get(self.__model__, id)
         if not model:
             raise NotFoundError(f"Entity with id {id} not found")
 
@@ -92,7 +92,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             Entity if found, None otherwise
         """
-        model = self.session.query(self.__model__).get(id)
+        model = self.session.get(self.__model__, id)
         return self.mapper.to_entity(model)
 
     def get_by_ids(self, ids: Iterable[int]) -> list[E]:
@@ -125,11 +125,24 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             First entity that matches the criteria, or None if no entity is found
         """
+        return self._first(kwargs, for_update=False)
+
+    def first_for_update(self, **kwargs) -> E | None:
+        """
+        Like first(), but locks the row (SELECT ... FOR UPDATE) until the
+        transaction ends, so a concurrent request that wants to change it
+        waits instead of overwriting this one's update.
+        """
+        return self._first(kwargs, for_update=True)
+
+    def _first(self, filters: dict[str, Any], for_update: bool) -> E | None:
         criteria = [
-            getattr(self.__model__, key) == value for key, value in kwargs.items()
+            getattr(self.__model__, key) == value for key, value in filters.items()
         ]
-        model = self.session.query(self.__model__).filter(*criteria).first()
-        return self.mapper.to_entity(model)
+        query = self.session.query(self.__model__).filter(*criteria)
+        if for_update:
+            query = query.with_for_update()
+        return self.mapper.to_entity(query.first())
 
     def filter(
         self,

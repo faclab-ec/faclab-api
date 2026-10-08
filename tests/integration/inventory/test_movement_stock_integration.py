@@ -52,7 +52,7 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
     mock_stock_repo = Mock()
 
     # Setup: No existing stock
-    mock_stock_repo.first.return_value = None
+    mock_stock_repo.first_for_update.return_value = None
 
     new_stock = Stock(id=1, product_id=10, quantity=10)
     mock_stock_repo.create.return_value = new_stock
@@ -125,7 +125,7 @@ def test_sale_confirmed_creates_movement_and_updates_stock(
 
     # Existing stock
     existing_stock = Stock(id=1, product_id=10, quantity=100)
-    mock_stock_repo.first.return_value = existing_stock
+    mock_stock_repo.first_for_update.return_value = existing_stock
 
     updated_stock = Stock(id=1, product_id=10, quantity=95)
     mock_stock_repo.update.return_value = updated_stock
@@ -221,7 +221,7 @@ def test_sale_cancelled_reverts_stock_via_event(mock_inv_scope, mock_stock_scope
 
     # Stock after sale was confirmed (reduced by 5)
     existing_stock = Stock(id=1, product_id=10, quantity=95)
-    mock_stock_repo.first.return_value = existing_stock
+    mock_stock_repo.first_for_update.return_value = existing_stock
 
     # Stock after reversal
     restored_stock = Stock(id=1, product_id=10, quantity=100)
@@ -353,7 +353,7 @@ def test_multiple_movements_accumulate_stock(mock_stock_scope):
         elif call_count[0] == 3:
             return Stock(id=1, product_id=10, quantity=20)  # After second movement
 
-    mock_stock_repo.first.side_effect = mock_first
+    mock_stock_repo.first_for_update.side_effect = mock_first
     mock_stock_repo.create.return_value = Stock(id=1, product_id=10, quantity=10)
     mock_stock_repo.update.side_effect = [
         Stock(id=1, product_id=10, quantity=20),

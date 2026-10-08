@@ -49,7 +49,8 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
             sale.cancel()
             self.sale_repo.update(sale)
 
-            for item in items:
+            # Sorted so concurrent requests lock stock rows in the same order
+            for item in sorted(items, key=lambda i: i.product_id):
                 movement = Movement(
                     product_id=item.product_id,
                     quantity=abs(item.quantity),
@@ -58,7 +59,7 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 )
                 self.movement_repo.create(movement)
 
-                stock = self.stock_repo.first(product_id=item.product_id)
+                stock = self.stock_repo.first_for_update(product_id=item.product_id)
                 if stock:
                     stock.update_quantity(abs(item.quantity))
                     self.stock_repo.update(stock)

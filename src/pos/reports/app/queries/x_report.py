@@ -23,7 +23,7 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
         self.session = session
 
     def _handle(self, query: GetXReportQuery) -> dict:
-        shift = self.session.query(ShiftModel).get(query.shift_id)
+        shift = self.session.get(ShiftModel, query.shift_id)
         if shift is None:
             raise NotFoundError(f"Shift with id {query.shift_id} not found")
 

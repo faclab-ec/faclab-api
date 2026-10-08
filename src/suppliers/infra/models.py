@@ -41,7 +41,7 @@ class SupplierContactModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     supplier_id: Mapped[int] = mapped_column(
-        ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str | None] = mapped_column(String(64))
@@ -60,7 +60,7 @@ class SupplierProductModel(Base):
         ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False
     )
     product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
     )
     purchase_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     supplier_sku: Mapped[str | None] = mapped_column(String(64))

@@ -13,10 +13,10 @@ class RefundModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     original_sale_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("sales.id"), nullable=False
+        Integer, ForeignKey("sales.id"), nullable=False, index=True
     )
     shift_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("pos_shifts.id"), nullable=True
+        Integer, ForeignKey("pos_shifts.id"), nullable=True, index=True
     )
     refund_date: Mapped[datetime | None] = mapped_column(DateTime)
     subtotal: Mapped[Decimal] = mapped_column(
@@ -48,7 +48,10 @@ class RefundItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     refund_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("pos_refunds.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("pos_refunds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     original_sale_item_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sale_items.id"), nullable=False
@@ -74,7 +77,10 @@ class RefundPaymentModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     refund_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("pos_refunds.id", ondelete="CASCADE"), nullable=False
+        Integer,
+        ForeignKey("pos_refunds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     amount: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False)

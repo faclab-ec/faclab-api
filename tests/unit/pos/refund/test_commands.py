@@ -107,8 +107,10 @@ def _mock_repo(entity=None):
         repo.update.return_value = entity
         repo.get_by_id.return_value = entity
         repo.first.return_value = entity
+        repo.first_for_update.return_value = entity
     else:
         repo.first.return_value = None
+        repo.first_for_update.return_value = None
         repo.get_by_id.return_value = None
     return repo
 
@@ -306,7 +308,9 @@ class TestProcessRefund:
         refund_payment_repo.create.side_effect = lambda p: p
         movement_repo = MagicMock()
         stock_repo = MagicMock()
-        stock_repo.first.return_value = Stock(id=1, product_id=100, quantity=10)
+        stock_repo.first_for_update.return_value = Stock(
+            id=1, product_id=100, quantity=10
+        )
         event_publisher = MagicMock()
 
         handler = ProcessRefundCommandHandler(
@@ -337,7 +341,7 @@ class TestProcessRefund:
         assert "items" in result
         assert "payments" in result
         movement_repo.create.assert_called_once()
-        stock_repo.first.assert_called_once()
+        stock_repo.first_for_update.assert_called_once()
         stock_repo.update.assert_called_once()
         assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()

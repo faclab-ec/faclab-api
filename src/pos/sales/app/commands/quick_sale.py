@@ -109,9 +109,10 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         sale.recalculate_totals(created_items)
         self.sale_repo.update(sale)
 
-        # 6. Validar stock
-        for item in created_items:
-            stock = self.stock_repo.first(product_id=item.product_id)
+        # 6. Validar stock (bloquea las filas por product_id, en orden, para que
+        #    dos ventas concurrentes no se pisen ni se bloqueen mutuamente)
+        for item in sorted(created_items, key=lambda i: i.product_id):
+            stock = self.stock_repo.first_for_update(product_id=item.product_id)
             available = stock.quantity if stock else 0
             if available < item.quantity:
                 raise InsufficientStockError(item.product_id, item.quantity, available)
@@ -140,7 +141,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             )
             self.movement_repo.create(movement)
 
-            stock = self.stock_repo.first(product_id=item.product_id)
+            stock = self.stock_repo.first_for_update(product_id=item.product_id)
             if stock is None:
                 raise InsufficientStockError(item.product_id, item.quantity, 0)
             stock.update_quantity(-abs(item.quantity))

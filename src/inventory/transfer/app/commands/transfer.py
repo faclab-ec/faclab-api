@@ -175,8 +175,9 @@ class ConfirmStockTransferCommandHandler(
         if not items:
             raise TransferHasNoItemsError(transfer.id)
 
-        for item in items:
-            stock = self.stock_repo.first(
+        # Sorted so concurrent requests lock stock rows in the same order
+        for item in sorted(items, key=lambda i: i.product_id):
+            stock = self.stock_repo.first_for_update(
                 product_id=item.product_id,
                 location_id=transfer.source_location_id,
             )
@@ -223,9 +224,9 @@ class ReceiveStockTransferCommandHandler(
         transfer.receive()
         items = self.item_repo.filter_by(transfer_id=transfer.id)
 
-        for item in items:
+        for item in sorted(items, key=lambda i: i.product_id):
             # Release reservation in source
-            source_stock = self.stock_repo.first(
+            source_stock = self.stock_repo.first_for_update(
                 product_id=item.product_id,
                 location_id=transfer.source_location_id,
             )
@@ -300,8 +301,8 @@ class CancelStockTransferCommandHandler(
 
         if was_confirmed:
             items = self.item_repo.filter_by(transfer_id=transfer.id)
-            for item in items:
-                stock = self.stock_repo.first(
+            for item in sorted(items, key=lambda i: i.product_id):
+                stock = self.stock_repo.first_for_update(
                     product_id=item.product_id,
                     location_id=transfer.source_location_id,
                 )

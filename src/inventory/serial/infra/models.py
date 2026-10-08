@@ -11,7 +11,7 @@ class SerialNumberModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     serial_number: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="available")

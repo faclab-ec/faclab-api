@@ -15,16 +15,16 @@ class SaleModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     customer_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("customers.id"), nullable=True
+        Integer, ForeignKey("customers.id"), nullable=True, index=True
     )
     is_final_consumer: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
     shift_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("pos_shifts.id"), nullable=True
+        Integer, ForeignKey("pos_shifts.id"), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
-    sale_date: Mapped[datetime | None] = mapped_column(DateTime)
+    sale_date: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     subtotal: Mapped[Decimal] = mapped_column(
         MoneyColumn, nullable=False, default=Decimal("0")
     )
@@ -69,10 +69,10 @@ class SaleItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     sale_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False, index=True
     )
     product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False
+        Integer, ForeignKey("products.id"), nullable=False, index=True
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
@@ -97,7 +97,7 @@ class PaymentModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     sale_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False, index=True
     )
     amount: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False)

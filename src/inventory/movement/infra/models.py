@@ -15,14 +15,16 @@ class MovementModel(Base):
     __tablename__ = "movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     quantity: Mapped[int]
     type: Mapped[MovementType]
-    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))
+    location_id: Mapped[int | None] = mapped_column(
+        ForeignKey("locations.id"), index=True
+    )
     source_location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"))
     reference_type: Mapped[str | None] = mapped_column(String(64))
     reference_id: Mapped[int | None]
     reason: Mapped[str | None] = mapped_column(String(128))
-    date: Mapped[datetime | None] = mapped_column(default=datetime.now)
+    date: Mapped[datetime | None] = mapped_column(default=datetime.now, index=True)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.now)
     product: Mapped["ProductModel"] = relationship(back_populates="movements")

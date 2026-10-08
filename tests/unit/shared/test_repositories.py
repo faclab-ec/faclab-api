@@ -55,7 +55,7 @@ def test_create_flushes():
 def test_update_flushes():
     repo, session, _ = _make_repo()
     model = MagicMock()
-    session.query.return_value.get.return_value = model
+    session.get.return_value = model
     entity = FakeEntity(id=1, name="updated")
     repo.update(entity)
     session.flush.assert_called_once()
@@ -65,7 +65,7 @@ def test_update_flushes():
 def test_delete_flushes():
     repo, session, _ = _make_repo()
     model = MagicMock()
-    session.query.return_value.get.return_value = model
+    session.get.return_value = model
     repo.delete(1)
     session.flush.assert_called_once()
     session.commit.assert_not_called()
@@ -91,3 +91,11 @@ def test_other_integrity_errors_propagate():
 
     with pytest.raises(IntegrityError):
         repo.create(FakeEntity(name="test"))
+
+
+def test_first_for_update_locks_the_row():
+    repo, session, _ = _make_repo()
+
+    repo.first_for_update()
+
+    session.query.return_value.filter.return_value.with_for_update.assert_called_once()

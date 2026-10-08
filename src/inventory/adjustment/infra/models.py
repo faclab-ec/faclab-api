@@ -10,7 +10,7 @@ class InventoryAdjustmentModel(Base):
     __tablename__ = "inventory_adjustments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"))
+    warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouses.id"), index=True)
     reason: Mapped[str]
     status: Mapped[str] = mapped_column(default="draft")
     adjustment_date: Mapped[datetime | None]
@@ -24,7 +24,7 @@ class AdjustmentItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     adjustment_id: Mapped[int] = mapped_column(
-        ForeignKey("inventory_adjustments.id", ondelete="CASCADE")
+        ForeignKey("inventory_adjustments.id", ondelete="CASCADE"), index=True
     )
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))

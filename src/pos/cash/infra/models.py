@@ -13,7 +13,7 @@ class CashMovementModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     shift_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("pos_shifts.id"), nullable=False
+        Integer, ForeignKey("pos_shifts.id"), nullable=False, index=True
     )
     type: Mapped[str] = mapped_column(String(8), nullable=False)
     amount: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)

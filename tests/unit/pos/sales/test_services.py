@@ -63,7 +63,7 @@ def _build_confirm_handler(sale=None, items=None, stock=None):
     if items is not None:
         handler.sale_item_repo.filter_by.return_value = items
     if stock is not None:
-        handler.stock_repo.first.return_value = stock
+        handler.stock_repo.first_for_update.return_value = stock
 
     return handler
 
@@ -84,7 +84,7 @@ def _build_cancel_handler(sale=None, items=None, stock=None):
     if items is not None:
         handler.sale_item_repo.filter_by.return_value = items
     if stock is not None:
-        handler.stock_repo.first.return_value = stock
+        handler.stock_repo.first_for_update.return_value = stock
 
     return handler
 
@@ -131,7 +131,7 @@ class TestPOSConfirmSaleCommandHandler:
         items = [_make_sale_item(quantity=5)]
 
         handler = _build_confirm_handler(sale=sale, items=items)
-        handler.stock_repo.first.return_value = None
+        handler.stock_repo.first_for_update.return_value = None
 
         with pytest.raises(InsufficientStockError):
             handler._handle(POSConfirmSaleCommand(sale_id=1))

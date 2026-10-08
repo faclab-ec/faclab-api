@@ -45,7 +45,7 @@ class ProductModel(Base):
     )
 
     category_id: Mapped[int | None] = mapped_column(
-        ForeignKey("categories.id"), nullable=True
+        ForeignKey("categories.id"), nullable=True, index=True
     )
     unit_of_measure_id: Mapped[int | None] = mapped_column(
         ForeignKey("units_of_measure.id"), nullable=True

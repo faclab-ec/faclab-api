@@ -25,7 +25,7 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
         self.x_report_handler = x_report_handler
 
     def _handle(self, query: GetZReportQuery) -> dict:
-        shift = self.session.query(ShiftModel).get(query.shift_id)
+        shift = self.session.get(ShiftModel, query.shift_id)
         if shift is None:
             raise NotFoundError(f"Shift with id {query.shift_id} not found")
 

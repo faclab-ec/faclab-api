@@ -1,8 +1,12 @@
 """POS flows against PostgreSQL: shift, checkout, stock effects, refunds and
 the shift reports."""
 
-import pytest
+import threading
 
+import pytest
+from fastapi.testclient import TestClient
+
+from main import app
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
@@ -221,3 +225,32 @@ def test_sale_totals_are_charged_in_whole_cents(api, admin_api, shift):
 
     assert (sale["subtotal"], sale["tax"], sale["total"]) == (0.45, 0.07, 0.52)
     assert sale["paymentStatus"] == "PAID"
+
+
+def test_concurrent_checkouts_cannot_oversell(api, admin_api, product, shift):
+    """Both requests read the same stock; the row lock makes the second wait
+    and see what the first one left."""
+    barrier = threading.Barrier(2)
+    statuses: list[int] = []
+
+    def checkout() -> None:
+        client = TestClient(app)
+        barrier.wait()
+        response = client.post(
+            "/api/pos/sales/quick",
+            json={
+                "items": [{"productId": product["id"], "quantity": 6}],
+                "payments": [{"amount": "69.00", "paymentMethod": "CASH"}],
+            },
+            headers=api.headers,
+        )
+        statuses.append(response.status_code)
+
+    threads = [threading.Thread(target=checkout) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(statuses) == [201, 400]
+    assert _stock_quantity(admin_api, product["id"]) == 4
