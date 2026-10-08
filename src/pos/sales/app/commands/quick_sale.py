@@ -18,7 +18,6 @@ from src.sales.app.repositories import (
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
 from src.sales.domain.events import SaleConfirmed
 from src.sales.domain.exceptions import InsufficientStockError
-from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -92,29 +91,22 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                     f"Product with id {item_data['product_id']} not found"
                 )
 
-            unit_price = Decimal(str(item_data.get("unit_price") or product.sale_price))
-            quantity = item_data["quantity"]
-            discount = Decimal(str(item_data.get("discount", 0)))
-
-            base = unit_price * quantity
-            discount_amount = base * (discount / Decimal("100"))
-            item_subtotal = base - discount_amount
-            tax_amount = item_subtotal * product.tax_code.rate / Decimal("100")
-
             sale_item = SaleItem(
                 sale_id=sale.require_id(),
                 product_id=product.require_id(),
-                quantity=quantity,
-                unit_price=unit_price,
-                discount=discount,
+                quantity=item_data["quantity"],
+                unit_price=Decimal(
+                    str(item_data.get("unit_price") or product.sale_price)
+                ),
+                discount=Decimal(str(item_data.get("discount", 0))),
                 tax_code=product.tax_code,
-                tax_amount=tax_amount,
             )
+            sale_item.recalculate_tax()
             sale_item = self.sale_item_repo.create(sale_item)
             created_items.append(sale_item)
 
         # 5. Recalcular totales
-        recalculate_sale_totals(sale, created_items)
+        sale.recalculate_totals(created_items)
         self.sale_repo.update(sale)
 
         # 6. Validar stock

@@ -1,4 +1,3 @@
-from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -8,7 +7,7 @@ from wireup import injectable
 from src.catalog.product.infra.models import ProductModel
 from src.customers.infra.models import CustomerModel
 from src.pos.shift.infra.models import ShiftModel
-from src.sales.domain.services import discount_factor
+from src.sales.domain.services import discount_factor, tax_breakdown
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -41,9 +40,7 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         )
 
         items = []
-        tax_groups = defaultdict(
-            lambda: {"taxable_base": Decimal("0"), "tax_amount": Decimal("0")}
-        )
+        taxed_lines = []
 
         for item_model, product_name in item_rows:
             base = item_model.unit_price * item_model.quantity
@@ -65,21 +62,23 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
                 }
             )
 
-            group = tax_groups[item_model.tax_code]
-            group["taxable_base"] += subtotal
-            group["tax_amount"] += item_model.tax_amount
+            taxed_lines.append(
+                (TaxCode(item_model.tax_code), subtotal, item_model.tax_amount)
+            )
 
-        # The sale-level discount reduces each VAT base proportionally
-        factor = discount_factor(sale.subtotal, sale.discount)
-        tax_breakdown = [
+        # Same per-code amounts that add up to sale.tax
+        breakdown = tax_breakdown(
+            taxed_lines, discount_factor(sale.subtotal, sale.discount)
+        )
+        tax_groups = [
             {
                 "tax_code": code,
-                "tax_rate": TaxCode(code).rate,
-                "taxable_base": group["taxable_base"] * factor,
-                "tax_amount": group["tax_amount"] * factor,
+                "tax_rate": code.rate,
+                "taxable_base": base,
+                "tax_amount": tax,
             }
-            for code, group in sorted(
-                tax_groups.items(), key=lambda kv: (TaxCode(kv[0]).rate, kv[0])
+            for code, (base, tax) in sorted(
+                breakdown.items(), key=lambda kv: (kv[0].rate, kv[0])
             )
         ]
 
@@ -126,7 +125,7 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
             "customer": customer,
             "is_final_consumer": sale.is_final_consumer,
             "items": items,
-            "tax_breakdown": tax_breakdown,
+            "tax_breakdown": tax_groups,
             "subtotal": sale.subtotal,
             "discount": sale.discount,
             "discount_type": sale.discount_type,

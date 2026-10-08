@@ -337,19 +337,23 @@ Ejemplo: unitPrice=100, quantity=2, discount=10 → `(100 × 2) × (1 - 0.10) = 
 ### Totales de venta
 
 ```
-item.taxAmount = item.subtotal × tasa del taxCode / 100
+item.taxAmount = item.subtotal × tasa del taxCode / 100          (precisión completa)
 
-sale.subtotal = Σ item.subtotal
-sale.discount = subtotal × discountValue / 100    (discountType = PERCENTAGE)
-              = min(discountValue, subtotal)       (discountType = AMOUNT)
+sale.subtotal = redondear(Σ item.subtotal)
+sale.discount = redondear(subtotal × discountValue / 100)        (discountType = PERCENTAGE)
+              = min(redondear(discountValue), subtotal)          (discountType = AMOUNT)
 factor        = (subtotal - discount) / subtotal
-sale.tax      = Σ item.taxAmount × factor
+sale.tax      = Σ por taxCode de redondear(Σ item.taxAmount del código × factor)
 sale.total    = subtotal - discount + tax
 ```
 
-El descuento global se prorratea sobre la base imponible de cada item, porque el IVA se calcula sobre el precio menos los descuentos que constan en la factura (art. 59 de la LORTI). `item.taxAmount` guarda el IVA del item antes del descuento global.
+`redondear` es a centavos con la mitad hacia arriba (`round_money` en `src/shared/domain/money.py`). Los items guardan sus montos con precisión completa; solo se redondean los totales de la venta, así que `total` es exactamente `subtotal - discount + tax`.
+
+El descuento global se prorratea sobre la base imponible de cada item, porque el IVA se calcula sobre el precio menos los descuentos que constan en la factura (art. 59 de la LORTI). `item.taxAmount` guarda el IVA del item antes del descuento global. El IVA se redondea por código (como `totalConImpuestos` en la factura electrónica) y el desglose del recibo usa los mismos montos, de modo que suma exactamente `sale.tax`.
 
 Ejemplo: un item de 100 con IVA 15% y descuento global del 10% → descuento 10, IVA 15% de 90 = 13,50, total 103,50.
+
+Ejemplo de redondeo: 3 × 0,15 con IVA 15% → subtotal 0,45, IVA 0,0675 → 0,07, total 0,52.
 
 El descuento global hoy se aplica desde el POS (`POST /api/pos/sales/{id}/discount` o `discountType`/`discountValue` en `POST /api/pos/sales/quick`).
 

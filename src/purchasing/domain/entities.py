@@ -8,6 +8,7 @@ from src.purchasing.domain.exceptions import (
     InvalidPurchaseOrderStatusError,
 )
 from src.shared.domain.entities import Entity
+from src.shared.domain.money import round_money
 
 
 class PurchaseOrderStatus(StrEnum):
@@ -58,7 +59,10 @@ class PurchaseOrder(Entity):
             raise InvalidPurchaseOrderStatusError(self.status, "receive")
 
     def recalculate_totals(self, items: list["PurchaseOrderItem"]) -> None:
-        self.subtotal = sum((item.subtotal for item in items), Decimal("0.00"))
+        """Totales redondeados a centavos; las líneas guardan su costo completo"""
+        self.subtotal = round_money(
+            sum((item.subtotal for item in items), Decimal("0.00"))
+        )
         self.tax = Decimal("0.00")
         self.total = self.subtotal + self.tax
 

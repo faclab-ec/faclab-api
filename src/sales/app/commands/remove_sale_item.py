@@ -5,7 +5,6 @@ from wireup import injectable
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.events import SaleItemRemoved
 from src.sales.domain.exceptions import SaleItemNotInSaleError
-from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -60,7 +59,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         # Publicar evento

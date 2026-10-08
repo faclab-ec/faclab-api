@@ -1,4 +1,14 @@
+"""Cálculo de IVA con descuento global, compartido por ventas, devoluciones y recibos"""
+
+from collections import defaultdict
+from collections.abc import Iterable
 from decimal import Decimal
+
+from src.shared.domain.money import round_money
+from src.shared.domain.tax import TaxCode
+
+# (código de IVA, subtotal de la línea, IVA de la línea) a precisión completa
+TaxedLine = tuple[TaxCode, Decimal, Decimal]
 
 
 def discount_factor(subtotal: Decimal, discount: Decimal) -> Decimal:
@@ -8,24 +18,22 @@ def discount_factor(subtotal: Decimal, discount: Decimal) -> Decimal:
     return (subtotal - discount) / subtotal
 
 
-def recalculate_sale_totals(sale, items) -> None:
-    """Recalcula subtotal, descuento, IVA y total de la venta a partir de sus items.
+def tax_breakdown(
+    lines: Iterable[TaxedLine], factor: Decimal
+) -> dict[TaxCode, tuple[Decimal, Decimal]]:
+    """Base imponible e IVA por código, ya prorrateado el descuento global.
 
-    El descuento global se prorratea sobre la base imponible de cada item, porque el
-    IVA se calcula sobre el precio menos los descuentos de la factura (art. 59 LORTI).
+    El IVA se calcula sobre el precio menos los descuentos de la factura (art. 59
+    LORTI), así que cada base y su IVA se multiplican por `factor`. Cada grupo se
+    redondea a centavos, como `totalConImpuestos` en la factura electrónica, de
+    modo que el IVA de la venta es la suma de los grupos.
     """
-    subtotal = sum((item.subtotal for item in items), Decimal("0"))
-
-    if sale.discount_type == "PERCENTAGE":
-        discount = subtotal * sale.discount_value / Decimal("100")
-    elif sale.discount_type == "AMOUNT":
-        discount = min(sale.discount_value, subtotal)
-    else:
-        discount = Decimal("0")
-
-    item_tax = sum((item.tax_amount for item in items), Decimal("0"))
-
-    sale.subtotal = subtotal
-    sale.discount = discount
-    sale.tax = item_tax * discount_factor(subtotal, discount)
-    sale.total = subtotal - discount + sale.tax
+    bases: dict[TaxCode, Decimal] = defaultdict(Decimal)
+    taxes: dict[TaxCode, Decimal] = defaultdict(Decimal)
+    for tax_code, subtotal, tax_amount in lines:
+        bases[tax_code] += subtotal
+        taxes[tax_code] += tax_amount
+    return {
+        code: (round_money(bases[code] * factor), round_money(taxes[code] * factor))
+        for code in bases
+    }

@@ -5,7 +5,6 @@ from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.exceptions import SaleItemNotInSaleError
-from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
 
@@ -52,16 +51,13 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
         if command.discount is not None:
             sale_item.discount = command.discount
 
-        # Recalcular tax_amount del item
-        sale_item.tax_amount = (
-            sale_item.subtotal * sale_item.tax_code.rate / Decimal("100")
-        )
+        sale_item.recalculate_tax()
 
         self.sale_item_repo.update(sale_item)
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         result = sale_item.dict()

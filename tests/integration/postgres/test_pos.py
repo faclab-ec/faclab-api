@@ -178,3 +178,46 @@ def test_shift_reports_and_close(api, product, shift):
     assert closed["status"] == "CLOSED"
     assert closed["expectedBalance"] == 111.5
     assert closed["discrepancy"] == 0
+
+
+def test_refund_returns_what_was_charged_after_a_sale_discount(
+    api, client, auth_headers, product, shift
+):
+    manager = Api(client, auth_headers(Role.MANAGER))
+    sale = _quick_sale(
+        api,
+        product["id"],
+        2,
+        "20.70",
+        discountType="PERCENTAGE",
+        discountValue="10",
+    )
+    [item] = api.get(f"/api/pos/sales/{sale['id']}/items")
+
+    refund = api.post(
+        "/api/pos/refunds",
+        {
+            "originalSaleId": sale["id"],
+            "items": [{"saleItemId": item["id"], "quantity": 1}],
+        },
+    )
+
+    # Half of the 20.70 charged: base 9.00 + VAT 1.35
+    assert (refund["subtotal"], refund["tax"], refund["total"]) == (9.0, 1.35, 10.35)
+    manager.post(
+        f"/api/pos/refunds/{refund['id']}/process",
+        {"payments": [{"amount": "10.35", "paymentMethod": "CASH"}]},
+    )
+
+
+def test_sale_totals_are_charged_in_whole_cents(api, admin_api, shift):
+    warehouse = make_warehouse(admin_api, "W2")
+    shelf = make_location(admin_api, warehouse["id"])
+    candy = make_product(admin_api, "CANDY", salePrice="0.15", taxCode="VAT_15")
+    make_movement(admin_api, candy["id"], 10, shelf["id"])
+
+    # 3 x 0.15 = 0.45 + VAT 0.0675 -> 0.07
+    sale = _quick_sale(api, candy["id"], 3, "0.52")
+
+    assert (sale["subtotal"], sale["tax"], sale["total"]) == (0.45, 0.07, 0.52)
+    assert sale["paymentStatus"] == "PAID"

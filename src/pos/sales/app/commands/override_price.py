@@ -5,7 +5,6 @@ from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.exceptions import SaleItemNotInSaleError
-from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 
@@ -52,12 +51,12 @@ class OverrideItemPriceCommandHandler(CommandHandler[OverrideItemPriceCommand, d
         item.unit_price = command.new_price
         item.price_override = command.new_price
         item.override_reason = command.reason
-        item.tax_amount = item.subtotal * item.tax_code.rate / Decimal("100")
+        item.recalculate_tax()
 
         self.sale_item_repo.update(item)
 
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         result = item.dict()

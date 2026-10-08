@@ -7,7 +7,6 @@ from src.catalog.product.app.repositories import ProductRepository
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import SaleItem
 from src.sales.domain.events import SaleItemAdded
-from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -55,30 +54,22 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         if not product:
             raise NotFoundError(f"Product with id {command.product_id} not found")
 
-        # Calcular subtotal y tax_amount del item
-        unit_price = Decimal(str(command.unit_price))
-        discount = Decimal(str(command.discount))
-        base = unit_price * command.quantity
-        discount_amount = base * (discount / Decimal("100"))
-        item_subtotal = base - discount_amount
-        tax_amount = item_subtotal * product.tax_code.rate / Decimal("100")
-
-        # Crear el item
+        # Crear el item con el IVA de su producto
         sale_item = SaleItem(
             sale_id=command.sale_id,
             product_id=command.product_id,
             quantity=command.quantity,
-            unit_price=command.unit_price,
-            discount=command.discount,
+            unit_price=Decimal(str(command.unit_price)),
+            discount=Decimal(str(command.discount)),
             tax_code=product.tax_code,
-            tax_amount=tax_amount,
         )
+        sale_item.recalculate_tax()
 
         sale_item = self.sale_item_repo.create(sale_item)
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         # Publicar evento

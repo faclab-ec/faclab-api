@@ -18,6 +18,7 @@ from src.sales.domain.entities import PaymentMethod
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.money import round_money
 
 
 @dataclass
@@ -53,8 +54,10 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
-        total_payment = sum(Decimal(str(p["amount"])) for p in command.payments)
-        if total_payment < refund.total:
+        total_payment = sum(
+            (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
+        )
+        if round_money(total_payment) < refund.total:
             raise ValidationError(
                 message="Payment amount is insufficient",
                 detail=f"Total: {refund.total}, paid: {total_payment}",

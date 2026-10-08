@@ -1,18 +1,15 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from enum import StrEnum
 
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
+from src.sales.domain.services import discount_factor, tax_breakdown
 from src.shared.domain.entities import Entity
 from src.shared.domain.exceptions import ValidationError
+from src.shared.domain.money import round_money
 from src.shared.domain.tax import TaxCode
-
-CENT = Decimal("0.01")
-
-
-def _to_cents(amount: Decimal) -> Decimal:
-    return amount.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 class SaleStatus(StrEnum):
@@ -63,6 +60,10 @@ class SaleItem(Entity):
         base = self.unit_price * self.quantity
         discount_amount = base * (self.discount / Decimal("100"))
         return base - discount_amount
+
+    def recalculate_tax(self) -> None:
+        """IVA del item a precisión completa, antes del descuento global de la venta"""
+        self.tax_amount = self.subtotal * self.tax_code.rate / Decimal("100")
 
 
 @dataclass
@@ -140,9 +141,35 @@ class Sale(Entity):
         self.discount_type = discount_type
         self.discount_value = discount_value
 
+    def recalculate_totals(self, items: Iterable[SaleItem]) -> None:
+        """Recalcula subtotal, descuento, IVA y total a partir de los items.
+
+        Los montos de la venta se redondean a centavos y el total es exactamente
+        subtotal - descuento + IVA. El descuento global se prorratea sobre la base
+        de cada item antes de calcular el IVA (ver `tax_breakdown`).
+        """
+        items = list(items)
+        subtotal = round_money(sum((item.subtotal for item in items), Decimal("0")))
+
+        if self.discount_type == "PERCENTAGE":
+            discount = round_money(subtotal * self.discount_value / Decimal("100"))
+        elif self.discount_type == "AMOUNT":
+            discount = min(round_money(self.discount_value), subtotal)
+        else:
+            discount = Decimal("0")
+
+        breakdown = tax_breakdown(
+            ((item.tax_code, item.subtotal, item.tax_amount) for item in items),
+            discount_factor(subtotal, discount),
+        )
+        self.subtotal = subtotal
+        self.discount = discount
+        self.tax = sum((tax for _, tax in breakdown.values()), Decimal("0"))
+        self.total = subtotal - discount + self.tax
+
     def is_covered_by(self, amount: Decimal) -> bool:
         """Indica si el monto cubre el total, comparando al centavo"""
-        return _to_cents(amount) >= _to_cents(self.total)
+        return round_money(amount) >= round_money(self.total)
 
     def update_payment_status(self, total_paid: Decimal) -> None:
         """Actualiza el estado de pago basándose en el monto pagado"""

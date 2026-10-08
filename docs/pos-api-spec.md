@@ -312,9 +312,9 @@ Efectos:
 | originalSaleId | int | Venta original |
 | shiftId | int | Turno donde se procesa |
 | refundDate | datetime? | Fecha de completado |
-| subtotal | decimal | Subtotal devuelto |
-| tax | decimal | Impuesto devuelto |
-| total | decimal | Total devuelto |
+| subtotal | decimal | Base devuelta, neta del descuento global de la venta |
+| tax | decimal | IVA devuelto |
+| total | decimal | Total devuelto (`subtotal + tax`) |
 | reason | string? | Razón |
 | status | enum | `PENDING` → `COMPLETED` / `CANCELLED` |
 | refundedBy | string? | Quién procesó |
@@ -343,6 +343,8 @@ Efectos:
 | amount | decimal | Monto (>0) |
 | paymentMethod | enum | `CASH` \| `CREDIT_CARD` \| `DEBIT_CARD` \| `TRANSFER` \| `OTHER` |
 | reference | string? | Referencia |
+
+La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA el mismo factor de descuento global que tuvo la venta (`(subtotal - discount) / subtotal`) y redondea por código de IVA, igual que los totales de la venta (ver "Cálculos" en `sales-spec.md`). Devolver todos los items de una venta reintegra su total.
 
 ### Flujo de devolución
 

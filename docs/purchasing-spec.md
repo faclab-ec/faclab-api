@@ -62,7 +62,7 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `supplierId`   | `int`             | sí        | —           | ID del proveedor                         |
 | `orderNumber`  | `string`          | auto      | —           | Código único generado (`PO-{año}-{seq}`) |
 | `status`       | `PurchaseOrderStatus` | auto  | `draft`     | Estado actual de la orden                |
-| `subtotal`     | `number`          | auto      | `0`         | Suma de costos de todos los ítems        |
+| `subtotal`     | `number`          | auto      | `0`         | Suma de costos de todos los ítems, redondeada a centavos |
 | `tax`          | `number`          | auto      | `0`         | Impuestos (actualmente siempre 0)        |
 | `total`        | `number`          | auto      | `0`         | subtotal + tax                           |
 | `notes`        | `string \| null`  | no        | `null`      | Notas opcionales                         |
