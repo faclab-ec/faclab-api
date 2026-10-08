@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import APIRouter, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from wireup.integration.fastapi import setup as wireup_fastapi_setup
 
 import src
@@ -40,7 +42,11 @@ from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
 from src.shared.infra.logging import configure_logging
-from src.shared.infra.middlewares import ErrorHandlingMiddleware
+from src.shared.infra.middlewares import (
+    ErrorHandlingMiddleware,
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from src.suppliers.infra.routes import (
     SupplierContactRouter,
     SupplierProductRouter,
@@ -310,6 +316,16 @@ auth_router.include_router(AuthRouter().router, tags=["Auth"])
 # Middleware
 # ---------------------------------------------------------------------------
 
+# FastAPI handles these before ErrorHandlingMiddleware sees them; register
+# handlers so they still use the error envelope.
+app.add_exception_handler(
+    RequestValidationError,
+    request_validation_exception_handler,  # ty: ignore[invalid-argument-type]
+)
+app.add_exception_handler(
+    StarletteHTTPException,
+    http_exception_handler,  # ty: ignore[invalid-argument-type]
+)
 app.add_middleware(AuthMiddleware, token_service=JwtTokenService())
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(

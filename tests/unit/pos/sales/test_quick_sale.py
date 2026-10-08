@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.inventory.stock.domain.entities import Stock
 from src.pos.sales.app.commands.quick_sale import (
     QuickSaleCommand,
     QuickSaleCommandHandler,
@@ -36,9 +37,7 @@ def _make_product(**overrides):
 
 
 def _make_stock(quantity=100):
-    stock = MagicMock()
-    stock.quantity = quantity
-    return stock
+    return Stock(id=1, product_id=1, quantity=quantity)
 
 
 def _mock_repo(entity=None, entities=None):
@@ -170,6 +169,7 @@ class TestQuickSaleHappyPath:
         sale_repo.create.assert_called_once()
         sale_item_repo.create.assert_called_once()
         movement_repo.create.assert_called_once()
+        assert stock_repo.update.call_args[0][0].quantity == 98
         payment_repo.create.assert_called_once()
         event_publisher.publish.assert_called_once()
 

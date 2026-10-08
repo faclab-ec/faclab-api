@@ -74,13 +74,6 @@ class SupplierContactResponse(SupplierContactRequest):
 
 # SupplierProduct Requests
 class SupplierProductRequest(BaseModel):
-    supplier_id: int = Field(
-        ...,
-        ge=1,
-        description="Supplier ID",
-        validation_alias=AliasChoices("supplierId", "supplier_id"),
-        serialization_alias="supplierId",
-    )
     product_id: int = Field(
         ...,
         ge=1,
@@ -126,6 +119,13 @@ class SupplierProductRequest(BaseModel):
 
 class SupplierProductResponse(SupplierProductRequest):
     id: int = Field(ge=1, description="Supplier product ID")
+    supplier_id: int = Field(
+        ...,
+        ge=1,
+        description="Supplier ID",
+        validation_alias=AliasChoices("supplierId", "supplier_id"),
+        serialization_alias="supplierId",
+    )
 
 
 # Query Params

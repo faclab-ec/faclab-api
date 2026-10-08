@@ -378,13 +378,21 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
 
 @injectable(lifetime="scoped")
 class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand, dict]):
-    def __init__(self, item_repo: StockTransferItemRepository):
+    def __init__(
+        self, repo: StockTransferRepository, item_repo: StockTransferItemRepository
+    ):
+        self.repo = repo
         self.item_repo = item_repo
 
     def _handle(self, command: UpdateTransferItemCommand) -> dict:
         item = self.item_repo.get_by_id(command.id)
         if item is None:
             raise NotFoundError(f"StockTransferItem with id {command.id} not found")
+        transfer = self.repo.get_by_id(item.transfer_id)
+        if transfer is None or transfer.status != TransferStatus.DRAFT:
+            raise DomainError(
+                "Solo se pueden modificar ítems de transferencias en DRAFT"
+            )
         if command.quantity is not None and command.quantity <= 0:
             raise DomainError("La cantidad debe ser mayor a cero")
 
@@ -401,11 +409,19 @@ class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand,
 
 @injectable(lifetime="scoped")
 class RemoveTransferItemCommandHandler(CommandHandler[RemoveTransferItemCommand, None]):
-    def __init__(self, item_repo: StockTransferItemRepository):
+    def __init__(
+        self, repo: StockTransferRepository, item_repo: StockTransferItemRepository
+    ):
+        self.repo = repo
         self.item_repo = item_repo
 
     def _handle(self, command: RemoveTransferItemCommand) -> None:
         item = self.item_repo.get_by_id(command.id)
         if item is None:
             raise NotFoundError(f"StockTransferItem with id {command.id} not found")
+        transfer = self.repo.get_by_id(item.transfer_id)
+        if transfer is None or transfer.status != TransferStatus.DRAFT:
+            raise DomainError(
+                "Solo se pueden eliminar ítems de transferencias en DRAFT"
+            )
         self.item_repo.delete(command.id)

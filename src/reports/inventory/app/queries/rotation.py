@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 
@@ -16,8 +16,8 @@ from src.shared.app.queries import Query, QueryHandler
 
 @dataclass
 class GetProductRotationQuery(Query):
-    from_date: date = date.today().replace(day=1)
-    to_date: date = date.today()
+    from_date: date = field(default_factory=lambda: date.today().replace(day=1))
+    to_date: date = field(default_factory=date.today)
     warehouse_id: int | None = None
 
 
@@ -84,11 +84,12 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
                         else_=0,
                     )
                 ).label("total_in"),
+                # OUT movements are stored with negative quantities
                 func.sum(
                     case(
                         (
                             MovementModel.type == MovementType.OUT,
-                            MovementModel.quantity,
+                            -MovementModel.quantity,
                         ),
                         else_=0,
                     )

@@ -51,9 +51,11 @@ class ProductModel(Base):
         ForeignKey("units_of_measure.id"), nullable=True
     )
     category: Mapped["CategoryModel | None"] = relationship(back_populates="products")
+    # Inventory history must survive product deletion: let the database FKs
+    # reject deleting a product that has movements or stock (409).
     movements: Mapped[list["MovementModel"]] = relationship(
-        back_populates="product", cascade="all, delete-orphan"
+        back_populates="product", passive_deletes="all"
     )
     stocks: Mapped[list["StockModel"]] = relationship(
-        back_populates="product", cascade="all, delete-orphan"
+        back_populates="product", passive_deletes="all"
     )

@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from wireup import injectable
 
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.domain.exceptions import NotFoundError
 from src.suppliers.app.repositories import SupplierContactRepository
 from src.suppliers.domain.entities import SupplierContact
 
@@ -38,7 +39,6 @@ class CreateSupplierContactCommandHandler(
 @dataclass
 class UpdateSupplierContactCommand(Command):
     id: int = 0
-    supplier_id: int = 0
     name: str = ""
     role: str | None = None
     email: str | None = None
@@ -53,9 +53,11 @@ class UpdateSupplierContactCommandHandler(
         self.repo = repo
 
     def _handle(self, command: UpdateSupplierContactCommand) -> dict:
-        contact = SupplierContact(
-            id=command.id,
-            supplier_id=command.supplier_id,
+        contact = self.repo.get_by_id(command.id)
+        if contact is None:
+            raise NotFoundError(f"Supplier contact with id {command.id} not found")
+        contact = replace(
+            contact,
             name=command.name,
             role=command.role,
             email=command.email,

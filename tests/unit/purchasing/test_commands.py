@@ -86,13 +86,13 @@ def _make_receipt(**overrides) -> PurchaseReceipt:
 def test_create_purchase_order_generates_order_number():
     po = _make_po()
     repo = MagicMock()
-    repo.count_by_year.return_value = 0
+    repo.last_sequence_for_prefix.return_value = 0
     repo.create.return_value = po
     handler = CreatePurchaseOrderCommandHandler(repo, MagicMock())
 
     result = handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
 
-    repo.count_by_year.assert_called_once()
+    repo.last_sequence_for_prefix.assert_called_once()
     repo.create.assert_called_once()
     assert result["order_number"] == "PO-2026-0001"
 
@@ -105,7 +105,7 @@ def test_create_purchase_order_publishes_event():
     EventBus.clear()
     po = _make_po()
     repo = MagicMock()
-    repo.count_by_year.return_value = 2
+    repo.last_sequence_for_prefix.return_value = 2
     repo.create.return_value = po
 
     events_received = []
@@ -122,13 +122,13 @@ def test_create_purchase_order_publishes_event():
 def test_create_purchase_order_order_number_increments():
     po = _make_po(order_number="PO-2026-0005")
     repo = MagicMock()
-    repo.count_by_year.return_value = 4
+    repo.last_sequence_for_prefix.return_value = 4
     repo.create.return_value = po
     handler = CreatePurchaseOrderCommandHandler(repo, MagicMock())
 
     handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
 
-    # count=4 → 5th order
+    # last sequence 4 → next is 5
     called_po = repo.create.call_args[0][0]
     import datetime
 
@@ -523,3 +523,78 @@ def test_receive_already_received_po_raises():
                 items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
             )
         )
+
+
+def test_receive_draft_po_raises():
+    handler, po_repo, item_repo, receipt_repo, receipt_item_repo, publisher = (
+        _make_receipt_handler()
+    )
+    po_repo.get_by_id.return_value = _make_po(status=PurchaseOrderStatus.DRAFT)
+
+    with pytest.raises(DomainError, match="Only sent or partially received"):
+        handler.handle(
+            CreatePurchaseReceiptCommand(
+                purchase_order_id=1,
+                items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
+            )
+        )
+    receipt_repo.create.assert_not_called()
+
+
+def test_receive_repeated_item_lines_cannot_exceed_pending():
+    handler, po_repo, item_repo, receipt_repo, receipt_item_repo, publisher = (
+        _make_receipt_handler()
+    )
+    po_repo.get_by_id.return_value = _make_po(status=PurchaseOrderStatus.SENT)
+    item_repo.filter_by.return_value = [
+        _make_item(id=1, quantity_ordered=10, quantity_received=0)
+    ]
+
+    with pytest.raises(DomainError, match="Cannot receive 12 units for item 1"):
+        handler.handle(
+            CreatePurchaseReceiptCommand(
+                purchase_order_id=1,
+                items=[
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=6, lot_number="A"
+                    ),
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=6, lot_number="B"
+                    ),
+                ],
+            )
+        )
+    receipt_repo.create.assert_not_called()
+
+
+def test_receive_item_split_across_lines_completes_order():
+    handler, po_repo, item_repo, receipt_repo, receipt_item_repo, publisher = (
+        _make_receipt_handler()
+    )
+    po = _make_po(status=PurchaseOrderStatus.SENT)
+    po_repo.get_by_id.return_value = po
+    item_repo.filter_by.return_value = [
+        _make_item(id=1, quantity_ordered=10, quantity_received=0)
+    ]
+    receipt_repo.create.return_value = _make_receipt()
+    receipt_item_repo.create.return_value = MagicMock(id=1)
+    po_repo.update.side_effect = lambda updated: updated
+
+    handler.handle(
+        CreatePurchaseReceiptCommand(
+            purchase_order_id=1,
+            items=[
+                ReceiveItemInput(
+                    purchase_order_item_id=1, quantity_received=4, lot_number="A"
+                ),
+                ReceiveItemInput(
+                    purchase_order_item_id=1, quantity_received=6, lot_number="B"
+                ),
+            ],
+        )
+    )
+
+    assert item_repo.update.call_args[0][0].quantity_received == 10
+    published_event = publisher.publish.call_args[0][0]
+    assert published_event.is_complete is True
+    assert len(published_event.items) == 2

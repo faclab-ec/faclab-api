@@ -283,7 +283,7 @@ class SupplierRouter:
         result = handler.handle(
             CreateSupplierProductCommand(
                 supplier_id=supplier_id,
-                **new_product.model_dump(exclude_none=True, exclude={"supplier_id"}),
+                **new_product.model_dump(exclude_none=True),
             )
         )
         return DataResponse(

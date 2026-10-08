@@ -253,13 +253,19 @@ class AddAdjustmentItemCommandHandler(CommandHandler[AddAdjustmentItemCommand, d
 class UpdateAdjustmentItemCommandHandler(
     CommandHandler[UpdateAdjustmentItemCommand, dict]
 ):
-    def __init__(self, item_repo: AdjustmentItemRepository):
+    def __init__(
+        self, repo: InventoryAdjustmentRepository, item_repo: AdjustmentItemRepository
+    ):
+        self.repo = repo
         self.item_repo = item_repo
 
     def _handle(self, command: UpdateAdjustmentItemCommand) -> dict:
         item = self.item_repo.get_by_id(command.id)
         if item is None:
             raise NotFoundError(f"AdjustmentItem with id {command.id} not found")
+        adjustment = self.repo.get_by_id(item.adjustment_id)
+        if adjustment is None or adjustment.status != AdjustmentStatus.DRAFT:
+            raise DomainError("Solo se pueden modificar ítems de ajustes en DRAFT")
 
         updated = replace(
             item,
@@ -276,11 +282,17 @@ class UpdateAdjustmentItemCommandHandler(
 class RemoveAdjustmentItemCommandHandler(
     CommandHandler[RemoveAdjustmentItemCommand, None]
 ):
-    def __init__(self, item_repo: AdjustmentItemRepository):
+    def __init__(
+        self, repo: InventoryAdjustmentRepository, item_repo: AdjustmentItemRepository
+    ):
+        self.repo = repo
         self.item_repo = item_repo
 
     def _handle(self, command: RemoveAdjustmentItemCommand) -> None:
         item = self.item_repo.get_by_id(command.id)
         if item is None:
             raise NotFoundError(f"AdjustmentItem with id {command.id} not found")
+        adjustment = self.repo.get_by_id(item.adjustment_id)
+        if adjustment is None or adjustment.status != AdjustmentStatus.DRAFT:
+            raise DomainError("Solo se pueden eliminar ítems de ajustes en DRAFT")
         self.item_repo.delete(command.id)

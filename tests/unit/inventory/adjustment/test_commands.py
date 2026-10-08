@@ -368,7 +368,7 @@ def test_update_adjustment_item_success():
     item_repo.get_by_id.return_value = item
     item_repo.update.return_value = updated_item
 
-    handler = UpdateAdjustmentItemCommandHandler(item_repo)
+    handler = UpdateAdjustmentItemCommandHandler(_draft_parent_repo(), item_repo)
     result = handler.handle(UpdateAdjustmentItemCommand(id=1, actual_quantity=95))
 
     item_repo.update.assert_called_once()
@@ -379,7 +379,7 @@ def test_update_adjustment_item_not_found_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = None
 
-    handler = UpdateAdjustmentItemCommandHandler(item_repo)
+    handler = UpdateAdjustmentItemCommandHandler(_draft_parent_repo(), item_repo)
 
     with pytest.raises(NotFoundError):
         handler.handle(UpdateAdjustmentItemCommand(id=99, actual_quantity=50))
@@ -395,7 +395,45 @@ def test_remove_adjustment_item_success():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = item
 
-    handler = RemoveAdjustmentItemCommandHandler(item_repo)
+    handler = RemoveAdjustmentItemCommandHandler(_draft_parent_repo(), item_repo)
     handler.handle(RemoveAdjustmentItemCommand(id=1))
 
     item_repo.delete.assert_called_once_with(1)
+
+
+def _draft_parent_repo():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_adjustment()
+    return repo
+
+
+@pytest.mark.parametrize(
+    "status", [AdjustmentStatus.CONFIRMED, AdjustmentStatus.CANCELLED]
+)
+def test_update_item_requires_draft_parent(status):
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_adjustment(status=status)
+    item_repo = MagicMock()
+    item_repo.get_by_id.return_value = _make_item()
+
+    handler = UpdateAdjustmentItemCommandHandler(repo, item_repo)
+
+    with pytest.raises(DomainError):
+        handler.handle(UpdateAdjustmentItemCommand(id=1, actual_quantity=95))
+    item_repo.update.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "status", [AdjustmentStatus.CONFIRMED, AdjustmentStatus.CANCELLED]
+)
+def test_remove_item_requires_draft_parent(status):
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_adjustment(status=status)
+    item_repo = MagicMock()
+    item_repo.get_by_id.return_value = _make_item()
+
+    handler = RemoveAdjustmentItemCommandHandler(repo, item_repo)
+
+    with pytest.raises(DomainError):
+        handler.handle(RemoveAdjustmentItemCommand(id=1))
+    item_repo.delete.assert_not_called()

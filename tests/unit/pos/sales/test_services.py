@@ -107,6 +107,7 @@ class TestPOSConfirmSaleCommandHandler:
         handler.sale_repo.update.assert_called_once()
         handler.movement_repo.create.assert_called_once()
         handler.stock_repo.update.assert_called_once()
+        assert handler.stock_repo.update.call_args[0][0].quantity == 45
 
     def test_confirm_insufficient_stock_raises_error(self):
         from src.pos.sales.app.commands import POSConfirmSaleCommand
@@ -230,6 +231,7 @@ class TestPOSCancelSaleCommandHandler:
         assert result["status"] == SaleStatus.CANCELLED
         handler.movement_repo.create.assert_called_once()
         handler.stock_repo.update.assert_called_once()
+        assert handler.stock_repo.update.call_args[0][0].quantity == 50
 
     def test_cancel_sale_not_found(self):
         from src.pos.sales.app.commands import POSCancelSaleCommand

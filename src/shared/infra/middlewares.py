@@ -86,6 +86,38 @@ def _build_validation_error_response(
     }
 
 
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", None) or str(uuid.uuid4())
+
+
+async def request_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """FastAPI handles request validation before the error middleware sees it, so
+    register this with `app.add_exception_handler` to keep the error envelope."""
+    logger.warning("request_validation_error", detail=str(exc))
+    body = _build_validation_error_response(exc, _request_id(request))
+    return JSONResponse(status_code=422, content=body)
+
+
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    """Wraps Starlette HTTP errors (unknown route, wrong method...) in the error
+    envelope. Register with `app.add_exception_handler`."""
+    logger.warning(
+        "http_error",
+        status_code=exc.status_code,
+        detail=exc.detail,
+    )
+    body = _build_error_response(
+        error_code="HTTP_ERROR",
+        message=str(exc.detail),
+        request_id=_request_id(request),
+    )
+    return JSONResponse(status_code=exc.status_code, content=body, headers=exc.headers)
+
+
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
@@ -103,22 +135,6 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             return response
-        except RequestValidationError as exc:
-            logger.warning("request_validation_error", detail=str(exc))
-            body = _build_validation_error_response(exc, request_id)
-            return JSONResponse(status_code=422, content=body)
-        except StarletteHTTPException as exc:
-            logger.exception(
-                "http_error",
-                error_class=exc.__class__.__name__,
-                detail=exc.detail,
-            )
-            body = _build_error_response(
-                error_code="HTTP_ERROR",
-                message=str(exc.detail),
-                request_id=request_id,
-            )
-            return JSONResponse(status_code=exc.status_code, content=body)
         except BaseError as exc:
             status = _resolve_status(exc)
             logger.warning(

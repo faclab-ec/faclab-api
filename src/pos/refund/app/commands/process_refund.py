@@ -92,7 +92,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
             stock = self.stock_repo.first(product_id=item.product_id)
             if stock:
-                stock.update_quantity(abs(item.quantity))
+                stock = stock.update_quantity(abs(item.quantity))
                 self.stock_repo.update(stock)
 
         items_data = [
