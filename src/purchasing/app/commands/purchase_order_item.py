@@ -12,8 +12,9 @@ from src.purchasing.domain.entities import (
     PurchaseOrderItem,
     PurchaseOrderStatus,
 )
+from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 def _recalculate_totals(
@@ -52,9 +53,7 @@ class AddPurchaseOrderItemCommandHandler(
                 f"Purchase order with id {command.purchase_order_id} not found"
             )
         if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot add items to a purchase order with status '{purchase_order.status.value}'."
-            )
+            raise InvalidPurchaseOrderStatusError(purchase_order.status, "add items to")
 
         item = PurchaseOrderItem(
             purchase_order_id=command.purchase_order_id,
@@ -103,8 +102,8 @@ class UpdatePurchaseOrderItemCommandHandler(
                 f"Purchase order with id {item.purchase_order_id} not found"
             )
         if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot update items on a purchase order with status '{purchase_order.status.value}'."
+            raise InvalidPurchaseOrderStatusError(
+                purchase_order.status, "update items of"
             )
 
         updated = replace(
@@ -149,8 +148,8 @@ class RemovePurchaseOrderItemCommandHandler(
                 f"Purchase order with id {item.purchase_order_id} not found"
             )
         if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot remove items from a purchase order with status '{purchase_order.status.value}'."
+            raise InvalidPurchaseOrderStatusError(
+                purchase_order.status, "remove items from"
             )
 
         self.item_repo.delete(command.id)

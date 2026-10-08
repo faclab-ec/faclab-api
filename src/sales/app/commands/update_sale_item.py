@@ -4,10 +4,10 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -46,10 +46,7 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
             raise NotFoundError(f"Sale item with id {command.sale_item_id} not found")
 
         if sale_item.sale_id != command.sale_id:
-            raise DomainError(
-                f"Sale item {command.sale_item_id} does not belong to "
-                f"sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         if command.quantity is not None:
             sale_item.quantity = command.quantity

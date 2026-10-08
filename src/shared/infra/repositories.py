@@ -1,13 +1,14 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, ClassVar, Generic, TypeVar
 
 from sqlalchemy import asc, desc, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from src.shared.app.repositories import Repository
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.exceptions import AlreadyExistsError, NotFoundError
 from src.shared.domain.specifications import Specification
 from src.shared.infra.mappers import Mapper
 
@@ -19,13 +20,22 @@ OrderCriteria = str | Any
 
 class SqlAlchemyRepository(Repository[E], Generic[E]):
     __model__: ClassVar[type[Any]]
+    # Unique constraint (or unique index) name -> error raised when it is violated
+    __unique_errors__: ClassVar[dict[str, Callable[[], AlreadyExistsError]]] = {}
 
     def __init__(self, session: Session, mapper: Mapper[E, Any]):
         self.session = session
         self.mapper = mapper
 
     def _save(self) -> None:
-        self.session.flush()
+        try:
+            self.session.flush()
+        except IntegrityError as exc:
+            diag = getattr(exc.orig, "diag", None)
+            error = self.__unique_errors__.get(getattr(diag, "constraint_name", ""))
+            if error is None:
+                raise
+            raise error() from exc
 
     def create(self, entity: E) -> E:
         """

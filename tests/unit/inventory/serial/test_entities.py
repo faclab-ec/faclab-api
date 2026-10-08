@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from src.inventory.serial.domain.entities import SerialNumber, SerialStatus
-from src.shared.domain.exceptions import DomainError
+from src.inventory.serial.domain.exceptions import InvalidSerialStatusError
 
 
 def _make_serial(**overrides) -> SerialNumber:
@@ -31,19 +31,19 @@ def test_mark_sold_from_available():
 
 def test_mark_sold_from_reserved_raises():
     serial = _make_serial(status=SerialStatus.RESERVED)
-    with pytest.raises(DomainError, match="Only AVAILABLE serials can be sold"):
+    with pytest.raises(InvalidSerialStatusError, match="as sold"):
         serial.mark_sold()
 
 
 def test_mark_sold_from_sold_raises():
     serial = _make_serial(status=SerialStatus.SOLD)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidSerialStatusError):
         serial.mark_sold()
 
 
 def test_mark_sold_from_returned_raises():
     serial = _make_serial(status=SerialStatus.RETURNED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidSerialStatusError):
         serial.mark_sold()
 
 
@@ -60,13 +60,13 @@ def test_mark_reserved_from_available():
 
 def test_mark_reserved_from_sold_raises():
     serial = _make_serial(status=SerialStatus.SOLD)
-    with pytest.raises(DomainError, match="Only AVAILABLE serials can be reserved"):
+    with pytest.raises(InvalidSerialStatusError, match="as reserved"):
         serial.mark_reserved()
 
 
 def test_mark_reserved_from_reserved_raises():
     serial = _make_serial(status=SerialStatus.RESERVED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidSerialStatusError):
         serial.mark_reserved()
 
 
@@ -83,13 +83,13 @@ def test_mark_returned_from_sold():
 
 def test_mark_returned_from_available_raises():
     serial = _make_serial(status=SerialStatus.AVAILABLE)
-    with pytest.raises(DomainError, match="Only SOLD serials can be returned"):
+    with pytest.raises(InvalidSerialStatusError, match="as returned"):
         serial.mark_returned()
 
 
 def test_mark_returned_from_reserved_raises():
     serial = _make_serial(status=SerialStatus.RESERVED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidSerialStatusError):
         serial.mark_returned()
 
 

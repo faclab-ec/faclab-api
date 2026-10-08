@@ -17,9 +17,13 @@ from src.purchasing.domain.entities import (
     PurchaseReceiptItem,
 )
 from src.purchasing.domain.events import PurchaseOrderReceived
+from src.purchasing.domain.exceptions import (
+    ExceedsPendingQuantityError,
+    InvalidPurchaseOrderStatusError,
+)
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -74,10 +78,7 @@ class CreatePurchaseReceiptCommandHandler(
             PurchaseOrderStatus.SENT,
             PurchaseOrderStatus.PARTIAL,
         ):
-            raise DomainError(
-                f"Cannot receive goods for a purchase order with status '{purchase_order.status.value}'. "
-                "Only sent or partially received orders can be received."
-            )
+            raise InvalidPurchaseOrderStatusError(purchase_order.status, "receive")
 
         # Validate quantities against pending amounts
         po_items_by_id: dict[int, PurchaseOrderItem] = {
@@ -100,9 +101,8 @@ class CreatePurchaseReceiptCommandHandler(
                 requested.get(item_id, 0) + receive_item.quantity_received
             )
             if requested[item_id] > po_item.quantity_pending:
-                raise DomainError(
-                    f"Cannot receive {requested[item_id]} units for item {item_id}. "
-                    f"Only {po_item.quantity_pending} units are pending."
+                raise ExceedsPendingQuantityError(
+                    item_id, requested[item_id], po_item.quantity_pending
                 )
 
         # Create the receipt

@@ -5,8 +5,9 @@ from wireup import injectable
 
 from src.inventory.lot.app.repositories import LotRepository
 from src.inventory.lot.domain.entities import Lot
+from src.inventory.lot.domain.exceptions import LotAlreadyExistsError
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError, ValidationError
 
 
 @dataclass
@@ -38,9 +39,7 @@ class CreateLotCommandHandler(CommandHandler[CreateLotCommand, dict]):
             product_id=command.product_id, lot_number=command.lot_number
         )
         if existing is not None:
-            raise DomainError(
-                f"Lot '{command.lot_number}' already exists for product {command.product_id}."
-            )
+            raise LotAlreadyExistsError(command.lot_number, command.product_id)
 
         lot = Lot(
             product_id=command.product_id,
@@ -68,7 +67,7 @@ class UpdateLotCommandHandler(CommandHandler[UpdateLotCommand, dict]):
         updates = {}
         if command.current_quantity is not None:
             if command.current_quantity < 0:
-                raise DomainError(
+                raise ValidationError(
                     f"Current quantity cannot be negative. Received: {command.current_quantity}"
                 )
             updates["current_quantity"] = command.current_quantity

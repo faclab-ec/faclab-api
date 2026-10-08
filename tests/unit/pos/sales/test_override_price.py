@@ -9,7 +9,7 @@ from src.pos.sales.app.commands.override_price import (
     OverrideItemPriceCommandHandler,
 )
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 
@@ -157,7 +157,7 @@ class TestOverrideItemPriceCommandHandler:
         item = _make_item(sale_id=99)
         handler = _build_handler(sale=sale, item=item)
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(SaleItemNotInSaleError):
             handler._handle(
                 OverrideItemPriceCommand(
                     sale_id=1,

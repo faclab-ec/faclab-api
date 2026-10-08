@@ -8,6 +8,7 @@ from src.inventory.movement.app.commands.movement import (
 )
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.stock.app.repositories import StockRepository
+from src.inventory.stock.domain.exceptions import InsufficientStockError
 from src.inventory.transfer.app.repositories import (
     StockTransferItemRepository,
     StockTransferRepository,
@@ -22,9 +23,14 @@ from src.inventory.transfer.domain.events import (
     StockTransferConfirmed,
     StockTransferReceived,
 )
+from src.inventory.transfer.domain.exceptions import (
+    InvalidTransferStatusError,
+    SameLocationTransferError,
+    TransferHasNoItemsError,
+)
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError, ValidationError
 
 # ---------------------------------------------------------------------------
 # Transfer commands
@@ -106,7 +112,7 @@ class CreateStockTransferCommandHandler(
 
     def _handle(self, command: CreateStockTransferCommand) -> dict:
         if command.source_location_id == command.destination_location_id:
-            raise DomainError("La ubicación de origen y destino no pueden ser la misma")
+            raise SameLocationTransferError()
         transfer = StockTransfer(
             source_location_id=command.source_location_id,
             destination_location_id=command.destination_location_id,
@@ -129,7 +135,7 @@ class UpdateStockTransferCommandHandler(
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
         if transfer.status != TransferStatus.DRAFT:
-            raise DomainError("Solo se pueden actualizar transferencias en DRAFT")
+            raise InvalidTransferStatusError(transfer.status, "actualizar")
 
         updated = replace(
             transfer,
@@ -154,7 +160,7 @@ class DeleteStockTransferCommandHandler(
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
         if transfer.status != TransferStatus.DRAFT:
-            raise DomainError("Solo se pueden eliminar transferencias en DRAFT")
+            raise InvalidTransferStatusError(transfer.status, "eliminar")
         self.repo.delete(command.id)
 
 
@@ -181,7 +187,7 @@ class ConfirmStockTransferCommandHandler(
 
         items = self.item_repo.filter_by(transfer_id=transfer.id)
         if not items:
-            raise DomainError("La transferencia no tiene ítems")
+            raise TransferHasNoItemsError(transfer.id)
 
         for item in items:
             stock = self.stock_repo.first(
@@ -189,10 +195,7 @@ class ConfirmStockTransferCommandHandler(
                 location_id=transfer.source_location_id,
             )
             if stock is None or stock.available_quantity < item.quantity:
-                raise DomainError(
-                    f"Stock insuficiente para producto {item.product_id} "
-                    f"en la ubicación de origen"
-                )
+                raise InsufficientStockError(item.product_id, item.quantity)
             updated_stock = replace(
                 stock,
                 reserved_quantity=stock.reserved_quantity + item.quantity,
@@ -236,7 +239,7 @@ class ReceiveStockTransferCommandHandler(
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
         if transfer.status != TransferStatus.CONFIRMED:
-            raise DomainError("Solo transferencias CONFIRMED pueden recibirse")
+            raise InvalidTransferStatusError(transfer.status, "recibir")
 
         items = self.item_repo.filter_by(transfer_id=transfer.id)
 
@@ -361,9 +364,9 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
                 f"StockTransfer with id {command.transfer_id} not found"
             )
         if transfer.status != TransferStatus.DRAFT:
-            raise DomainError("Solo se pueden agregar ítems a transferencias en DRAFT")
+            raise InvalidTransferStatusError(transfer.status, "agregar ítems a")
         if command.quantity <= 0:
-            raise DomainError("La cantidad debe ser mayor a cero")
+            raise ValidationError("La cantidad debe ser mayor a cero")
 
         item = StockTransferItem(
             transfer_id=command.transfer_id,
@@ -389,12 +392,12 @@ class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand,
         if item is None:
             raise NotFoundError(f"StockTransferItem with id {command.id} not found")
         transfer = self.repo.get_by_id(item.transfer_id)
-        if transfer is None or transfer.status != TransferStatus.DRAFT:
-            raise DomainError(
-                "Solo se pueden modificar ítems de transferencias en DRAFT"
-            )
+        if transfer is None:
+            raise NotFoundError(f"StockTransfer with id {item.transfer_id} not found")
+        if transfer.status != TransferStatus.DRAFT:
+            raise InvalidTransferStatusError(transfer.status, "modificar ítems de")
         if command.quantity is not None and command.quantity <= 0:
-            raise DomainError("La cantidad debe ser mayor a cero")
+            raise ValidationError("La cantidad debe ser mayor a cero")
 
         updated = replace(
             item,
@@ -420,8 +423,8 @@ class RemoveTransferItemCommandHandler(CommandHandler[RemoveTransferItemCommand,
         if item is None:
             raise NotFoundError(f"StockTransferItem with id {command.id} not found")
         transfer = self.repo.get_by_id(item.transfer_id)
-        if transfer is None or transfer.status != TransferStatus.DRAFT:
-            raise DomainError(
-                "Solo se pueden eliminar ítems de transferencias en DRAFT"
-            )
+        if transfer is None:
+            raise NotFoundError(f"StockTransfer with id {item.transfer_id} not found")
+        if transfer.status != TransferStatus.DRAFT:
+            raise InvalidTransferStatusError(transfer.status, "eliminar ítems de")
         self.item_repo.delete(command.id)

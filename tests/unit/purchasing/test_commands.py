@@ -35,7 +35,11 @@ from src.purchasing.domain.entities import (
     PurchaseOrderStatus,
     PurchaseReceipt,
 )
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.purchasing.domain.exceptions import (
+    ExceedsPendingQuantityError,
+    InvalidPurchaseOrderStatusError,
+)
+from src.shared.domain.exceptions import NotFoundError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,7 +164,7 @@ def test_update_purchase_order_non_draft_raises():
     repo.get_by_id.return_value = po
     handler = UpdatePurchaseOrderCommandHandler(repo)
 
-    with pytest.raises(DomainError, match="Only DRAFT orders can be updated"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot update"):
         handler.handle(UpdatePurchaseOrderCommand(id=1, supplier_id=20))
 
 
@@ -194,7 +198,7 @@ def test_delete_purchase_order_non_draft_raises():
     repo.get_by_id.return_value = po
     handler = DeletePurchaseOrderCommandHandler(repo)
 
-    with pytest.raises(DomainError, match="Only DRAFT orders can be deleted"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot delete"):
         handler.handle(DeletePurchaseOrderCommand(id=1))
 
 
@@ -332,7 +336,7 @@ def test_add_item_to_non_draft_po_raises():
     po_repo.get_by_id.return_value = po
     handler = AddPurchaseOrderItemCommandHandler(item_repo, po_repo)
 
-    with pytest.raises(DomainError, match="Cannot add items"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot add items"):
         handler.handle(
             AddPurchaseOrderItemCommand(
                 purchase_order_id=1,
@@ -482,7 +486,7 @@ def test_receive_excess_quantity_raises():
     po_repo.get_by_id.return_value = po
     item_repo.filter_by.return_value = [item]
 
-    with pytest.raises(DomainError, match="Only 5 units are pending"):
+    with pytest.raises(ExceedsPendingQuantityError, match="Only 5 units are pending"):
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
@@ -500,7 +504,7 @@ def test_receive_cancelled_po_raises():
     po = _make_po(status=PurchaseOrderStatus.CANCELLED)
     po_repo.get_by_id.return_value = po
 
-    with pytest.raises(DomainError, match="Cannot receive goods"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot receive"):
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
@@ -516,7 +520,7 @@ def test_receive_already_received_po_raises():
     po = _make_po(status=PurchaseOrderStatus.RECEIVED)
     po_repo.get_by_id.return_value = po
 
-    with pytest.raises(DomainError, match="Cannot receive goods"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot receive"):
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
@@ -531,7 +535,7 @@ def test_receive_draft_po_raises():
     )
     po_repo.get_by_id.return_value = _make_po(status=PurchaseOrderStatus.DRAFT)
 
-    with pytest.raises(DomainError, match="Only sent or partially received"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="status 'draft'"):
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
@@ -550,7 +554,9 @@ def test_receive_repeated_item_lines_cannot_exceed_pending():
         _make_item(id=1, quantity_ordered=10, quantity_received=0)
     ]
 
-    with pytest.raises(DomainError, match="Cannot receive 12 units for item 1"):
+    with pytest.raises(
+        ExceedsPendingQuantityError, match="Cannot receive 12 units for item 1"
+    ):
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,

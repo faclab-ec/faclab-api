@@ -4,11 +4,11 @@ from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.events import SaleItemRemoved
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -51,10 +51,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
 
         # Verificar que el item pertenece a la venta
         if sale_item.sale_id != command.sale_id:
-            raise DomainError(
-                f"Sale item {command.sale_item_id} does not belong to "
-                f"sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         # Guardar info del item para el evento
         item_dict = sale_item.dict()

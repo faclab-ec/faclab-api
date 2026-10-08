@@ -1,7 +1,12 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from src.shared.domain.entities import Entity
+from src.shared.domain.exceptions import AlreadyExistsError
 from src.shared.infra.repositories import SqlAlchemyRepository
 
 
@@ -11,8 +16,16 @@ class FakeEntity(Entity):
     id: int | None = None
 
 
+class NameTakenError(AlreadyExistsError):
+    error_code = "NAME_ALREADY_EXISTS"
+
+    def __init__(self):
+        super().__init__("name already taken")
+
+
 class FakeRepo(SqlAlchemyRepository[FakeEntity]):
     __model__ = MagicMock
+    __unique_errors__ = {"fakes_name_key": NameTakenError}
 
 
 def _make_repo():
@@ -56,3 +69,25 @@ def test_delete_flushes():
     repo.delete(1)
     session.flush.assert_called_once()
     session.commit.assert_not_called()
+
+
+def _violation(constraint: str) -> IntegrityError:
+    orig = Exception("duplicate key value violates unique constraint")
+    orig.diag = SimpleNamespace(constraint_name=constraint)  # ty: ignore[unresolved-attribute]
+    return IntegrityError(statement="INSERT ...", params={}, orig=orig)
+
+
+def test_known_unique_violation_becomes_its_domain_error():
+    repo, session, _ = _make_repo()
+    session.flush.side_effect = _violation("fakes_name_key")
+
+    with pytest.raises(NameTakenError):
+        repo.create(FakeEntity(name="test"))
+
+
+def test_other_integrity_errors_propagate():
+    repo, session, _ = _make_repo()
+    session.flush.side_effect = _violation("some_other_key")
+
+    with pytest.raises(IntegrityError):
+        repo.create(FakeEntity(name="test"))

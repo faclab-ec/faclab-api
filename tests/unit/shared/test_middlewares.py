@@ -19,30 +19,79 @@ def _make_request():
     return req
 
 
-def test_integrity_error_returns_409():
+def _dispatch(exc: Exception) -> tuple[int, dict]:
     middleware = _make_middleware()
-    fake_request = _make_request()
-    call_next = AsyncMock(
-        side_effect=IntegrityError(
-            statement="DELETE FROM units_of_measure WHERE id = 8",
-            params={"id": 8},
-            orig=Exception(
-                'update or delete on table "units_of_measure" violates foreign key '
-                'constraint "products_unit_of_measure_id_fkey" on table "products"'
-            ),
+    response = asyncio.run(
+        middleware.dispatch(_make_request(), AsyncMock(side_effect=exc))
+    )
+    return response.status_code, json.loads(response.body)
+
+
+def _integrity_error(message: str, pgcode: str | None = None) -> IntegrityError:
+    orig = Exception(message)
+    orig.pgcode = pgcode  # ty: ignore[unresolved-attribute]
+    return IntegrityError(statement="...", params={}, orig=orig)
+
+
+def test_deleting_a_referenced_record_returns_409():
+    status, body = _dispatch(
+        _integrity_error(
+            'update or delete on table "units_of_measure" violates foreign key '
+            'constraint "products_unit_of_measure_id_fkey" on table "products"'
         )
     )
 
-    response = asyncio.get_event_loop().run_until_complete(
-        middleware.dispatch(fake_request, call_next)
-    )
-
-    assert response.status_code == 409
-    body = json.loads(response.body)
-    assert body["errors"][0]["code"] == "INTEGRITY_ERROR"
+    assert status == 409
+    assert body["errors"][0]["code"] == "RECORD_IN_USE"
     assert "referenced by other records" in body["errors"][0]["message"]
     assert "requestId" in body["meta"]
     assert "timestamp" in body["meta"]
+
+
+def test_referencing_a_missing_record_returns_422():
+    status, body = _dispatch(
+        _integrity_error(
+            'insert or update on table "movements" violates foreign key '
+            'constraint "movements_product_id_fkey"',
+            pgcode="23503",
+        )
+    )
+
+    assert status == 422
+    assert body["errors"][0]["code"] == "REFERENCE_NOT_FOUND"
+
+
+def test_untranslated_unique_violation_returns_409():
+    status, body = _dispatch(
+        _integrity_error(
+            'duplicate key value violates unique constraint "uq_stock_product_location"',
+            pgcode="23505",
+        )
+    )
+
+    assert status == 409
+    assert body["errors"][0]["code"] == "ALREADY_EXISTS"
+    # Database internals never reach the client
+    assert "uq_stock" not in json.dumps(body)
+
+
+def test_conflict_errors_return_409_with_their_code():
+    from src.catalog.product.domain.exceptions import ProductSkuAlreadyExistsError
+
+    status, body = _dispatch(ProductSkuAlreadyExistsError())
+
+    assert status == 409
+    assert body["errors"][0]["code"] == "PRODUCT_SKU_ALREADY_EXISTS"
+
+
+def test_domain_error_detail_is_included():
+    from src.sales.domain.exceptions import InvalidSaleStatusError
+
+    status, body = _dispatch(InvalidSaleStatusError("CONFIRMED", "confirm"))
+
+    assert status == 400
+    assert body["errors"][0]["code"] == "INVALID_SALE_STATUS"
+    assert body["errors"][0]["detail"] == "current_status=CONFIRMED, operation=confirm"
 
 
 def _envelope_app():

@@ -2,8 +2,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
+from src.inventory.serial.domain.exceptions import InvalidSerialStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class SerialStatus(StrEnum):
@@ -29,22 +29,22 @@ class SerialNumber(Entity):
 
     def mark_sold(self) -> "SerialNumber":
         if self.status != SerialStatus.AVAILABLE:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as sold. Current status: '{self.status.value}'. Only AVAILABLE serials can be sold."
+            raise InvalidSerialStatusError(
+                self.serial_number, self.status, SerialStatus.SOLD
             )
         return replace(self, status=SerialStatus.SOLD)
 
     def mark_reserved(self) -> "SerialNumber":
         if self.status != SerialStatus.AVAILABLE:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as reserved. Current status: '{self.status.value}'. Only AVAILABLE serials can be reserved."
+            raise InvalidSerialStatusError(
+                self.serial_number, self.status, SerialStatus.RESERVED
             )
         return replace(self, status=SerialStatus.RESERVED)
 
     def mark_returned(self) -> "SerialNumber":
         if self.status != SerialStatus.SOLD:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as returned. Current status: '{self.status.value}'. Only SOLD serials can be returned."
+            raise InvalidSerialStatusError(
+                self.serial_number, self.status, SerialStatus.RETURNED
             )
         return replace(self, status=SerialStatus.RETURNED)
 

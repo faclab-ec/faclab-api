@@ -3,6 +3,7 @@ from wireup import injectable
 
 from src.customers.app.repositories import CustomerContactRepository, CustomerRepository
 from src.customers.domain.entities import Customer, CustomerContact
+from src.customers.domain.exceptions import CustomerTaxIdAlreadyExistsError
 from src.customers.infra.mappers import CustomerContactMapper, CustomerMapper
 from src.customers.infra.models import CustomerContactModel, CustomerModel
 from src.shared.infra.repositories import SqlAlchemyRepository
@@ -11,6 +12,9 @@ from src.shared.infra.repositories import SqlAlchemyRepository
 @injectable(lifetime="scoped", as_type=CustomerRepository)
 class SqlAlchemyCustomerRepository(SqlAlchemyRepository[Customer], CustomerRepository):
     __model__ = CustomerModel
+    __unique_errors__ = {
+        "customers_tax_id_key": CustomerTaxIdAlreadyExistsError,
+    }
 
     def __init__(self, session: Session, mapper: CustomerMapper):
         super().__init__(session, mapper)

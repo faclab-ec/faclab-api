@@ -129,12 +129,13 @@ def test_confirming_an_adjustment_moves_stock_to_the_counted_quantity(api, store
 
     assert confirmed["status"] == "confirmed"
     assert _stock(api, product["id"], shelf["id"])["quantity"] == 7
-    api.error(
+    error = api.error(
         "PUT",
         f"/api/admin/adjustment-items/{item['id']}",
         400,
         json={"actualQuantity": 1},
     )
+    assert error["code"] == "INVALID_ADJUSTMENT_STATUS"
 
 
 def test_transfer_reserves_on_confirm_and_moves_stock_on_receive(api, store):
@@ -192,6 +193,8 @@ def test_transfer_without_enough_stock_cannot_be_confirmed(api, store):
         {"productId": product["id"], "quantity": 3},
     )
 
-    api.error("POST", f"/api/admin/transfers/{transfer['id']}/confirm", 400)
+    error = api.error("POST", f"/api/admin/transfers/{transfer['id']}/confirm", 400)
+
+    assert error["code"] == "INSUFFICIENT_STOCK"
 
     assert api.get(f"/api/admin/transfers/{transfer['id']}")["status"] == "draft"

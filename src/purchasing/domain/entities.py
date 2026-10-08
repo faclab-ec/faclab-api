@@ -3,8 +3,8 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class PurchaseOrderStatus(StrEnum):
@@ -31,18 +31,12 @@ class PurchaseOrder(Entity):
 
     def send(self) -> "PurchaseOrder":
         if self.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot send a purchase order with status '{self.status.value}'. Only DRAFT orders can be sent."
-            )
+            raise InvalidPurchaseOrderStatusError(self.status, "send")
         return replace(self, status=PurchaseOrderStatus.SENT)
 
     def cancel(self) -> "PurchaseOrder":
-        if self.status == PurchaseOrderStatus.RECEIVED:
-            raise DomainError(
-                "Cannot cancel a purchase order that has already been received."
-            )
-        if self.status == PurchaseOrderStatus.CANCELLED:
-            raise DomainError("Purchase order is already cancelled.")
+        if self.status in (PurchaseOrderStatus.RECEIVED, PurchaseOrderStatus.CANCELLED):
+            raise InvalidPurchaseOrderStatusError(self.status, "cancel")
         return replace(self, status=PurchaseOrderStatus.CANCELLED)
 
     def mark_partial(self) -> "PurchaseOrder":

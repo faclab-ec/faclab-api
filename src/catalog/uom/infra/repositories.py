@@ -3,6 +3,7 @@ from wireup import injectable
 
 from src.catalog.uom.app.repositories import UnitOfMeasureRepository
 from src.catalog.uom.domain.entities import UnitOfMeasure
+from src.catalog.uom.domain.exceptions import UnitOfMeasureSymbolAlreadyExistsError
 from src.catalog.uom.infra.mappers import UnitOfMeasureMapper
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.shared.infra.repositories import SqlAlchemyRepository
@@ -13,6 +14,9 @@ class SqlAlchemyUnitOfMeasureRepository(
     SqlAlchemyRepository[UnitOfMeasure], UnitOfMeasureRepository
 ):
     __model__ = UnitOfMeasureModel
+    __unique_errors__ = {
+        "units_of_measure_symbol_key": UnitOfMeasureSymbolAlreadyExistsError,
+    }
 
     def __init__(self, session: Session, mapper: UnitOfMeasureMapper):
         super().__init__(session, mapper)

@@ -451,13 +451,18 @@ Todos los campos en request y response usan **camelCase**:
 **Formato de error**:
 ```json
 {
-  "errorCode": "DOMAIN_ERROR",
-  "message": "Transfer must be in draft status to confirm",
-  "timestamp": "2026-03-01T10:00:00",
-  "requestId": "abc-123",
-  "detail": null
+  "errors": [
+    {
+      "code": "INVALID_TRANSFER_STATUS",
+      "message": "No se puede confirmar una transferencia en estado received",
+      "detail": "current_status=received, operation=confirmar"
+    }
+  ],
+  "meta": {"requestId": "abc-123", "timestamp": "2026-03-01T10:00:00Z"}
 }
 ```
+
+Códigos: `INVALID_TRANSFER_STATUS` (operación no permitida en el estado actual), `TRANSFER_HAS_NO_ITEMS`, `INSUFFICIENT_STOCK` (400) y `VALIDATION_ERROR` (422, incluye origen igual a destino).
 
 ---
 

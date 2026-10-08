@@ -280,17 +280,28 @@ Todos los errores siguen el mismo formato:
 
 ```json
 {
-  "error_code": "NOT_FOUND",
-  "message": "Entity with id 42 not found",
-  "timestamp": "2026-02-13T10:00:00Z",
-  "request_id": "550e8400-e29b-41d4-a716-446655440000",
-  "detail": "Customer"
+  "errors": [
+    {
+      "code": "INVALID_PURCHASE_ORDER_STATUS",
+      "message": "Cannot send a purchase order with status 'cancelled'",
+      "detail": "current_status=cancelled, operation=send"
+    }
+  ],
+  "meta": {"requestId": "550e8400-e29b-41d4-a716-446655440000", "timestamp": "2026-10-08T10:00:00Z"}
 }
 ```
 
-| `error_code` | HTTP | Origen |
+`field` aparece en los errores de validación (ruta del campo, p. ej. `body.code`) y `detail` cuando la excepción trae contexto adicional.
+
+| `code` | HTTP | Origen |
 |---|---|---|
-| `DOMAIN_ERROR` | 400 | `DomainError` — regla de negocio |
-| `APPLICATION_ERROR` | 400 | `ApplicationError` — logica de aplicacion |
+| Códigos de estado por agregado (`INVALID_SALE_STATUS`, `INVALID_PURCHASE_ORDER_STATUS`, `INVALID_ADJUSTMENT_STATUS`, `INVALID_TRANSFER_STATUS`, `INVALID_SERIAL_STATUS`, `INVALID_REFUND_STATUS`…) y otras reglas de negocio (`INSUFFICIENT_STOCK`, `EXCEEDS_PENDING_QUANTITY`, `SALE_HAS_NO_ITEMS`…) | 400 | Subclases de `DomainError` en `<módulo>/domain/exceptions.py` |
+| `*_ALREADY_EXISTS` (`PRODUCT_SKU_ALREADY_EXISTS`, `CUSTOMER_TAX_ID_ALREADY_EXISTS`, `LOCATION_CODE_ALREADY_EXISTS`…) | 409 | `AlreadyExistsError`; los repositorios traducen la violación de cada constraint de unicidad (`__unique_errors__`) |
+| `ALREADY_EXISTS` | 409 | Violación de unicidad sin traducción específica |
+| `RECORD_IN_USE` | 409 | Borrar un registro referenciado por otros (FK) |
+| `REFERENCE_NOT_FOUND` | 422 | El cuerpo referencia un registro inexistente (FK) |
 | `NOT_FOUND` | 404 | `NotFoundError` — recurso inexistente |
-| `VALIDATION_ERROR` | 422 | `ValidationError` — datos invalidos |
+| `VALIDATION_ERROR` | 422 | Validación del request o `ValidationError` del dominio |
+| `PERMISSION_DENIED` / `PASSWORD_CHANGE_REQUIRED` | 403 | Autorización |
+| `INVALID_CREDENTIALS` / `INVALID_TOKEN` / `TOKEN_EXPIRED` | 401 | Autenticación |
+| `INTERNAL_ERROR` | 500 | Excepción no controlada |

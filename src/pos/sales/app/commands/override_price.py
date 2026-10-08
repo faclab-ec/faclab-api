@@ -4,7 +4,7 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -48,9 +48,7 @@ class OverrideItemPriceCommandHandler(CommandHandler[OverrideItemPriceCommand, d
             raise NotFoundError(f"Sale item with id {command.item_id} not found")
 
         if item.sale_id != command.sale_id:
-            raise ValidationError(
-                f"Item {command.item_id} does not belong to sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.item_id, command.sale_id)
 
         item.unit_price = command.new_price
         item.price_override = command.new_price

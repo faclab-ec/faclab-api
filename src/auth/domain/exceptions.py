@@ -1,4 +1,4 @@
-from src.shared.domain.exceptions import ApplicationError, DomainError
+from src.shared.domain.exceptions import AlreadyExistsError, ApplicationError
 
 
 class InvalidCredentialsError(ApplicationError):
@@ -21,9 +21,15 @@ class PasswordChangeRequiredError(ApplicationError):
     error_code = "PASSWORD_CHANGE_REQUIRED"
 
 
-class UsernameAlreadyExistsError(DomainError):
+class UsernameAlreadyExistsError(AlreadyExistsError):
     error_code = "USERNAME_ALREADY_EXISTS"
 
+    def __init__(self, message: str = "username already exists"):
+        super().__init__(message)
 
-class EmailAlreadyExistsError(DomainError):
+
+class EmailAlreadyExistsError(AlreadyExistsError):
     error_code = "EMAIL_ALREADY_EXISTS"
+
+    def __init__(self, message: str = "email already exists"):
+        super().__init__(message)

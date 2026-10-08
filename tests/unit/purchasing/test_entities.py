@@ -10,7 +10,7 @@ from src.purchasing.domain.entities import (
     PurchaseReceipt,
     PurchaseReceiptItem,
 )
-from src.shared.domain.exceptions import DomainError
+from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -59,13 +59,13 @@ def test_purchase_order_send_from_draft():
 
 def test_purchase_order_send_from_non_draft_raises():
     po = _make_po(status=PurchaseOrderStatus.SENT)
-    with pytest.raises(DomainError, match="Only DRAFT orders can be sent"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot send"):
         po.send()
 
 
 def test_purchase_order_send_from_partial_raises():
     po = _make_po(status=PurchaseOrderStatus.PARTIAL)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidPurchaseOrderStatusError):
         po.send()
 
 
@@ -89,13 +89,13 @@ def test_purchase_order_cancel_from_partial():
 
 def test_purchase_order_cancel_from_received_raises():
     po = _make_po(status=PurchaseOrderStatus.RECEIVED)
-    with pytest.raises(DomainError, match="already been received"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="status 'received'"):
         po.cancel()
 
 
 def test_purchase_order_cancel_already_cancelled_raises():
     po = _make_po(status=PurchaseOrderStatus.CANCELLED)
-    with pytest.raises(DomainError, match="already cancelled"):
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="status 'cancelled'"):
         po.cancel()
 
 

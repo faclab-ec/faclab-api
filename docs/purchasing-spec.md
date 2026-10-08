@@ -559,17 +559,22 @@ Todas las respuestas de error siguen el formato estándar:
 
 ```json
 {
-  "errorCode": "DOMAIN_ERROR",
-  "message": "La orden de compra no está en estado borrador",
-  "timestamp": "2026-03-08T10:00:00Z",
-  "requestId": "abc-123-def",
-  "detail": null
+  "errors": [
+    {
+      "code": "INVALID_PURCHASE_ORDER_STATUS",
+      "message": "Cannot send a purchase order with status 'cancelled'",
+      "detail": "current_status=cancelled, operation=send"
+    }
+  ],
+  "meta": {"requestId": "abc-123-def", "timestamp": "2026-03-08T10:00:00Z"}
 }
 ```
 
 | Código HTTP | `errorCode`        | Casos típicos                              |
 | ----------- | ------------------ | ------------------------------------------ |
-| 400         | `DOMAIN_ERROR`     | Transición de estado inválida, exceder cantidad pendiente |
+| 400         | `INVALID_PURCHASE_ORDER_STATUS` | Operación no permitida en el estado actual de la orden |
+| 400         | `EXCEEDS_PENDING_QUANTITY` | Recibir más unidades de las pendientes |
+| 409         | `PURCHASE_ORDER_NUMBER_ALREADY_EXISTS` | Número de orden duplicado (creación concurrente) |
 | 404         | `NOT_FOUND`        | Orden, ítem, proveedor o producto no existe|
 | 422         | `VALIDATION_ERROR` | Campos requeridos faltantes, valores fuera de rango |
 

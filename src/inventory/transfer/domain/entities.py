@@ -2,8 +2,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
+from src.inventory.transfer.domain.exceptions import InvalidTransferStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class TransferStatus(StrEnum):
@@ -26,17 +26,17 @@ class StockTransfer(Entity):
 
     def confirm(self) -> "StockTransfer":
         if self.status != TransferStatus.DRAFT:
-            raise DomainError("Solo transferencias en DRAFT pueden confirmarse")
+            raise InvalidTransferStatusError(self.status, "confirmar")
         return replace(self, status=TransferStatus.CONFIRMED)
 
     def receive(self) -> "StockTransfer":
         if self.status != TransferStatus.CONFIRMED:
-            raise DomainError("Solo transferencias CONFIRMED pueden recibirse")
+            raise InvalidTransferStatusError(self.status, "recibir")
         return replace(self, status=TransferStatus.RECEIVED)
 
     def cancel(self) -> "StockTransfer":
         if self.status == TransferStatus.RECEIVED:
-            raise DomainError("No se puede cancelar una transferencia ya recibida")
+            raise InvalidTransferStatusError(self.status, "cancelar")
         return replace(self, status=TransferStatus.CANCELLED)
 
 

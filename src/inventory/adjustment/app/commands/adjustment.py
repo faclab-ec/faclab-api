@@ -13,6 +13,7 @@ from src.inventory.adjustment.domain.entities import (
     InventoryAdjustment,
 )
 from src.inventory.adjustment.domain.events import AdjustmentConfirmed
+from src.inventory.adjustment.domain.exceptions import InvalidAdjustmentStatusError
 from src.inventory.movement.app.commands.movement import (
     CreateMovementCommand,
     CreateMovementCommandHandler,
@@ -21,7 +22,7 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.stock.app.repositories import StockRepository
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 # ---------------------------------------------------------------------------
 # Adjustment commands
@@ -116,7 +117,7 @@ class UpdateAdjustmentCommandHandler(CommandHandler[UpdateAdjustmentCommand, dic
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
         if adjustment.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo se pueden actualizar ajustes en DRAFT")
+            raise InvalidAdjustmentStatusError(adjustment.status, "actualizar")
 
         updated = replace(
             adjustment,
@@ -139,7 +140,7 @@ class DeleteAdjustmentCommandHandler(CommandHandler[DeleteAdjustmentCommand, Non
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
         if adjustment.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo se pueden eliminar ajustes en DRAFT")
+            raise InvalidAdjustmentStatusError(adjustment.status, "eliminar")
         self.repo.delete(command.id)
 
 
@@ -229,7 +230,7 @@ class AddAdjustmentItemCommandHandler(CommandHandler[AddAdjustmentItemCommand, d
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.adjustment_id} not found")
         if adjustment.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo se pueden agregar ítems a ajustes en DRAFT")
+            raise InvalidAdjustmentStatusError(adjustment.status, "agregar ítems a")
 
         stock = self.stock_repo.first(
             product_id=command.product_id, location_id=command.location_id
@@ -264,8 +265,10 @@ class UpdateAdjustmentItemCommandHandler(
         if item is None:
             raise NotFoundError(f"AdjustmentItem with id {command.id} not found")
         adjustment = self.repo.get_by_id(item.adjustment_id)
-        if adjustment is None or adjustment.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo se pueden modificar ítems de ajustes en DRAFT")
+        if adjustment is None:
+            raise NotFoundError(f"Adjustment with id {item.adjustment_id} not found")
+        if adjustment.status != AdjustmentStatus.DRAFT:
+            raise InvalidAdjustmentStatusError(adjustment.status, "modificar ítems de")
 
         updated = replace(
             item,
@@ -293,6 +296,8 @@ class RemoveAdjustmentItemCommandHandler(
         if item is None:
             raise NotFoundError(f"AdjustmentItem with id {command.id} not found")
         adjustment = self.repo.get_by_id(item.adjustment_id)
-        if adjustment is None or adjustment.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo se pueden eliminar ítems de ajustes en DRAFT")
+        if adjustment is None:
+            raise NotFoundError(f"Adjustment with id {item.adjustment_id} not found")
+        if adjustment.status != AdjustmentStatus.DRAFT:
+            raise InvalidAdjustmentStatusError(adjustment.status, "eliminar ítems de")
         self.item_repo.delete(command.id)

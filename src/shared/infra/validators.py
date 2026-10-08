@@ -88,6 +88,9 @@ class ErrorDetail(BaseModel):
         None,
         description="Dot-path to the field that caused the error, if applicable",
     )
+    detail: str | None = Field(
+        None, description="Extra context for the error (e.g. the current status)"
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -124,7 +127,7 @@ _ERR_404: dict = {
     "model": ErrorResponse,
 }
 _ERR_409: dict = {
-    "description": "**Integrity conflict** — the resource is referenced by other records and cannot be modified or deleted.",
+    "description": "**Conflict** — a unique value is already taken (`*_ALREADY_EXISTS`) or the resource is referenced by other records (`RECORD_IN_USE`).",
     "model": ErrorResponse,
 }
 _ERR_422: dict = {

@@ -2,8 +2,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import StrEnum
 
+from src.inventory.adjustment.domain.exceptions import InvalidAdjustmentStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class AdjustmentStatus(StrEnum):
@@ -35,12 +35,12 @@ class InventoryAdjustment(Entity):
 
     def confirm(self) -> "InventoryAdjustment":
         if self.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo ajustes en DRAFT pueden confirmarse")
+            raise InvalidAdjustmentStatusError(self.status, "confirmar")
         return replace(self, status=AdjustmentStatus.CONFIRMED)
 
     def cancel(self) -> "InventoryAdjustment":
         if self.status == AdjustmentStatus.CONFIRMED:
-            raise DomainError("No se puede cancelar un ajuste ya confirmado")
+            raise InvalidAdjustmentStatusError(self.status, "cancelar")
         return replace(self, status=AdjustmentStatus.CANCELLED)
 
 

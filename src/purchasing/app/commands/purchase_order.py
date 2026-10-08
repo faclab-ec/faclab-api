@@ -10,9 +10,10 @@ from src.purchasing.domain.events import (
     PurchaseOrderCreated,
     PurchaseOrderSent,
 )
+from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -80,9 +81,7 @@ class UpdatePurchaseOrderCommandHandler(
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
         if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot update a purchase order with status '{purchase_order.status.value}'. Only DRAFT orders can be updated."
-            )
+            raise InvalidPurchaseOrderStatusError(purchase_order.status, "update")
 
         updated = replace(
             purchase_order,
@@ -111,9 +110,7 @@ class DeletePurchaseOrderCommandHandler(
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
         if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot delete a purchase order with status '{purchase_order.status.value}'. Only DRAFT orders can be deleted."
-            )
+            raise InvalidPurchaseOrderStatusError(purchase_order.status, "delete")
         self.repo.delete(command.id)
 
 
