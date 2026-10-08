@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from src.customers.domain.entities import TaxType
 from src.shared.domain.entities import Entity
+from src.shared.domain.tax import TaxType
 
 
 @dataclass

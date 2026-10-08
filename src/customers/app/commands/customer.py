@@ -4,7 +4,7 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.customers.app.repositories import CustomerRepository
-from src.customers.domain.entities import Customer, TaxType
+from src.customers.domain.entities import Customer
 from src.customers.domain.events import (
     CustomerActivated,
     CustomerCreated,
@@ -14,6 +14,7 @@ from src.customers.domain.events import (
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxType
 from src.shared.domain.value_objects import Email, TaxId
 
 

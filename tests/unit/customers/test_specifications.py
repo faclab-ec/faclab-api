@@ -1,7 +1,8 @@
 from typing import Any
 
-from src.customers.domain.entities import Customer, TaxType
+from src.customers.domain.entities import Customer
 from src.customers.domain.specifications import ActiveCustomers, CustomersByType
+from src.shared.domain.tax import TaxType
 
 
 def _make_customer(**overrides) -> Customer:

@@ -15,8 +15,9 @@ from src.customers.app.commands.customer import (
     UpdateCustomerCommand,
     UpdateCustomerCommandHandler,
 )
-from src.customers.domain.entities import Customer, TaxType
+from src.customers.domain.entities import Customer
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxType
 
 
 def _make_customer(**overrides) -> Customer:

@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.customers.domain.entities import TaxType
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxType
 from src.suppliers.app.queries.supplier import (
     GetAllSuppliersQuery,
     GetAllSuppliersQueryHandler,

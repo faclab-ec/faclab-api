@@ -33,6 +33,7 @@ def create_wireup_container():
     from src.sales.infra.container import INJECTABLES as SALES_INJECTABLES
     from src.shared.infra.database import create_session_factory
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
+    from src.shared.infra.outbox.writer import OutboxWriter
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
 
     db_connection_string = config.DB_CONNECTION_STRING
@@ -45,6 +46,7 @@ def create_wireup_container():
         injectables=[
             get_db_session,
             EventBusPublisher,
+            OutboxWriter,
             *AUTH_INJECTABLES,
             *CATALOG_INJECTABLES,
             *UOM_INJECTABLES,
@@ -74,7 +76,7 @@ def create_wireup_container():
     import src.inventory.lot.infra.event_handlers  # noqa: F401
     import src.inventory.serial.infra.event_handlers  # noqa: F401
     import src.inventory.stock.infra.event_handlers  # noqa: F401
+    import src.invoicing.infra.event_handlers  # noqa: F401
     import src.purchasing.infra.event_handlers  # noqa: F401
-    import src.shared.infra.kafka.event_handlers  # noqa: F401
 
     return container

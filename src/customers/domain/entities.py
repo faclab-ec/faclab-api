@@ -1,16 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from enum import IntEnum
 
 from src.shared.domain.entities import Entity
-
-
-class TaxType(IntEnum):
-    RUC = 1
-    NATIONAL_ID = 2  # Cédula
-    PASSPORT = 3  # Pasaporte
-    FOREIGN_ID = 4  # Identificación de extranjero
+from src.shared.domain.tax import TaxType
 
 
 @dataclass

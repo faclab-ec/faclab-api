@@ -52,6 +52,9 @@ class BaseConfig:
     #
     KAFKA_BOOTSTRAP_SERVERS = env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     KAFKA_ENABLED = env.bool("KAFKA_ENABLED", False)
+    # How often the outbox relay looks for unpublished messages; it also wakes
+    # up right after a commit that wrote one
+    OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", 5.0)
 
     #
     # Auth / JWT config

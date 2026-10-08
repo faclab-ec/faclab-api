@@ -1,13 +1,14 @@
 import json
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.catalog.product.domain.entities import Product
+from src.customers.domain.entities import Customer
+from src.invoicing.infra.event_handlers import build_sale_confirmed_message
 from src.sales.domain.events import SaleConfirmed
-from src.shared.domain.tax import TaxCode
-from src.shared.infra.kafka.event_handlers import _build_enriched_payload
-from src.shared.infra.kafka.producer import _json_serializer
+from src.shared.domain.tax import TaxCode, TaxType
+from src.shared.infra.kafka.producer import json_default
 
 
 def _make_event(**overrides) -> SaleConfirmed:
@@ -34,25 +35,35 @@ def _make_event(**overrides) -> SaleConfirmed:
     return SaleConfirmed(**defaults)
 
 
-def _build(event: SaleConfirmed) -> dict:
-    product = Product(id=10, sku="SKU-10", name="Producto 10")
-    scope = MagicMock()
-    scope.get.return_value.get_by_id.return_value = product
-    with patch(
-        "src.shared.infra.kafka.event_handlers.create_sync_scope"
-    ) as create_scope:
-        create_scope.return_value.__enter__.return_value = scope
-        return _build_enriched_payload(event)
+def _build(event: SaleConfirmed, customer: Customer | None = None) -> dict:
+    customer_repo = MagicMock()
+    customer_repo.get_by_id.return_value = customer
+    product_repo = MagicMock()
+    product_repo.get_by_ids.return_value = [
+        Product(id=10, sku="SKU-10", name="Producto 10")
+    ]
+    return build_sale_confirmed_message(event, customer_repo, product_repo)
 
 
-def test_item_carries_tax_code_instead_of_tax_rate():
-    payload = _build(_make_event())
+def test_item_carries_tax_code_and_product_data():
+    message = _build(_make_event())
 
-    item = payload["payload"]["items"][0]
+    item = message["payload"]["items"][0]
     assert item["tax_code"] == TaxCode.VAT_15
     assert "tax_rate" not in item
     assert item["sku"] == "SKU-10"
     assert item["product_name"] == "Producto 10"
+
+
+def test_customer_is_embedded_when_the_sale_has_one():
+    customer = Customer(
+        id=7, name="Ana", tax_id="1710034065", tax_type=TaxType.NATIONAL_ID
+    )
+
+    message = _build(_make_event(customer_id=7), customer)
+
+    assert message["payload"]["customer"]["tax_type"] == "NATIONAL_ID"
+    assert message["event_type"] == "SaleConfirmed"
 
 
 def test_tax_code_serializes_as_plain_string():
@@ -70,7 +81,7 @@ def test_tax_code_serializes_as_plain_string():
         ]
     )
 
-    raw = json.loads(json.dumps(_build(event), default=_json_serializer))
+    raw = json.loads(json.dumps(_build(event), default=json_default))
 
     item = raw["payload"]["items"][0]
     assert item["tax_code"] == "EXEMPT"

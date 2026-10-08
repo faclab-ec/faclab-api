@@ -41,12 +41,16 @@ from src.purchasing.infra.routes import POItemRouter, PurchaseOrderRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
+from src.shared.infra.database import create_session_maker
+from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
 from src.shared.infra.middlewares import (
     ErrorHandlingMiddleware,
     http_exception_handler,
     request_validation_exception_handler,
 )
+from src.shared.infra.outbox import relay as outbox_relay
+from src.shared.infra.outbox.relay import OutboxRelay
 from src.suppliers.infra.routes import (
     SupplierContactRouter,
     SupplierProductRouter,
@@ -71,11 +75,22 @@ _docs = config.get_docs_config()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    producer = None
+    if config.KAFKA_ENABLED:
+        # Publishes the Kafka messages committed to the outbox
+        producer = KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS)
+        producer.start()
+        outbox_relay.start(
+            OutboxRelay(
+                create_session_maker(config.DB_CONNECTION_STRING),
+                producer,
+                poll_interval=config.OUTBOX_POLL_INTERVAL_SECONDS,
+            )
+        )
+
     yield
 
-    from src.shared.infra.kafka.event_handlers import _get_producer
-
-    producer = _get_producer()
+    outbox_relay.stop()
     if producer:
         producer.close()
 

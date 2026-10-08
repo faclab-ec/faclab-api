@@ -9,12 +9,16 @@ class Base(DeclarativeBase):
     pass
 
 
-def create_session_factory(connection_string: str):
+def create_session_maker(connection_string: str) -> sessionmaker[Session]:
     if not connection_string:
         raise ValueError("Database connection string cannot be empty")
 
     engine = create_engine(connection_string)
-    _factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def create_session_factory(connection_string: str):
+    _factory = create_session_maker(connection_string)
 
     @injectable(lifetime="scoped")
     def get_db_session() -> Iterator[Session]:

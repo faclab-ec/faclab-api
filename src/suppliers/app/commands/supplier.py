@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
-from src.customers.domain.entities import TaxType
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxType
 from src.shared.domain.value_objects import Email, TaxId
 from src.suppliers.app.repositories import SupplierRepository
 from src.suppliers.domain.entities import Supplier
