@@ -4,7 +4,7 @@ from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.events import SaleItemRemoved
-from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
+from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -41,8 +41,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
         # Validar que la venta esté en DRAFT
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "remove items from")
+        sale.ensure_draft("remove items from")
 
         # Obtener el item
         sale_item = self.sale_item_repo.get_by_id(command.sale_item_id)

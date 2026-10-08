@@ -23,6 +23,12 @@ class Supplier(Entity):
     notes: str | None = None
     created_at: datetime | None = None
 
+    def activate(self) -> None:
+        self.is_active = True
+
+    def deactivate(self) -> None:
+        self.is_active = False
+
 
 @dataclass
 class SupplierContact(Entity):
@@ -32,6 +38,18 @@ class SupplierContact(Entity):
     role: str | None = None
     email: str | None = None
     phone: str | None = None
+
+    def update(
+        self,
+        name: str,
+        role: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> None:
+        self.name = name
+        self.role = role
+        self.email = email
+        self.phone = phone
 
 
 @dataclass
@@ -44,3 +62,19 @@ class SupplierProduct(Entity):
     min_order_quantity: int = 1
     lead_time_days: int | None = None
     is_preferred: bool = False
+
+    def update(
+        self,
+        product_id: int,
+        purchase_price: Decimal,
+        supplier_sku: str | None = None,
+        min_order_quantity: int = 1,
+        lead_time_days: int | None = None,
+        is_preferred: bool = False,
+    ) -> None:
+        self.product_id = product_id
+        self.purchase_price = purchase_price
+        self.supplier_sku = supplier_sku
+        self.min_order_quantity = min_order_quantity
+        self.lead_time_days = lead_time_days
+        self.is_preferred = is_preferred

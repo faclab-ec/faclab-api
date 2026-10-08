@@ -151,7 +151,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             stock = self.stock_repo.first(product_id=item.product_id)
             if stock is None:
                 raise InsufficientStockError(item.product_id, item.quantity, 0)
-            stock = stock.update_quantity(-abs(item.quantity))
+            stock.update_quantity(-abs(item.quantity))
             self.stock_repo.update(stock)
 
         # 10. Registrar pagos

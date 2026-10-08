@@ -1,9 +1,12 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
+from src.purchasing.domain.exceptions import (
+    ExceedsPendingQuantityError,
+    InvalidPurchaseOrderStatusError,
+)
 from src.shared.domain.entities import Entity
 
 
@@ -29,21 +32,43 @@ class PurchaseOrder(Entity):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
-    def send(self) -> "PurchaseOrder":
+    def ensure_draft(self, operation: str) -> None:
         if self.status != PurchaseOrderStatus.DRAFT:
-            raise InvalidPurchaseOrderStatusError(self.status, "send")
-        return replace(self, status=PurchaseOrderStatus.SENT)
+            raise InvalidPurchaseOrderStatusError(self.status, operation)
 
-    def cancel(self) -> "PurchaseOrder":
+    def update_details(
+        self, supplier_id: int, notes: str | None, expected_date: datetime | None
+    ) -> None:
+        self.ensure_draft("update")
+        self.supplier_id = supplier_id
+        self.notes = notes
+        self.expected_date = expected_date
+
+    def send(self) -> None:
+        self.ensure_draft("send")
+        self.status = PurchaseOrderStatus.SENT
+
+    def cancel(self) -> None:
         if self.status in (PurchaseOrderStatus.RECEIVED, PurchaseOrderStatus.CANCELLED):
             raise InvalidPurchaseOrderStatusError(self.status, "cancel")
-        return replace(self, status=PurchaseOrderStatus.CANCELLED)
+        self.status = PurchaseOrderStatus.CANCELLED
 
-    def mark_partial(self) -> "PurchaseOrder":
-        return replace(self, status=PurchaseOrderStatus.PARTIAL)
+    def ensure_receivable(self) -> None:
+        if self.status not in (PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIAL):
+            raise InvalidPurchaseOrderStatusError(self.status, "receive")
 
-    def mark_received(self) -> "PurchaseOrder":
-        return replace(self, status=PurchaseOrderStatus.RECEIVED)
+    def recalculate_totals(self, items: list["PurchaseOrderItem"]) -> None:
+        self.subtotal = sum((item.subtotal for item in items), Decimal("0.00"))
+        self.tax = Decimal("0.00")
+        self.total = self.subtotal + self.tax
+
+    def update_reception_status(self, items: list["PurchaseOrderItem"]) -> None:
+        """Pasa a RECEIVED cuando no queda nada pendiente; si no, a PARTIAL"""
+        self.ensure_receivable()
+        if all(item.quantity_pending == 0 for item in items):
+            self.status = PurchaseOrderStatus.RECEIVED
+        else:
+            self.status = PurchaseOrderStatus.PARTIAL
 
 
 @dataclass
@@ -62,6 +87,18 @@ class PurchaseOrderItem(Entity):
     @property
     def subtotal(self) -> Decimal:
         return self.unit_cost * self.quantity_ordered
+
+    def update(self, quantity_ordered: int, unit_cost: Decimal) -> None:
+        self.quantity_ordered = quantity_ordered
+        self.unit_cost = unit_cost
+
+    def receive(self, quantity: int) -> None:
+        """Registra unidades recibidas sin superar lo pendiente"""
+        if quantity > self.quantity_pending:
+            raise ExceedsPendingQuantityError(
+                self.require_id(), quantity, self.quantity_pending
+            )
+        self.quantity_received += quantity
 
 
 @dataclass

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -38,11 +38,7 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         PlainPassword(command.new_password)
 
         new_hash = self.hasher.hash(command.new_password)
-        user = replace(
-            user,
-            password_hash=new_hash,
-            must_change_password=True,
-        )
+        user.reset_password(new_hash)
         user = self.repo.update(user)
 
         self.event_publisher.publish(

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -23,14 +23,10 @@ from src.inventory.transfer.domain.events import (
     StockTransferConfirmed,
     StockTransferReceived,
 )
-from src.inventory.transfer.domain.exceptions import (
-    InvalidTransferStatusError,
-    SameLocationTransferError,
-    TransferHasNoItemsError,
-)
+from src.inventory.transfer.domain.exceptions import TransferHasNoItemsError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.exceptions import NotFoundError
 
 # ---------------------------------------------------------------------------
 # Transfer commands
@@ -111,8 +107,6 @@ class CreateStockTransferCommandHandler(
         self.repo = repo
 
     def _handle(self, command: CreateStockTransferCommand) -> dict:
-        if command.source_location_id == command.destination_location_id:
-            raise SameLocationTransferError()
         transfer = StockTransfer(
             source_location_id=command.source_location_id,
             destination_location_id=command.destination_location_id,
@@ -134,17 +128,9 @@ class UpdateStockTransferCommandHandler(
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
-        if transfer.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(transfer.status, "actualizar")
 
-        updated = replace(
-            transfer,
-            notes=command.notes if command.notes is not None else transfer.notes,
-            requested_by=command.requested_by
-            if command.requested_by is not None
-            else transfer.requested_by,
-        )
-        saved = self.repo.update(updated)
+        transfer.update_details(notes=command.notes, requested_by=command.requested_by)
+        saved = self.repo.update(transfer)
         return saved.dict()
 
 
@@ -159,8 +145,7 @@ class DeleteStockTransferCommandHandler(
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
-        if transfer.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(transfer.status, "eliminar")
+        transfer.ensure_draft("eliminar")
         self.repo.delete(command.id)
 
 
@@ -185,6 +170,7 @@ class ConfirmStockTransferCommandHandler(
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
 
+        transfer.confirm()
         items = self.item_repo.filter_by(transfer_id=transfer.id)
         if not items:
             raise TransferHasNoItemsError(transfer.id)
@@ -194,16 +180,12 @@ class ConfirmStockTransferCommandHandler(
                 product_id=item.product_id,
                 location_id=transfer.source_location_id,
             )
-            if stock is None or stock.available_quantity < item.quantity:
+            if stock is None:
                 raise InsufficientStockError(item.product_id, item.quantity)
-            updated_stock = replace(
-                stock,
-                reserved_quantity=stock.reserved_quantity + item.quantity,
-            )
-            self.stock_repo.update(updated_stock)
+            stock.reserve(item.quantity)
+            self.stock_repo.update(stock)
 
-        confirmed = transfer.confirm()
-        saved = self.repo.update(confirmed)
+        saved = self.repo.update(transfer)
         self.event_publisher.publish(
             StockTransferConfirmed(
                 aggregate_id=saved.require_id(),
@@ -238,9 +220,7 @@ class ReceiveStockTransferCommandHandler(
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
-        if transfer.status != TransferStatus.CONFIRMED:
-            raise InvalidTransferStatusError(transfer.status, "recibir")
-
+        transfer.receive()
         items = self.item_repo.filter_by(transfer_id=transfer.id)
 
         for item in items:
@@ -250,11 +230,8 @@ class ReceiveStockTransferCommandHandler(
                 location_id=transfer.source_location_id,
             )
             if source_stock is not None:
-                updated = replace(
-                    source_stock,
-                    reserved_quantity=source_stock.reserved_quantity - item.quantity,
-                )
-                self.stock_repo.update(updated)
+                source_stock.release(item.quantity)
+                self.stock_repo.update(source_stock)
 
             # OUT movement from source
             self.movement_handler.handle(
@@ -284,8 +261,7 @@ class ReceiveStockTransferCommandHandler(
                 )
             )
 
-        received = transfer.receive()
-        saved = self.repo.update(received)
+        saved = self.repo.update(transfer)
         self.event_publisher.publish(
             StockTransferReceived(
                 aggregate_id=saved.require_id(),
@@ -320,6 +296,7 @@ class CancelStockTransferCommandHandler(
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
 
         was_confirmed = transfer.status == TransferStatus.CONFIRMED
+        transfer.cancel()
 
         if was_confirmed:
             items = self.item_repo.filter_by(transfer_id=transfer.id)
@@ -329,14 +306,10 @@ class CancelStockTransferCommandHandler(
                     location_id=transfer.source_location_id,
                 )
                 if stock is not None:
-                    updated = replace(
-                        stock,
-                        reserved_quantity=stock.reserved_quantity - item.quantity,
-                    )
-                    self.stock_repo.update(updated)
+                    stock.release(item.quantity)
+                    self.stock_repo.update(stock)
 
-        cancelled = transfer.cancel()
-        saved = self.repo.update(cancelled)
+        saved = self.repo.update(transfer)
         self.event_publisher.publish(
             StockTransferCancelled(
                 aggregate_id=saved.require_id(),
@@ -363,10 +336,7 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
             raise NotFoundError(
                 f"StockTransfer with id {command.transfer_id} not found"
             )
-        if transfer.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(transfer.status, "agregar ítems a")
-        if command.quantity <= 0:
-            raise ValidationError("La cantidad debe ser mayor a cero")
+        transfer.ensure_draft("agregar ítems a")
 
         item = StockTransferItem(
             transfer_id=command.transfer_id,
@@ -394,19 +364,10 @@ class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand,
         transfer = self.repo.get_by_id(item.transfer_id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {item.transfer_id} not found")
-        if transfer.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(transfer.status, "modificar ítems de")
-        if command.quantity is not None and command.quantity <= 0:
-            raise ValidationError("La cantidad debe ser mayor a cero")
+        transfer.ensure_draft("modificar ítems de")
 
-        updated = replace(
-            item,
-            quantity=command.quantity
-            if command.quantity is not None
-            else item.quantity,
-            notes=command.notes if command.notes is not None else item.notes,
-        )
-        saved = self.item_repo.update(updated)
+        item.update(quantity=command.quantity, notes=command.notes)
+        saved = self.item_repo.update(item)
         return saved.dict()
 
 
@@ -425,6 +386,5 @@ class RemoveTransferItemCommandHandler(CommandHandler[RemoveTransferItemCommand,
         transfer = self.repo.get_by_id(item.transfer_id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {item.transfer_id} not found")
-        if transfer.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(transfer.status, "eliminar ítems de")
+        transfer.ensure_draft("eliminar ítems de")
         self.item_repo.delete(command.id)

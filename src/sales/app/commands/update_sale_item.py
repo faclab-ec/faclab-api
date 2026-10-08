@@ -4,7 +4,7 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
+from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -38,8 +38,7 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "update items in")
+        sale.ensure_draft("update items in")
 
         sale_item = self.sale_item_repo.get_by_id(command.sale_item_id)
         if not sale_item:

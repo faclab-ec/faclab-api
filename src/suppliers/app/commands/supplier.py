@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -148,8 +148,8 @@ class ActivateSupplierCommandHandler(CommandHandler[ActivateSupplierCommand, dic
         if supplier is None:
             raise NotFoundError(f"Supplier with id {command.id} not found")
 
-        updated_supplier = replace(supplier, is_active=True)
-        updated_supplier = self.repo.update(updated_supplier)
+        supplier.activate()
+        updated_supplier = self.repo.update(supplier)
 
         self.event_publisher.publish(
             SupplierActivated(
@@ -177,8 +177,8 @@ class DeactivateSupplierCommandHandler(CommandHandler[DeactivateSupplierCommand,
         if supplier is None:
             raise NotFoundError(f"Supplier with id {command.id} not found")
 
-        updated_supplier = replace(supplier, is_active=False)
-        updated_supplier = self.repo.update(updated_supplier)
+        supplier.deactivate()
+        updated_supplier = self.repo.update(supplier)
 
         self.event_publisher.publish(
             SupplierDeactivated(

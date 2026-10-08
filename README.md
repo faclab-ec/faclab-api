@@ -92,7 +92,7 @@ Cada modulo de dominio sigue la misma estructura interna:
 ```
 modulo/
 ├── domain/
-│   ├── entities.py                 # Entidades (dataclasses inmutables)
+│   ├── entities.py                 # Entidades (dataclasses con sus transiciones de estado)
 │   ├── events.py                   # Eventos de dominio
 │   ├── specifications.py           # Especificaciones para consultas
 │   └── exceptions.py               # Excepciones de dominio
@@ -282,7 +282,7 @@ La suite incluye:
 ## Convenciones de Codigo
 
 - **Formatter/Linter**: ruff (`make lint` antes de commitear)
-- **Entidades de dominio**: Dataclasses inmutables que extienden `Entity`
+- **Entidades de dominio**: Dataclasses que extienden `Entity`; sus métodos validan cada transición de estado y mutan la instancia (`po.send()`, `stock.reserve(n)`), y el handler la persiste con `repo.update(entity)`
 - **Modelos SQLAlchemy**: Solo en la capa de infraestructura (`infra/models.py`)
 - **Capas**: Domain ← Application ← Infrastructure (nunca al reves)
 - **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) — `feat:`, `fix:`, `refactor:`, `test:`, `docs:`

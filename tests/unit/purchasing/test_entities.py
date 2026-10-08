@@ -10,7 +10,10 @@ from src.purchasing.domain.entities import (
     PurchaseReceipt,
     PurchaseReceiptItem,
 )
-from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
+from src.purchasing.domain.exceptions import (
+    ExceedsPendingQuantityError,
+    InvalidPurchaseOrderStatusError,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -53,8 +56,8 @@ def test_purchase_order_initial_status():
 
 def test_purchase_order_send_from_draft():
     po = _make_po(status=PurchaseOrderStatus.DRAFT)
-    sent = po.send()
-    assert sent.status == PurchaseOrderStatus.SENT
+    po.send()
+    assert po.status == PurchaseOrderStatus.SENT
 
 
 def test_purchase_order_send_from_non_draft_raises():
@@ -71,20 +74,20 @@ def test_purchase_order_send_from_partial_raises():
 
 def test_purchase_order_cancel_from_draft():
     po = _make_po(status=PurchaseOrderStatus.DRAFT)
-    cancelled = po.cancel()
-    assert cancelled.status == PurchaseOrderStatus.CANCELLED
+    po.cancel()
+    assert po.status == PurchaseOrderStatus.CANCELLED
 
 
 def test_purchase_order_cancel_from_sent():
     po = _make_po(status=PurchaseOrderStatus.SENT)
-    cancelled = po.cancel()
-    assert cancelled.status == PurchaseOrderStatus.CANCELLED
+    po.cancel()
+    assert po.status == PurchaseOrderStatus.CANCELLED
 
 
 def test_purchase_order_cancel_from_partial():
     po = _make_po(status=PurchaseOrderStatus.PARTIAL)
-    cancelled = po.cancel()
-    assert cancelled.status == PurchaseOrderStatus.CANCELLED
+    po.cancel()
+    assert po.status == PurchaseOrderStatus.CANCELLED
 
 
 def test_purchase_order_cancel_from_received_raises():
@@ -99,23 +102,60 @@ def test_purchase_order_cancel_already_cancelled_raises():
         po.cancel()
 
 
-def test_purchase_order_mark_partial():
-    po = _make_po(status=PurchaseOrderStatus.SENT)
-    partial = po.mark_partial()
-    assert partial.status == PurchaseOrderStatus.PARTIAL
+@pytest.mark.parametrize(
+    "status", [PurchaseOrderStatus.SENT, PurchaseOrderStatus.PARTIAL]
+)
+def test_reception_status_is_partial_while_items_are_pending(status):
+    po = _make_po(status=status)
+    po.update_reception_status(
+        [_make_item(quantity_received=10), _make_item(id=2, quantity_received=3)]
+    )
+    assert po.status == PurchaseOrderStatus.PARTIAL
 
 
-def test_purchase_order_mark_received():
-    po = _make_po(status=PurchaseOrderStatus.SENT)
-    received = po.mark_received()
-    assert received.status == PurchaseOrderStatus.RECEIVED
+def test_reception_status_is_received_when_nothing_is_pending():
+    po = _make_po(status=PurchaseOrderStatus.PARTIAL)
+    po.update_reception_status([_make_item(quantity_received=10)])
+    assert po.status == PurchaseOrderStatus.RECEIVED
 
 
-def test_purchase_order_is_immutable():
+@pytest.mark.parametrize(
+    "status",
+    [
+        PurchaseOrderStatus.DRAFT,
+        PurchaseOrderStatus.RECEIVED,
+        PurchaseOrderStatus.CANCELLED,
+    ],
+)
+def test_only_sent_or_partial_orders_are_receivable(status):
+    po = _make_po(status=status)
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot receive"):
+        po.ensure_receivable()
+
+
+def test_update_details_only_in_draft():
     po = _make_po(status=PurchaseOrderStatus.DRAFT)
-    sent = po.send()
-    assert po.status == PurchaseOrderStatus.DRAFT  # original unchanged
-    assert sent.status == PurchaseOrderStatus.SENT
+    po.update_details(supplier_id=20, notes="n", expected_date=None)
+    assert (po.supplier_id, po.notes) == (20, "n")
+
+    po.send()
+    with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot update"):
+        po.update_details(supplier_id=30, notes=None, expected_date=None)
+
+
+def test_recalculate_totals_sums_item_subtotals():
+    po = _make_po()
+    po.recalculate_totals(
+        [
+            _make_item(quantity_ordered=2, unit_cost=Decimal("10.00")),
+            _make_item(id=2, quantity_ordered=3, unit_cost=Decimal("1.50")),
+        ]
+    )
+    assert (po.subtotal, po.tax, po.total) == (
+        Decimal("24.50"),
+        Decimal("0.00"),
+        Decimal("24.50"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -164,3 +204,16 @@ def test_purchase_receipt_item_creation():
     )
     assert ri.quantity_received == 3
     assert ri.location_id == 2
+
+
+def test_item_receive_adds_to_received_quantity():
+    item = _make_item(quantity_ordered=10, quantity_received=4)
+    item.receive(6)
+    assert (item.quantity_received, item.quantity_pending) == (10, 0)
+
+
+def test_item_cannot_receive_more_than_pending():
+    item = _make_item(quantity_ordered=10, quantity_received=4)
+    with pytest.raises(ExceedsPendingQuantityError, match="Only 6 units are pending"):
+        item.receive(7)
+    assert item.quantity_received == 4

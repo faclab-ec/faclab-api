@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from src.shared.domain.entities import Entity
+from src.shared.domain.exceptions import ValidationError
 
 
 @dataclass
@@ -27,6 +28,31 @@ class Lot(Entity):
         if self.expiration_date is None:
             return None
         return (self.expiration_date - date.today()).days
+
+    def receive(self, quantity: int) -> None:
+        """Suma unidades recibidas (p. ej. otra recepción del mismo lote)"""
+        self.initial_quantity += quantity
+        self.current_quantity += quantity
+
+    def update_details(
+        self,
+        current_quantity: int | None = None,
+        manufacture_date: date | None = None,
+        expiration_date: date | None = None,
+        notes: str | None = None,
+    ) -> None:
+        if current_quantity is not None:
+            if current_quantity < 0:
+                raise ValidationError(
+                    f"Current quantity cannot be negative. Received: {current_quantity}"
+                )
+            self.current_quantity = current_quantity
+        if manufacture_date is not None:
+            self.manufacture_date = manufacture_date
+        if expiration_date is not None:
+            self.expiration_date = expiration_date
+        if notes is not None:
+            self.notes = notes
 
     def dict(self):
         return {

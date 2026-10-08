@@ -89,10 +89,14 @@ class Sale(Entity):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
+    def ensure_draft(self, operation: str) -> None:
+        """Las ventas solo se editan en DRAFT"""
+        if self.status != SaleStatus.DRAFT:
+            raise InvalidSaleStatusError(self.status, operation)
+
     def confirm(self) -> None:
         """Confirma la venta (solo si está en DRAFT)"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "confirm")
+        self.ensure_draft("confirm")
         self.status = SaleStatus.CONFIRMED
         if self.sale_date is None:
             self.sale_date = datetime.now()
@@ -111,8 +115,7 @@ class Sale(Entity):
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "park")
+        self.ensure_draft("park")
         self.parked_at = datetime.now()
         self.park_reason = reason
 
@@ -125,8 +128,7 @@ class Sale(Entity):
 
     def apply_discount(self, discount_type: str, discount_value: Decimal) -> None:
         """Aplica un descuento global (solo en DRAFT); luego hay que recalcular los totales"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "apply discount to")
+        self.ensure_draft("apply discount to")
         if discount_type not in ("PERCENTAGE", "AMOUNT"):
             raise ValidationError(
                 f"Invalid discount_type: {discount_type}. Must be PERCENTAGE or AMOUNT"

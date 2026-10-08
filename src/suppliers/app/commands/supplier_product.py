@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 
 from wireup import injectable
@@ -63,8 +63,7 @@ class UpdateSupplierProductCommandHandler(
         supplier_product = self.repo.get_by_id(command.id)
         if supplier_product is None:
             raise NotFoundError(f"Supplier product with id {command.id} not found")
-        supplier_product = replace(
-            supplier_product,
+        supplier_product.update(
             product_id=command.product_id,
             purchase_price=command.purchase_price,
             supplier_sku=command.supplier_sku,

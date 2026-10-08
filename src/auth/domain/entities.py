@@ -25,6 +25,28 @@ class User(Entity):
     last_login_at: datetime | None = None
     created_at: datetime | None = None
 
+    def activate(self) -> None:
+        self.is_active = True
+
+    def deactivate(self) -> None:
+        self.is_active = False
+
+    def change_role(self, role: Role) -> None:
+        self.role = role
+
+    def change_password(self, password_hash: str) -> None:
+        """El usuario fijó su propia contraseña"""
+        self.password_hash = password_hash
+        self.must_change_password = False
+
+    def reset_password(self, password_hash: str) -> None:
+        """Un admin asignó una contraseña temporal que el usuario debe cambiar"""
+        self.password_hash = password_hash
+        self.must_change_password = True
+
+    def record_login(self, at: datetime) -> None:
+        self.last_login_at = at
+
 
 @dataclass(frozen=True)
 class AuthenticatedUser:

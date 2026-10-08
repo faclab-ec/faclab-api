@@ -84,7 +84,7 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
                     location_id=stock.location_id,
                 )
 
-                stock = stock.update_quantity(event.quantity)
+                stock.update_quantity(event.quantity)
                 stock = stock_repo.update(stock)
 
                 EventBus.publish(

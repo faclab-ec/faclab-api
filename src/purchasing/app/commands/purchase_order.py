@@ -1,16 +1,15 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 
 from wireup import injectable
 
 from src.purchasing.app.repositories import PurchaseOrderRepository
-from src.purchasing.domain.entities import PurchaseOrder, PurchaseOrderStatus
+from src.purchasing.domain.entities import PurchaseOrder
 from src.purchasing.domain.events import (
     PurchaseOrderCancelled,
     PurchaseOrderCreated,
     PurchaseOrderSent,
 )
-from src.purchasing.domain.exceptions import InvalidPurchaseOrderStatusError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -80,16 +79,13 @@ class UpdatePurchaseOrderCommandHandler(
         purchase_order = self.repo.get_by_id(command.id)
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
-        if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise InvalidPurchaseOrderStatusError(purchase_order.status, "update")
 
-        updated = replace(
-            purchase_order,
+        purchase_order.update_details(
             supplier_id=command.supplier_id,
             notes=command.notes,
             expected_date=command.expected_date,
         )
-        updated = self.repo.update(updated)
+        updated = self.repo.update(purchase_order)
         return updated.dict()
 
 
@@ -109,8 +105,7 @@ class DeletePurchaseOrderCommandHandler(
         purchase_order = self.repo.get_by_id(command.id)
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
-        if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise InvalidPurchaseOrderStatusError(purchase_order.status, "delete")
+        purchase_order.ensure_draft("delete")
         self.repo.delete(command.id)
 
 
@@ -130,8 +125,8 @@ class SendPurchaseOrderCommandHandler(CommandHandler[SendPurchaseOrderCommand, d
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
 
-        sent = purchase_order.send()
-        sent = self.repo.update(sent)
+        purchase_order.send()
+        sent = self.repo.update(purchase_order)
 
         self.event_publisher.publish(
             PurchaseOrderSent(
@@ -161,8 +156,8 @@ class CancelPurchaseOrderCommandHandler(
         if purchase_order is None:
             raise NotFoundError(f"Purchase order with id {command.id} not found")
 
-        cancelled = purchase_order.cancel()
-        cancelled = self.repo.update(cancelled)
+        purchase_order.cancel()
+        cancelled = self.repo.update(purchase_order)
 
         self.event_publisher.publish(
             PurchaseOrderCancelled(

@@ -198,3 +198,17 @@ def test_transfer_without_enough_stock_cannot_be_confirmed(api, store):
     assert error["code"] == "INSUFFICIENT_STOCK"
 
     assert api.get(f"/api/admin/transfers/{transfer['id']}")["status"] == "draft"
+
+
+def test_serial_status_transitions(api, store):
+    serial = api.post(
+        "/api/admin/serials",
+        {"productId": store["product"]["id"], "serialNumber": "SN-9"},
+    )
+    path = f"/api/admin/serials/{serial['id']}/status"
+
+    assert api.put(path, {"status": "reserved"})["status"] == "reserved"
+    error = api.error("PUT", path, 400, json={"status": "available"})
+
+    assert error["code"] == "INVALID_SERIAL_STATUS"
+    assert api.get(f"/api/admin/serials/{serial['id']}")["status"] == "reserved"

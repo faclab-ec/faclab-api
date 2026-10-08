@@ -1,9 +1,13 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from src.inventory.transfer.domain.exceptions import InvalidTransferStatusError
+from src.inventory.transfer.domain.exceptions import (
+    InvalidTransferStatusError,
+    SameLocationTransferError,
+)
 from src.shared.domain.entities import Entity
+from src.shared.domain.exceptions import ValidationError
 
 
 class TransferStatus(StrEnum):
@@ -24,20 +28,37 @@ class StockTransfer(Entity):
     notes: str | None = None
     created_at: datetime | None = None
 
-    def confirm(self) -> "StockTransfer":
-        if self.status != TransferStatus.DRAFT:
-            raise InvalidTransferStatusError(self.status, "confirmar")
-        return replace(self, status=TransferStatus.CONFIRMED)
+    def __post_init__(self):
+        if self.source_location_id == self.destination_location_id:
+            raise SameLocationTransferError()
 
-    def receive(self) -> "StockTransfer":
+    def ensure_draft(self, operation: str) -> None:
+        if self.status != TransferStatus.DRAFT:
+            raise InvalidTransferStatusError(self.status, operation)
+
+    def update_details(
+        self, notes: str | None = None, requested_by: str | None = None
+    ) -> None:
+        """Actualiza los datos editables; solo en DRAFT"""
+        self.ensure_draft("actualizar")
+        if notes is not None:
+            self.notes = notes
+        if requested_by is not None:
+            self.requested_by = requested_by
+
+    def confirm(self) -> None:
+        self.ensure_draft("confirmar")
+        self.status = TransferStatus.CONFIRMED
+
+    def receive(self) -> None:
         if self.status != TransferStatus.CONFIRMED:
             raise InvalidTransferStatusError(self.status, "recibir")
-        return replace(self, status=TransferStatus.RECEIVED)
+        self.status = TransferStatus.RECEIVED
 
-    def cancel(self) -> "StockTransfer":
+    def cancel(self) -> None:
         if self.status == TransferStatus.RECEIVED:
             raise InvalidTransferStatusError(self.status, "cancelar")
-        return replace(self, status=TransferStatus.CANCELLED)
+        self.status = TransferStatus.CANCELLED
 
 
 @dataclass
@@ -48,3 +69,18 @@ class StockTransferItem(Entity):
     id: int | None = None
     lot_id: int | None = None
     notes: str | None = None
+
+    def __post_init__(self):
+        _ensure_positive(self.quantity)
+
+    def update(self, quantity: int | None = None, notes: str | None = None) -> None:
+        if quantity is not None:
+            _ensure_positive(quantity)
+            self.quantity = quantity
+        if notes is not None:
+            self.notes = notes
+
+
+def _ensure_positive(quantity: int) -> None:
+    if quantity <= 0:
+        raise ValidationError("La cantidad debe ser mayor a cero")

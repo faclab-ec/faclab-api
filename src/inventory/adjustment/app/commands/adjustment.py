@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -9,11 +9,9 @@ from src.inventory.adjustment.app.repositories import (
 from src.inventory.adjustment.domain.entities import (
     AdjustmentItem,
     AdjustmentReason,
-    AdjustmentStatus,
     InventoryAdjustment,
 )
 from src.inventory.adjustment.domain.events import AdjustmentConfirmed
-from src.inventory.adjustment.domain.exceptions import InvalidAdjustmentStatusError
 from src.inventory.movement.app.commands.movement import (
     CreateMovementCommand,
     CreateMovementCommandHandler,
@@ -116,17 +114,9 @@ class UpdateAdjustmentCommandHandler(CommandHandler[UpdateAdjustmentCommand, dic
         adjustment = self.repo.get_by_id(command.id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
-        if adjustment.status != AdjustmentStatus.DRAFT:
-            raise InvalidAdjustmentStatusError(adjustment.status, "actualizar")
 
-        updated = replace(
-            adjustment,
-            notes=command.notes if command.notes is not None else adjustment.notes,
-            adjusted_by=command.adjusted_by
-            if command.adjusted_by is not None
-            else adjustment.adjusted_by,
-        )
-        saved = self.repo.update(updated)
+        adjustment.update_details(notes=command.notes, adjusted_by=command.adjusted_by)
+        saved = self.repo.update(adjustment)
         return saved.dict()
 
 
@@ -139,8 +129,7 @@ class DeleteAdjustmentCommandHandler(CommandHandler[DeleteAdjustmentCommand, Non
         adjustment = self.repo.get_by_id(command.id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
-        if adjustment.status != AdjustmentStatus.DRAFT:
-            raise InvalidAdjustmentStatusError(adjustment.status, "eliminar")
+        adjustment.ensure_draft("eliminar")
         self.repo.delete(command.id)
 
 
@@ -163,7 +152,7 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
 
-        confirmed = adjustment.confirm()
+        adjustment.confirm()
 
         items = self.item_repo.filter_by(adjustment_id=adjustment.id)
         adjusted_count = 0
@@ -186,7 +175,7 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
             )
             adjusted_count += 1
 
-        confirmed = self.repo.update(confirmed)
+        confirmed = self.repo.update(adjustment)
         self.event_publisher.publish(
             AdjustmentConfirmed(
                 aggregate_id=confirmed.require_id(),
@@ -208,8 +197,8 @@ class CancelAdjustmentCommandHandler(CommandHandler[CancelAdjustmentCommand, dic
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
 
-        cancelled = adjustment.cancel()
-        saved = self.repo.update(cancelled)
+        adjustment.cancel()
+        saved = self.repo.update(adjustment)
         return saved.dict()
 
 
@@ -229,8 +218,7 @@ class AddAdjustmentItemCommandHandler(CommandHandler[AddAdjustmentItemCommand, d
         adjustment = self.repo.get_by_id(command.adjustment_id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.adjustment_id} not found")
-        if adjustment.status != AdjustmentStatus.DRAFT:
-            raise InvalidAdjustmentStatusError(adjustment.status, "agregar ítems a")
+        adjustment.ensure_draft("agregar ítems a")
 
         stock = self.stock_repo.first(
             product_id=command.product_id, location_id=command.location_id
@@ -267,17 +255,10 @@ class UpdateAdjustmentItemCommandHandler(
         adjustment = self.repo.get_by_id(item.adjustment_id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {item.adjustment_id} not found")
-        if adjustment.status != AdjustmentStatus.DRAFT:
-            raise InvalidAdjustmentStatusError(adjustment.status, "modificar ítems de")
+        adjustment.ensure_draft("modificar ítems de")
 
-        updated = replace(
-            item,
-            actual_quantity=command.actual_quantity
-            if command.actual_quantity is not None
-            else item.actual_quantity,
-            notes=command.notes if command.notes is not None else item.notes,
-        )
-        saved = self.item_repo.update(updated)
+        item.update(actual_quantity=command.actual_quantity, notes=command.notes)
+        saved = self.item_repo.update(item)
         return {**saved.dict(), "difference": saved.difference}
 
 
@@ -298,6 +279,5 @@ class RemoveAdjustmentItemCommandHandler(
         adjustment = self.repo.get_by_id(item.adjustment_id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {item.adjustment_id} not found")
-        if adjustment.status != AdjustmentStatus.DRAFT:
-            raise InvalidAdjustmentStatusError(adjustment.status, "eliminar ítems de")
+        adjustment.ensure_draft("eliminar ítems de")
         self.item_repo.delete(command.id)

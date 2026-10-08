@@ -7,7 +7,6 @@ from src.catalog.product.app.repositories import ProductRepository
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import SaleItem
 from src.sales.domain.events import SaleItemAdded
-from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.sales.domain.services import recalculate_sale_totals
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -49,8 +48,7 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
         # Validar que la venta esté en DRAFT
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "add items to")
+        sale.ensure_draft("add items to")
 
         # Obtener tax_code del producto
         product = self.product_repo.get_by_id(command.product_id)

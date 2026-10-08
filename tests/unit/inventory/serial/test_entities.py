@@ -24,9 +24,8 @@ def _make_serial(**overrides) -> SerialNumber:
 
 def test_mark_sold_from_available():
     serial = _make_serial(status=SerialStatus.AVAILABLE)
-    sold = serial.mark_sold()
-    assert sold.status == SerialStatus.SOLD
-    assert serial.status == SerialStatus.AVAILABLE  # immutable
+    serial.mark_sold()
+    assert serial.status == SerialStatus.SOLD
 
 
 def test_mark_sold_from_reserved_raises():
@@ -54,8 +53,8 @@ def test_mark_sold_from_returned_raises():
 
 def test_mark_reserved_from_available():
     serial = _make_serial(status=SerialStatus.AVAILABLE)
-    reserved = serial.mark_reserved()
-    assert reserved.status == SerialStatus.RESERVED
+    serial.mark_reserved()
+    assert serial.status == SerialStatus.RESERVED
 
 
 def test_mark_reserved_from_sold_raises():
@@ -77,8 +76,8 @@ def test_mark_reserved_from_reserved_raises():
 
 def test_mark_returned_from_sold():
     serial = _make_serial(status=SerialStatus.SOLD)
-    returned = serial.mark_returned()
-    assert returned.status == SerialStatus.RETURNED
+    serial.mark_returned()
+    assert serial.status == SerialStatus.RETURNED
 
 
 def test_mark_returned_from_available_raises():
@@ -100,30 +99,36 @@ def test_mark_returned_from_reserved_raises():
 
 def test_mark_scrapped_from_available():
     serial = _make_serial(status=SerialStatus.AVAILABLE)
-    scrapped = serial.mark_scrapped()
-    assert scrapped.status == SerialStatus.SCRAPPED
+    serial.mark_scrapped()
+    assert serial.status == SerialStatus.SCRAPPED
 
 
 def test_mark_scrapped_from_sold():
     serial = _make_serial(status=SerialStatus.SOLD)
-    scrapped = serial.mark_scrapped()
-    assert scrapped.status == SerialStatus.SCRAPPED
+    serial.mark_scrapped()
+    assert serial.status == SerialStatus.SCRAPPED
 
 
 def test_mark_scrapped_from_returned():
     serial = _make_serial(status=SerialStatus.RETURNED)
-    scrapped = serial.mark_scrapped()
-    assert scrapped.status == SerialStatus.SCRAPPED
+    serial.mark_scrapped()
+    assert serial.status == SerialStatus.SCRAPPED
 
 
 def test_mark_scrapped_from_reserved():
     serial = _make_serial(status=SerialStatus.RESERVED)
-    scrapped = serial.mark_scrapped()
-    assert scrapped.status == SerialStatus.SCRAPPED
+    serial.mark_scrapped()
+    assert serial.status == SerialStatus.SCRAPPED
 
 
-def test_serial_is_immutable():
+def test_change_status_dispatches_to_the_transition():
     serial = _make_serial(status=SerialStatus.AVAILABLE)
-    sold = serial.mark_sold()
-    assert serial.status == SerialStatus.AVAILABLE
-    assert sold.status == SerialStatus.SOLD
+    serial.change_status(SerialStatus.RESERVED)
+    assert serial.status == SerialStatus.RESERVED
+
+
+def test_change_status_to_available_is_not_allowed():
+    serial = _make_serial(status=SerialStatus.SOLD)
+    with pytest.raises(InvalidSerialStatusError):
+        serial.change_status(SerialStatus.AVAILABLE)
+    assert serial.status == SerialStatus.SOLD

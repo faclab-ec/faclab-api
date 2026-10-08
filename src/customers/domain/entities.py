@@ -30,6 +30,12 @@ class Customer(Entity):
     is_active: bool = True
     created_at: datetime | None = None
 
+    def activate(self) -> None:
+        self.is_active = True
+
+    def deactivate(self) -> None:
+        self.is_active = False
+
 
 @dataclass
 class CustomerContact(Entity):
@@ -39,3 +45,15 @@ class CustomerContact(Entity):
     role: str | None = None
     email: str | None = None
     phone: str | None = None
+
+    def update(
+        self,
+        name: str,
+        role: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> None:
+        self.name = name
+        self.role = role
+        self.email = email
+        self.phone = phone

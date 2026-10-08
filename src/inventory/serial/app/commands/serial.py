@@ -4,10 +4,7 @@ from wireup import injectable
 
 from src.inventory.serial.app.repositories import SerialNumberRepository
 from src.inventory.serial.domain.entities import SerialNumber, SerialStatus
-from src.inventory.serial.domain.exceptions import (
-    InvalidSerialStatusError,
-    SerialNumberAlreadyExistsError,
-)
+from src.inventory.serial.domain.exceptions import SerialNumberAlreadyExistsError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 
@@ -69,18 +66,6 @@ class UpdateSerialStatusCommandHandler(CommandHandler[UpdateSerialStatusCommand,
                 f"Valid values: {', '.join(s.value for s in SerialStatus)}"
             ) from err
 
-        if new_status == SerialStatus.SOLD:
-            serial = serial.mark_sold()
-        elif new_status == SerialStatus.RESERVED:
-            serial = serial.mark_reserved()
-        elif new_status == SerialStatus.RETURNED:
-            serial = serial.mark_returned()
-        elif new_status == SerialStatus.SCRAPPED:
-            serial = serial.mark_scrapped()
-        else:
-            raise InvalidSerialStatusError(
-                serial.serial_number, serial.status, command.status
-            )
-
+        serial.change_status(new_status)
         serial = self.repo.update(serial)
         return serial.dict()

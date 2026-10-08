@@ -554,8 +554,9 @@ def test_receive_repeated_item_lines_cannot_exceed_pending():
         _make_item(id=1, quantity_ordered=10, quantity_received=0)
     ]
 
+    # The second line only has 4 units left after the first one
     with pytest.raises(
-        ExceedsPendingQuantityError, match="Cannot receive 12 units for item 1"
+        ExceedsPendingQuantityError, match="Cannot receive 6 units for item 1"
     ):
         handler.handle(
             CreatePurchaseReceiptCommand(
