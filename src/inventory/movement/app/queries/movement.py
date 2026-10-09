@@ -1,10 +1,17 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from wireup import injectable
 
 from src.inventory.movement.app.repositories import MovementRepository
+from src.inventory.movement.domain.specifications import (
+    MovementsByProduct,
+    MovementsByType,
+    MovementsInDateRange,
+)
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.specifications import Specification, all_of
 
 
 @dataclass
@@ -13,8 +20,8 @@ class GetAllMovementsQuery(Query):
 
     product_id: int | None = None
     type: str | None = None
-    from_date: str | None = None
-    to_date: str | None = None
+    from_date: datetime | None = None
+    to_date: datetime | None = None
     limit: int | None = None
     offset: int | None = None
 
@@ -25,13 +32,16 @@ class GetAllMovementsQueryHandler(QueryHandler[GetAllMovementsQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllMovementsQuery) -> dict:
-        filters = {}
+        specs: list[Specification] = []
         if query.product_id is not None:
-            filters["product_id"] = query.product_id
+            specs.append(MovementsByProduct(query.product_id))
         if query.type is not None:
-            filters["type"] = query.type
-        # TODO: Implementar filtros por from_date y to_date cuando sea necesario
-        return self.repo.paginate(limit=query.limit, offset=query.offset, **filters)
+            specs.append(MovementsByType(query.type))
+        if query.from_date is not None or query.to_date is not None:
+            specs.append(MovementsInDateRange(query.from_date, query.to_date))
+        return self.repo.paginate_by_spec(
+            all_of(specs), limit=query.limit, offset=query.offset
+        )
 
 
 @dataclass

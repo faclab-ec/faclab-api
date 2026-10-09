@@ -42,7 +42,7 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | Metodo | Ruta | Descripcion |
 |---|---|---|
 | `POST` | `/api/admin/products` | Crear producto |
-| `GET` | `/api/admin/products` | Listar con paginacion |
+| `GET` | `/api/admin/products` | Listar con paginacion; `categoryId`, `search` (nombre o SKU que contienen el texto, o código de barras exacto) |
 | `GET` | `/api/admin/products/{id}` | Obtener por ID |
 | `PUT` | `/api/admin/products/{id}` | Actualizar |
 | `DELETE` | `/api/admin/products/{id}` | Eliminar |
@@ -82,7 +82,7 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | Metodo | Ruta | Descripcion |
 |---|---|---|
 | `POST` | `/api/admin/movements` | Crear movimiento (IN/OUT) |
-| `GET` | `/api/admin/movements` | Listar movimientos |
+| `GET` | `/api/admin/movements` | Listar movimientos; `productId`, `type`, `fromDate` y `toDate` (fecha y hora, ambos incluidos) |
 | `GET` | `/api/admin/movements/{id}` | Obtener por ID |
 
 ### Lotes — `/api/admin/lots`
@@ -108,7 +108,7 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | Metodo | Ruta | Descripcion |
 |---|---|---|
 | `POST` | `/api/admin/customers` | Crear cliente |
-| `GET` | `/api/admin/customers` | Listar clientes |
+| `GET` | `/api/admin/customers` | Listar clientes; `search` (nombre o identificación que contienen el texto) |
 | `GET` | `/api/admin/customers/{id}` | Obtener por ID |
 | `GET` | `/api/admin/customers/tax-id/{tax_id}` | Buscar por RUC |
 | `PUT` | `/api/admin/customers/{id}` | Actualizar |
@@ -131,7 +131,7 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | Metodo | Ruta | Descripcion |
 |---|---|---|
 | `POST` | `/api/admin/suppliers` | Crear proveedor |
-| `GET` | `/api/admin/suppliers` | Listar proveedores |
+| `GET` | `/api/admin/suppliers` | Listar proveedores; `isActive`, `search` (nombre o identificación que contienen el texto) |
 | `GET` | `/api/admin/suppliers/{id}` | Obtener por ID |
 | `PUT` | `/api/admin/suppliers/{id}` | Actualizar |
 | `DELETE` | `/api/admin/suppliers/{id}` | Eliminar |

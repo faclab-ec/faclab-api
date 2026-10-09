@@ -146,7 +146,7 @@ def test_get_transfer_items_success():
 
     item_repo = MagicMock()
     item_repo.filter_by.return_value = [item1, item2]
-    handler = GetTransferItemsQueryHandler(item_repo)
+    handler = GetTransferItemsQueryHandler(item_repo, MagicMock())
 
     result = handler.handle(GetTransferItemsQuery(transfer_id=1))
 
@@ -159,7 +159,7 @@ def test_get_transfer_items_success():
 def test_get_transfer_items_empty():
     item_repo = MagicMock()
     item_repo.filter_by.return_value = []
-    handler = GetTransferItemsQueryHandler(item_repo)
+    handler = GetTransferItemsQueryHandler(item_repo, MagicMock())
 
     result = handler.handle(GetTransferItemsQuery(transfer_id=99))
 

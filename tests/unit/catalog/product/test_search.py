@@ -97,3 +97,9 @@ def test_search_products_handler_respects_limit():
 
     _, kwargs = mock_repo.filter_by_spec.call_args
     assert kwargs["limit"] == 5
+
+
+def test_search_term_matches_part_of_the_sku():
+    product = Product(id=1, sku="LAP-001", name="Portátil", barcode=None)
+
+    assert ProductBySearchTerm(term="lap").is_satisfied_by(product) is True

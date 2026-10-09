@@ -47,6 +47,19 @@ def test_get_all_customers_query_handler():
     assert result["total"] == 2
 
 
+def test_get_all_customers_with_search():
+    repo = MagicMock()
+    repo.paginate_by_spec.return_value = {"total": 0, "items": []}
+
+    GetAllCustomersQueryHandler(repo).handle(GetAllCustomersQuery(search="ana"))
+
+    repo.paginate.assert_not_called()
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_customer(name="Ana Pérez"))
+    assert spec.is_satisfied_by(_make_customer(name="Otra", tax_id="ANA-17"))
+    assert not spec.is_satisfied_by(_make_customer(name="Luis"))
+
+
 def test_get_customer_by_id_handler():
     customer = _make_customer()
     repo = MagicMock()

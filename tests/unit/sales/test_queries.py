@@ -251,7 +251,7 @@ def test_get_sale_items_query_handler():
         _make_sale_item(id=2, product_id=200, quantity=5),
     ]
     repo = _mock_repo(entities=items)
-    handler = GetSaleItemsQueryHandler(repo)
+    handler = GetSaleItemsQueryHandler(repo, MagicMock())
 
     query = GetSaleItemsQuery(sale_id=1)
     result = handler.handle(query)
@@ -265,7 +265,7 @@ def test_get_sale_items_query_handler():
 def test_get_sale_items_empty():
     """Test obtener items de una venta sin items"""
     repo = _mock_repo(entities=[])
-    handler = GetSaleItemsQueryHandler(repo)
+    handler = GetSaleItemsQueryHandler(repo, MagicMock())
 
     query = GetSaleItemsQuery(sale_id=1)
     result = handler.handle(query)

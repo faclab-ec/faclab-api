@@ -267,6 +267,8 @@ interface SaleItem {
   id: number;
   saleId: number;
   productId: number;
+  productName: string | null;
+  productSku: string | null;
   quantity: number;
   unitPrice: number;
   discount: number;

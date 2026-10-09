@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
@@ -74,7 +74,7 @@ def _make_supplier_product(**overrides) -> SupplierProduct:
 def test_get_all_suppliers_no_filter():
     suppliers = [_make_supplier(id=1), _make_supplier(id=2, name="Beta Supplies")]
     repo = MagicMock()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 2,
         "limit": None,
         "offset": None,
@@ -84,7 +84,7 @@ def test_get_all_suppliers_no_filter():
 
     result = handler.handle(GetAllSuppliersQuery())
 
-    repo.paginate.assert_called_once_with(limit=None, offset=None)
+    repo.paginate_by_spec.assert_called_once_with(ANY, limit=None, offset=None)
     assert len(result["items"]) == 2
     assert result["items"][0]["name"] == "ACME Corp"
     assert result["items"][1]["name"] == "Beta Supplies"
@@ -94,7 +94,7 @@ def test_get_all_suppliers_no_filter():
 def test_get_all_suppliers_with_active_filter():
     active_supplier = _make_supplier(is_active=True)
     repo = MagicMock()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 1,
         "limit": None,
         "offset": None,
@@ -104,16 +104,35 @@ def test_get_all_suppliers_with_active_filter():
 
     result = handler.handle(GetAllSuppliersQuery(is_active=True))
 
-    repo.paginate.assert_called_once_with(limit=None, offset=None, is_active=True)
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_supplier(is_active=True))
+    assert not spec.is_satisfied_by(_make_supplier(is_active=False))
     assert len(result["items"]) == 1
     assert result["items"][0]["is_active"] is True
     assert result["total"] == 1
 
 
+def test_get_all_suppliers_with_search():
+    repo = MagicMock()
+    repo.paginate_by_spec.return_value = {"total": 0, "items": []}
+
+    GetAllSuppliersQueryHandler(repo).handle(
+        GetAllSuppliersQuery(is_active=True, search="acme")
+    )
+
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_supplier(name="ACME Corp", is_active=True))
+    assert spec.is_satisfied_by(
+        _make_supplier(name="Otro", tax_id="ACME-1", is_active=True)
+    )
+    assert not spec.is_satisfied_by(_make_supplier(name="ACME Corp", is_active=False))
+    assert not spec.is_satisfied_by(_make_supplier(name="Beta", is_active=True))
+
+
 def test_get_all_suppliers_with_inactive_filter():
     inactive_supplier = _make_supplier(is_active=False)
     repo = MagicMock()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 1,
         "limit": None,
         "offset": None,
@@ -123,7 +142,9 @@ def test_get_all_suppliers_with_inactive_filter():
 
     result = handler.handle(GetAllSuppliersQuery(is_active=False))
 
-    repo.paginate.assert_called_once_with(limit=None, offset=None, is_active=False)
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_supplier(is_active=False))
+    assert not spec.is_satisfied_by(_make_supplier(is_active=True))
     assert len(result["items"]) == 1
     assert result["items"][0]["is_active"] is False
     assert result["total"] == 1
@@ -202,7 +223,7 @@ def test_get_supplier_products_by_supplier_id_handler():
     ]
     repo = MagicMock()
     repo.filter_by.return_value = products
-    handler = GetSupplierProductsBySupplierIdQueryHandler(repo)
+    handler = GetSupplierProductsBySupplierIdQueryHandler(repo, MagicMock())
 
     result = handler.handle(GetSupplierProductsBySupplierIdQuery(supplier_id=1))
 

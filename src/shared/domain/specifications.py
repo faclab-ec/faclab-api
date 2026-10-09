@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from typing import Any
 
 
@@ -65,3 +66,31 @@ class NotSpecification(Specification):
 
         criteria = self.spec.to_query_criteria()
         return [not_(and_(*criteria))]
+
+
+class MatchAll(Specification):
+    """Acepta cualquier candidato: el neutro de `&`"""
+
+    def is_satisfied_by(self, candidate: Any) -> bool:
+        return True
+
+    def to_query_criteria(self) -> list[Any]:
+        return []
+
+
+def all_of(specs: Iterable[Specification]) -> Specification:
+    """Combina las especificaciones con AND; sin ninguna, acepta todo"""
+    combined: Specification = MatchAll()
+    for spec in specs:
+        combined = combined & spec
+    return combined
+
+
+def contains_pattern(term: str) -> str:
+    """Patrón LIKE que busca `term` literal en cualquier parte del texto.
+
+    Escapa `%`, `_` y `\\` para que el término no actúe como comodín; úsalo con
+    `escape="\\"`.
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"

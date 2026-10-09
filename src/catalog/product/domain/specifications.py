@@ -1,4 +1,4 @@
-from src.shared.domain.specifications import Specification
+from src.shared.domain.specifications import Specification, contains_pattern
 
 
 class ProductInCategory(Specification):
@@ -41,14 +41,17 @@ class ProductBySku(Specification):
 
 
 class ProductBySearchTerm(Specification):
+    """Productos cuyo nombre o SKU contiene el término, o con ese código de barras"""
+
     def __init__(self, term: str):
         self.term = term
 
     def is_satisfied_by(self, candidate) -> bool:
+        term = self.term.lower()
         return (
-            candidate.sku == self.term
+            term in candidate.sku.lower()
             or (candidate.barcode and candidate.barcode == self.term)
-            or self.term.lower() in candidate.name.lower()
+            or term in candidate.name.lower()
         )
 
     def to_query_criteria(self):
@@ -56,10 +59,11 @@ class ProductBySearchTerm(Specification):
 
         from src.catalog.product.infra.models import ProductModel
 
+        pattern = contains_pattern(self.term)
         return [
             or_(
-                ProductModel.sku == self.term,
+                ProductModel.sku.ilike(pattern, escape="\\"),
                 ProductModel.barcode == self.term,
-                ProductModel.name.ilike(f"%{self.term}%"),
+                ProductModel.name.ilike(pattern, escape="\\"),
             )
         ]

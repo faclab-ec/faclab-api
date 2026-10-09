@@ -148,7 +148,7 @@ def test_get_adjustment_items_includes_difference():
 
     item_repo = MagicMock()
     item_repo.filter_by.return_value = [item1, item2]
-    handler = GetAdjustmentItemsQueryHandler(item_repo)
+    handler = GetAdjustmentItemsQueryHandler(item_repo, MagicMock())
 
     result = handler.handle(GetAdjustmentItemsQuery(adjustment_id=1))
 

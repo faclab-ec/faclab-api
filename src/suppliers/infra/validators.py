@@ -126,8 +126,26 @@ class SupplierProductResponse(SupplierProductRequest):
         validation_alias=AliasChoices("supplierId", "supplier_id"),
         serialization_alias="supplierId",
     )
+    product_name: str | None = Field(
+        None,
+        description="Product name",
+        validation_alias=AliasChoices("productName", "product_name"),
+        serialization_alias="productName",
+    )
+    product_sku: str | None = Field(
+        None,
+        description="Product SKU",
+        validation_alias=AliasChoices("productSku", "product_sku"),
+        serialization_alias="productSku",
+    )
 
 
 # Query Params
 class SupplierQueryParams(QueryParams):
     is_active: bool | None = None
+    search: str | None = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Text to look for in the name or tax ID (case-insensitive)",
+    )
