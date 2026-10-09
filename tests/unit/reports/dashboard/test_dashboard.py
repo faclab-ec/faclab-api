@@ -17,10 +17,12 @@ def _handler(**results) -> tuple[GetDashboardQueryHandler, dict[str, MagicMock]]
             "out_of_stock",
             "reorder_point",
             "expiring_lots",
+            "sale_repo",
         )
     }
     for name, value in results.items():
         handlers[name].handle.return_value = value
+    handlers["sale_repo"].count_by.return_value = 4
     return GetDashboardQueryHandler(**handlers), handlers
 
 
@@ -45,5 +47,7 @@ def test_dashboard_returns_totals_instead_of_full_lists():
             "reorder_point": 0,
             "expiring_soon": 3,
         },
+        "uninvoiced_sales": 4,
     }
     assert handlers["expiring_lots"].handle.call_args.args[0].days == 15
+    handlers["sale_repo"].count_by.assert_called_once_with(status="CONFIRMED")

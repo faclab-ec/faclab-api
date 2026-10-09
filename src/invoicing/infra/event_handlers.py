@@ -8,6 +8,10 @@ la venta se confirma de verdad.
 Cada ítem lleva además `invoice_discount`, `invoice_base` e `invoice_tax`: sus
 montos en la factura, redondeados a centavos y con el descuento global ya
 prorrateado (ver `invoice_lines`). faclab-invoicing los usa tal cual.
+
+`SaleInvoicingRequested` (reenvío manual) produce el mismo mensaje con un
+`event_id` nuevo. faclab-invoicing deduplica por `event_id` y, en un reenvío,
+lo ignora si la venta ya tiene una factura que no está rechazada.
 """
 
 from decimal import Decimal
@@ -15,7 +19,8 @@ from typing import Any
 
 from src.catalog.product.app.repositories import ProductRepository
 from src.customers.app.repositories import CustomerRepository
-from src.sales.domain.events import SaleConfirmed
+from src.invoicing.domain.exceptions import InvoicingDisabledError
+from src.sales.domain.events import SaleConfirmed, SaleInvoicingRequested
 from src.sales.domain.services import SaleLine, invoice_lines
 from src.shared.domain.tax import TaxCode
 from src.shared.infra.events.decorators import event_handler
@@ -26,7 +31,7 @@ SALES_CONFIRMED_TOPIC = "sales.confirmed"
 
 
 def build_sale_confirmed_message(
-    event: SaleConfirmed,
+    event: SaleConfirmed | SaleInvoicingRequested,
     customer_repo: CustomerRepository,
     product_repo: ProductRepository,
 ) -> dict[str, Any]:
@@ -100,13 +105,7 @@ def build_sale_confirmed_message(
     }
 
 
-@event_handler(SaleConfirmed)
-def enqueue_sale_confirmed(event: SaleConfirmed, session: Any = None) -> None:
-    from config import config
-
-    if not config.KAFKA_ENABLED:
-        return
-
+def _enqueue(event: SaleConfirmed | SaleInvoicingRequested, session: Any) -> None:
     with create_sync_scope(session) as scope:
         message = build_sale_confirmed_message(
             event, scope.get(CustomerRepository), scope.get(ProductRepository)
@@ -117,3 +116,24 @@ def enqueue_sale_confirmed(event: SaleConfirmed, session: Any = None) -> None:
             event_type="SaleConfirmed",
             event_id=event.event_id,
         )
+
+
+@event_handler(SaleConfirmed)
+def enqueue_sale_confirmed(event: SaleConfirmed, session: Any = None) -> None:
+    from config import config
+
+    if not config.KAFKA_ENABLED:
+        return
+    _enqueue(event, session)
+
+
+@event_handler(SaleInvoicingRequested)
+def enqueue_invoicing_request(
+    event: SaleInvoicingRequested, session: Any = None
+) -> None:
+    from config import config
+
+    # Pedido a mano: callar aquí escondería que no se envía nada
+    if not config.KAFKA_ENABLED:
+        raise InvoicingDisabledError()
+    _enqueue(event, session)

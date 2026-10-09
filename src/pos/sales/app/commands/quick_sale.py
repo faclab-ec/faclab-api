@@ -16,7 +16,7 @@ from src.sales.app.repositories import (
     SaleRepository,
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
-from src.sales.domain.events import SaleConfirmed
+from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
 from src.sales.domain.exceptions import (
     InsufficientStockError,
     OverrideReasonRequiredError,
@@ -185,37 +185,16 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         self.sale_repo.update(sale)
 
         # 12. Publicar evento
-        items_data = [
-            {
-                "product_id": item.product_id,
-                "quantity": item.quantity,
-                "unit_price": item.unit_price,
-                "discount": item.discount,
-                "tax_code": item.tax_code,
-                "tax_amount": item.tax_amount,
-                "subtotal": item.subtotal,
-            }
-            for item in created_items
-        ]
-
-        payments_data = [
-            {
-                "method": p.payment_method,
-                "amount": p.amount,
-            }
-            for p in created_payments
-        ]
-
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
                 sale_id=sale.require_id(),
                 customer_id=sale.customer_id,
-                items=items_data,
+                items=sale_items_data(created_items),
                 subtotal=sale.subtotal,
                 total_discount=sale.discount,
                 total=sale.total,
-                payments=payments_data,
+                payments=sale_payments_data(created_payments),
                 source="pos",
             )
         )

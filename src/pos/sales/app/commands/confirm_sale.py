@@ -14,7 +14,7 @@ from src.sales.app.repositories import (
     SaleItemRepository,
     SaleRepository,
 )
-from src.sales.domain.events import SaleConfirmed
+from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
 from src.sales.domain.exceptions import InsufficientStockError, SaleHasNoItemsError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -86,38 +86,18 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             stock.update_quantity(-abs(item.quantity))
             self.stock_repo.update(stock)
 
-        items_data = [
-            {
-                "product_id": item.product_id,
-                "quantity": item.quantity,
-                "unit_price": item.unit_price,
-                "discount": item.discount,
-                "tax_code": item.tax_code,
-                "tax_amount": item.tax_amount,
-                "subtotal": item.subtotal,
-            }
-            for item in items
-        ]
-
         payments = self.payment_repo.filter_by(sale_id=sale.id)
-        payments_data = [
-            {
-                "method": p.payment_method,
-                "amount": p.amount,
-            }
-            for p in payments
-        ]
 
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
                 sale_id=sale.require_id(),
                 customer_id=sale.customer_id,
-                items=items_data,
+                items=sale_items_data(items),
                 subtotal=sale.subtotal,
                 total_discount=sale.discount,
                 total=sale.total,
-                payments=payments_data,
+                payments=sale_payments_data(payments),
                 source="pos",
             )
         )
