@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
+from src.auth.app.commands.last_admin import ensure_not_last_admin
 from src.auth.app.repositories import UserRepository
 from src.auth.domain.entities import Role
 from src.shared.app.commands import Command, CommandHandler
@@ -24,6 +25,9 @@ class UpdateUserRoleCommandHandler(CommandHandler[UpdateUserRoleCommand, dict]):
         if user is None:
             raise NotFoundError(f"User with id {command.user_id} not found")
 
-        user.change_role(Role(command.role))
+        role = Role(command.role)
+        if role != Role.ADMIN:
+            ensure_not_last_admin(user, self.repo)
+        user.change_role(role)
         user = self.repo.update(user)
         return user.dict()

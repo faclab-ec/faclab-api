@@ -6,6 +6,7 @@ from src.auth.app.commands.change_password import (
     ChangePasswordCommandHandler,
 )
 from src.auth.app.commands.login import LoginCommand, LoginCommandHandler
+from src.auth.app.commands.logout import LogoutCommand, LogoutCommandHandler
 from src.auth.app.commands.refresh_token import (
     RefreshTokenCommand,
     RefreshTokenCommandHandler,
@@ -46,6 +47,12 @@ class AuthRouter:
             summary="Refresh an access token",
             responses=RESPONSES_COMMAND,
         )(self.refresh)
+        self.router.post(
+            "/logout",
+            status_code=204,
+            summary="End the session of a refresh token",
+            responses=RESPONSES_COMMAND,
+        )(self.logout)
         self.router.get(
             "/me",
             response_model=DataResponse[AuthenticatedUserResponse],
@@ -98,6 +105,15 @@ class AuthRouter:
             meta=meta,
         )
 
+    def logout(
+        self,
+        handler: Injected[LogoutCommandHandler],
+        request: RefreshRequest,
+    ) -> None:
+        """Revokes the session so its refresh token stops working. Always 204:
+        an expired or unknown token leaves nothing to close."""
+        handler.handle(LogoutCommand(refresh_token=request.refresh_token))
+
     def me(
         self,
         user: AuthenticatedUser = Depends(get_current_user),
@@ -125,5 +141,6 @@ class AuthRouter:
                 user_id=user.id,
                 current_password=body.current_password,
                 new_password=body.new_password,
+                keep_session_id=user.session_id,
             )
         )

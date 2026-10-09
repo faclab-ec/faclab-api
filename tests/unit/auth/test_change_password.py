@@ -37,7 +37,9 @@ def test_change_password_success():
 
     event_publisher = MagicMock()
 
-    handler = ChangePasswordCommandHandler(mock_repo, mock_hasher, event_publisher)
+    handler = ChangePasswordCommandHandler(
+        mock_repo, MagicMock(), mock_hasher, event_publisher
+    )
     handler.handle(
         ChangePasswordCommand(
             user_id=1,
@@ -66,7 +68,9 @@ def test_change_password_wrong_current_raises_invalid_credentials():
     mock_hasher = Mock()
     mock_hasher.verify.return_value = False
 
-    handler = ChangePasswordCommandHandler(mock_repo, mock_hasher, MagicMock())
+    handler = ChangePasswordCommandHandler(
+        mock_repo, MagicMock(), mock_hasher, MagicMock()
+    )
 
     with pytest.raises(InvalidCredentialsError):
         handler.handle(
@@ -82,7 +86,7 @@ def test_change_password_user_not_found():
     mock_repo = Mock()
     mock_repo.get_by_id.return_value = None
 
-    handler = ChangePasswordCommandHandler(mock_repo, Mock(), MagicMock())
+    handler = ChangePasswordCommandHandler(mock_repo, MagicMock(), Mock(), MagicMock())
 
     with pytest.raises(NotFoundError):
         handler.handle(
@@ -99,7 +103,7 @@ def test_change_password_weak_new_password():
     mock_repo = Mock()
     mock_repo.get_by_id.return_value = user
 
-    handler = ChangePasswordCommandHandler(mock_repo, Mock(), MagicMock())
+    handler = ChangePasswordCommandHandler(mock_repo, MagicMock(), Mock(), MagicMock())
 
     with pytest.raises(ValueError):
         handler.handle(
@@ -109,3 +113,26 @@ def test_change_password_weak_new_password():
                 new_password="short",
             )
         )
+
+
+def test_change_password_closes_every_other_session():
+    mock_repo = Mock()
+    mock_repo.get_by_id.return_value = _make_user()
+    mock_hasher = Mock()
+    mock_hasher.verify.return_value = True
+    mock_hasher.hash.return_value = "hashed_new"
+    session_repo = MagicMock()
+
+    ChangePasswordCommandHandler(
+        mock_repo, session_repo, mock_hasher, MagicMock()
+    ).handle(
+        ChangePasswordCommand(
+            user_id=1,
+            current_password="oldpass12",
+            new_password="newpass12",
+            keep_session_id=5,
+        )
+    )
+
+    user_id, _now, keep = session_repo.revoke_all_for_user.call_args.args
+    assert (user_id, keep) == (1, 5)

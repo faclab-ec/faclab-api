@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from wireup import injectable
 
-from src.auth.app.repositories import UserRepository
+from src.auth.app.repositories import AuthSessionRepository, UserRepository
 from src.auth.app.services.password_hasher import PasswordHasher
 from src.auth.domain.events import UserPasswordReset
 from src.auth.domain.value_objects import PlainPassword
@@ -23,10 +24,12 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
     def __init__(
         self,
         repo: UserRepository,
+        session_repo: AuthSessionRepository,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
     ):
         self.repo = repo
+        self.session_repo = session_repo
         self.hasher = hasher
         self.event_publisher = event_publisher
 
@@ -40,6 +43,8 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         new_hash = self.hasher.hash(command.new_password)
         user.reset_password(new_hash)
         user = self.repo.update(user)
+        # Whoever had the old password is logged out
+        self.session_repo.revoke_all_for_user(user.require_id(), datetime.now())
 
         self.event_publisher.publish(
             UserPasswordReset(

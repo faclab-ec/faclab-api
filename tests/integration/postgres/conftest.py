@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from main import app
 from src.auth.domain.entities import Role, User
-from src.auth.infra.models import UserModel
+from src.auth.infra.models import AuthSessionModel, UserModel
 from src.auth.infra.token_service import JwtTokenService
 from src.shared.infra.database import Base
 from src.shared.infra.events.event_bus import EventBus
@@ -128,7 +129,13 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
                 must_change_password=False,
             )
             session.add(model)
+            session.flush()
+            auth_session = AuthSessionModel(
+                user_id=model.id, expires_at=datetime.now() + timedelta(days=1)
+            )
+            session.add(auth_session)
             session.commit()
+            session_id = auth_session.id
             user = User(
                 id=model.id,
                 username=model.username,
@@ -136,7 +143,7 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
                 password_hash=model.password_hash,
                 role=role,
             )
-        token = JwtTokenService().issue_pair(user).access_token
+        token = JwtTokenService().issue_pair(user, session_id).access_token
         return {"Authorization": f"Bearer {token}"}
 
     return _headers

@@ -25,11 +25,17 @@ class TokenClaims:
     exp: int
     iss: str
     must_change_password: bool = False
+    sid: int | None = None  # AuthSession id; tokens issued before sessions have none
 
 
 class TokenService(ABC):
+    @property
     @abstractmethod
-    def issue_pair(self, user: User) -> TokenPair: ...
+    def refresh_ttl_seconds(self) -> int:
+        """How long a session lasts without refreshing"""
+
+    @abstractmethod
+    def issue_pair(self, user: User, session_id: int) -> TokenPair: ...
 
     @abstractmethod
     def decode_access(self, token: str) -> TokenClaims: ...

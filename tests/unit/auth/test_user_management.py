@@ -16,6 +16,7 @@ from src.auth.app.commands.update_user_role import (
     UpdateUserRoleCommandHandler,
 )
 from src.auth.domain.entities import Role, User
+from src.auth.domain.exceptions import LastAdminError
 from src.shared.domain.exceptions import NotFoundError
 
 
@@ -74,7 +75,7 @@ def test_deactivate_user_success():
     mock_repo.get_by_id.return_value = user
     mock_repo.update.return_value = deactivated
 
-    handler = DeactivateUserCommandHandler(mock_repo)
+    handler = DeactivateUserCommandHandler(mock_repo, Mock())
     result = handler.handle(DeactivateUserCommand(user_id=1))
 
     assert result["is_active"] is False
@@ -86,7 +87,7 @@ def test_deactivate_user_not_found():
     mock_repo = Mock()
     mock_repo.get_by_id.return_value = None
 
-    handler = DeactivateUserCommandHandler(mock_repo)
+    handler = DeactivateUserCommandHandler(mock_repo, Mock())
 
     with pytest.raises(NotFoundError):
         handler.handle(DeactivateUserCommand(user_id=999))
@@ -115,3 +116,54 @@ def test_activate_user_not_found():
 
     with pytest.raises(NotFoundError):
         handler.handle(ActivateUserCommand(user_id=999))
+
+
+def test_deactivate_user_closes_its_sessions():
+    mock_repo = Mock()
+    mock_repo.get_by_id.return_value = _make_user()
+    mock_repo.update.side_effect = lambda user: user
+    session_repo = Mock()
+
+    DeactivateUserCommandHandler(mock_repo, session_repo).handle(
+        DeactivateUserCommand(user_id=1)
+    )
+
+    assert session_repo.revoke_all_for_user.call_args.args[0] == 1
+
+
+def test_last_active_admin_cannot_be_deactivated():
+    mock_repo = Mock()
+    mock_repo.get_by_id.return_value = _make_user(role=Role.ADMIN)
+    mock_repo.count_by.return_value = 1
+
+    with pytest.raises(LastAdminError):
+        DeactivateUserCommandHandler(mock_repo, Mock()).handle(
+            DeactivateUserCommand(user_id=1)
+        )
+    mock_repo.count_by.assert_called_once_with(role=1, is_active=True)
+    mock_repo.update.assert_not_called()
+
+
+def test_an_admin_can_be_deactivated_while_another_remains():
+    mock_repo = Mock()
+    mock_repo.get_by_id.return_value = _make_user(role=Role.ADMIN)
+    mock_repo.update.side_effect = lambda user: user
+    mock_repo.count_by.return_value = 2
+
+    result = DeactivateUserCommandHandler(mock_repo, Mock()).handle(
+        DeactivateUserCommand(user_id=1)
+    )
+
+    assert result["is_active"] is False
+
+
+def test_last_active_admin_cannot_lose_the_admin_role():
+    mock_repo = Mock()
+    mock_repo.get_by_id.return_value = _make_user(role=Role.ADMIN)
+    mock_repo.count_by.return_value = 1
+
+    with pytest.raises(LastAdminError):
+        UpdateUserRoleCommandHandler(mock_repo).handle(
+            UpdateUserRoleCommand(user_id=1, role=Role.MANAGER.value)
+        )
+    mock_repo.update.assert_not_called()

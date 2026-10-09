@@ -13,7 +13,7 @@ This document is a self-contained contract for implementing authentication and a
 
 - **Content-Type**: `application/json` on all writes.
 - **Auth header** (protected routes): `Authorization: Bearer <accessToken>`.
-- **Public routes** (no auth): `POST /api/auth/login`, `POST /api/auth/refresh`.
+- **Public routes** (no auth): `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`.
 - **Response envelope** (success):
   ```json
   { "data": { ... }, "meta": { "requestId": "uuid", "timestamp": "ISO-8601" } }
@@ -134,14 +134,19 @@ Validation: `username` 1..64 chars, `password` 1..128 chars.
 { "refreshToken": "eyJhbGciOi..." }
 ```
 
-**200 Response**: same shape as `/login` (new access + refresh tokens). Treat as full rotation; replace both.
+**200 Response**: same shape as `/login` (new access + refresh tokens of the same session). Replace both; the session's expiry moves forward 7 days.
 
 **Errors**
 | Status | Code | Meaning |
 |---|---|---|
-| 400 | `TOKEN_EXPIRED` | Refresh token expired → force re-login |
-| 400 | `INVALID_TOKEN` | Not a refresh token / malformed → force re-login |
-| 400 | `INVALID_CREDENTIALS` | User was deactivated or deleted → force re-login |
+| 401 | `TOKEN_EXPIRED` | Refresh token expired → force re-login |
+| 401 | `INVALID_TOKEN` | Not a refresh token / malformed, or its session ended (logout, password change or reset, user deactivated) → force re-login |
+
+### 3.3 `POST /api/auth/logout`
+
+**Request** `{ "refreshToken": "eyJhbGciOi..." }`
+
+**204**, always: the session of that refresh token is revoked, so the token can't be refreshed again. An expired, invalid or already-closed token leaves nothing to close and also returns 204. Clear the tokens client-side afterwards; the access token keeps working until it expires (15 min).
 
 ---
 
@@ -197,6 +202,7 @@ Validation: `newPassword` ≥ 8 chars, ≤ 128.
 - On success the server clears the `mustChangePassword` flag in the DB, but **the access/refresh tokens already in the client still carry `mcp=true`**. To unblock the user, either:
   1. Log out and log back in (new tokens come with `mcp=false`), or
   2. Call `POST /api/auth/refresh` to get a fresh token pair — the refresh handler re-reads the user so the new tokens will be clean.
+- The change closes every other session of the user (other devices must log in again); the session that made the change stays open, so option 2 works.
 
   Do this automatically after a 204; otherwise the UI stays stuck on the "must change password" screen even though the DB is updated.
 - After success (and token rotation), call `GET /api/auth/me` to confirm `mustChangePassword: false`.
@@ -268,7 +274,7 @@ Validation: `username` 1..64, `email` 1..128, `password` 8..128, `role` 1..5 (de
 
 **Request** `{ "role": 3 }` (1..5)
 
-Returns updated `UserResponse`. 404 if user missing, 422 on bad role.
+Returns updated `UserResponse`. 404 if user missing, 422 on bad role, 409 `LAST_ADMIN` when it would leave no active admin.
 
 ### 5.5 `POST /api/admin/users/{userId}/activate`
 
@@ -276,7 +282,7 @@ No body. Returns updated `UserResponse`. Idempotent-ish (re-activating active us
 
 ### 5.6 `POST /api/admin/users/{userId}/deactivate`
 
-No body. Returns updated `UserResponse`. After this call, the target user's **access tokens still work until they expire**, but `/refresh` will fail with `INVALID_CREDENTIALS`. UI should assume the user is effectively signed-out on next token rotation.
+No body. Returns updated `UserResponse`. Every session of the user is revoked: their **access tokens still work until they expire**, but `/refresh` fails with `INVALID_TOKEN`. 409 `LAST_ADMIN` if they are the only active admin.
 
 ### 5.7 `POST /api/admin/users/{userId}/reset-password` — admin-assisted reset
 
@@ -337,8 +343,9 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 
 - Tokens are JWT HS256 (opaque to the frontend; do **not** parse claims client-side for auth decisions — rely on `/me`).
 - On login, `expiresIn` is the access TTL in seconds.
-- Every refresh issues a **new refresh token**; discard the old one.
-- On logout: client-side only — clear tokens from storage. There is no `/logout` endpoint.
+- Login opens a **session** (`auth_sessions`); both tokens carry its id in the `sid` claim. `/refresh` only works while the session is active and pushes its expiry forward, so an active user stays signed in.
+- Sessions end on `POST /api/auth/logout`, on a password change (every session except the one that made the change), on an admin reset or on deactivation. Access tokens are not checked against the session and expire on their own.
+- The access token also carries `perms` (the role's permission strings) so other services, such as faclab-invoicing, authorize the same way as this API.
 
 ---
 
@@ -348,16 +355,15 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 |---|---|---|---|
 | `INVALID_CREDENTIALS` | 401 | Wrong username/password; inactive user on login; deactivated user on refresh | Show "usuario o contraseña inválidos"; on refresh → force re-login |
 | `TOKEN_EXPIRED` | 401 | Access or refresh token past `exp` | Access → attempt refresh; Refresh → force re-login |
-| `INVALID_TOKEN` | 401 | Bad signature, wrong typ (sent refresh where access needed), malformed | Force re-login |
+| `INVALID_TOKEN` | 401 | Bad signature, wrong typ (sent refresh where access needed), malformed; on refresh, the session ended | Force re-login |
 | `PERMISSION_DENIED` | 403 | No auth header OR user lacks required permission | No header → force login; lacks perm → show "no access" view |
 | `PASSWORD_CHANGE_REQUIRED` | 403 | User has `mustChangePassword=true` and is calling a permission-gated route | Redirect to change-password screen; only `/me` and `/change-password` are reachable |
 | `USERNAME_ALREADY_EXISTS` | 409 | Create user conflict | Mark `username` field error |
 | `EMAIL_ALREADY_EXISTS` | 409 | Create user conflict | Mark `email` field error |
+| `LAST_ADMIN` | 409 | Deactivating or demoting the only active admin | Explain that another admin is needed first |
 | `NOT_FOUND` | 404 | User id missing | Show "user not found" |
 | `VALIDATION_ERROR` | 422 | Body/query validation failed | Use `errors[i].field` for inline errors |
 | `INTERNAL_ERROR` | 500 | Unexpected server failure | Generic toast + retry |
-
-> Note: several auth failures surface as HTTP 400 (not 401/403) per the shared `ApplicationError` convention. Discriminate by `errors[0].code`, not status code alone.
 
 ---
 

@@ -35,7 +35,7 @@ def test_admin_reset_password_sets_flag_and_rehashes():
 
     publisher = MagicMock()
 
-    handler = AdminResetPasswordCommandHandler(repo, hasher, publisher)
+    handler = AdminResetPasswordCommandHandler(repo, MagicMock(), hasher, publisher)
     result = handler.handle(
         AdminResetPasswordCommand(
             user_id=7,
@@ -61,7 +61,7 @@ def test_admin_reset_password_user_not_found():
     repo = Mock()
     repo.get_by_id.return_value = None
 
-    handler = AdminResetPasswordCommandHandler(repo, Mock(), MagicMock())
+    handler = AdminResetPasswordCommandHandler(repo, MagicMock(), Mock(), MagicMock())
 
     with pytest.raises(NotFoundError):
         handler.handle(
@@ -77,7 +77,7 @@ def test_admin_reset_password_rejects_weak_password():
     repo = Mock()
     repo.get_by_id.return_value = _user()
 
-    handler = AdminResetPasswordCommandHandler(repo, Mock(), MagicMock())
+    handler = AdminResetPasswordCommandHandler(repo, MagicMock(), Mock(), MagicMock())
 
     with pytest.raises(ValueError):
         handler.handle(
@@ -104,7 +104,7 @@ def test_change_password_clears_must_change_flag():
     hasher.verify.return_value = True
     hasher.hash.return_value = "brand_new"
 
-    handler = ChangePasswordCommandHandler(repo, hasher, MagicMock())
+    handler = ChangePasswordCommandHandler(repo, MagicMock(), hasher, MagicMock())
     handler.handle(
         ChangePasswordCommand(
             user_id=7,
