@@ -7,9 +7,9 @@ from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.app.repositories import SaleRepository
 from src.sales.domain.entities import Sale
 from src.sales.domain.events import SaleCreated
+from src.sales.domain.exceptions import CustomerRequiredError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError
 
 
 @dataclass
@@ -47,7 +47,7 @@ class POSCreateSaleCommandHandler(CommandHandler[POSCreateSaleCommand, dict]):
         if command.is_final_consumer:
             customer_id = None
         elif customer_id is None:
-            raise DomainError("customer_id is required when is_final_consumer is False")
+            raise CustomerRequiredError()
 
         sale = Sale(
             customer_id=customer_id,

@@ -97,7 +97,9 @@ class POSReportRouter:
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[DailySummaryResponse]:
         """Get an aggregated daily sales summary including totals, sale count, and average ticket."""
-        result = handler.handle(GetDailySummaryQuery(date=query_params.date))
+        result = handler.handle(
+            GetDailySummaryQuery(**query_params.model_dump(exclude_none=True))
+        )
         return DataResponse(data=DailySummaryResponse.model_validate(result), meta=meta)
 
     def by_payment_method(

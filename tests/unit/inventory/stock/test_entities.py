@@ -45,47 +45,37 @@ def test_available_quantity_with_location():
     assert stock.available_quantity == 150
 
 
-# --- update_quantity (immutability) ---
-
-
-def test_update_quantity_returns_new_instance():
-    stock = _make_stock(quantity=100)
-    new_stock = stock.update_quantity(10)
-
-    assert new_stock is not stock  # Must be a new instance
+# --- update_quantity (mutates in place) ---
 
 
 def test_update_quantity_positive_delta_increases():
     stock = _make_stock(quantity=50)
-    new_stock = stock.update_quantity(30)
+    stock.update_quantity(30)
 
-    assert new_stock.quantity == 80
-    assert stock.quantity == 50  # Original unchanged
+    assert stock.quantity == 80
 
 
 def test_update_quantity_negative_delta_decreases():
     stock = _make_stock(quantity=100)
-    new_stock = stock.update_quantity(-25)
+    stock.update_quantity(-25)
 
-    assert new_stock.quantity == 75
-    assert stock.quantity == 100  # Original unchanged
+    assert stock.quantity == 75
 
 
 def test_update_quantity_to_zero_is_allowed():
     stock = _make_stock(quantity=50)
-    new_stock = stock.update_quantity(-50)
+    stock.update_quantity(-50)
 
-    assert new_stock.quantity == 0
+    assert stock.quantity == 0
 
 
 def test_update_quantity_preserves_other_fields():
     stock = _make_stock(quantity=100, location_id=5, reserved_quantity=10)
-    new_stock = stock.update_quantity(20)
+    stock.update_quantity(20)
 
-    assert new_stock.id == stock.id
-    assert new_stock.product_id == stock.product_id
-    assert new_stock.location_id == stock.location_id
-    assert new_stock.reserved_quantity == stock.reserved_quantity
+    assert (stock.id, stock.product_id) == (1, 10)
+    assert stock.location_id == 5
+    assert stock.reserved_quantity == 10
 
 
 def test_update_quantity_below_zero_raises_insufficient_stock():
@@ -137,3 +127,37 @@ def test_stock_default_reserved_quantity_is_zero():
 def test_stock_with_reserved_quantity():
     stock = _make_stock(reserved_quantity=20)
     assert stock.reserved_quantity == 20
+
+
+# --- reserve / release ---
+
+
+def test_reserve_takes_from_available_quantity():
+    stock = _make_stock(quantity=10, reserved_quantity=2)
+    stock.reserve(5)
+
+    assert stock.reserved_quantity == 7
+    assert stock.available_quantity == 3
+
+
+def test_reserve_more_than_available_raises():
+    stock = _make_stock(quantity=10, reserved_quantity=6)
+
+    with pytest.raises(InsufficientStockError):
+        stock.reserve(5)
+
+    assert stock.reserved_quantity == 6
+
+
+def test_release_returns_reserved_units():
+    stock = _make_stock(quantity=10, reserved_quantity=7)
+    stock.release(5)
+
+    assert stock.reserved_quantity == 2
+
+
+def test_release_never_goes_below_zero():
+    stock = _make_stock(quantity=10, reserved_quantity=3)
+    stock.release(5)
+
+    assert stock.reserved_quantity == 0

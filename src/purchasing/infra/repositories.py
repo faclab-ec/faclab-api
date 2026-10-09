@@ -14,6 +14,7 @@ from src.purchasing.domain.entities import (
     PurchaseReceipt,
     PurchaseReceiptItem,
 )
+from src.purchasing.domain.exceptions import PurchaseOrderNumberAlreadyExistsError
 from src.purchasing.infra.mappers import (
     PurchaseOrderItemMapper,
     PurchaseOrderMapper,
@@ -34,6 +35,9 @@ class SqlAlchemyPurchaseOrderRepository(
     SqlAlchemyRepository[PurchaseOrder], PurchaseOrderRepository
 ):
     __model__ = PurchaseOrderModel
+    __unique_errors__ = {
+        "purchase_orders_order_number_key": PurchaseOrderNumberAlreadyExistsError,
+    }
 
     def __init__(self, session: Session, mapper: PurchaseOrderMapper):
         super().__init__(session, mapper)

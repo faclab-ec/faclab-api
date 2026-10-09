@@ -192,7 +192,7 @@ def test_confirm_transfer_reserves_stock():
     item_repo.filter_by.return_value = [item]
 
     stock_repo = MagicMock()
-    stock_repo.first.return_value = stock
+    stock_repo.first_for_update.return_value = stock
 
     event_publisher = MagicMock()
 
@@ -221,7 +221,7 @@ def test_confirm_transfer_validates_insufficient_stock():
     item_repo.filter_by.return_value = [item]
 
     stock_repo = MagicMock()
-    stock_repo.first.return_value = stock
+    stock_repo.first_for_update.return_value = stock
 
     event_publisher = MagicMock()
 
@@ -248,7 +248,7 @@ def test_confirm_transfer_validates_no_stock_record():
     item_repo.filter_by.return_value = [item]
 
     stock_repo = MagicMock()
-    stock_repo.first.return_value = None  # no stock at all
+    stock_repo.first_for_update.return_value = None  # no stock at all
 
     event_publisher = MagicMock()
 
@@ -315,7 +315,7 @@ def test_receive_transfer_creates_movements_and_releases_reservation():
     item_repo.filter_by.return_value = [item]
 
     stock_repo = MagicMock()
-    stock_repo.first.return_value = stock
+    stock_repo.first_for_update.return_value = stock
 
     movement_handler = MagicMock()
     event_publisher = MagicMock()
@@ -423,7 +423,7 @@ def test_cancel_confirmed_transfer_releases_reservations():
     item_repo.filter_by.return_value = [item]
 
     stock_repo = MagicMock()
-    stock_repo.first.return_value = stock
+    stock_repo.first_for_update.return_value = stock
 
     event_publisher = MagicMock()
 

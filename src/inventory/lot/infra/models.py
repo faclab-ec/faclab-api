@@ -44,10 +44,10 @@ class MovementLotItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     movement_id: Mapped[int] = mapped_column(
-        ForeignKey("movements.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("movements.id", ondelete="CASCADE"), nullable=False, index=True
     )
     lot_id: Mapped[int] = mapped_column(
-        ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False
+        ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
 

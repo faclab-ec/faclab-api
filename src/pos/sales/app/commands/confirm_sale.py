@@ -61,8 +61,9 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         if not items:
             raise SaleHasNoItemsError(command.sale_id)
 
-        for item in items:
-            stock = self.stock_repo.first(product_id=item.product_id)
+        # Lock stock rows by product id so concurrent sales can't deadlock
+        for item in sorted(items, key=lambda i: i.product_id):
+            stock = self.stock_repo.first_for_update(product_id=item.product_id)
             available = stock.quantity if stock else 0
             if available < item.quantity:
                 raise InsufficientStockError(item.product_id, item.quantity, available)
@@ -79,10 +80,10 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             )
             self.movement_repo.create(movement)
 
-            stock = self.stock_repo.first(product_id=item.product_id)
+            stock = self.stock_repo.first_for_update(product_id=item.product_id)
             if stock is None:
                 raise InsufficientStockError(item.product_id, item.quantity, 0)
-            stock = stock.update_quantity(-abs(item.quantity))
+            stock.update_quantity(-abs(item.quantity))
             self.stock_repo.update(stock)
 
         items_data = [

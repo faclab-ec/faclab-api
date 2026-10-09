@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from wireup import injectable
@@ -39,7 +39,7 @@ class LoginCommandHandler(CommandHandler[LoginCommand, TokenPair]):
         if not self.hasher.verify(command.password, user.password_hash):
             raise InvalidCredentialsError("invalid username or password")
 
-        user = replace(user, last_login_at=datetime.now(UTC))
+        user.record_login(datetime.now(UTC))
         user = self.repo.update(user)
 
         self.event_publisher.publish(

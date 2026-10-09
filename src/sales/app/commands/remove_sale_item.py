@@ -4,11 +4,10 @@ from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.events import SaleItemRemoved
-from src.sales.domain.exceptions import InvalidSaleStatusError
-from src.sales.domain.services import recalculate_sale_totals
+from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -41,8 +40,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
         # Validar que la venta esté en DRAFT
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "remove items from")
+        sale.ensure_draft("remove items from")
 
         # Obtener el item
         sale_item = self.sale_item_repo.get_by_id(command.sale_item_id)
@@ -51,10 +49,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
 
         # Verificar que el item pertenece a la venta
         if sale_item.sale_id != command.sale_id:
-            raise DomainError(
-                f"Sale item {command.sale_item_id} does not belong to "
-                f"sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         # Guardar info del item para el evento
         item_dict = sale_item.dict()
@@ -64,7 +59,7 @@ class RemoveSaleItemCommandHandler(CommandHandler[RemoveSaleItemCommand, dict]):
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         # Publicar evento

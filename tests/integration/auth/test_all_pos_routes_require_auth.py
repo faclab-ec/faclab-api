@@ -1,36 +1,14 @@
 """Guard test: every /api/pos route must carry a require_permission dependency.
 
-This fails if a new POS router is added without authorization coverage.
+Routes are read from the real application, so a router mounted in `main.py`
+without authorization coverage fails here.
 """
 
-from fastapi import APIRouter, FastAPI
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 
+from main import app
 from src.auth.infra.dependencies import get_current_user
-from src.pos.cash.infra.routes import POSCashRouter
-from src.pos.infra.routes import POSCustomerRouter, POSProductRouter
-from src.pos.refund.infra.routes import POSRefundRouter
-from src.pos.reports.infra.routes import POSReportRouter
-from src.pos.sales.infra.routes import POSSaleRouter
-from src.pos.shift.infra.routes import POSShiftRouter
-
-
-def _build_pos_app() -> FastAPI:
-    app = FastAPI()
-    pos = APIRouter(prefix="/api/pos")
-    pos.include_router(POSSaleRouter().router, prefix="/sales")
-    pos.include_router(POSShiftRouter().router, prefix="/shifts")
-    pos.include_router(POSProductRouter().router, prefix="/products")
-    pos.include_router(POSCustomerRouter().router, prefix="/customers")
-    pos.include_router(POSRefundRouter().router, prefix="/refunds")
-    pos.include_router(POSCashRouter().router, prefix="/shifts")
-    pos.include_router(POSReportRouter().router, prefix="/reports")
-    app.include_router(pos)
-    return app
-
-
-_APP = _build_pos_app()
 
 
 def _tree_contains_call(dep: Dependant, target) -> bool:
@@ -42,7 +20,7 @@ def _tree_contains_call(dep: Dependant, target) -> bool:
 def _pos_routes() -> list[APIRoute]:
     return [
         r
-        for r in _APP.routes
+        for r in app.routes
         if isinstance(r, APIRoute) and r.path.startswith("/api/pos")
     ]
 

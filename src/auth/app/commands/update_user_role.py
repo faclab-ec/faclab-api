@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -24,6 +24,6 @@ class UpdateUserRoleCommandHandler(CommandHandler[UpdateUserRoleCommand, dict]):
         if user is None:
             raise NotFoundError(f"User with id {command.user_id} not found")
 
-        user = replace(user, role=Role(command.role))
+        user.change_role(Role(command.role))
         user = self.repo.update(user)
         return user.dict()

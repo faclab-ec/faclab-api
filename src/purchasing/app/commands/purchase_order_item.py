@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from decimal import Decimal
 
 from wireup import injectable
@@ -7,22 +7,9 @@ from src.purchasing.app.repositories import (
     PurchaseOrderItemRepository,
     PurchaseOrderRepository,
 )
-from src.purchasing.domain.entities import (
-    PurchaseOrder,
-    PurchaseOrderItem,
-    PurchaseOrderStatus,
-)
+from src.purchasing.domain.entities import PurchaseOrderItem
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
-
-
-def _recalculate_totals(
-    po: PurchaseOrder, items: list[PurchaseOrderItem]
-) -> PurchaseOrder:
-    subtotal = sum(item.unit_cost * item.quantity_ordered for item in items)
-    tax = Decimal("0.00")
-    total = subtotal + tax
-    return replace(po, subtotal=subtotal, tax=tax, total=total)
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -51,10 +38,7 @@ class AddPurchaseOrderItemCommandHandler(
             raise NotFoundError(
                 f"Purchase order with id {command.purchase_order_id} not found"
             )
-        if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot add items to a purchase order with status '{purchase_order.status.value}'."
-            )
+        purchase_order.ensure_draft("add items to")
 
         item = PurchaseOrderItem(
             purchase_order_id=command.purchase_order_id,
@@ -67,8 +51,8 @@ class AddPurchaseOrderItemCommandHandler(
         all_items = self.item_repo.filter_by(
             purchase_order_id=command.purchase_order_id
         )
-        updated_po = _recalculate_totals(purchase_order, all_items)
-        self.po_repo.update(updated_po)
+        purchase_order.recalculate_totals(all_items)
+        self.po_repo.update(purchase_order)
 
         return item.dict()
 
@@ -102,21 +86,16 @@ class UpdatePurchaseOrderItemCommandHandler(
             raise NotFoundError(
                 f"Purchase order with id {item.purchase_order_id} not found"
             )
-        if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot update items on a purchase order with status '{purchase_order.status.value}'."
-            )
+        purchase_order.ensure_draft("update items of")
 
-        updated = replace(
-            item,
-            quantity_ordered=command.quantity_ordered,
-            unit_cost=command.unit_cost,
+        item.update(
+            quantity_ordered=command.quantity_ordered, unit_cost=command.unit_cost
         )
-        updated = self.item_repo.update(updated)
+        updated = self.item_repo.update(item)
 
         all_items = self.item_repo.filter_by(purchase_order_id=item.purchase_order_id)
-        updated_po = _recalculate_totals(purchase_order, all_items)
-        self.po_repo.update(updated_po)
+        purchase_order.recalculate_totals(all_items)
+        self.po_repo.update(purchase_order)
 
         return updated.dict()
 
@@ -148,10 +127,7 @@ class RemovePurchaseOrderItemCommandHandler(
             raise NotFoundError(
                 f"Purchase order with id {item.purchase_order_id} not found"
             )
-        if purchase_order.status != PurchaseOrderStatus.DRAFT:
-            raise DomainError(
-                f"Cannot remove items from a purchase order with status '{purchase_order.status.value}'."
-            )
+        purchase_order.ensure_draft("remove items from")
 
         self.item_repo.delete(command.id)
 
@@ -160,5 +136,5 @@ class RemovePurchaseOrderItemCommandHandler(
             for i in self.item_repo.filter_by(purchase_order_id=item.purchase_order_id)
             if i.id != command.id
         ]
-        updated_po = _recalculate_totals(purchase_order, all_items)
-        self.po_repo.update(updated_po)
+        purchase_order.recalculate_totals(all_items)
+        self.po_repo.update(purchase_order)

@@ -289,13 +289,18 @@ Formato de error:
 
 ```json
 {
-  "errorCode": "DOMAIN_ERROR",
-  "message": "Solo ajustes en DRAFT pueden confirmarse",
-  "timestamp": "2026-03-08T10:30:00",
-  "requestId": "uuid",
-  "detail": null
+  "errors": [
+    {
+      "code": "INVALID_ADJUSTMENT_STATUS",
+      "message": "No se puede confirmar un ajuste en estado confirmed",
+      "detail": "current_status=confirmed, operation=confirmar"
+    }
+  ],
+  "meta": {"requestId": "uuid", "timestamp": "2026-03-08T10:30:00Z"}
 }
 ```
+
+Todas las operaciones fuera de DRAFT responden 400 con `INVALID_ADJUSTMENT_STATUS`.
 
 ---
 

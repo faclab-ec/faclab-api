@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from src.purchasing.domain.entities import (
 from src.purchasing.domain.events import PurchaseOrderReceived
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -70,40 +70,24 @@ class CreatePurchaseReceiptCommandHandler(
                 f"Purchase order with id {command.purchase_order_id} not found"
             )
 
-        if purchase_order.status not in (
-            PurchaseOrderStatus.SENT,
-            PurchaseOrderStatus.PARTIAL,
-        ):
-            raise DomainError(
-                f"Cannot receive goods for a purchase order with status '{purchase_order.status.value}'. "
-                "Only sent or partially received orders can be received."
-            )
+        purchase_order.ensure_receivable()
 
-        # Validate quantities against pending amounts
         po_items_by_id: dict[int, PurchaseOrderItem] = {
-            item.id: item
+            item.require_id(): item
             for item in self.item_repo.filter_by(
                 purchase_order_id=command.purchase_order_id
             )
-            if item.id is not None
         }
 
-        # The same item can appear in several lines (e.g. split across lots), so
-        # validate the total requested per item, not each line on its own.
-        requested: dict[int, int] = {}
+        # Apply every line before persisting anything. The same item can appear
+        # in several lines (e.g. split across lots); each receive() checks what
+        # is still pending after the previous lines.
         for receive_item in command.items:
             item_id = receive_item.purchase_order_item_id
             po_item = po_items_by_id.get(item_id)
             if po_item is None:
                 raise NotFoundError(f"Purchase order item with id {item_id} not found")
-            requested[item_id] = (
-                requested.get(item_id, 0) + receive_item.quantity_received
-            )
-            if requested[item_id] > po_item.quantity_pending:
-                raise DomainError(
-                    f"Cannot receive {requested[item_id]} units for item {item_id}. "
-                    f"Only {po_item.quantity_pending} units are pending."
-                )
+            po_item.receive(receive_item.quantity_received)
 
         # Create the receipt
         receipt = PurchaseReceipt(
@@ -113,7 +97,7 @@ class CreatePurchaseReceiptCommandHandler(
         )
         receipt = self.receipt_repo.create(receipt)
 
-        # Create receipt items and update PO item quantities
+        # Create receipt items
         receipt_items_data = []
         for receive_item in command.items:
             po_item = po_items_by_id[receive_item.purchase_order_item_id]
@@ -139,30 +123,18 @@ class CreatePurchaseReceiptCommandHandler(
                 }
             )
 
-            updated_item = replace(
-                po_item,
-                quantity_received=po_item.quantity_received
-                + receive_item.quantity_received,
-            )
-            self.item_repo.update(updated_item)
-            po_items_by_id[po_item.require_id()] = updated_item
+        for item_id in {line.purchase_order_item_id for line in command.items}:
+            self.item_repo.update(po_items_by_id[item_id])
 
-        # Determine new PO status
-        all_received = all(
-            item.quantity_pending == 0 for item in po_items_by_id.values()
-        )
-        if all_received:
-            updated_po = purchase_order.mark_received()
-        else:
-            updated_po = purchase_order.mark_partial()
-        updated_po = self.po_repo.update(updated_po)
+        purchase_order.update_reception_status(list(po_items_by_id.values()))
+        updated_po = self.po_repo.update(purchase_order)
 
         self.event_publisher.publish(
             PurchaseOrderReceived(
                 aggregate_id=updated_po.require_id(),
                 purchase_order_id=updated_po.require_id(),
                 order_number=updated_po.order_number,
-                is_complete=all_received,
+                is_complete=updated_po.status == PurchaseOrderStatus.RECEIVED,
                 items=receipt_items_data,
             ),
             session=self.session,

@@ -65,3 +65,28 @@ class InsufficientStockError(SalesError):
             ),
             detail=f"product_id={product_id}, requested={requested}, available={available}",
         )
+
+
+class SaleItemNotInSaleError(SalesError):
+    """Se lanza cuando un item no pertenece a la venta indicada"""
+
+    error_code = "SALE_ITEM_NOT_IN_SALE"
+
+    def __init__(self, sale_item_id: int, sale_id: int):
+        self.sale_item_id = sale_item_id
+        self.sale_id = sale_id
+        super().__init__(
+            message=f"Sale item {sale_item_id} does not belong to sale {sale_id}",
+            detail=f"sale_item_id={sale_item_id}, sale_id={sale_id}",
+        )
+
+
+class CustomerRequiredError(SalesError):
+    """Se lanza cuando una venta que no es a consumidor final no tiene cliente"""
+
+    error_code = "CUSTOMER_REQUIRED"
+
+    def __init__(self):
+        super().__init__(
+            message="customer_id is required when is_final_consumer is False"
+        )

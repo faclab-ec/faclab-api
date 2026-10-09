@@ -127,6 +127,12 @@ async def on_sale_confirmed(event: SaleConfirmed, repo: ...) -> None:
         await create_out_movement(item, ...)
 ```
 
+### Outbox de Kafka
+
+Los mensajes hacia otros servicios no se publican desde el handler: `OutboxWriter.add()` los guarda en la tabla `outbox_messages` dentro de la misma transacción del request, junto con el contexto de traza. Si la transacción se revierte, el mensaje desaparece con ella. `OutboxRelay` (un hilo que arranca el lifespan cuando `KAFKA_ENABLED`) publica los mensajes confirmados en orden, usando `FOR UPDATE SKIP LOCKED` para que varias réplicas no dupliquen envíos; se despierta tras cada commit que escribió uno y reintenta los fallos en la siguiente vuelta (`OUTBOX_POLL_INTERVAL_SECONDS`).
+
+Hoy el único mensaje es `sales.confirmed` para faclab-invoicing; lo arma `src/invoicing/infra/event_handlers.py` con los datos del cliente y los productos.
+
 ### Specification Pattern
 
 Consultas reutilizables y componibles:
@@ -154,9 +160,9 @@ Dataclasses frozen con validacion en construccion:
 | Value Object | Validacion |
 |---|---|
 | `Email` | Formato de correo electronico |
-| `TaxId(value, country)` | RUC Ecuador (13 digitos) |
-| `Money(amount, currency)` | Operaciones aritmeticas tipadas |
-| `Percentage` | Rango 0-100, metodo `apply_to(money)` |
+| `TaxId(value)` | Cédula (10 dígitos) o RUC (13 dígitos) de Ecuador |
+
+Los montos son `Decimal`; `round_money()` (`src/shared/domain/money.py`) redondea los totales a centavos. `TaxCode` y `TaxType` (`src/shared/domain/tax.py`) son el código de IVA y el tipo de identificación del SRI.
 
 ## Inyeccion de Dependencias
 
@@ -214,7 +220,9 @@ src/shared/
 ├── domain/
 │   ├── entities.py           # Entity base class
 │   ├── events.py             # DomainEvent abstract base
-│   ├── value_objects.py      # Money, Email, TaxId, Percentage
+│   ├── value_objects.py      # Email, TaxId
+│   ├── money.py              # round_money
+│   ├── tax.py                # TaxCode (IVA), TaxType (identificación)
 │   ├── specifications.py     # Specification[T] con operadores &, |, ~
 │   └── exceptions.py         # NotFoundError, DomainError, ValidationError
 ├── app/
@@ -232,6 +240,12 @@ src/shared/
     ├── events/
     │   ├── event_bus.py          # EventBus implementacion
     │   └── decorators.py         # @event_handler decorator
+    ├── kafka/
+    │   └── producer.py           # KafkaEventProducer (aiokafka)
+    ├── outbox/
+    │   ├── models.py             # outbox_messages
+    │   ├── writer.py             # OutboxWriter: guarda el mensaje en la transacción
+    │   └── relay.py              # OutboxRelay: publica lo confirmado
     └── adapters/
         └── telemetry.py      # OpenTelemetry instrumentation setup
 ```

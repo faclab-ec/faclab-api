@@ -11,8 +11,9 @@ from src.customers.app.queries.customer import (
     GetCustomerByTaxIdQuery,
     GetCustomerByTaxIdQueryHandler,
 )
-from src.customers.domain.entities import Customer, TaxType
+from src.customers.domain.entities import Customer
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxType
 
 
 def _make_customer(**overrides) -> Customer:

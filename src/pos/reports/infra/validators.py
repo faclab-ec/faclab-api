@@ -151,9 +151,10 @@ class DailySummaryResponse(BaseModel):
 class DailySummaryQueryParams(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    date: dt.date = Field(
-        default_factory=dt.date.today,
-        description="Date for the report (defaults to today)",
+    # The default lives in GetDailySummaryQuery: FastAPI ignores default_factory
+    # on query models, so an omitted date would fail validation.
+    date: dt.date | None = Field(
+        None, description="Date for the report (defaults to today)"
     )
 
 

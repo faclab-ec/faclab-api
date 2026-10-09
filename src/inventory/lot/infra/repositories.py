@@ -3,6 +3,7 @@ from wireup import injectable
 
 from src.inventory.lot.app.repositories import LotRepository, MovementLotItemRepository
 from src.inventory.lot.domain.entities import Lot, MovementLotItem
+from src.inventory.lot.domain.exceptions import LotAlreadyExistsError
 from src.inventory.lot.infra.mappers import LotMapper, MovementLotItemMapper
 from src.inventory.lot.infra.models import LotModel, MovementLotItemModel
 from src.shared.infra.repositories import SqlAlchemyRepository
@@ -11,6 +12,9 @@ from src.shared.infra.repositories import SqlAlchemyRepository
 @injectable(lifetime="scoped", as_type=LotRepository)
 class SqlAlchemyLotRepository(SqlAlchemyRepository[Lot], LotRepository):
     __model__ = LotModel
+    __unique_errors__ = {
+        "uq_lot_product_lot_number": LotAlreadyExistsError,
+    }
 
     def __init__(self, session: Session, mapper: LotMapper):
         super().__init__(session, mapper)

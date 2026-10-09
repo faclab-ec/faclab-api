@@ -1,18 +1,15 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from enum import StrEnum
 
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
+from src.sales.domain.services import discount_factor, tax_breakdown
 from src.shared.domain.entities import Entity
 from src.shared.domain.exceptions import ValidationError
+from src.shared.domain.money import round_money
 from src.shared.domain.tax import TaxCode
-
-CENT = Decimal("0.01")
-
-
-def _to_cents(amount: Decimal) -> Decimal:
-    return amount.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 class SaleStatus(StrEnum):
@@ -64,6 +61,10 @@ class SaleItem(Entity):
         discount_amount = base * (self.discount / Decimal("100"))
         return base - discount_amount
 
+    def recalculate_tax(self) -> None:
+        """IVA del item a precisión completa, antes del descuento global de la venta"""
+        self.tax_amount = self.subtotal * self.tax_code.rate / Decimal("100")
+
 
 @dataclass
 class Sale(Entity):
@@ -89,10 +90,14 @@ class Sale(Entity):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
+    def ensure_draft(self, operation: str) -> None:
+        """Las ventas solo se editan en DRAFT"""
+        if self.status != SaleStatus.DRAFT:
+            raise InvalidSaleStatusError(self.status, operation)
+
     def confirm(self) -> None:
         """Confirma la venta (solo si está en DRAFT)"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "confirm")
+        self.ensure_draft("confirm")
         self.status = SaleStatus.CONFIRMED
         if self.sale_date is None:
             self.sale_date = datetime.now()
@@ -111,8 +116,7 @@ class Sale(Entity):
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "park")
+        self.ensure_draft("park")
         self.parked_at = datetime.now()
         self.park_reason = reason
 
@@ -125,8 +129,7 @@ class Sale(Entity):
 
     def apply_discount(self, discount_type: str, discount_value: Decimal) -> None:
         """Aplica un descuento global (solo en DRAFT); luego hay que recalcular los totales"""
-        if self.status != SaleStatus.DRAFT:
-            raise InvalidSaleStatusError(self.status, "apply discount to")
+        self.ensure_draft("apply discount to")
         if discount_type not in ("PERCENTAGE", "AMOUNT"):
             raise ValidationError(
                 f"Invalid discount_type: {discount_type}. Must be PERCENTAGE or AMOUNT"
@@ -138,9 +141,35 @@ class Sale(Entity):
         self.discount_type = discount_type
         self.discount_value = discount_value
 
+    def recalculate_totals(self, items: Iterable[SaleItem]) -> None:
+        """Recalcula subtotal, descuento, IVA y total a partir de los items.
+
+        Los montos de la venta se redondean a centavos y el total es exactamente
+        subtotal - descuento + IVA. El descuento global se prorratea sobre la base
+        de cada item antes de calcular el IVA (ver `tax_breakdown`).
+        """
+        items = list(items)
+        subtotal = round_money(sum((item.subtotal for item in items), Decimal("0")))
+
+        if self.discount_type == "PERCENTAGE":
+            discount = round_money(subtotal * self.discount_value / Decimal("100"))
+        elif self.discount_type == "AMOUNT":
+            discount = min(round_money(self.discount_value), subtotal)
+        else:
+            discount = Decimal("0")
+
+        breakdown = tax_breakdown(
+            ((item.tax_code, item.subtotal, item.tax_amount) for item in items),
+            discount_factor(subtotal, discount),
+        )
+        self.subtotal = subtotal
+        self.discount = discount
+        self.tax = sum((tax for _, tax in breakdown.values()), Decimal("0"))
+        self.total = subtotal - discount + self.tax
+
     def is_covered_by(self, amount: Decimal) -> bool:
         """Indica si el monto cubre el total, comparando al centavo"""
-        return _to_cents(amount) >= _to_cents(self.total)
+        return round_money(amount) >= round_money(self.total)
 
     def update_payment_status(self, total_paid: Decimal) -> None:
         """Actualiza el estado de pago basándose en el monto pagado"""

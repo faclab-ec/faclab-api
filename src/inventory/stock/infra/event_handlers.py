@@ -39,11 +39,13 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
 
             # Find stock by (product_id, location_id)
             if event.location_id is not None:
-                stock = stock_repo.first(
+                stock = stock_repo.first_for_update(
                     product_id=event.product_id, location_id=event.location_id
                 )
             else:
-                stock = stock_repo.first(product_id=event.product_id, location_id=None)
+                stock = stock_repo.first_for_update(
+                    product_id=event.product_id, location_id=None
+                )
 
             if stock is None:
                 logger.info(
@@ -84,7 +86,7 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
                     location_id=stock.location_id,
                 )
 
-                stock = stock.update_quantity(event.quantity)
+                stock.update_quantity(event.quantity)
                 stock = stock_repo.update(stock)
 
                 EventBus.publish(

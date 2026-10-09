@@ -9,7 +9,11 @@ from src.inventory.transfer.domain.entities import (
     StockTransferItem,
     TransferStatus,
 )
-from src.shared.domain.exceptions import DomainError
+from src.inventory.transfer.domain.exceptions import (
+    InvalidTransferStatusError,
+    SameLocationTransferError,
+)
+from src.shared.domain.exceptions import ValidationError
 
 
 def _make_transfer(**overrides) -> StockTransfer:
@@ -41,25 +45,25 @@ def _make_item(**overrides) -> StockTransferItem:
 
 def test_confirm_draft_transfer():
     transfer = _make_transfer(status=TransferStatus.DRAFT)
-    confirmed = transfer.confirm()
-    assert confirmed.status == TransferStatus.CONFIRMED
+    transfer.confirm()
+    assert transfer.status == TransferStatus.CONFIRMED
 
 
 def test_confirm_confirmed_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.CONFIRMED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.confirm()
 
 
 def test_confirm_cancelled_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.CANCELLED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.confirm()
 
 
 def test_confirm_received_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.RECEIVED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.confirm()
 
 
@@ -70,19 +74,19 @@ def test_confirm_received_transfer_raises():
 
 def test_receive_confirmed_transfer():
     transfer = _make_transfer(status=TransferStatus.CONFIRMED)
-    received = transfer.receive()
-    assert received.status == TransferStatus.RECEIVED
+    transfer.receive()
+    assert transfer.status == TransferStatus.RECEIVED
 
 
 def test_receive_draft_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.DRAFT)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.receive()
 
 
 def test_receive_received_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.RECEIVED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.receive()
 
 
@@ -93,20 +97,35 @@ def test_receive_received_transfer_raises():
 
 def test_cancel_draft_transfer():
     transfer = _make_transfer(status=TransferStatus.DRAFT)
-    cancelled = transfer.cancel()
-    assert cancelled.status == TransferStatus.CANCELLED
+    transfer.cancel()
+    assert transfer.status == TransferStatus.CANCELLED
 
 
 def test_cancel_confirmed_transfer():
     transfer = _make_transfer(status=TransferStatus.CONFIRMED)
-    cancelled = transfer.cancel()
-    assert cancelled.status == TransferStatus.CANCELLED
+    transfer.cancel()
+    assert transfer.status == TransferStatus.CANCELLED
 
 
 def test_cancel_received_transfer_raises():
     transfer = _make_transfer(status=TransferStatus.RECEIVED)
-    with pytest.raises(DomainError):
+    with pytest.raises(InvalidTransferStatusError):
         transfer.cancel()
+
+
+def test_transfer_between_the_same_location_is_rejected():
+    with pytest.raises(SameLocationTransferError):
+        _make_transfer(source_location_id=10, destination_location_id=10)
+
+
+def test_update_details_only_in_draft():
+    transfer = _make_transfer(notes="old", requested_by="ana")
+    transfer.update_details(notes="new")
+    assert (transfer.notes, transfer.requested_by) == ("new", "ana")
+
+    transfer.confirm()
+    with pytest.raises(InvalidTransferStatusError):
+        transfer.update_details(notes="again")
 
 
 # ---------------------------------------------------------------------------
@@ -125,3 +144,14 @@ def test_transfer_item_dict_includes_all_fields():
     assert d["quantity"] == 5
     assert d["lot_id"] == 3
     assert d["notes"] == "Test"
+
+
+@pytest.mark.parametrize("quantity", [0, -1])
+def test_transfer_item_quantity_must_be_positive(quantity):
+    with pytest.raises(ValidationError):
+        _make_item(quantity=quantity)
+
+    item = _make_item(quantity=5)
+    with pytest.raises(ValidationError):
+        item.update(quantity=quantity)
+    assert item.quantity == 5

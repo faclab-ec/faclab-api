@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -22,6 +22,6 @@ class ActivateUserCommandHandler(CommandHandler[ActivateUserCommand, dict]):
         if user is None:
             raise NotFoundError(f"User with id {command.user_id} not found")
 
-        user = replace(user, is_active=True)
+        user.activate()
         user = self.repo.update(user)
         return user.dict()

@@ -10,7 +10,9 @@ class StockTransferModel(Base):
     __tablename__ = "stock_transfers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source_location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))
+    source_location_id: Mapped[int] = mapped_column(
+        ForeignKey("locations.id"), index=True
+    )
     destination_location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))
     status: Mapped[str] = mapped_column(default="draft")
     transfer_date: Mapped[datetime | None]
@@ -24,7 +26,7 @@ class StockTransferItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     transfer_id: Mapped[int] = mapped_column(
-        ForeignKey("stock_transfers.id", ondelete="CASCADE")
+        ForeignKey("stock_transfers.id", ondelete="CASCADE"), index=True
     )
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     quantity: Mapped[int]

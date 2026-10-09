@@ -1,16 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from enum import IntEnum
 
 from src.shared.domain.entities import Entity
-
-
-class TaxType(IntEnum):
-    RUC = 1
-    NATIONAL_ID = 2  # Cédula
-    PASSPORT = 3  # Pasaporte
-    FOREIGN_ID = 4  # Identificación de extranjero
+from src.shared.domain.tax import TaxType
 
 
 @dataclass
@@ -30,6 +23,12 @@ class Customer(Entity):
     is_active: bool = True
     created_at: datetime | None = None
 
+    def activate(self) -> None:
+        self.is_active = True
+
+    def deactivate(self) -> None:
+        self.is_active = False
+
 
 @dataclass
 class CustomerContact(Entity):
@@ -39,3 +38,15 @@ class CustomerContact(Entity):
     role: str | None = None
     email: str | None = None
     phone: str | None = None
+
+    def update(
+        self,
+        name: str,
+        role: str | None = None,
+        email: str | None = None,
+        phone: str | None = None,
+    ) -> None:
+        self.name = name
+        self.role = role
+        self.email = email
+        self.phone = phone

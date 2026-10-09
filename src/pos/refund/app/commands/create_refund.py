@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from decimal import Decimal
 
 from wireup import injectable
 
@@ -14,6 +13,7 @@ from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import SaleStatus
+from src.sales.domain.services import discount_factor
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
 
@@ -97,31 +97,22 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         created_items = []
         for item_data in command.items:
             sale_item = sale_item_lookup[item_data["sale_item_id"]]
-            quantity = item_data["quantity"]
-
-            item_subtotal = sale_item.unit_price * quantity
-            discount_amount = item_subtotal * (sale_item.discount / Decimal("100"))
-            item_subtotal = item_subtotal - discount_amount
-            tax_amount = item_subtotal * sale_item.tax_code.rate / Decimal("100")
-
             refund_item = RefundItem(
                 refund_id=refund.require_id(),
                 original_sale_item_id=sale_item.require_id(),
                 product_id=sale_item.product_id,
-                quantity=quantity,
+                quantity=item_data["quantity"],
                 unit_price=sale_item.unit_price,
                 discount=sale_item.discount,
                 tax_code=sale_item.tax_code,
-                tax_amount=tax_amount,
             )
+            refund_item.recalculate_tax()
             refund_item = self.refund_item_repo.create(refund_item)
             created_items.append(refund_item)
 
-        subtotal = sum((item.subtotal for item in created_items), Decimal("0"))
-        tax = sum((item.tax_amount for item in created_items), Decimal("0"))
-        refund.subtotal = subtotal
-        refund.tax = tax
-        refund.total = subtotal + tax
+        refund.recalculate_totals(
+            created_items, discount_factor(sale.subtotal, sale.discount)
+        )
         self.refund_repo.update(refund)
 
         result = refund.dict()

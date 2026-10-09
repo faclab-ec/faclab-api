@@ -18,6 +18,7 @@ from src.sales.domain.entities import PaymentMethod
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
+from src.shared.domain.money import round_money
 
 
 @dataclass
@@ -53,8 +54,10 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
-        total_payment = sum(Decimal(str(p["amount"])) for p in command.payments)
-        if total_payment < refund.total:
+        total_payment = sum(
+            (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
+        )
+        if round_money(total_payment) < refund.total:
             raise ValidationError(
                 message="Payment amount is insufficient",
                 detail=f"Total: {refund.total}, paid: {total_payment}",
@@ -81,7 +84,8 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         self.refund_repo.update(refund)
 
-        for item in items:
+        # Sorted so concurrent requests lock stock rows in the same order
+        for item in sorted(items, key=lambda i: i.product_id):
             movement = Movement(
                 product_id=item.product_id,
                 quantity=abs(item.quantity),
@@ -90,9 +94,9 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
             )
             self.movement_repo.create(movement)
 
-            stock = self.stock_repo.first(product_id=item.product_id)
+            stock = self.stock_repo.first_for_update(product_id=item.product_id)
             if stock:
-                stock = stock.update_quantity(abs(item.quantity))
+                stock.update_quantity(abs(item.quantity))
                 self.stock_repo.update(stock)
 
         items_data = [

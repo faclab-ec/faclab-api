@@ -4,8 +4,7 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.exceptions import InvalidSaleStatusError
-from src.sales.domain.services import recalculate_sale_totals
+from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 
@@ -37,8 +36,7 @@ class OverrideItemPriceCommandHandler(CommandHandler[OverrideItemPriceCommand, d
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "override price in")
+        sale.ensure_draft("override price in")
 
         if command.new_price <= Decimal("0"):
             raise ValidationError("new_price must be greater than 0")
@@ -48,19 +46,17 @@ class OverrideItemPriceCommandHandler(CommandHandler[OverrideItemPriceCommand, d
             raise NotFoundError(f"Sale item with id {command.item_id} not found")
 
         if item.sale_id != command.sale_id:
-            raise ValidationError(
-                f"Item {command.item_id} does not belong to sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.item_id, command.sale_id)
 
         item.unit_price = command.new_price
         item.price_override = command.new_price
         item.override_reason = command.reason
-        item.tax_amount = item.subtotal * item.tax_code.rate / Decimal("100")
+        item.recalculate_tax()
 
         self.sale_item_repo.update(item)
 
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         result = item.dict()

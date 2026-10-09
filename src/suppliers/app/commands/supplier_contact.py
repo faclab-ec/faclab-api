@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from wireup import injectable
 
@@ -56,8 +56,7 @@ class UpdateSupplierContactCommandHandler(
         contact = self.repo.get_by_id(command.id)
         if contact is None:
             raise NotFoundError(f"Supplier contact with id {command.id} not found")
-        contact = replace(
-            contact,
+        contact.update(
             name=command.name,
             role=command.role,
             email=command.email,

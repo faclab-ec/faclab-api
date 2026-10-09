@@ -10,7 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.shared.domain.exceptions import ApplicationError, BaseError, DomainError
+from src.shared.domain.exceptions import (
+    ApplicationError,
+    BaseError,
+    ConflictError,
+    DomainError,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -23,14 +28,17 @@ ERROR_CODE_TO_STATUS = {
     "TOKEN_EXPIRED": 401,
     "PERMISSION_DENIED": 403,
     "PASSWORD_CHANGE_REQUIRED": 403,
-    "USERNAME_ALREADY_EXISTS": 409,
-    "EMAIL_ALREADY_EXISTS": 409,
 }
 
+# Checked in order, so subclasses go before their bases
 LAYER_TO_STATUS = {
+    ConflictError: 409,
     DomainError: 400,
     ApplicationError: 400,
 }
+
+_UNIQUE_VIOLATION = "23505"
+_FOREIGN_KEY_VIOLATION = "23503"
 
 
 def _resolve_status(exc: BaseError) -> int:
@@ -50,15 +58,36 @@ def _build_meta(request_id: str) -> dict:
     }
 
 
+def _integrity_error(exc: IntegrityError) -> tuple[int, str, str]:
+    """Status, code and message for a database integrity error that no
+    repository translated into a domain error."""
+    pgcode = getattr(exc.orig, "pgcode", None)
+    text = str(exc.orig)
+    if pgcode == _UNIQUE_VIOLATION or "violates unique constraint" in text:
+        return 409, "ALREADY_EXISTS", "A record with these values already exists"
+    if pgcode == _FOREIGN_KEY_VIOLATION or "violates foreign key constraint" in text:
+        if text.startswith("insert or update"):
+            return 422, "REFERENCE_NOT_FOUND", "A referenced record does not exist"
+        return (
+            409,
+            "RECORD_IN_USE",
+            "Cannot complete operation because this record is referenced by other records",
+        )
+    return 409, "INTEGRITY_ERROR", "The operation violates a data integrity rule"
+
+
 def _build_error_response(
     error_code: str,
     message: str,
     request_id: str,
     field: str | None = None,
+    detail: str | None = None,
 ) -> dict:
     error = {"code": error_code, "message": message}
     if field is not None:
         error["field"] = field
+    if detail is not None:
+        error["detail"] = detail
     return {
         "errors": [error],
         "meta": _build_meta(request_id),
@@ -146,16 +175,16 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 error_code=exc.error_code,
                 message=exc.message,
                 request_id=request_id,
+                detail=exc.detail,
             )
             return JSONResponse(status_code=status, content=body)
         except IntegrityError as exc:
             logger.warning("integrity_error", message=str(exc.orig))
+            status, code, message = _integrity_error(exc)
             body = _build_error_response(
-                error_code="INTEGRITY_ERROR",
-                message="Cannot complete operation because this record is referenced by other records",
-                request_id=request_id,
+                error_code=code, message=message, request_id=request_id
             )
-            return JSONResponse(status_code=409, content=body)
+            return JSONResponse(status_code=status, content=body)
         except ValueError as exc:
             logger.warning("value_error", message=str(exc))
             body = _build_error_response(

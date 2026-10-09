@@ -107,8 +107,10 @@ def _mock_repo(entity=None):
         repo.update.return_value = entity
         repo.get_by_id.return_value = entity
         repo.first.return_value = entity
+        repo.first_for_update.return_value = entity
     else:
         repo.first.return_value = None
+        repo.first_for_update.return_value = None
         repo.get_by_id.return_value = None
     return repo
 
@@ -164,6 +166,51 @@ class TestCreateRefund:
         refund_repo.create.assert_called_once()
         refund_item_repo.create.assert_called_once()
         refund_repo.update.assert_called_once()
+
+    def test_refund_totals_without_sale_discount(self):
+        handler, _, _ = self._make_handler(
+            sale=_make_sale(), sale_items=[_make_sale_item()], shift=_make_shift()
+        )
+
+        result = handler.handle(
+            CreateRefundCommand(
+                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 2}]
+            )
+        )
+
+        # 2 x 20.00 at VAT 15%
+        assert (result["subtotal"], result["tax"], result["total"]) == (
+            Decimal("40.00"),
+            Decimal("6.00"),
+            Decimal("46.00"),
+        )
+
+    def test_refund_prorates_the_sale_discount(self):
+        """Se devuelve lo cobrado: la venta tuvo 10% de descuento global"""
+        sale = _make_sale(
+            subtotal=Decimal("100.00"),
+            discount=Decimal("10.00"),
+            discount_type="PERCENTAGE",
+            discount_value=Decimal("10"),
+            tax=Decimal("13.50"),
+            total=Decimal("103.50"),
+        )
+        handler, _, _ = self._make_handler(
+            sale=sale, sale_items=[_make_sale_item()], shift=_make_shift()
+        )
+
+        result = handler.handle(
+            CreateRefundCommand(
+                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 5}]
+            )
+        )
+
+        # Refunding every item returns exactly the sale total
+        assert (result["subtotal"], result["tax"], result["total"]) == (
+            Decimal("90.00"),
+            Decimal("13.50"),
+            Decimal("103.50"),
+        )
 
     def test_sale_not_found(self):
         handler, _, _ = self._make_handler()
@@ -261,7 +308,9 @@ class TestProcessRefund:
         refund_payment_repo.create.side_effect = lambda p: p
         movement_repo = MagicMock()
         stock_repo = MagicMock()
-        stock_repo.first.return_value = Stock(id=1, product_id=100, quantity=10)
+        stock_repo.first_for_update.return_value = Stock(
+            id=1, product_id=100, quantity=10
+        )
         event_publisher = MagicMock()
 
         handler = ProcessRefundCommandHandler(
@@ -292,7 +341,7 @@ class TestProcessRefund:
         assert "items" in result
         assert "payments" in result
         movement_repo.create.assert_called_once()
-        stock_repo.first.assert_called_once()
+        stock_repo.first_for_update.assert_called_once()
         stock_repo.update.assert_called_once()
         assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()

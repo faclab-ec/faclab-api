@@ -6,13 +6,14 @@ from src.customers.app.commands.customer import (
     CreateCustomerCommand,
     CreateCustomerCommandHandler,
 )
-from src.customers.domain.entities import Customer, TaxType
+from src.customers.domain.entities import Customer
 from src.customers.domain.events import (
     CustomerActivated,
     CustomerCreated,
     CustomerDeactivated,
     CustomerUpdated,
 )
+from src.shared.domain.tax import TaxType
 from src.shared.infra.events.event_bus import EventBus
 
 

@@ -4,10 +4,9 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.exceptions import InvalidSaleStatusError
-from src.sales.domain.services import recalculate_sale_totals
+from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
@@ -38,34 +37,27 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
-        if sale.status.value != "DRAFT":
-            raise InvalidSaleStatusError(sale.status.value, "update items in")
+        sale.ensure_draft("update items in")
 
         sale_item = self.sale_item_repo.get_by_id(command.sale_item_id)
         if not sale_item:
             raise NotFoundError(f"Sale item with id {command.sale_item_id} not found")
 
         if sale_item.sale_id != command.sale_id:
-            raise DomainError(
-                f"Sale item {command.sale_item_id} does not belong to "
-                f"sale {command.sale_id}"
-            )
+            raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         if command.quantity is not None:
             sale_item.quantity = command.quantity
         if command.discount is not None:
             sale_item.discount = command.discount
 
-        # Recalcular tax_amount del item
-        sale_item.tax_amount = (
-            sale_item.subtotal * sale_item.tax_code.rate / Decimal("100")
-        )
+        sale_item.recalculate_tax()
 
         self.sale_item_repo.update(sale_item)
 
         # Recalcular totales de la venta
         items = self.sale_item_repo.filter_by(sale_id=command.sale_id)
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
         self.sale_repo.update(sale)
 
         result = sale_item.dict()

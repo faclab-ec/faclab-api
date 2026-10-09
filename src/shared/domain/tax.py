@@ -1,5 +1,5 @@
 from decimal import Decimal
-from enum import StrEnum
+from enum import IntEnum, StrEnum
 
 
 class TaxCode(StrEnum):
@@ -37,3 +37,12 @@ _RATES = {
     TaxCode.EXEMPT: Decimal("0"),
     TaxCode.NOT_TAXED: Decimal("0"),
 }
+
+
+class TaxType(IntEnum):
+    """Tipo de identificación tributaria de un cliente o proveedor"""
+
+    RUC = 1
+    NATIONAL_ID = 2  # Cédula
+    PASSPORT = 3  # Pasaporte
+    FOREIGN_ID = 4  # Identificación de extranjero

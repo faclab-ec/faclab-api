@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Any
 
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
-from src.sales.domain.services import recalculate_sale_totals
+from src.sales.domain.services import discount_factor, tax_breakdown
 from src.shared.domain.tax import TaxCode
 
 
@@ -42,7 +42,7 @@ def _make_item(
     return SaleItem(**defaults)
 
 
-class TestRecalculateSaleTotals:
+class TestSaleRecalculateTotals:
     def test_no_discount(self):
         """Totales sin descuento de venta"""
         sale = _make_sale()
@@ -51,7 +51,7 @@ class TestRecalculateSaleTotals:
         ]
         # subtotal = 200, tax = 24, total = 224
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("200")
         assert sale.tax == Decimal("24")
@@ -66,7 +66,7 @@ class TestRecalculateSaleTotals:
         ]
         # subtotal = 100, discount = 10, tax = 12% of 90 = 10.8, total = 100.8
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("100")
         assert sale.discount == Decimal("10")
@@ -81,7 +81,7 @@ class TestRecalculateSaleTotals:
         ]
         # subtotal = 100, discount = 25, tax = 12% of 75 = 9, total = 84
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("100")
         assert sale.discount == Decimal("25")
@@ -102,7 +102,7 @@ class TestRecalculateSaleTotals:
         ]
         # factor = 120/150 = 0.8 → taxed base 80, tax = 12; exempt base 40, tax = 0
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("150")
         assert sale.discount == Decimal("30")
@@ -116,7 +116,7 @@ class TestRecalculateSaleTotals:
             _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_15)
         ]
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.discount == Decimal("100")
         assert sale.tax == Decimal("0")
@@ -136,7 +136,7 @@ class TestRecalculateSaleTotals:
         ]
         # subtotal = 150, tax = 12 + 0 = 12, total = 162
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("150")
         assert sale.tax == Decimal("12")
@@ -147,7 +147,7 @@ class TestRecalculateSaleTotals:
         sale = _make_sale(discount_type="PERCENTAGE", discount_value=Decimal("10"))
         items = []
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("0")
         assert sale.tax == Decimal("0")
@@ -167,8 +167,78 @@ class TestRecalculateSaleTotals:
         ]
         # base = 200, item discount = 20, subtotal = 180, tax = 21.6, total = 201.6
 
-        recalculate_sale_totals(sale, items)
+        sale.recalculate_totals(items)
 
         assert sale.subtotal == Decimal("180")
         assert sale.tax == Decimal("21.6")
         assert sale.total == Decimal("201.6")
+
+    def test_totals_are_rounded_to_cents(self):
+        """Las líneas conservan su precisión; la venta se redondea al centavo"""
+        sale = _make_sale()
+        items = [
+            _make_item(quantity=3, unit_price=Decimal("0.15"), tax_code=TaxCode.VAT_15)
+        ]
+        # subtotal = 0.45, tax = 0.0675 -> 0.07, total = 0.52
+
+        sale.recalculate_totals(items)
+
+        assert items[0].tax_amount == Decimal("0.0675")
+        assert (sale.subtotal, sale.tax, sale.total) == (
+            Decimal("0.45"),
+            Decimal("0.07"),
+            Decimal("0.52"),
+        )
+
+    def test_percentage_discount_is_rounded_and_total_adds_up(self):
+        sale = _make_sale(discount_type="PERCENTAGE", discount_value=Decimal("3.33"))
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("10.00"), tax_code=TaxCode.VAT_15)
+        ]
+        # discount = 0.333 -> 0.33; tax = 1.5 * 9.67/10 = 1.4505 -> 1.45
+
+        sale.recalculate_totals(items)
+
+        assert sale.discount == Decimal("0.33")
+        assert sale.tax == Decimal("1.45")
+        assert (
+            sale.total == sale.subtotal - sale.discount + sale.tax == Decimal("11.12")
+        )
+
+    def test_tax_is_rounded_per_tax_code(self):
+        """Cada código de IVA se redondea por separado, como en la factura"""
+        sale = _make_sale()
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("0.10"), tax_code=TaxCode.VAT_5),
+            _make_item(
+                quantity=1,
+                unit_price=Decimal("0.10"),
+                tax_code=TaxCode.VAT_15,
+                product_id=200,
+            ),
+        ]
+        # 0.005 -> 0.01 and 0.015 -> 0.02; rounding the sum (0.02) would differ
+
+        sale.recalculate_totals(items)
+
+        assert sale.tax == Decimal("0.03")
+        assert sale.total == Decimal("0.23")
+
+
+class TestTaxBreakdown:
+    def test_groups_by_tax_code_and_applies_the_discount_factor(self):
+        lines = [
+            (TaxCode.VAT_15, Decimal("100"), Decimal("15")),
+            (TaxCode.VAT_15, Decimal("20"), Decimal("3")),
+            (TaxCode.VAT_0, Decimal("30"), Decimal("0")),
+        ]
+
+        breakdown = tax_breakdown(lines, discount_factor(Decimal("150"), Decimal("15")))
+
+        assert breakdown == {
+            TaxCode.VAT_15: (Decimal("108.00"), Decimal("16.20")),
+            TaxCode.VAT_0: (Decimal("27.00"), Decimal("0.00")),
+        }
+
+    def test_discount_factor_without_subtotal_is_one(self):
+        assert discount_factor(Decimal("0"), Decimal("0")) == Decimal("1")

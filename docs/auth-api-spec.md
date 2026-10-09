@@ -260,8 +260,8 @@ Validation: `username` 1..64, `email` 1..128, `password` 8..128, `role` 1..5 (de
 **Errors**
 | Status | Code | Meaning |
 |---|---|---|
-| 400 | `USERNAME_ALREADY_EXISTS` | Duplicate username |
-| 400 | `EMAIL_ALREADY_EXISTS` | Duplicate email |
+| 409 | `USERNAME_ALREADY_EXISTS` | Duplicate username |
+| 409 | `EMAIL_ALREADY_EXISTS` | Duplicate email |
 | 422 | `VALIDATION_ERROR` | Body invalid |
 
 ### 5.4 `PUT /api/admin/users/{userId}/role`
@@ -346,13 +346,13 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 
 | Code | HTTP | When it happens | Frontend action |
 |---|---|---|---|
-| `INVALID_CREDENTIALS` | 400 | Wrong username/password; inactive user on login; deactivated user on refresh | Show "usuario o contraseña inválidos"; on refresh → force re-login |
-| `TOKEN_EXPIRED` | 400 | Access or refresh token past `exp` | Access → attempt refresh; Refresh → force re-login |
-| `INVALID_TOKEN` | 400 | Bad signature, wrong typ (sent refresh where access needed), malformed | Force re-login |
-| `PERMISSION_DENIED` | 400 | No auth header OR user lacks required permission | No header → force login; lacks perm → show "no access" view |
+| `INVALID_CREDENTIALS` | 401 | Wrong username/password; inactive user on login; deactivated user on refresh | Show "usuario o contraseña inválidos"; on refresh → force re-login |
+| `TOKEN_EXPIRED` | 401 | Access or refresh token past `exp` | Access → attempt refresh; Refresh → force re-login |
+| `INVALID_TOKEN` | 401 | Bad signature, wrong typ (sent refresh where access needed), malformed | Force re-login |
+| `PERMISSION_DENIED` | 403 | No auth header OR user lacks required permission | No header → force login; lacks perm → show "no access" view |
 | `PASSWORD_CHANGE_REQUIRED` | 403 | User has `mustChangePassword=true` and is calling a permission-gated route | Redirect to change-password screen; only `/me` and `/change-password` are reachable |
-| `USERNAME_ALREADY_EXISTS` | 400 | Create user conflict | Mark `username` field error |
-| `EMAIL_ALREADY_EXISTS` | 400 | Create user conflict | Mark `email` field error |
+| `USERNAME_ALREADY_EXISTS` | 409 | Create user conflict | Mark `username` field error |
+| `EMAIL_ALREADY_EXISTS` | 409 | Create user conflict | Mark `email` field error |
 | `NOT_FOUND` | 404 | User id missing | Show "user not found" |
 | `VALIDATION_ERROR` | 422 | Body/query validation failed | Use `errors[i].field` for inline errors |
 | `INTERNAL_ERROR` | 500 | Unexpected server failure | Generic toast + retry |

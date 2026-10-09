@@ -4,8 +4,9 @@ from wireup import injectable
 
 from src.inventory.serial.app.repositories import SerialNumberRepository
 from src.inventory.serial.domain.entities import SerialNumber, SerialStatus
+from src.inventory.serial.domain.exceptions import SerialNumberAlreadyExistsError
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.exceptions import NotFoundError, ValidationError
 
 
 @dataclass
@@ -32,9 +33,7 @@ class CreateSerialNumberCommandHandler(CommandHandler[CreateSerialNumberCommand,
     def _handle(self, command: CreateSerialNumberCommand) -> dict:
         existing = self.repo.first(serial_number=command.serial_number)
         if existing is not None:
-            raise DomainError(
-                f"Serial number '{command.serial_number}' already exists."
-            )
+            raise SerialNumberAlreadyExistsError(command.serial_number)
 
         serial = SerialNumber(
             product_id=command.product_id,
@@ -62,23 +61,11 @@ class UpdateSerialStatusCommandHandler(CommandHandler[UpdateSerialStatusCommand,
         try:
             new_status = SerialStatus(command.status)
         except ValueError as err:
-            raise DomainError(
+            raise ValidationError(
                 f"Invalid serial status: '{command.status}'. "
                 f"Valid values: {', '.join(s.value for s in SerialStatus)}"
             ) from err
 
-        if new_status == SerialStatus.SOLD:
-            serial = serial.mark_sold()
-        elif new_status == SerialStatus.RESERVED:
-            serial = serial.mark_reserved()
-        elif new_status == SerialStatus.RETURNED:
-            serial = serial.mark_returned()
-        elif new_status == SerialStatus.SCRAPPED:
-            serial = serial.mark_scrapped()
-        else:
-            raise DomainError(
-                f"Cannot transition to status '{command.status}' directly."
-            )
-
+        serial.change_status(new_status)
         serial = self.repo.update(serial)
         return serial.dict()

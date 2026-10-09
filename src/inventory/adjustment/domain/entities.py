@@ -1,9 +1,9 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from src.inventory.adjustment.domain.exceptions import InvalidAdjustmentStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class AdjustmentStatus(StrEnum):
@@ -33,15 +33,28 @@ class InventoryAdjustment(Entity):
     adjusted_by: str | None = None
     created_at: datetime | None = None
 
-    def confirm(self) -> "InventoryAdjustment":
+    def ensure_draft(self, operation: str) -> None:
         if self.status != AdjustmentStatus.DRAFT:
-            raise DomainError("Solo ajustes en DRAFT pueden confirmarse")
-        return replace(self, status=AdjustmentStatus.CONFIRMED)
+            raise InvalidAdjustmentStatusError(self.status, operation)
 
-    def cancel(self) -> "InventoryAdjustment":
+    def update_details(
+        self, notes: str | None = None, adjusted_by: str | None = None
+    ) -> None:
+        """Actualiza los datos editables; solo en DRAFT"""
+        self.ensure_draft("actualizar")
+        if notes is not None:
+            self.notes = notes
+        if adjusted_by is not None:
+            self.adjusted_by = adjusted_by
+
+    def confirm(self) -> None:
+        self.ensure_draft("confirmar")
+        self.status = AdjustmentStatus.CONFIRMED
+
+    def cancel(self) -> None:
         if self.status == AdjustmentStatus.CONFIRMED:
-            raise DomainError("No se puede cancelar un ajuste ya confirmado")
-        return replace(self, status=AdjustmentStatus.CANCELLED)
+            raise InvalidAdjustmentStatusError(self.status, "cancelar")
+        self.status = AdjustmentStatus.CANCELLED
 
 
 @dataclass
@@ -58,3 +71,11 @@ class AdjustmentItem(Entity):
     @property
     def difference(self) -> int:
         return self.actual_quantity - self.expected_quantity
+
+    def update(
+        self, actual_quantity: int | None = None, notes: str | None = None
+    ) -> None:
+        if actual_quantity is not None:
+            self.actual_quantity = actual_quantity
+        if notes is not None:
+            self.notes = notes

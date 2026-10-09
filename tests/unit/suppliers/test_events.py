@@ -63,7 +63,7 @@ def test_supplier_deactivated_event_no_reason():
 def test_supplier_created_event_is_published():
     from unittest.mock import MagicMock
 
-    from src.customers.domain.entities import TaxType
+    from src.shared.domain.tax import TaxType
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
     from src.suppliers.app.commands.supplier import (
         CreateSupplierCommand,
@@ -96,7 +96,7 @@ def test_supplier_created_event_is_published():
 def test_supplier_activated_event_is_published():
     from unittest.mock import MagicMock
 
-    from src.customers.domain.entities import TaxType
+    from src.shared.domain.tax import TaxType
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
     from src.suppliers.app.commands.supplier import (
         ActivateSupplierCommand,

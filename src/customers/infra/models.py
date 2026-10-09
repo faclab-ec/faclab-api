@@ -38,7 +38,7 @@ class CustomerContactModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(
-        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str | None] = mapped_column(String(64))

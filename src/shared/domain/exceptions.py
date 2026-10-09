@@ -24,3 +24,15 @@ class NotFoundError(ApplicationError):
 
 class ValidationError(DomainError):
     error_code = "VALIDATION_ERROR"
+
+
+class ConflictError(DomainError):
+    """The operation conflicts with data that already exists (HTTP 409)."""
+
+    error_code = "CONFLICT"
+
+
+class AlreadyExistsError(ConflictError):
+    """A unique value is already taken. Subclasses use `<THING>_ALREADY_EXISTS`."""
+
+    error_code = "ALREADY_EXISTS"

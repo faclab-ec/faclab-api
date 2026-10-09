@@ -1,9 +1,9 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from src.inventory.serial.domain.exceptions import InvalidSerialStatusError
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import DomainError
 
 
 class SerialStatus(StrEnum):
@@ -27,26 +27,33 @@ class SerialNumber(Entity):
     created_at: datetime | None = None
     notes: str | None = None
 
-    def mark_sold(self) -> "SerialNumber":
-        if self.status != SerialStatus.AVAILABLE:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as sold. Current status: '{self.status.value}'. Only AVAILABLE serials can be sold."
-            )
-        return replace(self, status=SerialStatus.SOLD)
+    def mark_sold(self) -> None:
+        self._transition(SerialStatus.SOLD, allowed_from=(SerialStatus.AVAILABLE,))
 
-    def mark_reserved(self) -> "SerialNumber":
-        if self.status != SerialStatus.AVAILABLE:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as reserved. Current status: '{self.status.value}'. Only AVAILABLE serials can be reserved."
-            )
-        return replace(self, status=SerialStatus.RESERVED)
+    def mark_reserved(self) -> None:
+        self._transition(SerialStatus.RESERVED, allowed_from=(SerialStatus.AVAILABLE,))
 
-    def mark_returned(self) -> "SerialNumber":
-        if self.status != SerialStatus.SOLD:
-            raise DomainError(
-                f"Cannot mark serial '{self.serial_number}' as returned. Current status: '{self.status.value}'. Only SOLD serials can be returned."
-            )
-        return replace(self, status=SerialStatus.RETURNED)
+    def mark_returned(self) -> None:
+        self._transition(SerialStatus.RETURNED, allowed_from=(SerialStatus.SOLD,))
 
-    def mark_scrapped(self) -> "SerialNumber":
-        return replace(self, status=SerialStatus.SCRAPPED)
+    def mark_scrapped(self) -> None:
+        self.status = SerialStatus.SCRAPPED
+
+    def change_status(self, target: SerialStatus) -> None:
+        """Aplica la transición pedida; AVAILABLE no se asigna a mano"""
+        transitions = {
+            SerialStatus.SOLD: self.mark_sold,
+            SerialStatus.RESERVED: self.mark_reserved,
+            SerialStatus.RETURNED: self.mark_returned,
+            SerialStatus.SCRAPPED: self.mark_scrapped,
+        }
+        if target not in transitions:
+            raise InvalidSerialStatusError(self.serial_number, self.status, target)
+        transitions[target]()
+
+    def _transition(
+        self, target: SerialStatus, allowed_from: tuple[SerialStatus, ...]
+    ) -> None:
+        if self.status not in allowed_from:
+            raise InvalidSerialStatusError(self.serial_number, self.status, target)
+        self.status = target

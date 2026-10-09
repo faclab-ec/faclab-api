@@ -39,8 +39,6 @@ def handle_purchase_order_received_lots(
 
     with create_sync_scope(session) as scope:
         try:
-            from dataclasses import replace
-
             from src.inventory.lot.app.repositories import (
                 LotRepository,
                 MovementLotItemRepository,
@@ -80,12 +78,8 @@ def handle_purchase_order_received_lots(
                         quantity=quantity,
                     )
                 else:
-                    lot = replace(
-                        existing_lot,
-                        initial_quantity=existing_lot.initial_quantity + quantity,
-                        current_quantity=existing_lot.current_quantity + quantity,
-                    )
-                    lot = lot_repo.update(lot)
+                    existing_lot.receive(quantity)
+                    lot = lot_repo.update(existing_lot)
                     logger.info(
                         "lot_updated",
                         lot_id=lot.id,
