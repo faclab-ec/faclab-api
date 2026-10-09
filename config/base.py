@@ -55,6 +55,9 @@ class BaseConfig:
     # How often the outbox relay looks for unpublished messages; it also wakes
     # up right after a commit that wrote one
     OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", 5.0)
+    # Consumer group for the topics core reads (invoice results); every replica
+    # shares it so each message is handled once
+    KAFKA_CONSUMER_GROUP_ID = env("KAFKA_CONSUMER_GROUP_ID", "faclab-core")
 
     #
     # Auth / JWT config
@@ -368,6 +371,13 @@ All errors follow a consistent structure with one or more error entries:
         },
         # Admin — Reports
         {
+            "name": "Dashboard",
+            "description": (
+                "Home page summary: inventory value, warehouse summary and "
+                "alert counts in one call."
+            ),
+        },
+        {
             "name": "Inventory Reports",
             "description": (
                 "Inventory analytics: valuation, product rotation, "
@@ -480,7 +490,7 @@ All errors follow a consistent structure with one or more error entries:
         },
         {
             "name": "Reports",
-            "tags": ["Inventory Reports"],
+            "tags": ["Dashboard", "Inventory Reports"],
         },
         {
             "name": "POS",

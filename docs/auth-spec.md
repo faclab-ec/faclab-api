@@ -1,6 +1,6 @@
 # Auth Spec — Faclab Core
 
-JWT-based authentication with role-based authorization. All admin and POS routes require a valid access token. Login and refresh are public.
+JWT-based authentication with role-based authorization. All admin and POS routes require a valid access token. Login, refresh and logout are public.
 
 ## Obtaining a token
 
@@ -29,7 +29,9 @@ Send the token on every protected request:
 Authorization: Bearer <accessToken>
 ```
 
-Access tokens expire after `JWT_ACCESS_TTL` seconds (default 900). Refresh via `POST /api/auth/refresh` with `{"refreshToken":"..."}`. The server revalidates the user (role, `is_active`) before reissuing.
+Access tokens expire after `JWT_ACCESS_TTL` seconds (default 900). Refresh via `POST /api/auth/refresh` with `{"refreshToken":"..."}`. The server revalidates the user (role, `is_active`) and the session before reissuing.
+
+Each login opens a session (`auth_sessions`) whose id travels in the tokens as `sid`. `POST /api/auth/logout` with `{"refreshToken":"..."}` revokes it; a password change revokes the user's other sessions, and an admin reset or deactivation revokes all of them. A revoked session can't be refreshed; access tokens are stateless and expire on their own. The last active admin can't be deactivated or demoted (`LAST_ADMIN`, 409).
 
 ## Role × Permission matrix
 

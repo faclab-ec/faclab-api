@@ -86,3 +86,46 @@ def test_tax_code_serializes_as_plain_string():
     item = raw["payload"]["items"][0]
     assert item["tax_code"] == "EXEMPT"
     assert item["tax_amount"] == "0"
+
+
+def test_items_carry_invoice_amounts_with_the_sale_discount_prorated():
+    event = _make_event(
+        items=[
+            {
+                "product_id": 10,
+                "quantity": 2,
+                "unit_price": Decimal("50.000000"),
+                "discount": Decimal("10.00"),
+                "tax_code": TaxCode.VAT_15,
+                "tax_amount": Decimal("13.500000"),
+                "subtotal": Decimal("90.000000"),
+            },
+            {
+                "product_id": 10,
+                "quantity": 1,
+                "unit_price": Decimal("30.000000"),
+                "discount": Decimal("0"),
+                "tax_code": TaxCode.VAT_0,
+                "tax_amount": Decimal("0"),
+                "subtotal": Decimal("30.000000"),
+            },
+        ],
+        subtotal=Decimal("120.00"),
+        total_discount=Decimal("12.00"),
+        total=Decimal("120.15"),
+    )
+
+    raw = json.loads(json.dumps(_build(event), default=json_default))
+
+    first, second = raw["payload"]["items"]
+    # Bruto 100: 10 de descuento de la línea + 9 del descuento global
+    assert (first["invoice_discount"], first["invoice_base"], first["invoice_tax"]) == (
+        "19.00",
+        "81.00",
+        "12.15",
+    )
+    assert (
+        second["invoice_discount"],
+        second["invoice_base"],
+        second["invoice_tax"],
+    ) == ("3.00", "27.00", "0.00")

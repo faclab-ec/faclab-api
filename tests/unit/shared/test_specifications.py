@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import DeclarativeBase
 
-from src.shared.domain.specifications import Specification
+from src.shared.domain.specifications import Specification, all_of, contains_pattern
 
 
 class SpecBase(DeclarativeBase):
@@ -76,3 +76,20 @@ def test_to_query_criteria_not():
     spec = ~IsAdult()
     criteria = spec.to_query_criteria()
     assert len(criteria) == 1
+
+
+def test_all_of_without_specs_matches_everything():
+    spec = all_of([])
+    assert spec.is_satisfied_by({"age": 1}) is True
+    assert spec.to_query_criteria() == []
+
+
+def test_all_of_combines_with_and():
+    spec = all_of([IsAdult(), IsActive()])
+    assert spec.is_satisfied_by({"age": 20, "active": True}) is True
+    assert spec.is_satisfied_by({"age": 20, "active": False}) is False
+    assert len(spec.to_query_criteria()) == 2
+
+
+def test_contains_pattern_escapes_wildcards():
+    assert contains_pattern("50%_off\\") == "%50\\%\\_off\\\\%"

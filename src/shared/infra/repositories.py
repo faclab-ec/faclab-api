@@ -246,8 +246,21 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
             "items": [item.dict() for item in items],
         }
 
-    def paginate_by_spec(self, spec, limit=None, offset=None) -> dict:
-        items = self.filter_by_spec(spec, limit=limit, offset=offset)
+    def paginate_by_spec(
+        self,
+        spec: Specification,
+        limit: int | None = None,
+        offset: int | None = None,
+        order_by: OrderCriteria | None = None,
+        desc_order: bool = False,
+    ) -> dict:
+        items = self.filter_by_spec(
+            spec,
+            order_by=order_by,
+            desc_order=desc_order,
+            limit=limit,
+            offset=offset,
+        )
         total = self.count_by_spec(spec)
         return {
             "total": total,

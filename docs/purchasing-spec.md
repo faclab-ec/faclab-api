@@ -79,6 +79,7 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `id`              | `int`    | auto      | —       | ID único                             |
 | `purchaseOrderId` | `int`    | sí        | —       | ID de la orden de compra             |
 | `productId`       | `int`    | sí        | —       | ID del producto                      |
+| `productName`, `productSku` | `string?` | auto | — | Nombre y SKU del producto (solo en `GET /purchase-orders/{id}/items`) |
 | `quantityOrdered` | `int`    | sí        | —       | Cantidad pedida                      |
 | `quantityReceived`| `int`    | auto      | `0`     | Cantidad recibida acumulada          |
 | `unitCost`        | `number` | sí        | —       | Costo unitario                       |

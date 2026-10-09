@@ -84,13 +84,13 @@ def test_sale_invoiced_event_to_dict():
         aggregate_id=1,
         sale_id=1,
         customer_id=10,
-        invoice_number="INV-001",
+        invoice_id="inv-001",
         total=Decimal("1500.0"),
     )
     event_dict = event.to_dict()
 
     assert event_dict["event_type"] == "SaleInvoiced"
-    assert event_dict["payload"]["invoice_number"] == "INV-001"
+    assert event_dict["payload"]["invoice_id"] == "inv-001"
 
 
 def test_payment_received_event_to_dict():

@@ -4,13 +4,20 @@ Cada venta confirmada (admin o POS) se publica en el topic `sales.confirmed` con
 los datos del cliente y de los productos que necesita la factura. El mensaje se
 guarda en el outbox dentro de la transacción de la venta: solo llega a Kafka si
 la venta se confirma de verdad.
+
+Cada ítem lleva además `invoice_discount`, `invoice_base` e `invoice_tax`: sus
+montos en la factura, redondeados a centavos y con el descuento global ya
+prorrateado (ver `invoice_lines`). faclab-invoicing los usa tal cual.
 """
 
+from decimal import Decimal
 from typing import Any
 
 from src.catalog.product.app.repositories import ProductRepository
 from src.customers.app.repositories import CustomerRepository
 from src.sales.domain.events import SaleConfirmed
+from src.sales.domain.services import SaleLine, invoice_lines
+from src.shared.domain.tax import TaxCode
 from src.shared.infra.events.decorators import event_handler
 from src.shared.infra.events.scope import create_sync_scope
 from src.shared.infra.outbox.writer import OutboxWriter
@@ -41,8 +48,22 @@ def build_sale_confirmed_message(
         p.id: p
         for p in product_repo.get_by_ids(item["product_id"] for item in event.items)
     }
+    lines = invoice_lines(
+        [
+            SaleLine(
+                gross=Decimal(item["quantity"]) * Decimal(item["unit_price"]),
+                tax_code=TaxCode(item["tax_code"]),
+                subtotal=Decimal(item.get("subtotal", 0)),
+                tax_amount=Decimal(item.get("tax_amount", 0)),
+            )
+            for item in event.items
+        ],
+        subtotal=event.subtotal,
+        discount=event.total_discount,
+        tax=event.total - event.subtotal + event.total_discount,
+    )
     items = []
-    for item in event.items:
+    for item, line in zip(event.items, lines, strict=True):
         product = products.get(item["product_id"])
         items.append(
             {
@@ -55,6 +76,9 @@ def build_sale_confirmed_message(
                 "tax_code": item.get("tax_code"),
                 "tax_amount": item.get("tax_amount", 0),
                 "subtotal": item.get("subtotal", 0),
+                "invoice_discount": line.discount,
+                "invoice_base": line.taxable_base,
+                "invoice_tax": line.tax,
             }
         )
 

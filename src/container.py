@@ -29,6 +29,7 @@ def create_wireup_container():
     from src.pos.sales.infra.container import INJECTABLES as POS_SALES_INJECTABLES
     from src.pos.shift.infra.container import INJECTABLES as POS_SHIFT_INJECTABLES
     from src.purchasing.infra.container import INJECTABLES as PURCHASING_INJECTABLES
+    from src.reports.dashboard.infra.container import DASHBOARD_INJECTABLES
     from src.reports.inventory.infra.container import REPORT_INJECTABLES
     from src.sales.infra.container import INJECTABLES as SALES_INJECTABLES
     from src.shared.infra.database import create_session_factory
@@ -63,6 +64,7 @@ def create_wireup_container():
             *SUPPLIER_INJECTABLES,
             *PURCHASING_INJECTABLES,
             *REPORT_INJECTABLES,
+            *DASHBOARD_INJECTABLES,
             *SALES_INJECTABLES,
             *POS_SALES_INJECTABLES,
             *POS_SHIFT_INJECTABLES,

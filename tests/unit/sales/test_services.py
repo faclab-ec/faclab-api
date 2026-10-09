@@ -2,7 +2,13 @@ from decimal import Decimal
 from typing import Any
 
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
-from src.sales.domain.services import discount_factor, tax_breakdown
+from src.sales.domain.services import (
+    InvoiceLine,
+    SaleLine,
+    discount_factor,
+    invoice_lines,
+    tax_breakdown,
+)
 from src.shared.domain.tax import TaxCode
 
 
@@ -242,3 +248,111 @@ class TestTaxBreakdown:
 
     def test_discount_factor_without_subtotal_is_one(self):
         assert discount_factor(Decimal("0"), Decimal("0")) == Decimal("1")
+
+
+def _line(item: SaleItem) -> SaleLine:
+    return SaleLine(
+        gross=item.unit_price * item.quantity,
+        tax_code=item.tax_code,
+        subtotal=item.subtotal,
+        tax_amount=item.tax_amount,
+    )
+
+
+def _invoice(sale: Sale, items: list[SaleItem]) -> list[InvoiceLine]:
+    sale.recalculate_totals(items)
+    return invoice_lines(
+        [_line(item) for item in items], sale.subtotal, sale.discount, sale.tax
+    )
+
+
+class TestInvoiceLines:
+    def test_without_discount_each_line_keeps_its_own_amounts(self):
+        sale = _make_sale()
+        items = [
+            _make_item(quantity=2, unit_price=Decimal("10"), tax_code=TaxCode.VAT_15),
+            _make_item(quantity=1, unit_price=Decimal("5"), tax_code=TaxCode.VAT_0),
+        ]
+
+        lines = _invoice(sale, items)
+
+        assert lines == [
+            InvoiceLine(Decimal("0.00"), Decimal("20.00"), Decimal("3.00")),
+            InvoiceLine(Decimal("0.00"), Decimal("5.00"), Decimal("0.00")),
+        ]
+
+    def test_global_discount_is_prorated_into_each_line(self):
+        sale = _make_sale(discount_type="PERCENTAGE", discount_value=Decimal("10"))
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("100"), tax_code=TaxCode.VAT_15),
+            _make_item(quantity=1, unit_price=Decimal("50"), tax_code=TaxCode.VAT_0),
+        ]
+
+        lines = _invoice(sale, items)
+
+        # 10% de 150 = 15: 10 a la primera línea y 5 a la segunda
+        assert lines == [
+            InvoiceLine(Decimal("10.00"), Decimal("90.00"), Decimal("13.50")),
+            InvoiceLine(Decimal("5.00"), Decimal("45.00"), Decimal("0.00")),
+        ]
+
+    def test_line_discount_and_global_discount_add_up(self):
+        sale = _make_sale(discount_type="AMOUNT", discount_value=Decimal("8"))
+        items = [
+            _make_item(
+                quantity=2,
+                unit_price=Decimal("50"),
+                discount=Decimal("20"),
+                tax_code=TaxCode.VAT_15,
+            )
+        ]
+
+        [line] = _invoice(sale, items)
+
+        # 100 bruto - 20 de la línea - 8 global = 72 de base
+        assert line == InvoiceLine(Decimal("28.00"), Decimal("72.00"), Decimal("10.80"))
+
+    def test_lines_add_up_to_the_sale_totals_when_cents_do_not_divide(self):
+        sale = _make_sale(discount_type="AMOUNT", discount_value=Decimal("1"))
+        items = [
+            _make_item(quantity=1, unit_price=Decimal("3.33"), tax_code=TaxCode.VAT_15)
+            for _ in range(3)
+        ] + [
+            _make_item(quantity=3, unit_price=Decimal("0.333"), tax_code=TaxCode.VAT_5),
+            _make_item(quantity=1, unit_price=Decimal("2.10"), tax_code=TaxCode.EXEMPT),
+        ]
+
+        lines = _invoice(sale, items)
+
+        bases = sum((line.taxable_base for line in lines), Decimal("0"))
+        taxes = sum((line.tax for line in lines), Decimal("0"))
+        assert bases == sale.subtotal - sale.discount
+        assert taxes == sale.tax
+        assert bases + taxes == sale.total
+        breakdown = tax_breakdown(
+            ((i.tax_code, i.subtotal, i.tax_amount) for i in items),
+            discount_factor(sale.subtotal, sale.discount),
+        )
+        for code, (_, code_tax) in breakdown.items():
+            assert code_tax == sum(
+                (
+                    ln.tax
+                    for ln, i in zip(lines, items, strict=True)
+                    if i.tax_code == code
+                ),
+                Decimal("0"),
+            )
+        for line in lines:
+            assert line.discount >= 0
+            assert line.taxable_base == line.taxable_base.quantize(Decimal("0.01"))
+
+    def test_tax_drift_from_stored_precision_goes_to_the_largest_group(self):
+        lines = [
+            SaleLine(Decimal("10"), TaxCode.VAT_15, Decimal("10"), Decimal("1.5")),
+            SaleLine(Decimal("10"), TaxCode.VAT_5, Decimal("10"), Decimal("0.5")),
+        ]
+
+        # La venta guardó 2.01 de IVA; recalculado daría 2.00
+        result = invoice_lines(lines, Decimal("20"), Decimal("0"), Decimal("2.01"))
+
+        assert [line.tax for line in result] == [Decimal("1.51"), Decimal("0.50")]

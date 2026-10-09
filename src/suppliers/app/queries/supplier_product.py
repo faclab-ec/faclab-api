@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
+from src.catalog.product.app.product_names import with_product_names
+from src.catalog.product.app.repositories import ProductRepository
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
 from src.suppliers.app.repositories import SupplierProductRepository
@@ -35,12 +37,15 @@ class GetSupplierProductsBySupplierIdQuery(Query):
 class GetSupplierProductsBySupplierIdQueryHandler(
     QueryHandler[GetSupplierProductsBySupplierIdQuery, list[dict]]
 ):
-    def __init__(self, repo: SupplierProductRepository):
+    def __init__(
+        self, repo: SupplierProductRepository, product_repo: ProductRepository
+    ):
         self.repo = repo
+        self.product_repo = product_repo
 
     def _handle(self, query: GetSupplierProductsBySupplierIdQuery) -> list[dict]:
         products = self.repo.filter_by(supplier_id=query.supplier_id)
-        return [p.dict() for p in products]
+        return with_product_names([p.dict() for p in products], self.product_repo)
 
 
 @dataclass

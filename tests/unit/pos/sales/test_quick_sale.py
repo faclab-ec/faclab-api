@@ -13,7 +13,10 @@ from src.pos.sales.app.commands.quick_sale import (
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
-from src.sales.domain.exceptions import InsufficientStockError
+from src.sales.domain.exceptions import (
+    InsufficientStockError,
+    OverrideReasonRequiredError,
+)
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 
@@ -278,6 +281,46 @@ class TestQuickSaleHappyPath:
         )
 
         assert result["status"] == "CONFIRMED"
+
+
+class TestQuickSalePriceOverride:
+    def _handle(self, item: dict):
+        sale_item_repo = _mock_repo()
+        sale_item_repo.create.side_effect = lambda sale_item: sale_item
+        handler = _build_handler(
+            sale_repo=_mock_repo(entity=_make_sale()),
+            sale_item_repo=sale_item_repo,
+            product_repo=_mock_repo(entity=_make_product(sale_price=Decimal("50"))),
+            stock_repo=_mock_repo(entity=_make_stock()),
+            payment_repo=_mock_repo(entity=_make_payment()),
+            shift_repo=_mock_repo(entity=_make_shift()),
+        )
+        handler.handle(
+            _quick_sale_command(
+                items=[{"product_id": 1, "quantity": 1, **item}],
+                payments=[{"amount": 100, "payment_method": "CASH"}],
+            )
+        )
+        return sale_item_repo.create.call_args.args[0]
+
+    def test_another_price_is_recorded_with_its_reason(self):
+        sale_item = self._handle(
+            {"unit_price": 45, "override_reason": "Cliente frecuente"}
+        )
+
+        assert sale_item.unit_price == Decimal("45")
+        assert sale_item.price_override == Decimal("45")
+        assert sale_item.override_reason == "Cliente frecuente"
+
+    def test_list_price_is_not_an_override(self):
+        sale_item = self._handle({"unit_price": 50.0})
+
+        assert sale_item.price_override is None
+        assert sale_item.override_reason is None
+
+    def test_another_price_needs_a_reason(self):
+        with pytest.raises(OverrideReasonRequiredError):
+            self._handle({"unit_price": 45})
 
 
 class TestQuickSaleErrors:

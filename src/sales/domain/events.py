@@ -83,18 +83,18 @@ class SaleCancelled(DomainEvent):
 
 @dataclass
 class SaleInvoiced(DomainEvent):
-    """Evento emitido cuando se factura una venta"""
+    """Evento emitido cuando el SRI autoriza la factura de una venta"""
 
     sale_id: int = 0
     customer_id: int | None = None
-    invoice_number: str = ""
+    invoice_id: str = ""  # id de la factura en faclab-invoicing
     total: Decimal = Decimal("0")
 
     def _payload(self) -> dict[str, Any]:
         return {
             "sale_id": self.sale_id,
             "customer_id": self.customer_id,
-            "invoice_number": self.invoice_number,
+            "invoice_id": self.invoice_id,
             "total": self.total,
         }
 

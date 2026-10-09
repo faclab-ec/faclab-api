@@ -149,3 +149,12 @@ def test_deleting_an_older_draft_does_not_reuse_a_live_order_number(api, order):
 
     assert latest["orderNumber"].endswith("-0003")
     assert newer["orderNumber"].endswith("-0004")
+
+
+def test_order_items_carry_the_product_name_and_sku(api, order):
+    [item] = api.get(f"/api/admin/purchase-orders/{order['po']['id']}/items")
+
+    assert (item["productName"], item["productSku"]) == (
+        order["product"]["name"],
+        order["product"]["sku"],
+    )

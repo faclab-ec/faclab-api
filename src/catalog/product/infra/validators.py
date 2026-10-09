@@ -95,3 +95,9 @@ class CategoryQueryParams(QueryParams):
 
 class ProductQueryParams(QueryParams):
     category_id: int | None = Field(None, ge=1, description="Filter by category ID")
+    search: str | None = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Text to look for in the name or SKU, or an exact barcode (case-insensitive)",
+    )

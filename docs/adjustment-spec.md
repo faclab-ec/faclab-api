@@ -52,6 +52,7 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `id`               | int            | Auto      | -       | ID primario                        |
 | `adjustmentId`     | int            | Si        | -       | FK a InventoryAdjustment           |
 | `productId`        | int            | Si        | -       | FK a Product                       |
+| `productName`, `productSku` | string? | Auto     | -       | Nombre y SKU del producto (solo en el listado de items) |
 | `locationId`       | int            | Si        | -       | FK a Location                      |
 | `expectedQuantity` | int            | Auto      | -       | Cantidad en sistema (capturada al agregar item) |
 | `actualQuantity`   | int            | Si        | -       | Cantidad contada/real              |

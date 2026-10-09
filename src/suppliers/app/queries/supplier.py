@@ -4,12 +4,15 @@ from wireup import injectable
 
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.specifications import Specification, all_of
 from src.suppliers.app.repositories import SupplierRepository
+from src.suppliers.domain.specifications import SupplierBySearchTerm, SuppliersByStatus
 
 
 @dataclass
 class GetAllSuppliersQuery(Query):
     is_active: bool | None = None
+    search: str | None = None
     limit: int | None = None
     offset: int | None = None
 
@@ -20,11 +23,13 @@ class GetAllSuppliersQueryHandler(QueryHandler[GetAllSuppliersQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllSuppliersQuery) -> dict:
-        filter_kwargs = {}
+        specs: list[Specification] = []
         if query.is_active is not None:
-            filter_kwargs["is_active"] = query.is_active
-        return self.repo.paginate(
-            limit=query.limit, offset=query.offset, **filter_kwargs
+            specs.append(SuppliersByStatus(query.is_active))
+        if query.search:
+            specs.append(SupplierBySearchTerm(query.search))
+        return self.repo.paginate_by_spec(
+            all_of(specs), limit=query.limit, offset=query.offset
         )
 
 

@@ -96,6 +96,14 @@ class QuickSaleItemInput(BaseModel):
     discount: Decimal = Field(
         Decimal("0"), ge=0, le=100, description="Discount percentage (0-100)"
     )
+    override_reason: str | None = Field(
+        None,
+        min_length=1,
+        max_length=512,
+        description="Why unitPrice differs from the product price (required then)",
+        validation_alias=AliasChoices("overrideReason", "override_reason"),
+        serialization_alias="overrideReason",
+    )
 
 
 class QuickSalePaymentInput(BaseModel):

@@ -96,6 +96,7 @@ GET /suppliers
 | limit    | int          | 100     | 1-1000                         |
 | offset   | int          | 0       | >= 0                           |
 | isActive | bool \| null | null    | Filtra por estado activo/inactivo |
+| search   | string \| null | null  | Texto contenido en el nombre o la identificación (sin distinguir mayúsculas) |
 
 **Response: `200`**
 
@@ -600,6 +601,8 @@ interface SupplierProduct {
   id: number;
   supplierId: number;
   productId: number;
+  productName?: string | null; // solo en GET /suppliers/{id}/products
+  productSku?: string | null;
   purchasePrice: number;
   supplierSku: string | null;
   minOrderQuantity: number;

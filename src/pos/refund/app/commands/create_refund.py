@@ -12,7 +12,6 @@ from src.pos.refund.domain.exceptions import (
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.entities import SaleStatus
 from src.sales.domain.services import discount_factor
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -47,7 +46,7 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         if not sale:
             raise NotFoundError(f"Sale with id {command.original_sale_id} not found")
 
-        if sale.status != SaleStatus.CONFIRMED:
+        if not sale.is_completed:
             raise SaleNotConfirmedError(command.original_sale_id)
 
         shift = self.shift_repo.first(status="OPEN")

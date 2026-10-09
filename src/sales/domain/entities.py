@@ -21,6 +21,12 @@ class SaleStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+# Ventas cerradas, facturadas o no: cuentan en la caja y en los reportes y
+# admiten devoluciones. faclab-invoicing pasa una venta a INVOICED cuando el SRI
+# autoriza su factura.
+COMPLETED_SALE_STATUSES = (SaleStatus.CONFIRMED.value, SaleStatus.INVOICED.value)
+
+
 class PaymentStatus(StrEnum):
     """Estado de pago de una venta"""
 
@@ -107,6 +113,11 @@ class Sale(Entity):
         if self.status not in (SaleStatus.DRAFT, SaleStatus.CONFIRMED):
             raise InvalidSaleStatusError(self.status, "cancel")
         self.status = SaleStatus.CANCELLED
+
+    @property
+    def is_completed(self) -> bool:
+        """Confirmada, facturada o no (ver `COMPLETED_SALE_STATUSES`)"""
+        return self.status in COMPLETED_SALE_STATUSES
 
     def invoice(self) -> None:
         """Marca la venta como facturada (solo si está CONFIRMED)"""

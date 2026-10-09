@@ -12,7 +12,7 @@ Specification del módulo de ventas para implementación frontend. Solo endpoint
 |--------------|------------------------------|
 | `DRAFT`      | Borrador, editable           |
 | `CONFIRMED`  | Confirmada, stock descontado |
-| `INVOICED`   | Facturada                    |
+| `INVOICED`   | Facturada: el SRI autorizó su factura (lo informa faclab-invoicing) |
 | `CANCELLED`  | Cancelada                    |
 
 ### PaymentStatus
@@ -267,6 +267,8 @@ interface SaleItem {
   id: number;
   saleId: number;
   productId: number;
+  productName: string | null;
+  productSku: string | null;
   quantity: number;
   unitPrice: number;
   discount: number;

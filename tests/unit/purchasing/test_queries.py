@@ -231,7 +231,7 @@ def test_get_items_by_po():
     item2 = _make_item(id=2, product_id=6)
     repo = MagicMock()
     repo.filter_by.return_value = [item1, item2]
-    handler = GetPurchaseOrderItemsByPOQueryHandler(repo)
+    handler = GetPurchaseOrderItemsByPOQueryHandler(repo, MagicMock())
 
     result = handler.handle(GetPurchaseOrderItemsByPOQuery(purchase_order_id=1))
 
@@ -242,7 +242,7 @@ def test_get_items_by_po():
 def test_get_items_by_po_empty():
     repo = MagicMock()
     repo.filter_by.return_value = []
-    handler = GetPurchaseOrderItemsByPOQueryHandler(repo)
+    handler = GetPurchaseOrderItemsByPOQueryHandler(repo, MagicMock())
 
     result = handler.handle(GetPurchaseOrderItemsByPOQuery(purchase_order_id=99))
 

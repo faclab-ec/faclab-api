@@ -3,12 +3,14 @@ from dataclasses import dataclass
 from wireup import injectable
 
 from src.customers.app.repositories import CustomerRepository
+from src.customers.domain.specifications import CustomerBySearchTerm
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
 
 
 @dataclass
 class GetAllCustomersQuery(Query):
+    search: str | None = None
     limit: int | None = None
     offset: int | None = None
 
@@ -19,6 +21,12 @@ class GetAllCustomersQueryHandler(QueryHandler[GetAllCustomersQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllCustomersQuery) -> dict:
+        if query.search:
+            return self.repo.paginate_by_spec(
+                CustomerBySearchTerm(query.search),
+                limit=query.limit,
+                offset=query.offset,
+            )
         return self.repo.paginate(limit=query.limit, offset=query.offset)
 
 

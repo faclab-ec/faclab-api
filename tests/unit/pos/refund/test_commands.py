@@ -231,6 +231,21 @@ class TestCreateRefund:
         with pytest.raises(SaleNotConfirmedError):
             handler.handle(command)
 
+    def test_invoiced_sale_can_be_refunded(self):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(status=SaleStatus.INVOICED),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        handler.handle(
+            CreateRefundCommand(
+                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 1}]
+            )
+        )
+
+        refund_repo.create.assert_called_once()
+
     def test_no_open_shift(self):
         sale = _make_sale()
         handler, _, _ = self._make_handler(sale=sale, shift=None)

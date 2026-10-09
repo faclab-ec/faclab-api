@@ -9,11 +9,13 @@ from src.catalog.product.domain.specifications import (
 )
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.specifications import Specification, all_of
 
 
 @dataclass
 class GetAllProductsQuery(Query):
     category_id: int | None = None
+    search: str | None = None
     limit: int | None = None
     offset: int | None = None
 
@@ -24,12 +26,14 @@ class GetAllProductsQueryHandler(QueryHandler[GetAllProductsQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllProductsQuery) -> dict:
+        specs: list[Specification] = []
         if query.category_id is not None:
-            spec = ProductInCategory(query.category_id)
-            return self.repo.paginate_by_spec(
-                spec, limit=query.limit, offset=query.offset
-            )
-        return self.repo.paginate(limit=query.limit, offset=query.offset)
+            specs.append(ProductInCategory(query.category_id))
+        if query.search:
+            specs.append(ProductBySearchTerm(query.search))
+        return self.repo.paginate_by_spec(
+            all_of(specs), limit=query.limit, offset=query.offset
+        )
 
 
 @dataclass

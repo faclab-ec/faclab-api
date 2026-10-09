@@ -60,6 +60,8 @@ class TransferItemResponse(BaseModel):
     id: int = Field(description="Transfer item ID")
     transfer_id: int = Field(description="Parent transfer ID")
     product_id: int = Field(description="Product ID")
+    product_name: str | None = Field(None, description="Product name")
+    product_sku: str | None = Field(None, description="Product SKU")
     quantity: int = Field(description="Quantity to transfer")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")

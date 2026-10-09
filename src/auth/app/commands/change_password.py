@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from wireup import injectable
 
-from src.auth.app.repositories import UserRepository
+from src.auth.app.repositories import AuthSessionRepository, UserRepository
 from src.auth.app.services.password_hasher import PasswordHasher
 from src.auth.domain.events import UserPasswordChanged
 from src.auth.domain.exceptions import InvalidCredentialsError
@@ -17,6 +18,8 @@ class ChangePasswordCommand(Command):
     user_id: int = 0
     current_password: str = ""
     new_password: str = ""
+    # The session making the change stays open; every other one is closed
+    keep_session_id: int | None = None
 
 
 @injectable(lifetime="scoped")
@@ -24,10 +27,12 @@ class ChangePasswordCommandHandler(CommandHandler[ChangePasswordCommand, None]):
     def __init__(
         self,
         repo: UserRepository,
+        session_repo: AuthSessionRepository,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
     ):
         self.repo = repo
+        self.session_repo = session_repo
         self.hasher = hasher
         self.event_publisher = event_publisher
 
@@ -44,6 +49,9 @@ class ChangePasswordCommandHandler(CommandHandler[ChangePasswordCommand, None]):
         new_hash = self.hasher.hash(command.new_password)
         user.change_password(new_hash)
         self.repo.update(user)
+        self.session_repo.revoke_all_for_user(
+            user.require_id(), datetime.now(), command.keep_session_id
+        )
 
         self.event_publisher.publish(
             UserPasswordChanged(

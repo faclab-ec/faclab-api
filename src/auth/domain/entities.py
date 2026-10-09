@@ -48,6 +48,33 @@ class User(Entity):
         self.last_login_at = at
 
 
+@dataclass
+class AuthSession(Entity):
+    """Sesión abierta con un login.
+
+    Sus tokens llevan su id (`sid`). El refresh solo funciona mientras la
+    sesión esté activa, así que revocarla (logout, cambio de contraseña,
+    desactivar al usuario) cierra la sesión aunque el refresh token no haya
+    vencido. Cada refresh extiende su vencimiento.
+    """
+
+    user_id: int
+    expires_at: datetime
+    id: int | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime | None = None
+
+    def is_active(self, now: datetime) -> bool:
+        return self.revoked_at is None and self.expires_at > now
+
+    def revoke(self, now: datetime) -> None:
+        if self.revoked_at is None:
+            self.revoked_at = now
+
+    def extend(self, until: datetime) -> None:
+        self.expires_at = until
+
+
 @dataclass(frozen=True)
 class AuthenticatedUser:
     id: int
@@ -55,3 +82,4 @@ class AuthenticatedUser:
     role: Role
     permissions: frozenset = field(default_factory=frozenset)
     must_change_password: bool = False
+    session_id: int | None = None

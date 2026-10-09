@@ -1,6 +1,6 @@
 """Unit tests for catalog product query handlers."""
 
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -28,7 +28,7 @@ def test_get_all_products_query_handler():
         Product(id=1, sku="SKU-001", name="Product 1"),
         Product(id=2, sku="SKU-002", name="Product 2"),
     ]
-    mock_repo.paginate.return_value = {
+    mock_repo.paginate_by_spec.return_value = {
         "total": 2,
         "limit": None,
         "offset": None,
@@ -44,7 +44,22 @@ def test_get_all_products_query_handler():
     assert result["items"][0]["id"] == 1
     assert result["items"][1]["id"] == 2
     assert result["total"] == 2
-    mock_repo.paginate.assert_called_once_with(limit=None, offset=None)
+    mock_repo.paginate_by_spec.assert_called_once_with(ANY, limit=None, offset=None)
+
+
+def test_get_all_products_with_search_and_category():
+    mock_repo = Mock()
+    mock_repo.paginate_by_spec.return_value = {"total": 0, "items": []}
+
+    GetAllProductsQueryHandler(mock_repo).handle(
+        GetAllProductsQuery(category_id=3, search="lap")
+    )
+
+    spec = mock_repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(Product(sku="X-1", name="Laptop", category_id=3))
+    assert spec.is_satisfied_by(Product(sku="LAP-9", name="Otro", category_id=3))
+    assert not spec.is_satisfied_by(Product(sku="X-1", name="Laptop", category_id=4))
+    assert not spec.is_satisfied_by(Product(sku="X-1", name="Mouse", category_id=3))
 
 
 def test_get_all_products_with_category_filter():

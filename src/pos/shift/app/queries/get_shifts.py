@@ -3,8 +3,10 @@ from dataclasses import dataclass
 from wireup import injectable
 
 from src.pos.shift.app.repositories import ShiftRepository
+from src.pos.shift.domain.specifications import ShiftsByStatus
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.specifications import Specification, all_of
 
 
 @dataclass
@@ -66,7 +68,14 @@ class GetAllShiftsQueryHandler(QueryHandler[GetAllShiftsQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllShiftsQuery) -> dict:
-        filters = {}
+        specs: list[Specification] = []
         if query.status is not None:
-            filters["status"] = query.status
-        return self.repo.paginate(limit=query.limit, offset=query.offset, **filters)
+            specs.append(ShiftsByStatus(query.status))
+        # Newest first: this is the shift history
+        return self.repo.paginate_by_spec(
+            all_of(specs),
+            limit=query.limit,
+            offset=query.offset,
+            order_by="id",
+            desc_order=True,
+        )

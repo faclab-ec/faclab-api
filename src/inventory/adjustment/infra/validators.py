@@ -65,6 +65,8 @@ class AdjustmentItemResponse(BaseModel):
     id: int = Field(description="Adjustment item ID")
     adjustment_id: int = Field(description="Parent adjustment ID")
     product_id: int = Field(description="Product ID")
+    product_name: str | None = Field(None, description="Product name")
+    product_sku: str | None = Field(None, description="Product SKU")
     location_id: int = Field(description="Storage location ID")
     expected_quantity: int = Field(
         description="System-recorded quantity before adjustment"

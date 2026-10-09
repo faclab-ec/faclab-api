@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
+from src.catalog.product.app.product_names import with_product_names
+from src.catalog.product.app.repositories import ProductRepository
 from src.inventory.transfer.app.repositories import (
     StockTransferItemRepository,
     StockTransferRepository,
@@ -71,9 +73,12 @@ class GetTransferItemsQuery(Query):
 
 @injectable(lifetime="scoped")
 class GetTransferItemsQueryHandler(QueryHandler[GetTransferItemsQuery, list[dict]]):
-    def __init__(self, item_repo: StockTransferItemRepository):
+    def __init__(
+        self, item_repo: StockTransferItemRepository, product_repo: ProductRepository
+    ):
         self.item_repo = item_repo
+        self.product_repo = product_repo
 
     def _handle(self, query: GetTransferItemsQuery) -> list[dict]:
         items = self.item_repo.filter_by(transfer_id=query.transfer_id)
-        return [item.dict() for item in items]
+        return with_product_names([item.dict() for item in items], self.product_repo)

@@ -47,6 +47,8 @@ class POSRefundRouter:
     def _setup_routes(self):
         _pos = [Depends(require_permission(Permission.POS_OPERATE))]
         _approve = [Depends(require_permission(Permission.REFUND_APPROVE))]
+        # Refund history is read from the back office too (managers, viewers)
+        _history = [Depends(require_permission(Permission.REPORT_POS_READ))]
 
         self.router.post(
             "",
@@ -75,14 +77,14 @@ class POSRefundRouter:
             response_model=DataResponse[RefundDetailResponse],
             summary="Get refund",
             responses=RESPONSES_QUERY,
-            dependencies=_pos,
+            dependencies=_history,
         )(self.get_refund)
         self.router.get(
             "",
             response_model=PaginatedDataResponse[RefundResponse],
             summary="List refunds",
             responses=RESPONSES_LIST,
-            dependencies=_pos,
+            dependencies=_history,
         )(self.list_refunds)
 
     def create_refund(

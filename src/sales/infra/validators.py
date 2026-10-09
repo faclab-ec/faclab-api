@@ -107,6 +107,18 @@ class SaleItemResponse(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
+    product_name: str | None = Field(
+        None,
+        description="Product name",
+        validation_alias=AliasChoices("productName", "product_name"),
+        serialization_alias="productName",
+    )
+    product_sku: str | None = Field(
+        None,
+        description="Product SKU",
+        validation_alias=AliasChoices("productSku", "product_sku"),
+        serialization_alias="productSku",
+    )
     quantity: int
     unit_price: DecimalNumber = Field(
         ...,

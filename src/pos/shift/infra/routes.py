@@ -45,6 +45,8 @@ class POSShiftRouter:
 
     def _setup_routes(self):
         _pos = [Depends(require_permission(Permission.POS_OPERATE))]
+        # Shift history is read from the back office too (managers, viewers)
+        _history = [Depends(require_permission(Permission.REPORT_POS_READ))]
 
         self.router.post(
             "/open",
@@ -73,14 +75,14 @@ class POSShiftRouter:
             response_model=DataResponse[ShiftResponse],
             summary="Get shift by ID",
             responses=RESPONSES_QUERY,
-            dependencies=_pos,
+            dependencies=_history,
         )(self.get_shift)
         self.router.get(
             "",
             response_model=PaginatedDataResponse[ShiftResponse],
             summary="List all shifts",
             responses=RESPONSES_LIST,
-            dependencies=_pos,
+            dependencies=_history,
         )(self.get_all_shifts)
 
     def open_shift(

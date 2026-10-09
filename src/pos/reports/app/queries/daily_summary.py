@@ -8,6 +8,7 @@ from wireup import injectable
 
 from src.catalog.product.infra.models import ProductModel
 from src.pos.refund.infra.models import RefundModel
+from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 
@@ -32,7 +33,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
                 func.count(SaleModel.id).label("count"),
                 func.coalesce(func.sum(SaleModel.total), Decimal("0")).label("total"),
             )
-            .filter(SaleModel.status == "CONFIRMED")
+            .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .one()
@@ -46,7 +47,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
                 func.sum(PaymentModel.amount).label("total"),
             )
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
-            .filter(SaleModel.status == "CONFIRMED")
+            .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .group_by(PaymentModel.payment_method)
@@ -65,7 +66,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             )
             .join(SaleModel, SaleModel.id == SaleItemModel.sale_id)
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
-            .filter(SaleModel.status == "CONFIRMED")
+            .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .group_by(ProductModel.name, ProductModel.sku)

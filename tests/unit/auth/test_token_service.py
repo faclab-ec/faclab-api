@@ -7,6 +7,7 @@ import pytest
 
 from src.auth.domain.entities import Role, User
 from src.auth.domain.exceptions import InvalidTokenError, TokenExpiredError
+from src.auth.domain.permissions import permissions_for
 from src.auth.infra.token_service import JwtTokenService
 
 
@@ -39,7 +40,7 @@ def _service(**config_overrides) -> JwtTokenService:
 
 def test_issue_pair_and_decode_round_trip():
     svc = _service()
-    pair = svc.issue_pair(_user())
+    pair = svc.issue_pair(_user(), 7)
 
     assert pair.token_type == "Bearer"
     assert pair.expires_in == 900
@@ -55,25 +56,37 @@ def test_issue_pair_and_decode_round_trip():
     refresh_claims = svc.decode_refresh(pair.refresh_token)
     assert refresh_claims.typ == "refresh"
     assert refresh_claims.sub == 42
+    assert access_claims.sid == refresh_claims.sid == 7
+
+
+def test_access_token_lists_the_role_permissions_for_other_services():
+    svc = _service()
+    pair = svc.issue_pair(_user(role=Role.CASHIER), 7)
+
+    access = jwt.decode(pair.access_token, options={"verify_signature": False})
+    refresh = jwt.decode(pair.refresh_token, options={"verify_signature": False})
+
+    assert access["perms"] == sorted(p.value for p in permissions_for(Role.CASHIER))
+    assert "perms" not in refresh
 
 
 def test_access_decoded_as_refresh_raises_invalid_token():
     svc = _service()
-    pair = svc.issue_pair(_user())
+    pair = svc.issue_pair(_user(), 7)
     with pytest.raises(InvalidTokenError):
         svc.decode_refresh(pair.access_token)
 
 
 def test_refresh_decoded_as_access_raises_invalid_token():
     svc = _service()
-    pair = svc.issue_pair(_user())
+    pair = svc.issue_pair(_user(), 7)
     with pytest.raises(InvalidTokenError):
         svc.decode_access(pair.refresh_token)
 
 
 def test_token_signed_with_other_secret_raises():
     svc = _service(JWT_SECRET="secret-a")
-    pair = svc.issue_pair(_user())
+    pair = svc.issue_pair(_user(), 7)
 
     evil = _service(JWT_SECRET="secret-b")
     with pytest.raises(InvalidTokenError):
@@ -107,7 +120,7 @@ def test_garbage_token_raises_invalid_token():
 def test_mcp_claim_round_trip():
     svc = _service()
     user = _user(must_change_password=True)
-    pair = svc.issue_pair(user)
+    pair = svc.issue_pair(user, 7)
     claims = svc.decode_access(pair.access_token)
     assert claims.must_change_password is True
     refresh_claims = svc.decode_refresh(pair.refresh_token)
@@ -133,7 +146,7 @@ def test_mcp_claim_defaults_false_for_legacy_tokens():
 
 def test_wrong_issuer_raises_invalid_token():
     svc = _service(JWT_ISSUER="faclab-a")
-    pair = svc.issue_pair(_user())
+    pair = svc.issue_pair(_user(), 7)
 
     other = _service(JWT_ISSUER="faclab-b")
     with pytest.raises(InvalidTokenError):

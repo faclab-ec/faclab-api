@@ -86,4 +86,9 @@ class CustomerContactResponse(CustomerContactRequest):
 
 # Query Params
 class CustomerQueryParams(QueryParams):
-    pass
+    search: str | None = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Text to look for in the name or tax ID (case-insensitive)",
+    )
