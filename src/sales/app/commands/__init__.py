@@ -20,6 +20,10 @@ from src.sales.app.commands.remove_sale_item import (
     RemoveSaleItemCommand,
     RemoveSaleItemCommandHandler,
 )
+from src.sales.app.commands.request_invoicing import (
+    RequestSaleInvoicingCommand,
+    RequestSaleInvoicingCommandHandler,
+)
 
 __all__ = [
     "CreateSaleCommand",
@@ -32,4 +36,6 @@ __all__ = [
     "InvoiceSaleCommandHandler",
     "RegisterPaymentCommand",
     "RegisterPaymentCommandHandler",
+    "RequestSaleInvoicingCommand",
+    "RequestSaleInvoicingCommandHandler",
 ]

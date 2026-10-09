@@ -194,6 +194,22 @@ GET /api/admin/sales/{sale_id}/payments
 
 ---
 
+### 2.5 Reenviar una venta a facturación
+
+```
+POST /api/admin/sales/{sale_id}/request-invoice
+```
+
+Permiso: `sale:write`. Vuelve a publicar la venta en `sales.confirmed` (mismo mensaje, `event_id` nuevo) para cuando su factura nunca llegó a faclab-invoicing o el SRI la rechazó y ya se corrigieron los datos (por ejemplo, la cédula del cliente). No mueve inventario.
+
+faclab-invoicing ignora el reenvío si la venta ya tiene una factura que no está rechazada (pendiente, en proceso o autorizada), así que reenviar de más no duplica facturas. Las facturas que esperan la configuración fiscal o un reintento del SRI no necesitan reenvío: se reanudan solas en faclab-invoicing.
+
+Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`.
+
+**Response** `202`: la venta (mismo formato que 2.2).
+
+---
+
 ## 3. Formato de respuestas
 
 ### Envelope estándar
@@ -303,6 +319,8 @@ interface SaleQueryParams {
 |-------------------|------|------------------------------------|
 | `NOT_FOUND`       | 404  | Venta no encontrada                |
 | `VALIDATION_ERROR`| 422  | Query params inválidos             |
+| `INVALID_SALE_STATUS` | 400 | Reenvío a facturación de una venta que no está `CONFIRMED` |
+| `INVOICING_DISABLED`  | 400 | Reenvío a facturación con `KAFKA_ENABLED` apagado |
 
 ### Estructura de error
 

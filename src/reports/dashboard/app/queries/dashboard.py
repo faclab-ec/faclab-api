@@ -20,6 +20,8 @@ from src.reports.inventory.app.queries.warehouse_summary import (
     GetWarehouseSummaryQuery,
     GetWarehouseSummaryQueryHandler,
 )
+from src.sales.app.repositories import SaleRepository
+from src.sales.domain.entities import SaleStatus
 from src.shared.app.queries import Query, QueryHandler
 
 
@@ -32,9 +34,9 @@ class GetDashboardQuery(Query):
 class GetDashboardQueryHandler(QueryHandler[GetDashboardQuery, dict]):
     """Lo que muestra la página de inicio, en una sola llamada.
 
-    Reúne el valor del inventario, el resumen por almacén y cuántas alertas hay
-    de cada tipo; la web hacía seis llamadas y descargaba la valoración y las
-    alertas completas solo para mostrar totales.
+    Reúne el valor del inventario, el resumen por almacén, cuántas alertas hay
+    de cada tipo y cuántas ventas esperan su factura; la web hacía seis llamadas
+    y descargaba la valoración y las alertas completas solo para mostrar totales.
     """
 
     def __init__(
@@ -45,6 +47,7 @@ class GetDashboardQueryHandler(QueryHandler[GetDashboardQuery, dict]):
         out_of_stock: GetOutOfStockAlertsQueryHandler,
         reorder_point: GetReorderPointAlertsQueryHandler,
         expiring_lots: GetExpiringLotsAlertsQueryHandler,
+        sale_repo: SaleRepository,
     ):
         self.valuation = valuation
         self.warehouse_summary = warehouse_summary
@@ -52,6 +55,7 @@ class GetDashboardQueryHandler(QueryHandler[GetDashboardQuery, dict]):
         self.out_of_stock = out_of_stock
         self.reorder_point = reorder_point
         self.expiring_lots = expiring_lots
+        self.sale_repo = sale_repo
 
     def _handle(self, query: GetDashboardQuery) -> dict:
         valuation = self.valuation.handle(GetInventoryValuationQuery())
@@ -72,4 +76,7 @@ class GetDashboardQueryHandler(QueryHandler[GetDashboardQuery, dict]):
                     )
                 ),
             },
+            # CONFIRMED: el SRI aún no autoriza su factura (pendiente, con error
+            # o nunca llegó a faclab-invoicing)
+            "uninvoiced_sales": self.sale_repo.count_by(status=SaleStatus.CONFIRMED),
         }

@@ -3,10 +3,18 @@ from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+
+from config import config
 from src.catalog.product.domain.entities import Product
 from src.customers.domain.entities import Customer
-from src.invoicing.infra.event_handlers import build_sale_confirmed_message
-from src.sales.domain.events import SaleConfirmed
+from src.invoicing.domain.exceptions import InvoicingDisabledError
+from src.invoicing.infra.event_handlers import (
+    build_sale_confirmed_message,
+    enqueue_invoicing_request,
+    enqueue_sale_confirmed,
+)
+from src.sales.domain.events import SaleConfirmed, SaleInvoicingRequested
 from src.shared.domain.tax import TaxCode, TaxType
 from src.shared.infra.kafka.producer import json_default
 
@@ -35,7 +43,9 @@ def _make_event(**overrides) -> SaleConfirmed:
     return SaleConfirmed(**defaults)
 
 
-def _build(event: SaleConfirmed, customer: Customer | None = None) -> dict:
+def _build(
+    event: SaleConfirmed | SaleInvoicingRequested, customer: Customer | None = None
+) -> dict:
     customer_repo = MagicMock()
     customer_repo.get_by_id.return_value = customer
     product_repo = MagicMock()
@@ -129,3 +139,33 @@ def test_items_carry_invoice_amounts_with_the_sale_discount_prorated():
         second["invoice_base"],
         second["invoice_tax"],
     ) == ("3.00", "27.00", "0.00")
+
+
+def test_a_resend_is_the_same_message_with_its_own_event_id():
+    original = _make_event()
+    resend = SaleInvoicingRequested(
+        aggregate_id=original.aggregate_id,
+        sale_id=original.sale_id,
+        customer_id=original.customer_id,
+        items=original.items,
+        subtotal=original.subtotal,
+        total_discount=original.total_discount,
+        total=original.total,
+        payments=original.payments,
+        source=original.source,
+    )
+
+    sent, resent = _build(original), _build(resend)
+
+    assert resent["event_type"] == "SaleConfirmed"
+    assert resent["event_id"] == resend.event_id != sent["event_id"]
+    assert resent["payload"] == sent["payload"]
+
+
+def test_a_resend_with_kafka_off_fails_instead_of_doing_nothing(monkeypatch):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", False)
+
+    # A confirmed sale just skips Kafka; a resend asked by hand must say why not
+    enqueue_sale_confirmed(_make_event())
+    with pytest.raises(InvoicingDisabledError):
+        enqueue_invoicing_request(SaleInvoicingRequested(aggregate_id=1, sale_id=1))

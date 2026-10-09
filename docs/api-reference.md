@@ -186,6 +186,7 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | `POST` | `/api/admin/sales/{id}/payments` | Registrar pago |
 | `GET` | `/api/admin/sales/{id}/payments` | Listar pagos |
 | `GET` | `/api/admin/sales/{id}/items` | Listar items |
+| `POST` | `/api/admin/sales/{id}/request-invoice` | Reenviar una venta `CONFIRMED` a faclab-invoicing |
 
 > La confirmacion y anulacion se realizan desde el POS (`/api/pos/sales`).
 

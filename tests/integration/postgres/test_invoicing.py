@@ -1,6 +1,6 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
-message carries the invoice amounts, and an authorized invoice from the
-`invoices` topic marks the sale as invoiced."""
+message carries the invoice amounts, an authorized invoice from the `invoices`
+topic marks the sale as invoiced, and a confirmed sale can be sent again."""
 
 from decimal import Decimal
 
@@ -126,3 +126,66 @@ def test_other_invoice_results_leave_the_sale_alone(pos):
 
     assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
     assert cashier.get(f"/api/pos/sales/{cancelled['id']}")["status"] == "CANCELLED"
+
+
+def test_a_confirmed_sale_can_be_sent_to_invoicing_again(
+    pos, client, admin, db_session: Session, monkeypatch
+):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    admin_api = Api(client, admin)
+    sale = _checkout(pos, [1, 1, 0])
+    movements = admin_api.get("/api/admin/movements")
+
+    resent = admin_api.post(f"/api/admin/sales/{sale['id']}/request-invoice")
+
+    assert resent["status"] == "CONFIRMED"
+    first, again = db_session.scalars(
+        select(OutboxMessageModel).order_by(OutboxMessageModel.id)
+    )
+    # Same message, new event id: faclab-invoicing tells redeliveries from resends
+    assert (again.topic, again.event_type) == ("sales.confirmed", "SaleConfirmed")
+    assert again.event_id != first.event_id
+    assert again.payload["event_id"] == again.event_id
+    assert again.payload["payload"] == first.payload["payload"]
+    # Unlike SaleConfirmed, it doesn't move stock
+    assert admin_api.get("/api/admin/movements") == movements
+
+
+def test_only_confirmed_sales_can_be_sent_again(
+    pos, client, admin, db_session: Session, monkeypatch
+):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    admin_api = Api(client, admin)
+    invoiced = _checkout(pos, [1, 0, 0])
+    handle_invoice_message(_authorized(invoiced["id"]))
+    cancelled = _checkout(pos, [1, 0, 0])
+    cashier.post(f"/api/pos/sales/{cancelled['id']}/cancel")
+
+    for sale in (invoiced, cancelled):
+        error = admin_api.error(
+            "POST", f"/api/admin/sales/{sale['id']}/request-invoice", 400
+        )
+        assert error["code"] == "INVALID_SALE_STATUS"
+
+    monkeypatch.setattr(config, "KAFKA_ENABLED", False)
+    confirmed = _checkout(pos, [1, 0, 0])
+    error = admin_api.error(
+        "POST", f"/api/admin/sales/{confirmed['id']}/request-invoice", 400
+    )
+    assert error["code"] == "INVOICING_DISABLED"
+    # Only the two checkouts made with Kafka on wrote a message
+    assert len(db_session.scalars(select(OutboxMessageModel)).all()) == 2
+
+
+def test_cashiers_can_send_a_sale_again_but_viewers_cannot(
+    pos, client, auth_headers, monkeypatch
+):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+
+    cashier.post(f"/api/admin/sales/{sale['id']}/request-invoice")
+    viewer = Api(client, auth_headers(Role.VIEWER))
+    error = viewer.error("POST", f"/api/admin/sales/{sale['id']}/request-invoice", 403)
+    assert error["code"] == "PERMISSION_DENIED"

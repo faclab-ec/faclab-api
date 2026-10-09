@@ -20,6 +20,9 @@ class DashboardResponse(BaseModel):
     inventory_value: DecimalNumber = Field(description="Current inventory value")
     warehouses: list[WarehouseSummaryResponse]
     alerts: DashboardAlertsResponse
+    uninvoiced_sales: int = Field(
+        description="Confirmed sales whose invoice the SRI hasn't authorized yet"
+    )
 
 
 class DashboardQueryParams(BaseModel):
