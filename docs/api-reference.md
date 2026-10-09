@@ -233,6 +233,12 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | `GET` | `/api/admin/alerts/{id}` | Obtener por ID |
 | `GET` | `/api/admin/alerts/stock/{stock_id}` | Alertas por stock |
 
+### Dashboard — `/api/admin/dashboard`
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `GET` | `/api/admin/dashboard?expiringDays=30` | Valor del inventario, resumen por almacén y cantidad de alertas por tipo (`report:inventory:read` + `alert:read`) |
+
 ### Reportes de Inventario — `/api/admin/reports/inventory`
 
 | Metodo | Ruta | Descripcion |

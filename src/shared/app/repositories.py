@@ -65,6 +65,11 @@ class Repository(Generic[T], ABC):
 
     @abstractmethod
     def paginate_by_spec(
-        self, spec: Specification, limit: int | None = None, offset: int | None = None
+        self,
+        spec: Specification,
+        limit: int | None = None,
+        offset: int | None = None,
+        order_by: str | None = None,
+        desc_order: bool = False,
     ) -> dict:
         raise NotImplementedError

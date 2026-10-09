@@ -90,3 +90,16 @@ class CustomerRequiredError(SalesError):
         super().__init__(
             message="customer_id is required when is_final_consumer is False"
         )
+
+
+class OverrideReasonRequiredError(SalesError):
+    """Se lanza cuando se vende un item a otro precio sin indicar el motivo"""
+
+    error_code = "OVERRIDE_REASON_REQUIRED"
+
+    def __init__(self, product_id: int):
+        self.product_id = product_id
+        super().__init__(
+            message="A reason is required to sell below or above the list price",
+            detail=f"product_id={product_id}",
+        )

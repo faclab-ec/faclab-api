@@ -55,7 +55,9 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 
 **GET `/shifts/{shiftId}`** — Turno por ID
 
-**GET `/shifts?status=OPEN&limit=20&offset=0`** — Listar turnos (paginado)
+**GET `/shifts?status=OPEN&limit=20&offset=0`** — Listar turnos (paginado, del más reciente al más antiguo)
+
+`GET /shifts` y `GET /shifts/{shiftId}` piden `report:pos:read` (no `pos:operate`): el historial de turnos también se consulta desde la administración.
 
 ```json
 { "data": { "items": [...], "total": 50, "limit": 20, "offset": 0 } }
@@ -152,6 +154,7 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
   "customerId": null,
   "items": [
     { "productId": 1, "quantity": 2, "unitPrice": 10.50, "discount": 0 },
+    { "productId": 2, "quantity": 1, "unitPrice": 8.00, "overrideReason": "Empaque dañado" },
     { "productId": 3, "quantity": 1 }
   ],
   "payments": [
@@ -173,6 +176,7 @@ Validaciones:
 - Descuento global válido (PERCENTAGE: 0-100; AMOUNT: ≥0)
 - Total de pagos ≥ total de venta, comparados al centavo
 - `customerId=null` → `isFinalConsumer=true` automáticamente
+- Un `unitPrice` distinto del precio del producto es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
 
 Response 201 — Sale CONFIRMED con items y pagos incluidos.
 
@@ -403,7 +407,9 @@ Efectos:
 
 **GET `/refunds/{refundId}`** — Obtener devolución con items y pagos
 
-**GET `/refunds?saleId=1&status=COMPLETED&limit=20&offset=0`** — Listar (paginado)
+**GET `/refunds?saleId=1&status=COMPLETED&limit=20&offset=0`** — Listar (paginado, de la más reciente a la más antigua)
+
+`GET /refunds` y `GET /refunds/{refundId}` piden `report:pos:read`, como el historial de turnos.
 
 ---
 

@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import pytest
 
@@ -100,7 +100,7 @@ def test_get_all_shifts():
         _make_shift(id=2, cashier_name="Maria"),
     ]
     repo = _mock_repo()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 2,
         "limit": None,
         "offset": None,
@@ -110,7 +110,9 @@ def test_get_all_shifts():
 
     result = handler.handle(GetAllShiftsQuery())
 
-    repo.paginate.assert_called_once_with(limit=None, offset=None)
+    repo.paginate_by_spec.assert_called_once_with(
+        ANY, limit=None, offset=None, order_by="id", desc_order=True
+    )
     assert len(result["items"]) == 2
     assert result["total"] == 2
 
@@ -119,7 +121,7 @@ def test_get_all_shifts_with_status_filter():
     """Test filtrar turnos por estado"""
     shifts = [_make_shift(id=1, status=ShiftStatus.CLOSED)]
     repo = _mock_repo()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 1,
         "limit": None,
         "offset": None,
@@ -129,7 +131,9 @@ def test_get_all_shifts_with_status_filter():
 
     result = handler.handle(GetAllShiftsQuery(status="CLOSED"))
 
-    repo.paginate.assert_called_once_with(limit=None, offset=None, status="CLOSED")
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_shift(status=ShiftStatus.CLOSED))
+    assert not spec.is_satisfied_by(_make_shift(status=ShiftStatus.OPEN))
     assert len(result["items"]) == 1
 
 
@@ -137,7 +141,7 @@ def test_get_all_shifts_with_pagination():
     """Test paginacion de turnos"""
     shifts = [_make_shift(id=i) for i in range(1, 6)]
     repo = _mock_repo()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 10,
         "limit": 5,
         "offset": 0,
@@ -147,7 +151,9 @@ def test_get_all_shifts_with_pagination():
 
     result = handler.handle(GetAllShiftsQuery(limit=5, offset=0))
 
-    repo.paginate.assert_called_once_with(limit=5, offset=0)
+    repo.paginate_by_spec.assert_called_once_with(
+        ANY, limit=5, offset=0, order_by="id", desc_order=True
+    )
     assert len(result["items"]) == 5
     assert result["total"] == 10
 
@@ -155,7 +161,7 @@ def test_get_all_shifts_with_pagination():
 def test_get_all_shifts_empty():
     """Test obtener turnos cuando no hay ninguno"""
     repo = _mock_repo()
-    repo.paginate.return_value = {
+    repo.paginate_by_spec.return_value = {
         "total": 0,
         "limit": None,
         "offset": None,

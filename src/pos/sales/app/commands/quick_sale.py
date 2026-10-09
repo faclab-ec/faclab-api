@@ -17,7 +17,10 @@ from src.sales.app.repositories import (
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
 from src.sales.domain.events import SaleConfirmed
-from src.sales.domain.exceptions import InsufficientStockError
+from src.sales.domain.exceptions import (
+    InsufficientStockError,
+    OverrideReasonRequiredError,
+)
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -91,15 +94,25 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                     f"Product with id {item_data['product_id']} not found"
                 )
 
+            unit_price = Decimal(str(item_data.get("unit_price") or product.sale_price))
+            # Selling at another price is recorded like POST .../price: with
+            # the new price and why
+            overridden = (
+                product.sale_price is not None and unit_price != product.sale_price
+            )
+            reason = item_data.get("override_reason")
+            if overridden and not reason:
+                raise OverrideReasonRequiredError(product.require_id())
+
             sale_item = SaleItem(
                 sale_id=sale.require_id(),
                 product_id=product.require_id(),
                 quantity=item_data["quantity"],
-                unit_price=Decimal(
-                    str(item_data.get("unit_price") or product.sale_price)
-                ),
+                unit_price=unit_price,
                 discount=Decimal(str(item_data.get("discount", 0))),
                 tax_code=product.tax_code,
+                price_override=unit_price if overridden else None,
+                override_reason=reason if overridden else None,
             )
             sale_item.recalculate_tax()
             sale_item = self.sale_item_repo.create(sale_item)

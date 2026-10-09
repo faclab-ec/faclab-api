@@ -7,8 +7,10 @@ from src.pos.refund.app.repositories import (
     RefundPaymentRepository,
     RefundRepository,
 )
+from src.pos.refund.domain.specifications import RefundsByStatus, RefundsOfSale
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.specifications import Specification, all_of
 
 
 @dataclass
@@ -56,12 +58,16 @@ class GetRefundsQueryHandler(QueryHandler[GetRefundsQuery, dict]):
         self.refund_repo = refund_repo
 
     def _handle(self, query: GetRefundsQuery) -> dict:
-        filters = {}
+        specs: list[Specification] = []
         if query.sale_id is not None:
-            filters["original_sale_id"] = query.sale_id
+            specs.append(RefundsOfSale(query.sale_id))
         if query.status is not None:
-            filters["status"] = query.status
-
-        return self.refund_repo.paginate(
-            limit=query.limit, offset=query.offset, **filters
+            specs.append(RefundsByStatus(query.status))
+        # Newest first: this is the refund history
+        return self.refund_repo.paginate_by_spec(
+            all_of(specs),
+            limit=query.limit,
+            offset=query.offset,
+            order_by="id",
+            desc_order=True,
         )

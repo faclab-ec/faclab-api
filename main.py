@@ -39,6 +39,7 @@ from src.pos.reports.infra.routes import POSReportRouter
 from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
 from src.purchasing.infra.routes import POItemRouter, PurchaseOrderRouter
+from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
@@ -315,6 +316,9 @@ admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
     tags=["Inventory Reports"],
+)
+admin_router.include_router(
+    DashboardRouter().router, prefix="/dashboard", tags=["Dashboard"]
 )
 
 # POS API

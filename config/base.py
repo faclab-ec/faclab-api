@@ -371,6 +371,13 @@ All errors follow a consistent structure with one or more error entries:
         },
         # Admin — Reports
         {
+            "name": "Dashboard",
+            "description": (
+                "Home page summary: inventory value, warehouse summary and "
+                "alert counts in one call."
+            ),
+        },
+        {
             "name": "Inventory Reports",
             "description": (
                 "Inventory analytics: valuation, product rotation, "
@@ -483,7 +490,7 @@ All errors follow a consistent structure with one or more error entries:
         },
         {
             "name": "Reports",
-            "tags": ["Inventory Reports"],
+            "tags": ["Dashboard", "Inventory Reports"],
         },
         {
             "name": "POS",
