@@ -55,6 +55,9 @@ class BaseConfig:
     # How often the outbox relay looks for unpublished messages; it also wakes
     # up right after a commit that wrote one
     OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", 5.0)
+    # Consumer group for the topics core reads (invoice results); every replica
+    # shares it so each message is handled once
+    KAFKA_CONSUMER_GROUP_ID = env("KAFKA_CONSUMER_GROUP_ID", "faclab-core")
 
     #
     # Auth / JWT config

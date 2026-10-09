@@ -31,6 +31,7 @@ from src.inventory.serial.infra.routes import SerialRouter
 from src.inventory.stock.infra.routes import StockRouter
 from src.inventory.transfer.infra.routes import TransferItemRouter, TransferRouter
 from src.inventory.warehouse.infra.routes import WarehouseRouter
+from src.invoicing.infra.invoice_messages import INVOICES_TOPIC, handle_invoice_message
 from src.pos.cash.infra.routes import POSCashRouter
 from src.pos.infra.routes import POSCustomerRouter, POSProductRouter
 from src.pos.refund.infra.routes import POSRefundRouter
@@ -42,6 +43,7 @@ from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
 from src.shared.infra.database import create_session_maker
+from src.shared.infra.kafka.consumer import KafkaMessageConsumer
 from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
 from src.shared.infra.middlewares import (
@@ -76,6 +78,7 @@ _docs = config.get_docs_config()
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     producer = None
+    consumer = None
     if config.KAFKA_ENABLED:
         # Publishes the Kafka messages committed to the outbox
         producer = KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS)
@@ -87,9 +90,18 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                 poll_interval=config.OUTBOX_POLL_INTERVAL_SECONDS,
             )
         )
+        # Marks sales as invoiced when faclab-invoicing reports the SRI result
+        consumer = KafkaMessageConsumer(
+            config.KAFKA_BOOTSTRAP_SERVERS,
+            config.KAFKA_CONSUMER_GROUP_ID,
+            {INVOICES_TOPIC: handle_invoice_message},
+        )
+        consumer.start()
 
     yield
 
+    if consumer:
+        consumer.stop()
     outbox_relay.stop()
     if producer:
         producer.close()

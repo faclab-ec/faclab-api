@@ -356,7 +356,7 @@ La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA
 
 ### Endpoints
 
-**POST `/refunds`** — Crear devolución (PENDING)
+**POST `/refunds`** — Crear devolución (PENDING). La venta debe estar `CONFIRMED` o `INVOICED`.
 
 ```json
 // Request

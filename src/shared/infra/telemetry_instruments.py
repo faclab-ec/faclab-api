@@ -37,3 +37,13 @@ kafka_send_errors = _meter.create_counter(
     "kafka.send_errors",
     description="Number of Kafka send failures",
 )
+
+kafka_messages_consumed = _meter.create_counter(
+    "kafka.messages_consumed",
+    description="Number of Kafka messages handled",
+)
+
+kafka_consume_errors = _meter.create_counter(
+    "kafka.consume_errors",
+    description="Number of Kafka messages whose handler failed (retried)",
+)

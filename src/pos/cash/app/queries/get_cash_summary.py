@@ -8,6 +8,7 @@ from wireup import injectable
 from src.pos.cash.infra.models import CashMovementModel
 from src.pos.refund.infra.models import RefundModel, RefundPaymentModel
 from src.pos.shift.app.repositories import ShiftRepository
+from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
@@ -16,12 +17,12 @@ from src.shared.domain.exceptions import NotFoundError
 def compute_cash_summary(session: Session, shift_id: int) -> dict:
     """Compute cash summary for a shift. Pure function reusable by CloseShift and reports."""
 
-    # Cash sales: SUM of CASH payments from CONFIRMED sales in this shift
+    # Cash sales: SUM of CASH payments from completed sales in this shift
     cash_sales = (
         session.query(func.coalesce(func.sum(PaymentModel.amount), Decimal("0")))
         .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
         .filter(SaleModel.shift_id == shift_id)
-        .filter(SaleModel.status == "CONFIRMED")
+        .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
         .filter(PaymentModel.payment_method == "CASH")
         .scalar()
     )

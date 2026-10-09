@@ -131,7 +131,13 @@ async def on_sale_confirmed(event: SaleConfirmed, repo: ...) -> None:
 
 Los mensajes hacia otros servicios no se publican desde el handler: `OutboxWriter.add()` los guarda en la tabla `outbox_messages` dentro de la misma transacción del request, junto con el contexto de traza. Si la transacción se revierte, el mensaje desaparece con ella. `OutboxRelay` (un hilo que arranca el lifespan cuando `KAFKA_ENABLED`) publica los mensajes confirmados en orden, usando `FOR UPDATE SKIP LOCKED` para que varias réplicas no dupliquen envíos; se despierta tras cada commit que escribió uno y reintenta los fallos en la siguiente vuelta (`OUTBOX_POLL_INTERVAL_SECONDS`).
 
-Hoy el único mensaje es `sales.confirmed` para faclab-invoicing; lo arma `src/invoicing/infra/event_handlers.py` con los datos del cliente y los productos.
+Hoy el único mensaje es `sales.confirmed` para faclab-invoicing; lo arma `src/invoicing/infra/event_handlers.py` con los datos del cliente y los productos. Cada ítem lleva además `invoice_discount`, `invoice_base` e `invoice_tax`: sus montos en la factura del SRI, redondeados a centavos y con el descuento global ya prorrateado (`invoice_lines` en `src/sales/domain/services.py`). Las bases suman `subtotal - descuento` y bases más IVA suman el total cobrado, así que faclab-invoicing los copia al XML sin recalcular nada.
+
+### Consumidor de Kafka
+
+`KafkaMessageConsumer` (`src/shared/infra/kafka/consumer.py`) también corre en un hilo que arranca el lifespan cuando `KAFKA_ENABLED`, con el consumer group `KAFKA_CONSUMER_GROUP_ID` (por defecto `faclab-core`). Entrega cada mensaje al handler de su topic y confirma el offset solo si el handler termina bien; si falla, vuelve a ese offset y lo reintenta, así que los handlers deben ser idempotentes. Un mensaje que no es JSON se descarta. Si Kafka no está disponible, el consumidor y el productor reintentan la conexión en vez de morir.
+
+Hoy lee el topic `invoices`, donde faclab-invoicing publica cada transición de sus facturas (created → signed → sent → authorized / rejected). `src/invoicing/infra/invoice_messages.py` solo actúa ante `InvoiceAuthorized`: la venta pasa de `CONFIRMED` a `INVOICED` y se publica `SaleInvoiced`. Si la venta ya estaba facturada no hace nada; si no existe o ya no está confirmada (p. ej. se anuló antes de que el SRI respondiera), lo registra como error y sigue, porque eso se resuelve con una nota de crédito y no reintentando.
 
 ### Specification Pattern
 
@@ -241,7 +247,8 @@ src/shared/
     │   ├── event_bus.py          # EventBus implementacion
     │   └── decorators.py         # @event_handler decorator
     ├── kafka/
-    │   └── producer.py           # KafkaEventProducer (aiokafka)
+    │   ├── producer.py           # KafkaEventProducer (aiokafka)
+    │   └── consumer.py           # KafkaMessageConsumer: offsets tras procesar, reintentos
     ├── outbox/
     │   ├── models.py             # outbox_messages
     │   ├── writer.py             # OutboxWriter: guarda el mensaje en la transacción

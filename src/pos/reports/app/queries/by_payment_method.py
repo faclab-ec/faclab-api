@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 
@@ -30,7 +31,7 @@ class GetSalesByPaymentMethodQueryHandler(
                 func.sum(PaymentModel.amount).label("total_amount"),
             )
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
-            .filter(SaleModel.status == "CONFIRMED")
+            .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
         )
 
         if query.from_date is not None:

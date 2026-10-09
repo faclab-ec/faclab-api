@@ -7,6 +7,7 @@ from typing import Any
 
 import structlog
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaError
 from opentelemetry import trace
 
 from src.shared.infra.telemetry_instruments import (
@@ -27,10 +28,12 @@ def json_default(obj):
 
 
 class KafkaEventProducer:
-    def __init__(self, bootstrap_servers: str) -> None:
+    def __init__(self, bootstrap_servers: str, retry_delay: float = 5.0) -> None:
         self._bootstrap_servers = bootstrap_servers
+        self._retry_delay = retry_delay
         self._producer: AIOKafkaProducer | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._connect_task: asyncio.Task[None] | None = None
         self._thread: threading.Thread | None = None
         self._started = threading.Event()
 
@@ -39,6 +42,7 @@ class KafkaEventProducer:
             return
 
         self._loop = asyncio.new_event_loop()
+        self._connect_task = self._loop.create_task(self._start_producer())
         self._thread = threading.Thread(
             target=self._run_loop,
             args=(self._loop,),
@@ -50,18 +54,32 @@ class KafkaEventProducer:
 
     def _run_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(self._start_producer())
-        self._started.set()
         loop.run_forever()
 
     async def _start_producer(self) -> None:
-        self._producer = AIOKafkaProducer(
-            bootstrap_servers=self._bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v, default=json_default).encode(
-                "utf-8"
-            ),
-        )
-        await self._producer.start()
+        # If Kafka is down, keep retrying: until then `publish` raises and the
+        # outbox relay keeps the messages for the next poll
+        while True:
+            producer = AIOKafkaProducer(
+                bootstrap_servers=self._bootstrap_servers,
+                value_serializer=lambda v: json.dumps(v, default=json_default).encode(
+                    "utf-8"
+                ),
+            )
+            try:
+                await producer.start()
+                break
+            except KafkaError as exc:
+                await producer.stop()
+                logger.warning(
+                    "kafka_producer_start_failed",
+                    error=str(exc),
+                    retry_in=self._retry_delay,
+                )
+                await asyncio.sleep(self._retry_delay)
+
+        self._producer = producer
+        self._started.set()
         logger.info(
             "kafka_producer_started",
             bootstrap_servers=self._bootstrap_servers,
@@ -93,14 +111,17 @@ class KafkaEventProducer:
             )
 
     def close(self) -> None:
-        if self._loop is None or self._producer is None:
+        if self._loop is None:
             return
 
-        future = asyncio.run_coroutine_threadsafe(self._producer.stop(), self._loop)
-        try:
-            future.result(timeout=5)
-        except Exception as e:
-            logger.error("kafka_producer_close_error", error=str(e))
+        if self._connect_task is not None:
+            self._loop.call_soon_threadsafe(self._connect_task.cancel)
+        if self._producer is not None:
+            future = asyncio.run_coroutine_threadsafe(self._producer.stop(), self._loop)
+            try:
+                future.result(timeout=5)
+            except Exception as e:
+                logger.error("kafka_producer_close_error", error=str(e))
 
         self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread is not None:
