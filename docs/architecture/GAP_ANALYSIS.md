@@ -42,7 +42,7 @@
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
 | G-07 | Producción usa las URLs del SRI de pruebas (`celcer`) y el broker `localhost:29092` | V | `faclab-invoicing/src/config/production.ts:27-34` | Facturas "autorizadas" sin validez tributaria | P0 | S1.3 (resuelta: `SRI_ENVIRONMENT` elige `celcer` o `cel` y, como `KAFKA_BROKERS`, la región, las tablas y el bucket, es obligatoria en producción) |
-| G-08 | El core envía `email`, `phone`, `address`, `sku` o `product_name` nulos y facturación los exige | V | `src/invoicing/infra/event_handlers.py:42-50`, `faclab-invoicing/.../schemas.ts:18-30` | La venta va a la cola de mensajes fallidos (DLQ, *dead letter queue*) y nunca se factura | P0 | S1.6 |
+| G-08 | El core envía `email`, `phone`, `address`, `sku` o `product_name` nulos y facturación los exige | V | `src/invoicing/infra/event_handlers.py:42-50`, `faclab-invoicing/.../schemas.ts:18-30` | La venta va a la cola de mensajes fallidos (DLQ, *dead letter queue*) y nunca se factura | P0 | S1.6 (resuelta: contrato v1 con esos campos nulables; invoicing los acepta y el XML los omite) |
 | G-09 | Guardar la configuración del emisor lee y reescribe el contador: puede retroceder y repetir secuenciales; la primera factura sale con 000000002 | V | `company-config.commands.ts:40-46`, `dynamo-company-config.repository.ts:22-53` | Rechazo por secuencial duplicado; huecos | P0 | S2.7, S2.8 |
 | G-10 | No se guarda número ni fecha de autorización ni el XML autorizado | V | `invoice.mapper.ts:29-55` | No se puede entregar ni conservar el comprobante autorizado | P0 | S4.1 |
 | G-11 | No existe nota de crédito; `RefundCompleted` no tiene suscriptores | V | `src/pos/refund/app/commands/process_refund.py:112`, búsqueda de suscriptores sin resultados | Devoluciones sin respaldo tributario | P1 | S4.5 |
@@ -140,7 +140,7 @@
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
 | G-75 | Invoicing tiene 31 pruebas y ninguna cubre XML, firma, SOAP, Kafka, JWT ni persistencia | V | `vitest run` | Regresiones tributarias sin detectar | P1 | S1.1, S4.1, S4.2 |
-| G-76 | No hay pruebas de contrato entre servicios | V | — | Incompatibilidades como G-08 | P0 | S1.6 |
+| G-76 | No hay pruebas de contrato entre servicios | V | — | Incompatibilidades como G-08 | P0 | S1.6 (resuelta: JSON Schema versionado en `contracts/`, pruebas de contrato en el CI de core e invoicing) |
 | G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1, S9.2 |
 | G-78 | Cobertura del core desconocida (último `.coverage` de abril 2026, ~66,8 %) | P | `.coverage` | — | P3 | S1.1 (resuelta: 95 %, medida en cada run de CI) |
 
