@@ -82,10 +82,10 @@
 
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
-| G-38 | No hay `.dockerignore` y el Dockerfile hace `COPY . .` | V | `Dockerfile:24,33` | `.env`, `.venv`, `.git` y datos de Postgres dentro de la imagen | P0 | S1.2 |
+| G-38 | No hay `.dockerignore` y el Dockerfile hace `COPY . .` | V | `Dockerfile:24,33` | `.env`, `.venv`, `.git` y datos de Postgres dentro de la imagen | P0 | S1.2 (resuelta: `.dockerignore` e imagen de producción con copia explícita) |
 | G-39 | Campos de actor tomados del cuerpo de la solicitud | V | `src/pos/sales/infra/validators.py:69-73`, `src/pos/cash/infra/validators.py:16-20`, `src/pos/refund/infra/validators.py:37-41` | Suplantación en caja, devoluciones y ajustes | P0 | S1.4 |
-| G-40 | `DOCS_ENABLED` activo por defecto en producción | V | `config/base.py:73` | Exposición del contrato interno | P1 | S1.2 |
-| G-41 | CORS fijo en código | V | `main.py:70` | No se puede desplegar el frontend en otro dominio | P1 | S1.2 |
+| G-40 | `DOCS_ENABLED` activo por defecto en producción | V | `config/base.py:73` | Exposición del contrato interno | P1 | S1.2 (resuelta: falso por defecto fuera de local; también apaga `/openapi.json`) |
+| G-41 | CORS fijo en código | V | `main.py:70` | No se puede desplegar el frontend en otro dominio | P1 | S1.2 (resuelta: `CORS_ORIGINS`, obligatoria fuera de local) |
 | G-42 | Sin límite de intentos de login ni rate limiting | V | Búsqueda sin resultados | Fuerza bruta | P1 | S1.4, S6.3 |
 | G-43 | El refresh token no rota ni detecta reutilización | V | `src/auth/app/commands/refresh_token.py:32-51` | Un refresh robado sirve durante 7 días | P1 | S1.4 |
 | G-44 | Tokens (incluido el refresh) en `localStorage` | V | `faclab-web/src/shared/lib/auth/tokenStorage.ts` | Robo de tokens mediante inyección de scripts (XSS) | P2 | S1.4 |
@@ -95,7 +95,7 @@
 | G-48 | Invoicing comparte el secreto HS256 y puede emitir tokens para el core | V | `faclab-invoicing/src/shared/infra/http/auth.ts:45-109` | Un compromiso de invoicing compromete todo | P2 | S6.1 |
 | G-49 | Kafka sin TLS ni SASL; kafka-ui sin autenticación | V | `faclab-infra/docker-compose.yml` | Aceptable solo en red privada | P2 | S8.1 |
 | G-50 | No hay bitácora de auditoría | V | Búsqueda sin resultados | Sin trazabilidad de cambios de precio, ajustes, caja y usuarios | P1 | S3.5 |
-| G-51 | `scripts/seed.py` borra tablas sin verificar el entorno | V | `scripts/seed.py:79-82` | Borrado accidental en un entorno real | P2 | S1.2 |
+| G-51 | `scripts/seed.py` borra tablas sin verificar el entorno | V | `scripts/seed.py:79-82` | Borrado accidental en un entorno real | P2 | S1.2 (resuelta: solo corre con `ENVIRONMENT=local`) |
 | G-52 | El secreto de SigNoz en el compose de ejemplo es el valor por defecto del proyecto | V | `Telemetry/deploy/docker/docker-compose.yaml:122` | Acceso no autorizado al panel de observabilidad | P1 | S8.6 |
 
 ### 2.5 Operación, entrega y versiones
@@ -103,11 +103,11 @@
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
 | G-53 | Ningún repositorio tiene CI | V | Solo `.github/pull_request_template.md` | Regresiones sin detectar | P0 | S1.1 (resuelta: CI en los cuatro repos) |
-| G-54 | Healthcheck roto (`curl` no existe) y sin endpoints de salud | V | `docker inspect`, `docker-compose.yml:17-22`, `main.py:409-411` | Orquestador sin señal de salud | P1 | S1.2 |
-| G-55 | Imagen de producción como root, con herramientas de compilación y un solo proceso | V | `Dockerfile:31-37` | Superficie de ataque y capacidad limitada | P1 | S1.2 |
+| G-54 | Healthcheck roto (`curl` no existe) y sin endpoints de salud | V | `docker inspect`, `docker-compose.yml:17-22`, `main.py:409-411` | Orquestador sin señal de salud | P1 | S1.2 (resuelta: `/health/live`, `/health/ready` y healthchecks sin curl) |
+| G-55 | Imagen de producción como root, con herramientas de compilación y un solo proceso | V | `Dockerfile:31-37` | Superficie de ataque y capacidad limitada | P1 | S1.2 (resuelta: imagen sin compiladores, usuario `app`, `WEB_CONCURRENCY` workers) |
 | G-56 | Invoicing y web sin Dockerfile; `package-lock.json` de invoicing ignorado; dependencia `pettier` | V | `faclab-invoicing/.gitignore:4`, `package.json:68` | Builds no reproducibles | P1 | S1.1 (parcial: lock versionado y sin `pettier`), S1.3 |
 | G-57 | Sin tags ni versionado coordinado entre repos | V | `git tag` vacío en los cuatro | Despliegues incompatibles | P2 | S8.2 |
-| G-58 | PostgreSQL 14 llega al fin de soporte el 12/11/2026 | V | `docker-compose.yml`, política de versiones de PostgreSQL | Sin parches de seguridad | P1 | S1.2 |
+| G-58 | PostgreSQL 14 llega al fin de soporte el 12/11/2026 | V | `docker-compose.yml`, política de versiones de PostgreSQL | Sin parches de seguridad | P1 | S1.2 (resuelta: compose local y CI en PostgreSQL 17) |
 | G-59 | Sin infraestructura de producción, respaldos ni plan de recuperación | V | No hay manifiestos en ningún repo | Pérdida de datos tributarios | P0 (antes del piloto) | S8.1, S8.3 |
 | G-60 | `.venv` en Python 3.11 y Docker en 3.12; passlib sin mantenimiento (usa `crypt`, eliminado en 3.13) | V | Advertencia de pytest | Bloqueo para actualizar Python | P3 | S1.1 (parcial: CI en 3.12; falta el `.venv` local), S1.4 |
 

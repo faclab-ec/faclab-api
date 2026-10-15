@@ -220,6 +220,33 @@ Puntos fuertes verificados:
   de PostgreSQL].
 - La página de documentación Scalar carga un script sin versión fija desde jsDelivr (`main.py:173`) [V].
 
+*Actualización S1.2 (2026-10-14):*
+
+- **Configuración**:
+  - Staging y producción (`config/deployed.py`) no arrancan sin `DATABASE_URL`, `CORS_ORIGINS` y
+    `JWT_SECRET`. El mensaje nombra las que faltan.
+  - SQLite queda solo como valor por defecto de `local`.
+  - CORS sale de `CORS_ORIGINS`, y fuera de local no admite `*`.
+  - `DOCS_ENABLED` es falso por defecto fuera de local, y también controla `/openapi.json` y la
+    redirección de `/`.
+  - Scalar queda fijado en `@scalar/api-reference@1.74.0`.
+- **Imagen**:
+  - `.dockerignore` deja fuera los secretos, `.venv`, `.git`, `.data`, `tests` y `docs`.
+  - Las etapas son `builder` → `runtime` → `development` / `production`.
+  - La imagen de producción no trae compiladores (solo `libpq5`) y corre como `app` (uid 10001) con
+    código de solo lectura.
+  - `uvicorn --workers $WEB_CONCURRENCY` (2 por defecto) corre con `--proxy-headers`.
+  - `HEALTHCHECK` llama a `/health/live`.
+  - La configuración se valida antes de levantar los workers [V, `docker run`].
+- **Salud**: `/health/live` y `/health/ready` son públicos y quedan fuera de la documentación y del log
+  de acceso. Ready devuelve 503 si la base de datos falla y `degraded` si solo falla el productor de
+  Kafka.
+- **Entorno local**:
+  - El healthcheck de compose usa Python contra `/health/live`, y el contenedor pasa a `healthy` [V].
+  - compose usa `postgres:17`.
+  - `pytest` pasó a `requirements_dev.txt`.
+  - `scripts/seed.py` solo corre con `ENVIRONMENT=local`.
+
 ## 4. faclab-invoicing
 
 ### 4.1 Proceso
