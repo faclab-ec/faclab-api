@@ -42,7 +42,7 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `status`          | AdjustmentStatus   | No        | `draft`   | Estado actual                   |
 | `adjustmentDate`  | datetime \| null   | No        | null      | Fecha del ajuste                |
 | `notes`           | string \| null     | No        | null      | Observaciones                   |
-| `adjustedBy`      | string \| null     | No        | null      | Persona que realizo el ajuste   |
+| `adjustedBy`      | string \| null     | Auto      | usuario   | Usuario autenticado que creó el ajuste (nombre completo o username); no se acepta en el cuerpo |
 | `createdAt`       | datetime \| null   | Auto      | now       | Fecha de creacion               |
 
 ### AdjustmentItem
@@ -103,8 +103,7 @@ Base URL: `/api/admin`
 {
   "warehouseId": 1,
   "reason": "physical_count",
-  "notes": "Conteo mensual",
-  "adjustedBy": "Juan Perez"
+  "notes": "Conteo mensual"
 }
 ```
 
@@ -113,21 +112,22 @@ Base URL: `/api/admin`
 | `warehouseId` | int            | Si        |
 | `reason`      | string (enum)  | Si        |
 | `notes`       | string \| null | No        |
-| `adjustedBy`  | string \| null | No        |
+
+> `adjustedBy` lo pone el backend con el usuario autenticado; si llega en el cuerpo se ignora.
 
 ### UpdateAdjustmentRequest (PUT `/adjustments/{id}`)
 
 ```json
 {
-  "notes": "Conteo actualizado",
-  "adjustedBy": "Maria Lopez"
+  "notes": "Conteo actualizado"
 }
 ```
 
 | Campo       | Tipo           | Requerido |
 |-------------|----------------|-----------|
 | `notes`     | string \| null | No        |
-| `adjustedBy`| string \| null | No        |
+
+> Editar no cambia `adjustedBy`: sigue siendo quien creó el ajuste.
 
 > Solo funciona si el ajuste esta en `draft`. Retorna 400 si no lo esta.
 

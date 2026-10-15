@@ -43,7 +43,7 @@ DRAFT ──confirm──▶ CONFIRMED ──receive──▶ RECEIVED
 | `destinationLocationId`  | `int`             | Sí        | ID de la ubicación destino                  |
 | `status`                 | `TransferStatus`  | No        | Estado actual (default: `draft`)            |
 | `transferDate`           | `datetime \| null` | No        | Fecha de transferencia                      |
-| `requestedBy`            | `string \| null`   | No        | Persona que solicita la transferencia       |
+| `requestedBy`            | `string \| null`   | Auto      | Usuario autenticado que creó la transferencia (no se envía en el cuerpo) |
 | `notes`                  | `string \| null`   | No        | Notas adicionales                           |
 | `createdAt`              | `datetime`        | Auto      | Fecha de creación                           |
 
@@ -144,8 +144,7 @@ POST /transfers
 {
   "sourceLocationId": 1,
   "destinationLocationId": 2,
-  "notes": "Reabastecimiento mensual",
-  "requestedBy": "Juan Pérez"
+  "notes": "Reabastecimiento mensual"
 }
 ```
 
@@ -154,7 +153,8 @@ POST /transfers
 | `sourceLocationId`      | `int`           | Sí        | Debe existir                       |
 | `destinationLocationId` | `int`           | Sí        | Debe existir, ≠ sourceLocationId   |
 | `notes`                 | `string \| null` | No        |                                    |
-| `requestedBy`           | `string \| null` | No        |                                    |
+
+`requestedBy` lo pone el backend con el usuario autenticado; si llega en el cuerpo se ignora.
 
 **Response** `200`:
 ```json
@@ -185,15 +185,15 @@ PUT /transfers/{id}
 **Request body**:
 ```json
 {
-  "notes": "Notas actualizadas",
-  "requestedBy": "María López"
+  "notes": "Notas actualizadas"
 }
 ```
 
 | Campo         | Tipo            | Requerido |
 | ------------- | --------------- | --------- |
 | `notes`       | `string \| null` | No        |
-| `requestedBy` | `string \| null` | No        |
+
+Editar no cambia `requestedBy`: sigue siendo quien creó la transferencia.
 
 **Error** `400`: Solo se puede actualizar en estado `draft`.
 
