@@ -201,7 +201,7 @@ Middleware centralizado con respuestas estructuradas:
 ## Requisitos Previos
 
 - Docker y Docker Compose (recomendado)
-- Python 3.11+ (para desarrollo local)
+- Python 3.12 para desarrollo local (la version de Docker y de CI; `ruff` y `ty` validan contra 3.11)
 - PostgreSQL 14 (si se ejecuta sin Docker)
 
 ## Instalacion
@@ -270,6 +270,27 @@ La suite incluye:
 - **Tests unitarios**: Entidades, value objects, specifications, commands, queries, event handlers
 - **Tests de integracion**: Flujos cross-module (Movement → Stock, Sale → Movement → Stock, PO → Movement → Stock) y guards de autorizacion sobre las rutas reales de `main.app`
 - **Tests contra PostgreSQL** (`tests/integration/postgres/`): recorren la API con `TestClient` sobre una base real migrada con Alembic (rutas, specifications, reportes y flujos de inventario, POS y compras). Solo corren con `TEST_DATABASE_URL`; sin ella se saltan. `make test-integration` la arma a partir de `DATABASE_URL` y recrea la base `<db>_test` en cada corrida.
+
+## Integracion continua
+
+Cada PR y cada push a `master` corren `.github/workflows/ci.yml` en GitHub Actions con Python 3.12 (la version de la imagen Docker):
+
+| Job | Que corre |
+|---|---|
+| `lint` | `ruff check .`, `ruff format --check .`, `ty check` |
+| `test` | `pytest --cov=src` y luego `pytest tests/integration/postgres` contra un servicio `postgres:17`, con la cobertura de ambas corridas sumada |
+
+El reporte de cobertura queda en el resumen del run y como artefacto `coverage-report` (`coverage.xml` y `htmlcov/`).
+
+Para correr lo mismo en local:
+
+```bash
+.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/ty check
+.venv/bin/python -m pytest tests/ -q --cov=src
+make test-integration           # las pruebas contra PostgreSQL
+```
+
+`make lint` corrige en vez de solo verificar; CI falla si queda algo sin formatear.
 
 ## Documentacion
 
