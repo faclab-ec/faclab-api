@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -44,6 +45,13 @@ from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
 from src.shared.infra.database import create_session_maker
+from src.shared.infra.health import (
+    HealthCheckAccessFilter,
+    HealthRouter,
+    create_health_engine,
+    database_check,
+    kafka_check,
+)
 from src.shared.infra.kafka.consumer import KafkaMessageConsumer
 from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
@@ -75,14 +83,17 @@ origins = ["http://localhost:3000", "http://localhost:5173"]
 
 _docs = config.get_docs_config()
 
+# Publishes the Kafka messages committed to the outbox; started by the lifespan
+# and reported by the readiness check
+producer = (
+    KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS) if config.KAFKA_ENABLED else None
+)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    producer = None
     consumer = None
-    if config.KAFKA_ENABLED:
-        # Publishes the Kafka messages committed to the outbox
-        producer = KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS)
+    if producer:
         producer.start()
         outbox_relay.start(
             OutboxRelay(
@@ -370,6 +381,19 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(pos_router)
 app.include_router(auth_router)
+
+# ---------------------------------------------------------------------------
+# Health (public, outside the docs and the access log)
+# ---------------------------------------------------------------------------
+
+health_router = HealthRouter(
+    checks={
+        "database": database_check(create_health_engine(config.DB_CONNECTION_STRING))
+    },
+    informational={"kafka": kafka_check(producer)} if producer else None,
+)
+app.include_router(health_router.router)
+logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())
 
 # ---------------------------------------------------------------------------
 # Doc endpoints (only registered when DOCS_ENABLED=true)
