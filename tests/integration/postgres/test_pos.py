@@ -39,9 +39,7 @@ def product(admin_api) -> dict:
 
 @pytest.fixture
 def shift(api) -> dict:
-    return api.post(
-        "/api/pos/shifts/open", {"cashierName": "Caja 1", "openingBalance": "100.00"}
-    )
+    return api.post("/api/pos/shifts/open", {"openingBalance": "100.00"})
 
 
 def _stock_quantity(admin_api: Api, product_id: int) -> int:

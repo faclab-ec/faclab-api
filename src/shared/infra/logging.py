@@ -15,6 +15,52 @@ def _extract_otel_context(logger, method_name, event_dict):
     return event_dict
 
 
+# Keys whose value never reaches a log, compared without case, "_" or "-"
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "currentpassword",
+        "newpassword",
+        "secret",
+        "jwtsecret",
+        "token",
+        "accesstoken",
+        "refreshtoken",
+        "authorization",
+        "cookie",
+        "setcookie",
+        "apikey",
+    }
+)
+_REDACTED = "[REDACTED]"
+
+
+def _is_sensitive(key) -> bool:
+    return (
+        isinstance(key, str)
+        and key.lower().replace("_", "").replace("-", "") in _SENSITIVE_KEYS
+    )
+
+
+def _redact(value):
+    if isinstance(value, dict):
+        return {
+            key: _REDACTED if _is_sensitive(key) else _redact(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact(item) for item in value)
+    return value
+
+
+def redact_sensitive(logger, method_name, event_dict):
+    """Masks passwords, tokens and secrets in any field of the event, at any
+    depth. A minimal net for S1.4; S1.5 completes the redaction policy."""
+    return _redact(event_dict)
+
+
 def configure_logging(log_level: str = "INFO", json_output: bool = False):
     shared_processors = [
         structlog.contextvars.merge_contextvars,
@@ -22,6 +68,7 @@ def configure_logging(log_level: str = "INFO", json_output: bool = False):
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        redact_sensitive,
     ]
 
     if json_output:

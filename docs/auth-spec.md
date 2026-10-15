@@ -10,13 +10,12 @@ curl -X POST http://localhost:3000/api/auth/login \
   -d '{"username":"admin","password":"ChangeMe123!"}'
 ```
 
-Response:
+Response (the refresh token comes in the `faclab_refresh` cookie, `HttpOnly; Secure; SameSite=Strict; Path=/api/auth`, without `Secure` locally):
 
 ```json
 {
   "data": {
     "accessToken": "eyJhbGciOi...",
-    "refreshToken": "eyJhbGciOi...",
     "tokenType": "Bearer",
     "expiresIn": 900
   }
@@ -29,9 +28,17 @@ Send the token on every protected request:
 Authorization: Bearer <accessToken>
 ```
 
-Access tokens expire after `JWT_ACCESS_TTL` seconds (default 900). Refresh via `POST /api/auth/refresh` with `{"refreshToken":"..."}`. The server revalidates the user (role, `is_active`) and the session before reissuing.
+Access tokens expire after `JWT_ACCESS_TTL_SECONDS` seconds (default 900). Refresh via `POST /api/auth/refresh` with no body: the browser sends the cookie (`withCredentials` / `credentials: "include"`). The server revalidates the user (role, `is_active`) and the session before reissuing.
 
-Each login opens a session (`auth_sessions`) whose id travels in the tokens as `sid`. `POST /api/auth/logout` with `{"refreshToken":"..."}` revokes it; a password change revokes the user's other sessions, and an admin reset or deactivation revokes all of them. A revoked session can't be refreshed; access tokens are stateless and expire on their own. The last active admin can't be deactivated or demoted (`LAST_ADMIN`, 409).
+Each login opens a session (`auth_sessions`) whose id travels in the tokens as `sid`. `POST /api/auth/logout` revokes it and clears the cookie; a password change revokes the user's other sessions, and an admin reset or deactivation revokes all of them. A revoked session can't be refreshed; access tokens are stateless and expire on their own. The last active admin can't be deactivated or demoted (`LAST_ADMIN`, 409).
+
+## Session security
+
+- **Refresh rotation.** Every refresh issues a new refresh token (its `jti` is stored in `auth_sessions.refresh_jti`) and the previous one stops working. Presenting an already used refresh token revokes the whole session: 401 `TOKEN_REUSED`. The token replaced less than `JWT_REFRESH_REUSE_GRACE_SECONDS` ago (default 30) still gets the current token, so two tabs refreshing at once don't log the user out. The revocation is committed even though the request fails (`commit_transaction` on the error).
+- **Login lockout.** Failed logins are stored in `login_failures`. By default 5 failures for a username within 15 minutes, or 20 from one client IP, lock it for 15 minutes after the last failure: 429 `LOGIN_LOCKED`, even with the right password. Attempts while locked are not counted. Unknown usernames are checked against a dummy bcrypt hash, so response time doesn't reveal which usernames exist.
+- **Authors from the token.** Shifts, POS sales, cash movements, refunds, adjustments and transfers are signed with the authenticated user's `fullName`, or the username when it has none. Request bodies don't accept author fields.
+- **No internals in responses or logs.** JWT errors answer the generic "invalid token" and unexpected `ValueError`s "Invalid value" (the detail stays in the server log). Request validation errors are logged without the rejected `input`, and a structlog processor masks passwords, tokens, secrets, cookies and `Authorization` values.
+- **HTTP hardening.** Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; bodies over `MAX_REQUEST_BODY_BYTES` (1 MiB) get 413 `REQUEST_TOO_LARGE`.
 
 ## Role × Permission matrix
 

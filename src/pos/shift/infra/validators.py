@@ -10,15 +10,8 @@ from src.shared.infra.validators import DecimalNumber, QueryParams
 
 
 class OpenShiftRequest(BaseModel):
-    """Open a new cashier shift."""
+    """Open a new cashier shift. The cashier is the authenticated user."""
 
-    cashier_name: str = Field(
-        ...,
-        max_length=128,
-        description="Cashier name",
-        validation_alias=AliasChoices("cashierName", "cashier_name"),
-        serialization_alias="cashierName",
-    )
     opening_balance: Decimal = Field(
         ...,
         ge=0,

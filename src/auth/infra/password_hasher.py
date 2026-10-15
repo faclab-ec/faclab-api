@@ -1,3 +1,6 @@
+import secrets
+from functools import cached_property
+
 from passlib.context import CryptContext
 from wireup import injectable
 
@@ -14,3 +17,11 @@ class BcryptPasswordHasher(PasswordHasher):
 
     def verify(self, plain: str, hashed: str) -> bool:
         return self._ctx.verify(plain, hashed)
+
+    def verify_dummy(self, plain: str) -> None:
+        self._ctx.verify(plain, self._dummy_hash)
+
+    @cached_property
+    def _dummy_hash(self) -> str:
+        # Same cost as a real hash; nobody knows its password
+        return self._ctx.hash(secrets.token_urlsafe(32))

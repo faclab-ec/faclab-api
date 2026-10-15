@@ -8,6 +8,7 @@ from src.pos.refund.domain.exceptions import InvalidRefundStatusError
 from src.sales.domain.entities import PaymentMethod
 from src.sales.domain.services import tax_breakdown
 from src.shared.domain.entities import Entity
+from src.shared.domain.exceptions import InvalidValueError
 from src.shared.domain.tax import TaxCode
 
 
@@ -91,4 +92,6 @@ class RefundPayment(Entity):
 
     def __post_init__(self):
         if self.amount <= Decimal("0"):
-            raise ValueError(f"Payment amount must be positive, got {self.amount}")
+            raise InvalidValueError(
+                f"Payment amount must be positive, got {self.amount}"
+            )

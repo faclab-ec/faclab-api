@@ -1,5 +1,9 @@
 class BaseError(Exception):
     error_code: str = "INTERNAL_ERROR"
+    # The request transaction commits the changes flushed before this error
+    # instead of rolling them back, e.g. a failed login attempt that must be
+    # counted even though the request fails
+    commit_transaction: bool = False
 
     def __init__(self, message: str, detail: str | None = None):
         self.message = message
@@ -24,6 +28,12 @@ class NotFoundError(ApplicationError):
 
 class ValidationError(DomainError):
     error_code = "VALIDATION_ERROR"
+
+
+class InvalidValueError(ValidationError, ValueError):
+    """A value object or entity rejected a value. Still a ValueError for callers
+    that expect one, but answered with its own message (422) instead of the
+    generic text the API gives to unexpected ValueErrors."""
 
 
 class ConflictError(DomainError):

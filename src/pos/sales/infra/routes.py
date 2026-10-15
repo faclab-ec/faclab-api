@@ -3,8 +3,9 @@
 from fastapi import APIRouter, Depends, status
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.pos.sales.app.commands.apply_discount import (
     ApplySaleDiscountCommand,
     ApplySaleDiscountCommandHandler,
@@ -235,6 +236,7 @@ class POSSaleRouter:
         self,
         handler: Injected[POSCreateSaleCommandHandler],
         sale: POSSaleRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Create a new POS sale in DRAFT status.
@@ -243,7 +245,9 @@ class POSSaleRouter:
         Optionally associate a customer or mark it as a final-consumer sale.
         """
         result = handler.handle(
-            POSCreateSaleCommand(**sale.model_dump(exclude_none=True))
+            POSCreateSaleCommand(
+                **sale.model_dump(exclude_none=True), created_by=user.display_name
+            )
         )
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
 
@@ -251,6 +255,7 @@ class POSSaleRouter:
         self,
         handler: Injected[QuickSaleCommandHandler],
         sale: QuickSaleRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleDetailResponse]:
         """Complete a sale in a single request — creates the sale, adds items, registers payments, and confirms.
@@ -268,7 +273,7 @@ class POSSaleRouter:
                 discount_type=sale.discount_type,
                 discount_value=sale.discount_value,
                 notes=sale.notes,
-                created_by=sale.created_by,
+                created_by=user.display_name,
             )
         )
         return DataResponse(data=SaleDetailResponse.model_validate(result), meta=meta)

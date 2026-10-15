@@ -118,7 +118,9 @@ def client(pg_engine: Engine) -> TestClient:
 def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
     """Return bearer headers for a persisted user with the given role."""
 
-    def _headers(role: Role = Role.ADMIN) -> dict[str, str]:
+    def _headers(
+        role: Role = Role.ADMIN, full_name: str | None = None
+    ) -> dict[str, str]:
         with Session(bind=pg_engine) as session:
             model = UserModel(
                 username=f"{role.name.lower()}-test",
@@ -127,11 +129,14 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
                 role=int(role),
                 is_active=True,
                 must_change_password=False,
+                full_name=full_name,
             )
             session.add(model)
             session.flush()
             auth_session = AuthSessionModel(
-                user_id=model.id, expires_at=datetime.now() + timedelta(days=1)
+                user_id=model.id,
+                expires_at=datetime.now() + timedelta(days=1),
+                refresh_jti="test-jti",
             )
             session.add(auth_session)
             session.commit()
@@ -142,8 +147,9 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
                 email=model.email,
                 password_hash=model.password_hash,
                 role=role,
+                full_name=full_name,
             )
-        token = JwtTokenService().issue_pair(user, session_id).access_token
+        token = JwtTokenService().issue_pair(user, session_id, "test-jti").access_token
         return {"Authorization": f"Bearer {token}"}
 
     return _headers

@@ -39,7 +39,6 @@ class CreateAdjustmentCommand(Command):
 class UpdateAdjustmentCommand(Command):
     id: int = 0
     notes: str | None = None
-    adjusted_by: str | None = None
 
 
 @dataclass
@@ -115,7 +114,7 @@ class UpdateAdjustmentCommandHandler(CommandHandler[UpdateAdjustmentCommand, dic
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
 
-        adjustment.update_details(notes=command.notes, adjusted_by=command.adjusted_by)
+        adjustment.update_details(notes=command.notes)
         saved = self.repo.update(adjustment)
         return saved.dict()
 

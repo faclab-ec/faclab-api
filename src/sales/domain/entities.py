@@ -7,7 +7,7 @@ from enum import StrEnum
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
 from src.sales.domain.services import discount_factor, tax_breakdown
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import ValidationError
+from src.shared.domain.exceptions import InvalidValueError, ValidationError
 from src.shared.domain.money import round_money
 from src.shared.domain.tax import TaxCode
 
@@ -208,6 +208,8 @@ class Payment(Entity):
     def __post_init__(self):
         """Valida que el monto sea positivo"""
         if self.amount <= Decimal("0"):
-            raise ValueError(f"Payment amount must be positive, got {self.amount}")
+            raise InvalidValueError(
+                f"Payment amount must be positive, got {self.amount}"
+            )
         if self.payment_date is None:
             self.payment_date = datetime.now()

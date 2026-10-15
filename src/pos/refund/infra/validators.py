@@ -34,13 +34,6 @@ class CreateRefundRequest(BaseModel):
     reason: str | None = Field(
         None, max_length=512, description="Reason for the refund"
     )
-    refunded_by: str | None = Field(
-        None,
-        max_length=64,
-        description="User who processed the refund",
-        validation_alias=AliasChoices("refundedBy", "refunded_by"),
-        serialization_alias="refundedBy",
-    )
 
 
 class ProcessRefundPaymentInput(BaseModel):

@@ -61,13 +61,9 @@ def test_managers_read_shift_and_refund_history_newest_first(
     client, auth_headers, cashier, product
 ):
     manager = Api(client, auth_headers(Role.MANAGER))
-    first = cashier.post(
-        "/api/pos/shifts/open", {"cashierName": "Caja", "openingBalance": "0"}
-    )
+    first = cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
     cashier.post(f"/api/pos/shifts/{first['id']}/close", {"closingBalance": "0"})
-    second = cashier.post(
-        "/api/pos/shifts/open", {"cashierName": "Caja", "openingBalance": "0"}
-    )
+    second = cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
     sale = _checkout(cashier, product["id"])
     [item] = cashier.get(f"/api/pos/sales/{sale['id']}/items")
     refund = cashier.post(
@@ -87,7 +83,7 @@ def test_managers_read_shift_and_refund_history_newest_first(
 
 
 def test_quick_sale_records_price_overrides(cashier, db_session, product):
-    cashier.post("/api/pos/shifts/open", {"cashierName": "Caja", "openingBalance": "0"})
+    cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
 
     error = cashier.error(
         "POST",

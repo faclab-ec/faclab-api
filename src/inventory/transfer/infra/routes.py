@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.inventory.transfer.app.commands.transfer import (
     AddTransferItemCommand,
     AddTransferItemCommandHandler,
@@ -156,12 +157,15 @@ class TransferRouter:
         self,
         body: CreateTransferRequest,
         handler: Injected[CreateStockTransferCommandHandler],
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[TransferResponse]:
-        """Create a new stock transfer in DRAFT status."""
+        """Create a new stock transfer in DRAFT status. The authenticated user is
+        recorded as the requester."""
         result = handler.handle(
             CreateStockTransferCommand(
-                **body.model_dump(exclude_none=True, by_alias=False)
+                **body.model_dump(exclude_none=True, by_alias=False),
+                requested_by=user.display_name,
             )
         )
         return DataResponse(data=TransferResponse.model_validate(result), meta=meta)

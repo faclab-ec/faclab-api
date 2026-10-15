@@ -66,13 +66,6 @@ class POSSaleRequest(BaseModel):
         serialization_alias="isFinalConsumer",
     )
     notes: str | None = Field(None, max_length=512, description="Additional notes")
-    created_by: str | None = Field(
-        None,
-        max_length=64,
-        description="User who created the sale",
-        validation_alias=AliasChoices("createdBy", "created_by"),
-        serialization_alias="createdBy",
-    )
 
 
 class QuickSaleItemInput(BaseModel):
@@ -149,13 +142,6 @@ class QuickSaleRequest(BaseModel):
         serialization_alias="discountValue",
     )
     notes: str | None = Field(None, max_length=512, description="Additional notes")
-    created_by: str | None = Field(
-        None,
-        max_length=64,
-        description="User who created the sale",
-        validation_alias=AliasChoices("createdBy", "created_by"),
-        serialization_alias="createdBy",
-    )
 
 
 class ReceiptItemResponse(BaseModel):

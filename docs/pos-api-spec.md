@@ -13,7 +13,7 @@ Todos los endpoints usan JSON. Las respuestas siguen el formato `DataResponse`, 
 | Campo | Tipo | Descripción |
 |-------|------|-------------|
 | id | int | ID auto-generado |
-| cashierName | string | Nombre del cajero (max 128) |
+| cashierName | string | Cajero: el usuario autenticado que abre el turno (nombre completo o username). No se envía en el cuerpo |
 | openedAt | datetime | Fecha/hora de apertura |
 | closedAt | datetime? | Fecha/hora de cierre |
 | openingBalance | decimal | Saldo inicial (≥0) |
@@ -33,7 +33,7 @@ Solo puede existir **un turno OPEN** a la vez. Todas las operaciones POS (ventas
 
 ```json
 // Request
-{ "cashierName": "Juan", "openingBalance": 100.00, "notes": "Turno matutino" }
+{ "openingBalance": 100.00, "notes": "Turno matutino" }
 
 // Response 201
 { "data": { "id": 1, "cashierName": "Juan", "openedAt": "...", "openingBalance": 100.00, "status": "OPEN", ... } }
@@ -85,7 +85,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | total | decimal | subtotal + tax - discount |
 | paymentStatus | enum | `PENDING` \| `PARTIAL` \| `PAID` |
 | notes | string? | Notas |
-| createdBy | string? | Usuario que creó |
+| createdBy | string? | Usuario autenticado que creó la venta (no se envía en el cuerpo) |
 | parkedAt | datetime? | Fecha de estacionamiento |
 | parkReason | string? | Razón de estacionamiento |
 | createdAt | datetime | Fecha creación |
@@ -140,7 +140,7 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
 
 ```json
 // Request
-{ "customerId": 5, "isFinalConsumer": false, "notes": "...", "createdBy": "cajero1" }
+{ "customerId": 5, "isFinalConsumer": false, "notes": "..." }
 // Si isFinalConsumer=true, customerId se ignora
 
 // Response 201 — Sale en DRAFT vinculada al turno activo
@@ -162,8 +162,7 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
   ],
   "discountType": "PERCENTAGE",
   "discountValue": 10,
-  "notes": "Venta rápida",
-  "createdBy": "cajero1"
+  "notes": "Venta rápida"
 }
 // discountType/discountValue son opcionales y siguen las reglas de POST /sales/{saleId}/discount
 ```
@@ -321,7 +320,7 @@ Efectos:
 | total | decimal | Total devuelto (`subtotal + tax`) |
 | reason | string? | Razón |
 | status | enum | `PENDING` → `COMPLETED` / `CANCELLED` |
-| refundedBy | string? | Quién procesó |
+| refundedBy | string? | Usuario autenticado que creó la devolución (no se envía en el cuerpo) |
 
 ### Entidad: RefundItem
 
@@ -370,8 +369,7 @@ La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA
     { "saleItemId": 5, "quantity": 1 },
     { "saleItemId": 6, "quantity": 2 }
   ],
-  "reason": "Producto defectuoso",
-  "refundedBy": "cajero1"
+  "reason": "Producto defectuoso"
 }
 ```
 
@@ -424,7 +422,7 @@ Efectos:
 | type | enum | `IN` \| `OUT` |
 | amount | decimal | Monto (>0) |
 | reason | string? | Razón |
-| performedBy | string? | Quién lo hizo |
+| performedBy | string? | Usuario autenticado que registró el movimiento (no se envía en el cuerpo) |
 | createdAt | datetime | Fecha |
 
 ### Endpoints
@@ -433,7 +431,7 @@ Efectos:
 
 ```json
 // Request
-{ "type": "OUT", "amount": 50.00, "reason": "Pago a proveedor", "performedBy": "cajero1" }
+{ "type": "OUT", "amount": 50.00, "reason": "Pago a proveedor" }
 
 // Validaciones: amount > 0, turno debe estar OPEN
 // Response 201
@@ -606,6 +604,8 @@ Formato de error estándar:
 9. **Cierre de caja**: El Z-Report da la reconciliación completa. La discrepancia (diferencia entre esperado y declarado) se registra automáticamente.
 
 10. **Campos camelCase**: La API usa camelCase en JSON (ej: `cashierName`, `paymentMethod`, `taxCode`).
+
+11. **Autoría desde el token**: `cashierName`, `createdBy`, `refundedBy` y `performedBy` los pone el backend con el usuario autenticado (su nombre completo o, si no tiene, su username). No se envían en el cuerpo; si llegan, se ignoran.
 
 ---
 

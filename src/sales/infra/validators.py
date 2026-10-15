@@ -60,13 +60,6 @@ class SaleRequest(BaseModel):
         serialization_alias="isFinalConsumer",
     )
     notes: str | None = Field(None, max_length=512, description="Additional notes")
-    created_by: str | None = Field(
-        None,
-        max_length=64,
-        description="User who created the sale",
-        validation_alias=AliasChoices("createdBy", "created_by"),
-        serialization_alias="createdBy",
-    )
 
 
 class PaymentRequest(BaseModel):

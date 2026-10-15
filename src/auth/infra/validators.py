@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.shared.infra.validators import QueryParams
@@ -11,15 +11,6 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
-class RefreshRequest(BaseModel):
-    refresh_token: str = Field(
-        ...,
-        min_length=1,
-        validation_alias=AliasChoices("refreshToken", "refresh_token"),
-        serialization_alias="refreshToken",
-    )
-
-
 class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -28,10 +19,12 @@ class ChangePasswordRequest(BaseModel):
 
 
 class TokenPairResponse(BaseModel):
+    """The refresh token is not here: it goes in the HttpOnly `faclab_refresh`
+    cookie."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     access_token: str = Field(description="Short-lived access token")
-    refresh_token: str = Field(description="Long-lived refresh token")
     token_type: str = Field("Bearer", description="Token scheme")
     expires_in: int = Field(description="Access token lifetime in seconds")
 
@@ -41,6 +34,9 @@ class AuthenticatedUserResponse(BaseModel):
 
     id: int = Field(ge=1)
     username: str
+    full_name: str | None = Field(
+        None, description="Shown as the author of documents; username when empty"
+    )
     role: int = Field(
         description="Role code (1=ADMIN, 2=MANAGER, 3=OPERATOR, 4=VIEWER, 5=CASHIER)"
     )
@@ -61,6 +57,11 @@ class CreateUserRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=64)
     email: str = Field(..., min_length=1, max_length=128)
     password: str = Field(..., min_length=8, max_length=128)
+    full_name: str | None = Field(
+        None,
+        max_length=64,
+        description="Shown as the author of documents; username when empty",
+    )
     role: int = Field(
         4,
         ge=1,
@@ -80,12 +81,23 @@ class UpdateUserRoleRequest(BaseModel):
     )
 
 
+class UpdateUserProfileRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    full_name: str | None = Field(
+        None,
+        max_length=64,
+        description="Shown as the author of documents; empty or null clears it",
+    )
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     id: int
     username: str
     email: str
+    full_name: str | None = None
     role: int = Field(
         description="Role code (1=ADMIN, 2=MANAGER, 3=OPERATOR, 4=VIEWER, 5=CASHIER)"
     )

@@ -36,15 +36,12 @@ class StockTransfer(Entity):
         if self.status != TransferStatus.DRAFT:
             raise InvalidTransferStatusError(self.status, operation)
 
-    def update_details(
-        self, notes: str | None = None, requested_by: str | None = None
-    ) -> None:
-        """Actualiza los datos editables; solo en DRAFT"""
+    def update_details(self, notes: str | None = None) -> None:
+        """Actualiza los datos editables; solo en DRAFT. El solicitante no
+        cambia: es el usuario que creó la transferencia"""
         self.ensure_draft("actualizar")
         if notes is not None:
             self.notes = notes
-        if requested_by is not None:
-            self.requested_by = requested_by
 
     def confirm(self) -> None:
         self.ensure_draft("confirmar")

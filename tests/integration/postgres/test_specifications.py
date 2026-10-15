@@ -126,7 +126,7 @@ def test_adjustments_and_transfers_filtered_by_status(api):
 
 def test_parked_sales(api, client, auth_headers):
     pos = Api(client, auth_headers(Role.CASHIER))
-    pos.post("/api/pos/shifts/open", {"cashierName": "Caja", "openingBalance": "0"})
+    pos.post("/api/pos/shifts/open", {"openingBalance": "0"})
     parked = pos.post("/api/pos/sales", {"isFinalConsumer": True})
     pos.post("/api/pos/sales", {"isFinalConsumer": True})
     pos.post(f"/api/pos/sales/{parked['id']}/park")

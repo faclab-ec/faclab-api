@@ -2,6 +2,8 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from src.shared.domain.exceptions import InvalidValueError
+
 
 @dataclass(frozen=True)
 class ValueObject(ABC):
@@ -20,7 +22,7 @@ class Email(ValueObject):
     def _validate(self):
         pattern = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
         if not re.match(pattern, self.value):
-            raise ValueError(f"Invalid email: {self.value}")
+            raise InvalidValueError(f"Invalid email: {self.value}")
 
 
 @dataclass(frozen=True)
@@ -35,10 +37,10 @@ class TaxId(ValueObject):
 
     def _validate(self):
         if not isinstance(self.value, str) or not self.value.isdigit():
-            raise ValueError(self._ERROR_MSG.format(value=self.value))
+            raise InvalidValueError(self._ERROR_MSG.format(value=self.value))
 
         if len(self.value) not in (10, 13):
-            raise ValueError(self._ERROR_MSG.format(value=self.value))
+            raise InvalidValueError(self._ERROR_MSG.format(value=self.value))
 
         self._validate_algorithm()
 
@@ -46,7 +48,7 @@ class TaxId(ValueObject):
         code = self.value
         province_code = int(code[:2])
         if province_code not in range(1, 25) and province_code != 30:
-            raise ValueError(self._INVALID_ID_MSG.format(value=self.value))
+            raise InvalidValueError(self._INVALID_ID_MSG.format(value=self.value))
 
         third_digit = int(code[2])
         is_public = len(code) == 13 and third_digit == 6
@@ -75,4 +77,4 @@ class TaxId(ValueObject):
         result = base - remainder if remainder != 0 else 0
 
         if result != checker:
-            raise ValueError(self._INVALID_ID_MSG.format(value=self.value))
+            raise InvalidValueError(self._INVALID_ID_MSG.format(value=self.value))

@@ -30,3 +30,14 @@ def test_activation_role_and_login():
     user.record_login(at)
 
     assert (user.is_active, user.role, user.last_login_at) == (True, Role.MANAGER, at)
+
+
+def test_display_name_is_the_full_name_or_the_username():
+    user = _user()
+    assert user.display_name == "ana"
+
+    user.rename("  Ana Pérez ")
+    assert (user.full_name, user.display_name) == ("Ana Pérez", "Ana Pérez")
+
+    user.rename("   ")
+    assert (user.full_name, user.display_name) == (None, "ana")

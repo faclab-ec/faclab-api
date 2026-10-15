@@ -56,7 +56,9 @@ from src.shared.infra.kafka.consumer import KafkaMessageConsumer
 from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
 from src.shared.infra.middlewares import (
+    BodySizeLimitMiddleware,
     ErrorHandlingMiddleware,
+    SecurityHeadersMiddleware,
     http_exception_handler,
     request_validation_exception_handler,
 )
@@ -369,6 +371,9 @@ app.add_exception_handler(
 )
 app.add_middleware(AuthMiddleware, token_service=JwtTokenService())
 app.add_middleware(ErrorHandlingMiddleware)
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=config.MAX_REQUEST_BODY_BYTES)
+app.add_middleware(SecurityHeadersMiddleware)
+# Added last so it is the outermost: 413s and errors keep their CORS headers
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,

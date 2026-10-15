@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.pos.cash.domain.entities import CashMovementType
@@ -12,13 +12,6 @@ class RegisterCashMovementRequest(BaseModel):
     amount: DecimalNumber = Field(..., gt=0, description="Cash amount")
     reason: str | None = Field(
         None, max_length=512, description="Reason for the cash movement"
-    )
-    performed_by: str | None = Field(
-        None,
-        max_length=64,
-        description="Name of the person performing the movement",
-        validation_alias=AliasChoices("performedBy", "performed_by"),
-        serialization_alias="performedBy",
     )
 
 

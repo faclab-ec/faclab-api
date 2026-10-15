@@ -13,18 +13,12 @@ class CreateAdjustmentRequest(BaseModel):
     warehouse_id: int = Field(description="ID of the warehouse being adjusted")
     reason: AdjustmentReason = Field(description="Reason for the adjustment")
     notes: str | None = Field(None, description="Additional notes")
-    adjusted_by: str | None = Field(
-        None, description="Name of the person performing the adjustment"
-    )
 
 
 class UpdateAdjustmentRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     notes: str | None = Field(None, description="Additional notes")
-    adjusted_by: str | None = Field(
-        None, description="Name of the person performing the adjustment"
-    )
 
 
 class AddAdjustmentItemRequest(BaseModel):

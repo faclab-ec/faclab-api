@@ -187,3 +187,30 @@ def test_unknown_route_uses_envelope():
     assert status == 404
     assert body["errors"][0]["code"] == "HTTP_ERROR"
     assert "requestId" in body["meta"]
+
+
+def test_unexpected_value_error_text_stays_out_of_the_response():
+    status, body = _dispatch(ValueError("invalid literal for int() with base 10: 'x'"))
+
+    assert status == 422
+    assert body["errors"][0] == {"code": "VALIDATION_ERROR", "message": "Invalid value"}
+
+
+def test_invalid_value_errors_keep_their_message():
+    from src.shared.domain.value_objects import Email
+
+    try:
+        Email("not-an-email")
+    except ValueError as exc:
+        status, body = _dispatch(exc)
+
+    assert status == 422
+    assert body["errors"][0]["code"] == "VALIDATION_ERROR"
+    assert body["errors"][0]["message"] == "Invalid email: not-an-email"
+
+
+def test_new_auth_codes_map_to_their_status():
+    from src.auth.domain.exceptions import LoginLockedError, TokenReusedError
+
+    assert _dispatch(LoginLockedError())[0] == 429
+    assert _dispatch(TokenReusedError())[0] == 401
