@@ -317,7 +317,8 @@ SigNoz: no hay dashboards ni alertas versionados (`deploy/common/dashboards` sol
 Cobertura del core: el último `.coverage` es de abril 2026 y da ~66,8 % al reubicar rutas; está
 desactualizado [P]. *Actualización S1.1 (2026-10-14):* **95 %** de `src` (10 738 sentencias, 511 sin
 cubrir) sumando la corrida sin base de datos (983 pruebas) y la de PostgreSQL (67) [V]. El job `test`
-del CI la mide igual en cada run y la publica como artefacto `coverage-report`.
+del CI la mide igual en cada run (95 % también en el run de faclab-api#111) y la publica como artefacto
+`coverage-report`.
 No hay pruebas de carga, de contrato entre servicios ni E2E contra servicios reales [V].
 
 ## 8. Coordinación entre repositorios
