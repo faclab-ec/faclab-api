@@ -53,6 +53,12 @@ def test_other_invoice_events_are_ignored(command_handler, event_type):
     command_handler.handle.assert_not_called()
 
 
+def test_a_schema_version_core_does_not_know_is_skipped(command_handler):
+    handle_invoice_message(_message(schema_version=2))
+
+    command_handler.handle.assert_not_called()
+
+
 def test_message_without_a_numeric_sale_id_is_skipped(command_handler):
     handle_invoice_message(_message(saleId="not-a-number"))
 

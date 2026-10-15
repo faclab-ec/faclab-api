@@ -3,7 +3,8 @@
 Cada venta confirmada (admin o POS) se publica en el topic `sales.confirmed` con
 los datos del cliente y de los productos que necesita la factura. El mensaje se
 guarda en el outbox dentro de la transacción de la venta: solo llega a Kafka si
-la venta se confirma de verdad.
+la venta se confirma de verdad. Su forma es el contrato
+`contracts/events/sales.confirmed/v1.schema.json`, que `tests/contract` verifica.
 
 Cada ítem lleva además `invoice_discount`, `invoice_base` e `invoice_tax`: sus
 montos en la factura, redondeados a centavos y con el descuento global ya
@@ -28,6 +29,8 @@ from src.shared.infra.events.scope import create_sync_scope
 from src.shared.infra.outbox.writer import OutboxWriter
 
 SALES_CONFIRMED_TOPIC = "sales.confirmed"
+# Versión del esquema en contracts/events/sales.confirmed/ (ver contracts/README.md)
+SALES_CONFIRMED_SCHEMA_VERSION = 1
 
 
 def build_sale_confirmed_message(
@@ -90,6 +93,7 @@ def build_sale_confirmed_message(
     return {
         "event_id": event.event_id,
         "event_type": "SaleConfirmed",
+        "schema_version": SALES_CONFIRMED_SCHEMA_VERSION,
         "aggregate_id": event.aggregate_id,
         "occurred_at": event.occurred_at.isoformat().replace("+00:00", "Z"),
         "payload": {

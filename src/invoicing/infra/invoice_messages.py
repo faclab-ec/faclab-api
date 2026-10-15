@@ -3,7 +3,8 @@
 faclab-invoicing usa ese topic como su propia máquina de estados (created →
 signed → sent → authorized | rejected) y publica ahí cada transición. Core lo lee
 con su propio consumer group y solo actúa cuando el SRI autoriza la factura: la
-venta pasa a INVOICED.
+venta pasa a INVOICED. La forma del mensaje es el contrato
+`contracts/events/invoices/v1.schema.json`.
 """
 
 from typing import Any
@@ -23,6 +24,8 @@ logger = structlog.get_logger(__name__)
 INVOICES_TOPIC = "invoices"
 INVOICE_AUTHORIZED = "InvoiceAuthorized"
 INVOICE_REJECTED = "InvoiceRejected"
+# Versiones del contrato que este consumidor entiende; sin el campo es v1
+SUPPORTED_SCHEMA_VERSIONS = (1,)
 
 
 def handle_invoice_message(message: dict[str, Any]) -> None:
@@ -33,6 +36,16 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
     que el consumidor lo reintente.
     """
     event_type = message.get("type")
+    schema_version = message.get("schema_version", 1)
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        # faclab-invoicing publica una versión nueva solo cuando core ya la
+        # acepta (contracts/README.md); reintentar no la vuelve legible
+        logger.error(
+            "invoice_message_unsupported_version",
+            event_type=event_type,
+            schema_version=schema_version,
+        )
+        return
     if event_type == INVOICE_REJECTED:
         logger.warning(
             "invoice_rejected",
