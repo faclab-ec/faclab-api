@@ -99,7 +99,13 @@ class KafkaMessageConsumer:
                 )
                 async for record in consumer:
                     partition = TopicPartition(record.topic, record.partition)
-                    if self.process(record.topic, record.value, record.headers):
+                    if self.process(
+                        record.topic,
+                        record.value,
+                        record.headers,
+                        partition=record.partition,
+                        offset=record.offset,
+                    ):
                         await consumer.commit({partition: record.offset + 1})
                     else:
                         consumer.seek(partition, record.offset)
@@ -117,6 +123,8 @@ class KafkaMessageConsumer:
         topic: str,
         value: bytes | None,
         headers: Sequence[tuple[str, bytes]] = (),
+        partition: int | None = None,
+        offset: int | None = None,
     ) -> bool:
         """Entrega el mensaje a su handler; devuelve False si hay que reintentarlo."""
         try:
@@ -127,18 +135,33 @@ class KafkaMessageConsumer:
             logger.error("kafka_message_discarded", topic=topic, reason="not JSON")
             return True
 
+        attributes: dict[str, str | int] = {
+            "messaging.system": "kafka",
+            "messaging.operation.type": "process",
+            "messaging.operation.name": "process",
+            "messaging.destination.name": topic,
+            "messaging.consumer.group.name": self._group_id,
+        }
+        if partition is not None:
+            attributes["messaging.destination.partition.id"] = str(partition)
+        if offset is not None:
+            attributes["messaging.kafka.offset"] = offset
+
+        # Child of the producer's span, so the message continues its trace
         carrier = {key: raw.decode("utf-8", "replace") for key, raw in headers}
         with tracer.start_as_current_span(
-            f"kafka.consume.{topic}",
+            f"process {topic}",
             context=extract(carrier),
             kind=trace.SpanKind.CONSUMER,
-            attributes={"kafka.topic": topic},
-        ):
+            attributes=attributes,
+        ) as span:
             try:
                 self._handlers[topic](message)
-            except Exception:
+            except Exception as exc:
                 kafka_consume_errors.add(1, {"kafka.topic": topic})
                 logger.exception("kafka_message_failed", topic=topic)
+                span.record_exception(exc)
+                span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
                 return False
         kafka_messages_consumed.add(1, {"kafka.topic": topic})
         return True

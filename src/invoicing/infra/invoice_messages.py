@@ -47,7 +47,10 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
         sale_id = int(message["saleId"])
         invoice_id = str(message["invoiceId"])
     except (KeyError, TypeError, ValueError):
-        logger.error("invoice_message_invalid", message=message)
+        # Never the whole message: only what identifies it and what is missing
+        logger.error(
+            "invoice_message_invalid", event_type=event_type, keys=sorted(message)
+        )
         return
 
     try:
