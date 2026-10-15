@@ -278,6 +278,7 @@ La suite incluye:
 | [docs/architecture.md](docs/architecture.md) | Arquitectura, patrones de diseno y DI |
 | [docs/api-reference.md](docs/api-reference.md) | Referencia completa de endpoints |
 | [docs/modules.md](docs/modules.md) | Detalle de cada modulo de dominio |
+| [docs/architecture/](docs/architecture/README.md) | Auditoria del ecosistema, arquitectura objetivo SaaS y roadmap por sesiones |
 
 ## Convenciones de Codigo
 
