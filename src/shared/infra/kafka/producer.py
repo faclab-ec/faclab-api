@@ -85,6 +85,11 @@ class KafkaEventProducer:
             bootstrap_servers=self._bootstrap_servers,
         )
 
+    @property
+    def is_connected(self) -> bool:
+        """True once the producer reached the broker; until then it keeps retrying."""
+        return self._producer is not None
+
     def publish(
         self, topic: str, value: dict[str, Any], headers: list[tuple[str, bytes]]
     ) -> None:

@@ -8,10 +8,10 @@ Sistema integral de ventas e inventarios construido con **FastAPI**, **Clean Arc
 |---|---|
 | Framework | FastAPI 0.115 |
 | Lenguaje | Python 3.12 |
-| Base de Datos | PostgreSQL 14 |
+| Base de Datos | PostgreSQL 17 |
 | ORM | SQLAlchemy 2.0 |
 | Migraciones | Alembic 1.15 |
-| Servidor ASGI | Uvicorn |
+| Servidor ASGI | Uvicorn (varios workers en produccion) |
 | Inyeccion de Dependencias | wireup 2.7 |
 | Observabilidad | OpenTelemetry (traces, metrics, logs) |
 | Logging estructurado | structlog |
@@ -125,6 +125,17 @@ La documentacion interactiva (Scalar) esta disponible en:
 | `http://localhost:3000/docs/admin` | Solo endpoints Admin |
 | `http://localhost:3000/docs/pos` | Solo endpoints POS |
 
+La documentacion y los esquemas OpenAPI (`/openapi.json`, `/openapi/admin.json`, `/openapi/pos.json`) solo existen con `DOCS_ENABLED=true`, activo por defecto solo en `local`.
+
+### Salud
+
+Endpoints publicos, fuera de la documentacion y del log de acceso:
+
+| URL | Respuesta |
+|---|---|
+| `GET /health/live` | `200 {"status": "ok"}` mientras el proceso responde |
+| `GET /health/ready` | `200` con `status` `ok`, o `degraded` si Kafka esta activo pero el productor no esta conectado (el outbox conserva los mensajes); `503` con `status` `unavailable` si la base de datos no responde a `SELECT 1` |
+
 Ver [docs/api-reference.md](docs/api-reference.md) para la referencia completa de endpoints.
 
 ## Flujo de Datos
@@ -202,7 +213,7 @@ Middleware centralizado con respuestas estructuradas:
 
 - Docker y Docker Compose (recomendado)
 - Python 3.12 para desarrollo local (la version de Docker y de CI; `ruff` y `ty` validan contra 3.11)
-- PostgreSQL 14 (si se ejecuta sin Docker)
+- PostgreSQL 17 (si se ejecuta sin Docker)
 
 ## Instalacion
 
@@ -213,12 +224,19 @@ cp .env.example .env
 # Editar .env con credenciales de base de datos
 ```
 
-Variables requeridas:
+Variables principales (la lista completa esta en `config/base.py`):
 
-```
-DB_CONNECTION_STRING=postgresql://user:password@localhost:5432/faclab_db
-ENVIRONMENT=local
-```
+| Variable | `local` | `staging` / `production` |
+|---|---|---|
+| `ENVIRONMENT` | `local` (por defecto) | `staging` o `production` |
+| `DATABASE_URL` | Por defecto `sqlite:///./warehouse.db` | **Obligatoria**, por ejemplo `postgresql://user:password@db:5432/faclab` |
+| `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
+| `JWT_SECRET` | Por defecto un valor de desarrollo | **Obligatoria**, unica y de 32 caracteres o mas |
+| `DOCS_ENABLED` | Por defecto `true` | Por defecto `false` |
+
+Si falta alguna variable obligatoria, el arranque falla con un mensaje que las nombra.
+
+La imagen de produccion lee ademas `WEB_CONCURRENCY` (workers de uvicorn, por defecto 2) y `FORWARDED_ALLOW_IPS` (de quien confiar los encabezados `X-Forwarded-*`, por defecto `*` porque el API solo se expone detras del proxy).
 
 ## Ejecucion
 
@@ -250,6 +268,8 @@ make down                       # Detener contenedores
 make migrations m="descripcion" # Crear migracion
 make upgrade                    # Aplicar migraciones
 make downgrade d=revision_id    # Revertir migracion
+make seed                       # Datos de ejemplo; borra los existentes y solo corre con ENVIRONMENT=local
+make seed-admin                 # Primer usuario admin desde AUTH_SEED_* (idempotente)
 
 # Testing y calidad
 make test                       # Tests con cobertura (Docker)
@@ -291,6 +311,27 @@ make test-integration           # las pruebas contra PostgreSQL
 ```
 
 `make lint` corrige en vez de solo verificar; CI falla si queda algo sin formatear.
+
+## Imagen de produccion
+
+El `Dockerfile` tiene cuatro etapas:
+
+- `builder` compila los wheels con `build-essential` y `libpq-dev`.
+- `runtime` instala esos wheels sobre `python:3.12-slim` con solo `libpq5`.
+- `development` agrega las dependencias de desarrollo; es la que usa `docker compose`.
+- `production` copia solo `main.py`, `config/`, `src/`, `alembic/` y `alembic.ini`, y corre como el usuario sin privilegios `app` (uid 10001).
+
+`.dockerignore` deja fuera `.env`, `.venv`, `.git`, `.data`, `tests` y `docs`.
+
+```bash
+docker build --target production -t faclab-core .
+docker run --rm -p 8080:8080 \
+  -e ENVIRONMENT=production -e DATABASE_URL=... -e CORS_ORIGINS=... -e JWT_SECRET=... \
+  faclab-core                                  # API en :8080
+docker run --rm -e ... faclab-core alembic upgrade head   # migraciones como tarea aparte
+```
+
+El contenedor valida la configuracion antes de levantar los workers: si falta una variable obligatoria, sale con codigo 1 y el mensaje en vez de reiniciar los workers en bucle. Su `HEALTHCHECK` llama a `/health/live`.
 
 ## Documentacion
 

@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -44,6 +45,13 @@ from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
 from src.shared.infra.database import create_session_maker
+from src.shared.infra.health import (
+    HealthCheckAccessFilter,
+    HealthRouter,
+    create_health_engine,
+    database_check,
+    kafka_check,
+)
 from src.shared.infra.kafka.consumer import KafkaMessageConsumer
 from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
@@ -67,22 +75,23 @@ configure_logging(
 
 logger = structlog.get_logger(__name__)
 
-origins = ["http://localhost:3000", "http://localhost:5173"]
-
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
 _docs = config.get_docs_config()
 
+# Publishes the Kafka messages committed to the outbox; started by the lifespan
+# and reported by the readiness check
+producer = (
+    KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS) if config.KAFKA_ENABLED else None
+)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    producer = None
     consumer = None
-    if config.KAFKA_ENABLED:
-        # Publishes the Kafka messages committed to the outbox
-        producer = KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS)
+    if producer:
         producer.start()
         outbox_relay.start(
             OutboxRelay(
@@ -115,6 +124,7 @@ app = FastAPI(
     version=_docs.version,
     description=_docs.description,
     openapi_tags=_docs.openapi_tags,
+    openapi_url="/openapi.json" if _docs.enabled else None,
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
@@ -170,7 +180,7 @@ _SCALAR_TEMPLATE = """<!DOCTYPE html>
     data-url="{schema_url}"
     data-configuration='{config}'
   ></script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.74.0"></script>
 </body>
 </html>"""
 
@@ -361,7 +371,7 @@ app.add_middleware(AuthMiddleware, token_service=JwtTokenService())
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -372,7 +382,20 @@ app.include_router(pos_router)
 app.include_router(auth_router)
 
 # ---------------------------------------------------------------------------
-# Doc endpoints (only registered when DOCS_ENABLED=true)
+# Health (public, outside the docs and the access log)
+# ---------------------------------------------------------------------------
+
+health_router = HealthRouter(
+    checks={
+        "database": database_check(create_health_engine(config.DB_CONNECTION_STRING))
+    },
+    informational={"kafka": kafka_check(producer)} if producer else None,
+)
+app.include_router(health_router.router)
+logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())
+
+# ---------------------------------------------------------------------------
+# Doc endpoints and root redirect (only registered when DOCS_ENABLED=true)
 # ---------------------------------------------------------------------------
 
 if _docs.enabled:
@@ -400,15 +423,9 @@ if _docs.enabled:
     async def pos_openapi_schema():
         return JSONResponse(_filtered_schema(("/api/pos", "/api/auth")))
 
-
-# ---------------------------------------------------------------------------
-# Root
-# ---------------------------------------------------------------------------
-
-
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse("/docs")
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return RedirectResponse("/docs")
 
 
 wireup_fastapi_setup(wireup_container, app)

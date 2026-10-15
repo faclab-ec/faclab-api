@@ -34,9 +34,14 @@ class BaseConfig:
     LOG_LEVEL = env("LOG_LEVEL", "INFO")
 
     #
-    # Database config
+    # Database config (required outside local)
     #
-    DB_CONNECTION_STRING = env("DATABASE_URL", "sqlite:///./warehouse.db")
+    DB_CONNECTION_STRING = env.str("DATABASE_URL", "")
+
+    #
+    # CORS: comma-separated origins allowed to call the API (required outside local)
+    #
+    CORS_ORIGINS: list[str] = env.list("CORS_ORIGINS", [])
 
     #
     # OpenTelemetry config
@@ -68,9 +73,9 @@ class BaseConfig:
     JWT_ISSUER = env("JWT_ISSUER", "faclab-core")
 
     #
-    # Docs config
+    # Docs config: /docs and the OpenAPI schemas, off unless enabled
     #
-    DOCS_ENABLED = env.bool("DOCS_ENABLED", True)
+    DOCS_ENABLED = env.bool("DOCS_ENABLED", False)
 
     API_TITLE = "Faclab Core API"
     API_VERSION = "1.0.0"

@@ -8,7 +8,6 @@ opentelemetry-instrumentation-fastapi==0.53b0
 opentelemetry-instrumentation-logging==0.53b0
 opentelemetry-instrumentation-sqlalchemy==0.53b0
 psycopg2==2.9.10
-pytest==8.3.4
 pytz==2024.2
 structlog==25.2.0
 sqlalchemy==2.0.40

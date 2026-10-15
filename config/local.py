@@ -3,3 +3,8 @@ from .base import BaseConfig, env
 
 class Config(BaseConfig):
     LOG_LEVEL = env("LOG_LEVEL", "DEBUG")
+    DB_CONNECTION_STRING = env.str("DATABASE_URL", "sqlite:///./warehouse.db")
+    CORS_ORIGINS: list[str] = env.list(
+        "CORS_ORIGINS", ["http://localhost:3000", "http://localhost:5173"]
+    )
+    DOCS_ENABLED = env.bool("DOCS_ENABLED", True)

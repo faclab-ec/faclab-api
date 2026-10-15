@@ -24,6 +24,7 @@ from src.inventory.transfer.infra.models import (
     StockTransferModel,
 )
 from src.inventory.warehouse.infra.models import WarehouseModel
+from src.pos.shift.infra.models import ShiftModel  # noqa: F401  # sales.shift_id FK
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
     PurchaseOrderModel,
@@ -65,6 +66,18 @@ TRUNCATE_ORDER = [
     UnitOfMeasureModel,
     WarehouseModel,
 ]
+
+
+def ensure_local_environment() -> None:
+    """The seed empties the business tables, so it only runs in local."""
+    env = Env()
+    env.read_env()
+    environment = env("ENVIRONMENT", "local")
+    if environment != "local":
+        raise SystemExit(
+            f"El seed borra los datos y solo corre con ENVIRONMENT=local "
+            f"(actual: {environment})"
+        )
 
 
 def get_session() -> Session:
@@ -1697,6 +1710,7 @@ def seed_transfers(
 
 
 def main():
+    ensure_local_environment()
     session = get_session()
     try:
         print("Truncando datos existentes...")

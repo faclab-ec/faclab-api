@@ -43,3 +43,16 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
 - Las actualizaciones tienen una breve interrupción. Aceptable para el piloto; se puede mejorar con dos
   réplicas del API detrás de Caddy.
 - Hay que documentar runbooks de despliegue, reversión y restauración (S8.2, S8.3).
+
+## Avance
+
+- **S1.2 (2026-10-14)**: el core ya tiene lo que este despliegue espera de su imagen:
+  - `.dockerignore`, así que no entran secretos;
+  - etapa `production` sin compiladores, como usuario `app`, con `WEB_CONCURRENCY` workers y
+    `--proxy-headers`, confiando en `FORWARDED_ALLOW_IPS` porque solo Caddy la expone;
+  - `HEALTHCHECK` sobre `/health/live`;
+  - `/health/ready` para el paso 4 del despliegue;
+  - `alembic` incluido para correr las migraciones como tarea única.
+
+  PostgreSQL 17 ya corre en local y en CI. Falta el compose de producción (S8.1) y la publicación de
+  imágenes (S8.2).
