@@ -1,0 +1,32 @@
+# Secrets and local state: never in an image
+.env
+.env.*
+.venv
+.data
+*.db
+
+# VCS, editors and assistants
+.git
+.github
+.claude
+.qodo
+.idea
+.vscode
+.DS_Store
+
+# Caches and test artifacts
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov
+
+# Not needed at runtime (compose mounts the source tree in development)
+tests
+docs
+CLAUDE.md
+Dockerfile
+docker-compose*.yml
