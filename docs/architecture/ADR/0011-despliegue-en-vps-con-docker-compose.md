@@ -56,3 +56,19 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
 
   PostgreSQL 17 ya corre en local y en CI. Falta el compose de producción (S8.1) y la publicación de
   imágenes (S8.2).
+
+- **S1.3 (2026-10-15)**: invoicing y web también tienen su imagen.
+  - **Invoicing**:
+    - `node:22-bookworm-slim` como `app`, con `HEALTHCHECK` en `/health`;
+    - toda la configuración que depende del entorno sale de variables, y producción no arranca sin
+      ellas;
+    - `SRI_ENVIRONMENT` es explícito.
+  - **Web**:
+    - Caddy en Alpine en el puerto 8080, sin TLS: se lo pone el Caddy de entrada;
+    - `API_BASE_URL` e `INVOICING_API_URL` se leen al arrancar, así que la misma imagen sirve en
+      cualquier entorno.
+    - La decisión dice "estáticos servidos por Caddy". Puede ser este contenedor detrás del proxy, o
+      el Caddy de entrada sirviendo los archivos; S8.1 elige.
+  - Para S8.1 queda:
+    - con `read_only`, la web necesita un tmpfs en `/srv/runtime` del usuario `app`;
+    - las URLs públicas tienen que coincidir con `CORS_ORIGINS` del core y de invoicing.
