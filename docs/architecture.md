@@ -1,5 +1,9 @@
 # Arquitectura
 
+> Este documento describe los patrones internos del core. La auditoría del ecosistema (core,
+> facturación, frontend, Kafka y observabilidad), la arquitectura objetivo SaaS y el roadmap están en
+> [docs/architecture/](architecture/README.md).
+
 ## Clean Architecture
 
 El proyecto organiza el codigo en tres capas con dependencias unidireccionales:
