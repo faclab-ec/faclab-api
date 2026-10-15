@@ -1,7 +1,7 @@
 from wireup import injectable
 
-from src.auth.domain.entities import AuthSession, User
-from src.auth.infra.models import AuthSessionModel, UserModel
+from src.auth.domain.entities import AuthSession, LoginFailure, User
+from src.auth.infra.models import AuthSessionModel, LoginFailureModel, UserModel
 from src.shared.infra.mappers import Mapper
 
 
@@ -15,3 +15,8 @@ class UserMapper(Mapper[User, UserModel]):
 class AuthSessionMapper(Mapper[AuthSession, AuthSessionModel]):
     __entity__ = AuthSession
     __exclude_fields__ = frozenset({"created_at"})
+
+
+@injectable(lifetime="singleton")
+class LoginFailureMapper(Mapper[LoginFailure, LoginFailureModel]):
+    __entity__ = LoginFailure

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, status
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.pos.refund.app.commands.cancel_refund import (
     CancelRefundCommand,
     CancelRefundCommandHandler,
@@ -91,6 +92,7 @@ class POSRefundRouter:
         self,
         handler: Injected[CreateRefundCommandHandler],
         refund_input: CreateRefundRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[RefundDetailResponse]:
         """Create a refund for a confirmed sale.
@@ -103,7 +105,7 @@ class POSRefundRouter:
                 original_sale_id=refund_input.original_sale_id,
                 items=[item.model_dump() for item in refund_input.items],
                 reason=refund_input.reason,
-                refunded_by=refund_input.refunded_by,
+                refunded_by=user.display_name,
             )
         )
         return DataResponse(data=RefundDetailResponse.model_validate(result), meta=meta)

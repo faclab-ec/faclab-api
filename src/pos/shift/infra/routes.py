@@ -3,8 +3,9 @@
 from fastapi import APIRouter, Depends, status
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.pos.shift.app.commands.close_shift import (
     CloseShiftCommand,
     CloseShiftCommandHandler,
@@ -89,12 +90,13 @@ class POSShiftRouter:
         self,
         handler: Injected[OpenShiftCommandHandler],
         data: OpenShiftRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse]:
         """Open a new cashier shift. Only one shift can be active at a time."""
         result = handler.handle(
             OpenShiftCommand(
-                cashier_name=data.cashier_name,
+                cashier_name=user.display_name,
                 opening_balance=data.opening_balance,
                 notes=data.notes,
             )

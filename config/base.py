@@ -71,6 +71,31 @@ class BaseConfig:
     JWT_ACCESS_TTL_SECONDS = env.int("JWT_ACCESS_TTL_SECONDS", 900)
     JWT_REFRESH_TTL_SECONDS = env.int("JWT_REFRESH_TTL_SECONDS", 604800)
     JWT_ISSUER = env("JWT_ISSUER", "faclab-core")
+    # A refresh token used again within this many seconds after it was rotated
+    # (two tabs refreshing at once, a lost response) gets the current session
+    # instead of revoking it. 0 makes every reuse revoke the session
+    JWT_REFRESH_REUSE_GRACE_SECONDS = env.int("JWT_REFRESH_REUSE_GRACE_SECONDS", 30)
+
+    #
+    # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)
+    #
+    AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", True)
+    # Empty: the cookie belongs to the API host only
+    AUTH_COOKIE_DOMAIN = env.str("AUTH_COOKIE_DOMAIN", "") or None
+
+    #
+    # Login lockout: MAX failures within the window lock the username (or the
+    # client IP) for LOGIN_LOCKOUT_SECONDS
+    #
+    LOGIN_MAX_FAILURES_PER_USER = env.int("LOGIN_MAX_FAILURES_PER_USER", 5)
+    LOGIN_MAX_FAILURES_PER_IP = env.int("LOGIN_MAX_FAILURES_PER_IP", 20)
+    LOGIN_FAILURE_WINDOW_SECONDS = env.int("LOGIN_FAILURE_WINDOW_SECONDS", 900)
+    LOGIN_LOCKOUT_SECONDS = env.int("LOGIN_LOCKOUT_SECONDS", 900)
+
+    #
+    # Largest request body accepted (413 above it)
+    #
+    MAX_REQUEST_BODY_BYTES = env.int("MAX_REQUEST_BODY_BYTES", 1_048_576)
 
     #
     # Docs config: /docs and the OpenAPI schemas, off unless enabled
@@ -103,7 +128,7 @@ Authentication endpoints live under `/api/auth` and are included in **all three 
 
 ## Authentication
 
-All endpoints — except `POST /api/auth/login` and `POST /api/auth/refresh` — require a **JWT Bearer token** (`HS256`) in the `Authorization` header:
+All endpoints — except `POST /api/auth/login`, `POST /api/auth/refresh` and `POST /api/auth/logout` — require a **JWT Bearer token** (`HS256`) in the `Authorization` header:
 
 ```
 Authorization: Bearer <accessToken>
@@ -111,10 +136,13 @@ Authorization: Bearer <accessToken>
 
 ### Flow
 
-1. **Login** — `POST /api/auth/login` with `{ "username": "...", "password": "..." }`. Receive an `accessToken` and a `refreshToken`.
+1. **Login** — `POST /api/auth/login` with `{ "username": "...", "password": "..." }`. The body carries the `accessToken`; the refresh token comes in the `faclab_refresh` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/api/auth`).
 2. **Authenticated calls** — send `Authorization: Bearer <accessToken>` on every request.
-3. **Refresh** — when the access token expires (the API responds with a `TOKEN_EXPIRED` error), `POST /api/auth/refresh` with `{ "refreshToken": "..." }` to obtain a new pair. The refresh token is also rotated.
-4. **Profile / change password** — `GET /api/auth/me` and `POST /api/auth/change-password` operate on the currently authenticated user.
+3. **Refresh** — when the access token expires (the API responds with a `TOKEN_EXPIRED` error), `POST /api/auth/refresh` with no body: the cookie identifies the session. Each refresh rotates the cookie; presenting an already used refresh token revokes the session (`TOKEN_REUSED`).
+4. **Logout** — `POST /api/auth/logout` revokes the session and clears the cookie.
+5. **Profile / change password** — `GET /api/auth/me` and `POST /api/auth/change-password` operate on the currently authenticated user.
+
+Browsers must send these three auth calls with credentials (`withCredentials` / `credentials: "include"`). By default, after 5 failed logins in 15 minutes the username is locked for 15 minutes (`LOGIN_LOCKED`, 429), even with the right password.
 
 ### Token lifetimes
 
@@ -141,10 +169,13 @@ Authorization is permission-based. Each user holds a single role, and each role 
 
 | HTTP | Error code | Meaning |
 |------|------------|---------|
-| 400 | `INVALID_CREDENTIALS` | Wrong username/password, or user is inactive. |
-| 400 | `TOKEN_EXPIRED` | Access (or refresh) token expired — call `/api/auth/refresh` or log in again. |
-| 400 | `INVALID_TOKEN` | Token is malformed, signed with a wrong secret, or refers to a user that no longer exists/is active. |
-| 400 | `PERMISSION_DENIED` | Authenticated, but missing one or more permissions required by the endpoint. |
+| 401 | `INVALID_CREDENTIALS` | Wrong username/password, or user is inactive. |
+| 401 | `TOKEN_EXPIRED` | Access (or refresh) token expired — call `/api/auth/refresh` or log in again. |
+| 401 | `INVALID_TOKEN` | Token is malformed or signed with a wrong secret, or its session ended — log in again. |
+| 401 | `TOKEN_REUSED` | An already used refresh token was presented; the session was revoked — log in again. |
+| 403 | `PERMISSION_DENIED` | No token, or authenticated but missing one or more permissions required by the endpoint. |
+| 403 | `PASSWORD_CHANGE_REQUIRED` | The user must change their password first. |
+| 429 | `LOGIN_LOCKED` | Too many failed logins for this username or client; wait and try again. |
 
 ### Trying it from this UI
 
@@ -153,22 +184,19 @@ Click the **lock icon** at the top of any endpoint, choose **`bearerAuth`**, and
 ### curl example
 
 ```bash
-# 1. Login
-TOKENS=$(curl -s -X POST http://localhost:3000/api/auth/login \
+# 1. Login (the refresh cookie is kept in cookies.txt)
+TOKENS=$(curl -s -c cookies.txt -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"change-me"}')
 
 ACCESS=$(echo "$TOKENS" | jq -r '.data.accessToken')
-REFRESH=$(echo "$TOKENS" | jq -r '.data.refreshToken')
 
 # 2. Call a protected endpoint
 curl -s http://localhost:3000/api/auth/me \
   -H "Authorization: Bearer $ACCESS"
 
-# 3. Refresh when the access token expires
-curl -s -X POST http://localhost:3000/api/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d "{\"refreshToken\":\"$REFRESH\"}"
+# 3. Refresh when the access token expires (sends and rotates the cookie)
+curl -s -b cookies.txt -c cookies.txt -X POST http://localhost:3000/api/auth/refresh
 ```
 
 ---

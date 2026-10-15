@@ -17,6 +17,10 @@ from src.auth.app.commands.deactivate_user import (
     DeactivateUserCommand,
     DeactivateUserCommandHandler,
 )
+from src.auth.app.commands.update_user_profile import (
+    UpdateUserProfileCommand,
+    UpdateUserProfileCommandHandler,
+)
 from src.auth.app.commands.update_user_role import (
     UpdateUserRoleCommand,
     UpdateUserRoleCommandHandler,
@@ -33,6 +37,7 @@ from src.auth.infra.dependencies import require_permission
 from src.auth.infra.validators import (
     AdminResetPasswordRequest,
     CreateUserRequest,
+    UpdateUserProfileRequest,
     UpdateUserRoleRequest,
     UserQueryParams,
     UserResponse,
@@ -84,6 +89,13 @@ class UserAdminRouter:
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.update_role)
+        self.router.put(
+            "/{user_id}/profile",
+            response_model=DataResponse[UserResponse],
+            summary="Update the user's full name (shown as author of documents)",
+            responses=RESPONSES_COMMAND,
+            dependencies=_perm,
+        )(self.update_profile)
         self.router.post(
             "/{user_id}/activate",
             response_model=DataResponse[UserResponse],
@@ -145,6 +157,7 @@ class UserAdminRouter:
                 email=body.email,
                 password=body.password,
                 role=body.role,
+                full_name=body.full_name,
             )
         )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
@@ -157,6 +170,18 @@ class UserAdminRouter:
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
         result = handler.handle(UpdateUserRoleCommand(user_id=user_id, role=body.role))
+        return DataResponse(data=UserResponse.model_validate(result), meta=meta)
+
+    def update_profile(
+        self,
+        handler: Injected[UpdateUserProfileCommandHandler],
+        user_id: int,
+        body: UpdateUserProfileRequest,
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[UserResponse]:
+        result = handler.handle(
+            UpdateUserProfileCommand(user_id=user_id, full_name=body.full_name)
+        )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
     def activate(

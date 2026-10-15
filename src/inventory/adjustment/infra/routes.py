@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.inventory.adjustment.app.commands.adjustment import (
     AddAdjustmentItemCommand,
     AddAdjustmentItemCommandHandler,
@@ -147,12 +148,15 @@ class AdjustmentRouter:
         self,
         body: CreateAdjustmentRequest,
         handler: Injected[CreateAdjustmentCommandHandler],
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[AdjustmentResponse]:
-        """Create a new inventory adjustment in DRAFT status."""
+        """Create a new inventory adjustment in DRAFT status. The authenticated
+        user is recorded as the person who adjusted."""
         result = handler.handle(
             CreateAdjustmentCommand(
-                **body.model_dump(exclude_none=True, by_alias=False)
+                **body.model_dump(exclude_none=True, by_alias=False),
+                adjusted_by=user.display_name,
             )
         )
         return DataResponse(data=AdjustmentResponse.model_validate(result), meta=meta)

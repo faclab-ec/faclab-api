@@ -18,3 +18,12 @@ def test_hash_produces_different_results():
     hash1 = hasher.hash("samepassword")
     hash2 = hasher.hash("samepassword")
     assert hash1 != hash2
+
+
+def test_verify_dummy_spends_a_bcrypt_check_without_a_user():
+    hasher = BcryptPasswordHasher()
+
+    assert hasher.verify_dummy("anything") is None
+    # The dummy hash is real bcrypt, computed once
+    assert hasher._dummy_hash.startswith("$2")
+    assert hasher._dummy_hash is hasher._dummy_hash

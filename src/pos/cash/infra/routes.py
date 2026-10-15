@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, status
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.pos.cash.app.commands.register_cash_movement import (
     RegisterCashMovementCommand,
     RegisterCashMovementCommandHandler,
@@ -68,6 +69,7 @@ class POSCashRouter:
         handler: Injected[RegisterCashMovementCommandHandler],
         shift_id: int,
         data: RegisterCashMovementRequest,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[CashMovementResponse]:
         """Register a cash-in or cash-out movement for a shift (e.g. petty cash withdrawal, float top-up)."""
@@ -77,7 +79,7 @@ class POSCashRouter:
                 type=data.type,
                 amount=data.amount,
                 reason=data.reason,
-                performed_by=data.performed_by,
+                performed_by=user.display_name,
             )
         )
         return DataResponse(data=CashMovementResponse.model_validate(result), meta=meta)

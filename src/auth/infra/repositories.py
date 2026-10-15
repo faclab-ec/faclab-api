@@ -1,17 +1,21 @@
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.auth.app.repositories import AuthSessionRepository, UserRepository
-from src.auth.domain.entities import AuthSession, User
+from src.auth.app.repositories import (
+    AuthSessionRepository,
+    LoginFailureRepository,
+    UserRepository,
+)
+from src.auth.domain.entities import AuthSession, LoginFailure, User
 from src.auth.domain.exceptions import (
     EmailAlreadyExistsError,
     UsernameAlreadyExistsError,
 )
-from src.auth.infra.mappers import AuthSessionMapper, UserMapper
-from src.auth.infra.models import AuthSessionModel, UserModel
+from src.auth.infra.mappers import AuthSessionMapper, LoginFailureMapper, UserMapper
+from src.auth.infra.models import AuthSessionModel, LoginFailureModel, UserModel
 from src.shared.infra.repositories import SqlAlchemyRepository
 
 
@@ -56,3 +60,53 @@ class SqlAlchemyAuthSessionRepository(
         result = self.session.execute(statement)
         self.session.flush()
         return result.rowcount
+
+
+@injectable(lifetime="scoped", as_type=LoginFailureRepository)
+class SqlAlchemyLoginFailureRepository(LoginFailureRepository):
+    def __init__(self, session: Session, mapper: LoginFailureMapper):
+        self.session = session
+        self.mapper = mapper
+
+    def add(self, failure: LoginFailure) -> None:
+        self.session.add(LoginFailureModel(**self.mapper.to_dict(failure)))
+        self.session.flush()
+
+    def last_failure_at(
+        self, *, username: str | None = None, ip_address: str | None = None
+    ) -> datetime | None:
+        statement = select(func.max(LoginFailureModel.attempted_at))
+        return self.session.scalar(_by_key(statement, username, ip_address))
+
+    def count_since(
+        self,
+        since: datetime,
+        *,
+        username: str | None = None,
+        ip_address: str | None = None,
+    ) -> int:
+        statement = select(func.count(LoginFailureModel.id)).where(
+            LoginFailureModel.attempted_at > since
+        )
+        return self.session.scalar(_by_key(statement, username, ip_address)) or 0
+
+    def clear_for_username(self, username: str) -> None:
+        self.session.execute(
+            delete(LoginFailureModel).where(LoginFailureModel.username == username)
+        )
+        self.session.flush()
+
+    def purge_before(self, before: datetime) -> None:
+        self.session.execute(
+            delete(LoginFailureModel).where(LoginFailureModel.attempted_at < before)
+        )
+        self.session.flush()
+
+
+def _by_key(statement, username: str | None, ip_address: str | None):
+    """Failures of a username, or of a client IP"""
+    if username is not None:
+        return statement.where(LoginFailureModel.username == username)
+    if ip_address is not None:
+        return statement.where(LoginFailureModel.ip_address == ip_address)
+    raise ValueError("username or ip_address is required")

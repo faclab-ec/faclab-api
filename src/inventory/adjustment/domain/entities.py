@@ -37,15 +37,12 @@ class InventoryAdjustment(Entity):
         if self.status != AdjustmentStatus.DRAFT:
             raise InvalidAdjustmentStatusError(self.status, operation)
 
-    def update_details(
-        self, notes: str | None = None, adjusted_by: str | None = None
-    ) -> None:
-        """Actualiza los datos editables; solo en DRAFT"""
+    def update_details(self, notes: str | None = None) -> None:
+        """Actualiza los datos editables; solo en DRAFT. Quien ajusta no cambia:
+        es el usuario que creó el ajuste"""
         self.ensure_draft("actualizar")
         if notes is not None:
             self.notes = notes
-        if adjusted_by is not None:
-            self.adjusted_by = adjusted_by
 
     def confirm(self) -> None:
         self.ensure_draft("confirmar")

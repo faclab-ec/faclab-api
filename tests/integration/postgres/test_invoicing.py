@@ -36,7 +36,7 @@ def pos(client, admin, auth_headers) -> tuple[Api, list[tuple[int, str]]]:
         make_movement(admin_api, product["id"], 10, location["id"])
         products.append((product["id"], price))
     cashier = Api(client, auth_headers(Role.CASHIER))
-    cashier.post("/api/pos/shifts/open", {"cashierName": "Caja", "openingBalance": "0"})
+    cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
     return cashier, products
 
 

@@ -13,14 +13,12 @@ class CreateTransferRequest(BaseModel):
     source_location_id: int = Field(description="Source location ID")
     destination_location_id: int = Field(description="Destination location ID")
     notes: str | None = Field(None, description="Additional notes")
-    requested_by: str | None = Field(None, description="Name of the requester")
 
 
 class UpdateTransferRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     notes: str | None = Field(None, description="Updated notes")
-    requested_by: str | None = Field(None, description="Updated requester name")
 
 
 class AddTransferItemRequest(BaseModel):

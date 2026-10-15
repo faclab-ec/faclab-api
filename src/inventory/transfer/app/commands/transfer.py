@@ -45,7 +45,6 @@ class CreateStockTransferCommand(Command):
 class UpdateStockTransferCommand(Command):
     id: int = 0
     notes: str | None = None
-    requested_by: str | None = None
 
 
 @dataclass
@@ -129,7 +128,7 @@ class UpdateStockTransferCommandHandler(
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
 
-        transfer.update_details(notes=command.notes, requested_by=command.requested_by)
+        transfer.update_details(notes=command.notes)
         saved = self.repo.update(transfer)
         return saved.dict()
 

@@ -23,6 +23,7 @@ class CreateUserCommand(Command):
     password: str = ""
     role: int = Role.VIEWER.value
     is_active: bool = True
+    full_name: str | None = None
 
 
 @injectable(lifetime="scoped")
@@ -55,6 +56,7 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
             role=Role(command.role),
             is_active=command.is_active,
         )
+        user.rename(command.full_name)
         user = self.repo.create(user)
 
         self.event_publisher.publish(

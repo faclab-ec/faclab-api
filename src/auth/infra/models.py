@@ -26,6 +26,8 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
+    # Shown as the author of documents; 64 so it fits their author columns
+    full_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class AuthSessionModel(Base):
@@ -40,3 +42,17 @@ class AuthSessionModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
+    refresh_jti: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_refresh_jti: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class LoginFailureModel(Base):
+    __tablename__ = "login_failures"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ip_address: Mapped[str | None] = mapped_column(
+        String(45), nullable=True, index=True
+    )
+    attempted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)

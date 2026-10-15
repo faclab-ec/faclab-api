@@ -7,8 +7,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from sqlalchemy.exc import IntegrityError
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from src.shared.domain.exceptions import (
     ApplicationError,
@@ -26,8 +28,10 @@ ERROR_CODE_TO_STATUS = {
     "INVALID_CREDENTIALS": 401,
     "INVALID_TOKEN": 401,
     "TOKEN_EXPIRED": 401,
+    "TOKEN_REUSED": 401,
     "PERMISSION_DENIED": 403,
     "PASSWORD_CHANGE_REQUIRED": 403,
+    "LOGIN_LOCKED": 429,
 }
 
 # Checked in order, so subclasses go before their bases
@@ -124,7 +128,15 @@ async def request_validation_exception_handler(
 ) -> JSONResponse:
     """FastAPI handles request validation before the error middleware sees it, so
     register this with `app.add_exception_handler` to keep the error envelope."""
-    logger.warning("request_validation_error", detail=str(exc))
+    # Only where and why: str(exc) includes each error's `input`, which can be
+    # a password sent in the body
+    logger.warning(
+        "request_validation_error",
+        errors=[
+            {"loc": err.get("loc"), "type": err.get("type"), "msg": err.get("msg")}
+            for err in exc.errors()
+        ],
+    )
     body = _build_validation_error_response(exc, _request_id(request))
     return JSONResponse(status_code=422, content=body)
 
@@ -186,10 +198,12 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(status_code=status, content=body)
         except ValueError as exc:
+            # The text of an unexpected ValueError is internal: only the log
+            # gets it. Expected ones are InvalidValueError (a BaseError above)
             logger.warning("value_error", message=str(exc))
             body = _build_error_response(
                 error_code="VALIDATION_ERROR",
-                message=str(exc),
+                message="Invalid value",
                 request_id=request_id,
             )
             return JSONResponse(status_code=422, content=body)
@@ -205,3 +219,89 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             structlog.contextvars.unbind_contextvars(
                 "request_id", "trace_id", "span_id"
             )
+
+
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
+
+
+class SecurityHeadersMiddleware:
+    """Adds basic security headers to every HTTP response."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in _SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
+class BodySizeLimitMiddleware:
+    """Answers 413 when the request body is larger than `max_bytes`.
+
+    A declared Content-Length is checked up front. A body without one
+    (chunked) is read here up to the limit and then replayed to the app:
+    FastAPI turns any error raised while it reads the body into a 400.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        content_length = headers.get("content-length")
+        if content_length is not None:
+            if content_length.isdigit() and int(content_length) > self.max_bytes:
+                await self._reject(scope, receive, send, headers)
+                return
+            await self.app(scope, receive, send)
+            return
+
+        messages: list[Message] = []
+        size = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            if message["type"] != "http.request":
+                break
+            size += len(message.get("body", b""))
+            if size > self.max_bytes:
+                await self._reject(scope, receive, send, headers)
+                return
+            if not message.get("more_body", False):
+                break
+
+        async def replay() -> Message:
+            if messages:
+                return messages.pop(0)
+            return await receive()
+
+        await self.app(scope, replay, send)
+
+    async def _reject(
+        self, scope: Scope, receive: Receive, send: Send, headers: Headers
+    ) -> None:
+        body = _build_error_response(
+            error_code="REQUEST_TOO_LARGE",
+            message=f"Request body exceeds {self.max_bytes} bytes",
+            request_id=headers.get("x-request-id") or str(uuid.uuid4()),
+        )
+        await JSONResponse(status_code=413, content=body)(scope, receive, send)

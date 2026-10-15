@@ -13,8 +13,39 @@ class TokenExpiredError(ApplicationError):
     error_code = "TOKEN_EXPIRED"
 
 
+class LoginFailedError(InvalidCredentialsError):
+    """Wrong username or password. The failed attempt it recorded is committed
+    even though the request fails, so it counts towards the lockout."""
+
+    commit_transaction = True
+
+    def __init__(self, message: str = "invalid username or password"):
+        super().__init__(message)
+
+
+class LoginLockedError(ApplicationError):
+    error_code = "LOGIN_LOCKED"
+
+    def __init__(
+        self,
+        message: str = "too many failed login attempts; try again later",
+    ):
+        super().__init__(message)
+
+
 class InvalidTokenError(ApplicationError):
     error_code = "INVALID_TOKEN"
+
+
+class TokenReusedError(ApplicationError):
+    """A refresh token that was already rotated came back: it may be stolen, so
+    the session is revoked. The revocation is committed with the error."""
+
+    error_code = "TOKEN_REUSED"
+    commit_transaction = True
+
+    def __init__(self, message: str = "refresh token already used; log in again"):
+        super().__init__(message)
 
 
 class PermissionDeniedError(ApplicationError):

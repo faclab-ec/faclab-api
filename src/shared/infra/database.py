@@ -4,6 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from wireup import injectable
 
+from src.shared.domain.exceptions import BaseError
+
 
 class Base(DeclarativeBase):
     pass
@@ -26,8 +28,11 @@ def create_session_factory(connection_string: str):
         try:
             yield session
             session.commit()
-        except Exception:
-            session.rollback()
+        except Exception as exc:
+            if isinstance(exc, BaseError) and exc.commit_transaction:
+                session.commit()
+            else:
+                session.rollback()
             raise
         finally:
             session.close()

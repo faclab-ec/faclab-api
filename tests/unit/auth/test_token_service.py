@@ -30,6 +30,7 @@ def _service(**config_overrides) -> JwtTokenService:
         "JWT_ACCESS_TTL_SECONDS": 900,
         "JWT_REFRESH_TTL_SECONDS": 7200,
         "JWT_ISSUER": "faclab-test",
+        "JWT_REFRESH_REUSE_GRACE_SECONDS": 30,
     }
     defaults.update(config_overrides)
     with patch("src.auth.infra.token_service.config") as mock_cfg:
@@ -40,7 +41,7 @@ def _service(**config_overrides) -> JwtTokenService:
 
 def test_issue_pair_and_decode_round_trip():
     svc = _service()
-    pair = svc.issue_pair(_user(), 7)
+    pair = svc.issue_pair(_user(), 7, "jti-1")
 
     assert pair.token_type == "Bearer"
     assert pair.expires_in == 900
@@ -57,11 +58,13 @@ def test_issue_pair_and_decode_round_trip():
     assert refresh_claims.typ == "refresh"
     assert refresh_claims.sub == 42
     assert access_claims.sid == refresh_claims.sid == 7
+    assert refresh_claims.jti == "jti-1"
+    assert access_claims.jti is None  # only refresh tokens rotate
 
 
 def test_access_token_lists_the_role_permissions_for_other_services():
     svc = _service()
-    pair = svc.issue_pair(_user(role=Role.CASHIER), 7)
+    pair = svc.issue_pair(_user(role=Role.CASHIER), 7, "jti-1")
 
     access = jwt.decode(pair.access_token, options={"verify_signature": False})
     refresh = jwt.decode(pair.refresh_token, options={"verify_signature": False})
@@ -72,21 +75,21 @@ def test_access_token_lists_the_role_permissions_for_other_services():
 
 def test_access_decoded_as_refresh_raises_invalid_token():
     svc = _service()
-    pair = svc.issue_pair(_user(), 7)
+    pair = svc.issue_pair(_user(), 7, "jti-1")
     with pytest.raises(InvalidTokenError):
         svc.decode_refresh(pair.access_token)
 
 
 def test_refresh_decoded_as_access_raises_invalid_token():
     svc = _service()
-    pair = svc.issue_pair(_user(), 7)
+    pair = svc.issue_pair(_user(), 7, "jti-1")
     with pytest.raises(InvalidTokenError):
         svc.decode_access(pair.refresh_token)
 
 
 def test_token_signed_with_other_secret_raises():
     svc = _service(JWT_SECRET="secret-a")
-    pair = svc.issue_pair(_user(), 7)
+    pair = svc.issue_pair(_user(), 7, "jti-1")
 
     evil = _service(JWT_SECRET="secret-b")
     with pytest.raises(InvalidTokenError):
@@ -120,7 +123,7 @@ def test_garbage_token_raises_invalid_token():
 def test_mcp_claim_round_trip():
     svc = _service()
     user = _user(must_change_password=True)
-    pair = svc.issue_pair(user, 7)
+    pair = svc.issue_pair(user, 7, "jti-1")
     claims = svc.decode_access(pair.access_token)
     assert claims.must_change_password is True
     refresh_claims = svc.decode_refresh(pair.refresh_token)
@@ -146,8 +149,40 @@ def test_mcp_claim_defaults_false_for_legacy_tokens():
 
 def test_wrong_issuer_raises_invalid_token():
     svc = _service(JWT_ISSUER="faclab-a")
-    pair = svc.issue_pair(_user(), 7)
+    pair = svc.issue_pair(_user(), 7, "jti-1")
 
     other = _service(JWT_ISSUER="faclab-b")
     with pytest.raises(InvalidTokenError):
         other.decode_access(pair.access_token)
+
+
+def test_access_token_carries_the_full_name_when_set():
+    svc = _service()
+
+    named = svc.issue_pair(_user(full_name="Alice Pérez"), 7, "j")
+    unnamed = svc.issue_pair(_user(), 7, "j")
+
+    assert svc.decode_access(named.access_token).name == "Alice Pérez"
+    assert svc.decode_access(unnamed.access_token).name is None
+
+
+@pytest.mark.parametrize(
+    "token_of",
+    [
+        lambda svc, pair: "not-a-jwt",
+        lambda svc, pair: pair.refresh_token,  # wrong typ
+        lambda svc, pair: (
+            _service(JWT_SECRET="other").issue_pair(_user(), 7, "j").access_token
+        ),
+    ],
+    ids=["garbage", "wrong-typ", "wrong-secret"],
+)
+def test_invalid_tokens_get_a_generic_message(token_of):
+    svc = _service()
+    pair = svc.issue_pair(_user(), 7, "j")
+
+    with pytest.raises(InvalidTokenError) as exc:
+        svc.decode_access(token_of(svc, pair))
+
+    # PyJWT's own text stays in the server log
+    assert exc.value.message == "invalid token"

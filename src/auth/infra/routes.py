@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Cookie, Depends, Request, Response
 from wireup import Injected
 
 from src.auth.app.commands.change_password import (
@@ -12,12 +14,17 @@ from src.auth.app.commands.refresh_token import (
     RefreshTokenCommandHandler,
 )
 from src.auth.domain.entities import AuthenticatedUser
+from src.auth.domain.exceptions import InvalidTokenError
+from src.auth.infra.cookies import (
+    REFRESH_COOKIE,
+    clear_refresh_cookie,
+    set_refresh_cookie,
+)
 from src.auth.infra.dependencies import get_current_user
 from src.auth.infra.validators import (
     AuthenticatedUserResponse,
     ChangePasswordRequest,
     LoginRequest,
-    RefreshRequest,
     TokenPairResponse,
 )
 from src.shared.infra.dependencies import get_meta
@@ -39,18 +46,28 @@ class AuthRouter:
             "/login",
             response_model=DataResponse[TokenPairResponse],
             summary="Login with username and password",
+            description=(
+                "Returns the access token and sets the refresh token in the "
+                "HttpOnly `faclab_refresh` cookie (Path=/api/auth). Too many "
+                "failures lock the username or the client IP: `LOGIN_LOCKED` (429)."
+            ),
             responses=RESPONSES_COMMAND,
         )(self.login)
         self.router.post(
             "/refresh",
             response_model=DataResponse[TokenPairResponse],
             summary="Refresh an access token",
+            description=(
+                "Reads the refresh token from the `faclab_refresh` cookie and "
+                "rotates it. An already used refresh token revokes the session: "
+                "`TOKEN_REUSED` (401)."
+            ),
             responses=RESPONSES_COMMAND,
         )(self.refresh)
         self.router.post(
             "/logout",
             status_code=204,
-            summary="End the session of a refresh token",
+            summary="End the session of the refresh cookie and clear it",
             responses=RESPONSES_COMMAND,
         )(self.logout)
         self.router.get(
@@ -70,18 +87,21 @@ class AuthRouter:
         self,
         handler: Injected[LoginCommandHandler],
         credentials: LoginRequest,
+        request: Request,
+        response: Response,
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[TokenPairResponse]:
         pair = handler.handle(
             LoginCommand(
                 username=credentials.username,
                 password=credentials.password,
+                ip_address=request.client.host if request.client else None,
             )
         )
+        set_refresh_cookie(response, pair.refresh_token)
         return DataResponse(
             data=TokenPairResponse(
                 access_token=pair.access_token,
-                refresh_token=pair.refresh_token,
                 token_type=pair.token_type,
                 expires_in=pair.expires_in,
             ),
@@ -91,14 +111,17 @@ class AuthRouter:
     def refresh(
         self,
         handler: Injected[RefreshTokenCommandHandler],
-        request: RefreshRequest,
+        response: Response,
+        refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE)] = None,
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[TokenPairResponse]:
-        pair = handler.handle(RefreshTokenCommand(refresh_token=request.refresh_token))
+        if not refresh_token:
+            raise InvalidTokenError("no refresh token; log in again")
+        pair = handler.handle(RefreshTokenCommand(refresh_token=refresh_token))
+        set_refresh_cookie(response, pair.refresh_token)
         return DataResponse(
             data=TokenPairResponse(
                 access_token=pair.access_token,
-                refresh_token=pair.refresh_token,
                 token_type=pair.token_type,
                 expires_in=pair.expires_in,
             ),
@@ -108,11 +131,14 @@ class AuthRouter:
     def logout(
         self,
         handler: Injected[LogoutCommandHandler],
-        request: RefreshRequest,
+        response: Response,
+        refresh_token: Annotated[str | None, Cookie(alias=REFRESH_COOKIE)] = None,
     ) -> None:
         """Revokes the session so its refresh token stops working. Always 204:
         an expired or unknown token leaves nothing to close."""
-        handler.handle(LogoutCommand(refresh_token=request.refresh_token))
+        if refresh_token:
+            handler.handle(LogoutCommand(refresh_token=refresh_token))
+        clear_refresh_cookie(response)
 
     def me(
         self,
@@ -123,6 +149,7 @@ class AuthRouter:
             data=AuthenticatedUserResponse(
                 id=user.id,
                 username=user.username,
+                full_name=user.full_name,
                 role=int(user.role),
                 permissions=sorted(p.value for p in user.permissions),
                 must_change_password=user.must_change_password,
