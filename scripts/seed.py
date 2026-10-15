@@ -24,6 +24,7 @@ from src.inventory.transfer.infra.models import (
     StockTransferModel,
 )
 from src.inventory.warehouse.infra.models import WarehouseModel
+from src.pos.shift.infra.models import ShiftModel  # noqa: F401  # sales.shift_id FK
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
     PurchaseOrderModel,
