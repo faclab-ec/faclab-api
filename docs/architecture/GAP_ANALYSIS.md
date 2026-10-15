@@ -102,14 +102,14 @@
 
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
-| G-53 | Ningún repositorio tiene CI | V | Solo `.github/pull_request_template.md` | Regresiones sin detectar | P0 | S1.1 |
+| G-53 | Ningún repositorio tiene CI | V | Solo `.github/pull_request_template.md` | Regresiones sin detectar | P0 | S1.1 (resuelta: CI en los cuatro repos) |
 | G-54 | Healthcheck roto (`curl` no existe) y sin endpoints de salud | V | `docker inspect`, `docker-compose.yml:17-22`, `main.py:409-411` | Orquestador sin señal de salud | P1 | S1.2 |
 | G-55 | Imagen de producción como root, con herramientas de compilación y un solo proceso | V | `Dockerfile:31-37` | Superficie de ataque y capacidad limitada | P1 | S1.2 |
-| G-56 | Invoicing y web sin Dockerfile; `package-lock.json` de invoicing ignorado; dependencia `pettier` | V | `faclab-invoicing/.gitignore:4`, `package.json:68` | Builds no reproducibles | P1 | S1.1, S1.3 |
+| G-56 | Invoicing y web sin Dockerfile; `package-lock.json` de invoicing ignorado; dependencia `pettier` | V | `faclab-invoicing/.gitignore:4`, `package.json:68` | Builds no reproducibles | P1 | S1.1 (parcial: lock versionado y sin `pettier`), S1.3 |
 | G-57 | Sin tags ni versionado coordinado entre repos | V | `git tag` vacío en los cuatro | Despliegues incompatibles | P2 | S8.2 |
 | G-58 | PostgreSQL 14 llega al fin de soporte el 12/11/2026 | V | `docker-compose.yml`, política de versiones de PostgreSQL | Sin parches de seguridad | P1 | S1.2 |
 | G-59 | Sin infraestructura de producción, respaldos ni plan de recuperación | V | No hay manifiestos en ningún repo | Pérdida de datos tributarios | P0 (antes del piloto) | S8.1, S8.3 |
-| G-60 | `.venv` en Python 3.11 y Docker en 3.12; passlib sin mantenimiento (usa `crypt`, eliminado en 3.13) | V | Advertencia de pytest | Bloqueo para actualizar Python | P3 | S1.1, S1.4 |
+| G-60 | `.venv` en Python 3.11 y Docker en 3.12; passlib sin mantenimiento (usa `crypt`, eliminado en 3.13) | V | Advertencia de pytest | Bloqueo para actualizar Python | P3 | S1.1 (parcial: CI en 3.12; falta el `.venv` local), S1.4 |
 
 ### 2.6 Observabilidad
 
@@ -142,7 +142,7 @@
 | G-75 | Invoicing tiene 31 pruebas y ninguna cubre XML, firma, SOAP, Kafka, JWT ni persistencia | V | `vitest run` | Regresiones tributarias sin detectar | P1 | S1.1, S4.1, S4.2 |
 | G-76 | No hay pruebas de contrato entre servicios | V | — | Incompatibilidades como G-08 | P0 | S1.6 |
 | G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1, S9.2 |
-| G-78 | Cobertura del core desconocida (último `.coverage` de abril 2026, ~66,8 %) | P | `.coverage` | — | P3 | S1.1 |
+| G-78 | Cobertura del core desconocida (último `.coverage` de abril 2026, ~66,8 %) | P | `.coverage` | — | P3 | S1.1 (resuelta: 95 %, medida en cada run de CI) |
 
 ## 3. Requisitos de ferretería
 

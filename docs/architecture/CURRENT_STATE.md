@@ -11,7 +11,8 @@ Faclab es hoy un sistema **de una sola empresa** compuesto por un monolito modul
 (faclab-core), un microservicio de facturación electrónica en Node/TypeScript (faclab-invoicing) y una
 SPA en React (faclab-web). Se comunican por HTTP (frontend → servicios) y por Kafka (core ↔ invoicing).
 Solo existe entorno de desarrollo local: no hay CI, imágenes publicadas, tags, infraestructura de
-producción ni datos productivos [V].
+producción ni datos productivos [V]. *Actualización S1.1 (2026-10-14):* los cuatro repos tienen CI en
+GitHub Actions.
 
 ```mermaid
 flowchart LR
@@ -250,7 +251,8 @@ Puntos fuertes verificados:
   No se valida que el certificado pertenezca al RUC configurado [V].
 - No hay Dockerfile ni CI; `package-lock.json` está ignorado por git, así que los builds no son
   reproducibles [V]. La dependencia de desarrollo `pettier` (`package.json:68`) parece un error de
-  tipeo de `prettier` y es un paquete que altera el formato al azar [V].
+  tipeo de `prettier` y es un paquete que altera el formato al azar [V]. *Actualización S1.1:* CI en
+  GitHub Actions, `package-lock.json` versionado y `pettier` eliminado; el Dockerfile queda para S1.3.
 
 ### 4.3 Contrato `sales.confirmed`
 
@@ -313,7 +315,11 @@ SigNoz: no hay dashboards ni alertas versionados (`deploy/common/dashboards` sol
 | web | **234 pasan, 18 omitidas** (Vitest) [V]; 66 pruebas Playwright con backend simulado [V, no ejecutadas] | Hooks, esquemas, cliente HTTP, totales del POS |
 
 Cobertura del core: el último `.coverage` es de abril 2026 y da ~66,8 % al reubicar rutas; está
-desactualizado [P]. No hay pruebas de carga, de contrato entre servicios ni E2E contra servicios reales [V].
+desactualizado [P]. *Actualización S1.1 (2026-10-14):* **95 %** de `src` (10 738 sentencias, 511 sin
+cubrir) sumando la corrida sin base de datos (983 pruebas) y la de PostgreSQL (67) [V]. El job `test`
+del CI la mide igual en cada run (95 % también en el run de faclab-api#111) y la publica como artefacto
+`coverage-report`.
+No hay pruebas de carga, de contrato entre servicios ni E2E contra servicios reales [V].
 
 ## 8. Coordinación entre repositorios
 
