@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +16,9 @@ def _make_middleware():
 def _make_request():
     req = MagicMock()
     req.headers = {}
-    req.state = MagicMock()
+    # RequestIdMiddleware sets request_id; without it the error middleware
+    # makes one up
+    req.state = SimpleNamespace()
     return req
 
 
@@ -101,6 +104,7 @@ def _envelope_app():
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     from src.shared.infra.middlewares import (
+        RequestIdMiddleware,
         http_exception_handler,
         request_validation_exception_handler,
     )
@@ -123,6 +127,7 @@ def _envelope_app():
         http_exception_handler,  # ty: ignore[invalid-argument-type]
     )
     app.add_middleware(ErrorHandlingMiddleware)
+    app.add_middleware(RequestIdMiddleware)
     return app
 
 
@@ -171,14 +176,14 @@ def test_request_validation_error_uses_envelope():
         "POST",
         "/items",
         body={"quantity": "abc"},
-        headers={"x-request-id": "req-1"},
+        headers={"x-request-id": "6f1c2a3e-8a3b-4c5d-9e0f-1a2b3c4d5e6f"},
     )
 
     assert status == 422
     assert "detail" not in body
     assert body["errors"][0]["code"] == "VALIDATION_ERROR"
     assert body["errors"][0]["field"] == "body.quantity"
-    assert body["meta"]["requestId"] == "req-1"
+    assert body["meta"]["requestId"] == "6f1c2a3e-8a3b-4c5d-9e0f-1a2b3c4d5e6f"
 
 
 def test_unknown_route_uses_envelope():

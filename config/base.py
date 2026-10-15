@@ -8,10 +8,13 @@ env = Env()
 @dataclass
 class OpenTelemetryConfig:
     service_name: str
+    service_version: str
     otlp_endpoint: str
     environment: str
     enabled: bool = True
     sampling_rate: float = 1.0
+    # Plain-text OTLP; only for local, where the collector has no TLS
+    insecure: bool = False
 
 
 @dataclass
@@ -26,6 +29,8 @@ class DocsConfig:
 
 class BaseConfig:
     SERVICE_NAME = env("SERVICE_NAME", "faclab-core")
+    # Set at build time (tag or commit SHA); reported in every log and span
+    SERVICE_VERSION = env("SERVICE_VERSION", "dev")
     ENVIRONMENT = env("ENVIRONMENT", "local")
 
     #
@@ -51,6 +56,7 @@ class BaseConfig:
     OTEL_ENVIRONMENT = env("OTEL_ENVIRONMENT", ENVIRONMENT)
     OTEL_ENABLED = env.bool("OTEL_ENABLED", True)
     OTEL_SAMPLING_RATE = env.float("OTEL_SAMPLING_RATE", 1.0)
+    OTEL_EXPORTER_OTLP_INSECURE = env.bool("OTEL_EXPORTER_OTLP_INSECURE", False)
 
     #
     # Kafka config
@@ -542,10 +548,12 @@ All errors follow a consistent structure with one or more error entries:
     def get_otel_config(self) -> OpenTelemetryConfig:
         return OpenTelemetryConfig(
             service_name=self.OTEL_SERVICE_NAME,
+            service_version=self.SERVICE_VERSION,
             otlp_endpoint=self.OTEL_OTLP_ENDPOINT,
             environment=self.OTEL_ENVIRONMENT,
             enabled=self.OTEL_ENABLED,
             sampling_rate=self.OTEL_SAMPLING_RATE,
+            insecure=self.OTEL_EXPORTER_OTLP_INSECURE,
         )
 
     def get_docs_config(self) -> DocsConfig:

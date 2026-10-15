@@ -1,21 +1,52 @@
 import logging
+import re
 import sys
 
 import structlog
+from opentelemetry import trace
 
 
-def _extract_otel_context(logger, method_name, event_dict):
-    record = event_dict.get("_record")
-    if record:
-        trace_id = getattr(record, "otelTraceID", "0")
-        span_id = getattr(record, "otelSpanID", "0")
-        if trace_id != "0":
-            event_dict["trace_id"] = trace_id
-            event_dict["span_id"] = span_id
+def add_trace_context(logger, method_name, event_dict):
+    """Correlates the log with its trace: ids of the span active when the log
+    was written (the request, command, query or Kafka message)."""
+    context = trace.get_current_span().get_span_context()
+    if context.is_valid:
+        event_dict["trace_id"] = format(context.trace_id, "032x")
+        event_dict["span_id"] = format(context.span_id, "016x")
     return event_dict
 
 
+_EVENT_IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def add_event_name(logger, method_name, event_dict):
+    """Stable `event.name` to search logs by: `outbox_publish_failed` becomes
+    `outbox.publish.failed`. A log from another library (uvicorn, aiokafka)
+    carries free text, so it takes the name of its logger."""
+    event = event_dict.get("event")
+    if isinstance(event, str) and _EVENT_IDENTIFIER.fullmatch(event):
+        name = event.replace("_", ".")
+    else:
+        name = event_dict.get("logger") or "log"
+    event_dict.setdefault("event.name", name)
+    return event_dict
+
+
+def service_fields(fields: dict[str, str]):
+    """Processor that stamps the service on every line. Only for JSON output:
+    OTLP logs already carry it in their resource, and the local console would
+    repeat it on every line."""
+
+    def add_service_fields(logger, method_name, event_dict):
+        for key, value in fields.items():
+            event_dict.setdefault(key, value)
+        return event_dict
+
+    return add_service_fields
+
+
 # Keys whose value never reaches a log, compared without case, "_" or "-"
+# (docs/architecture/OBSERVABILITY.md §4.6)
 _SENSITIVE_KEYS = frozenset(
     {
         "password",
@@ -23,6 +54,7 @@ _SENSITIVE_KEYS = frozenset(
         "newpassword",
         "secret",
         "jwtsecret",
+        "clientsecret",
         "token",
         "accesstoken",
         "refreshtoken",
@@ -30,6 +62,11 @@ _SENSITIVE_KEYS = frozenset(
         "cookie",
         "setcookie",
         "apikey",
+        "p12",
+        "certificate",
+        "privatekey",
+        "xml",
+        "signature",
     }
 )
 _REDACTED = "[REDACTED]"
@@ -56,25 +93,44 @@ def _redact(value):
 
 
 def redact_sensitive(logger, method_name, event_dict):
-    """Masks passwords, tokens and secrets in any field of the event, at any
-    depth. A minimal net for S1.4; S1.5 completes the redaction policy."""
+    """Masks passwords, tokens, secrets, certificates and signed XML in any
+    field of the event, at any depth."""
     return _redact(event_dict)
 
 
-def configure_logging(log_level: str = "INFO", json_output: bool = False):
+def configure_logging(
+    log_level: str = "INFO",
+    json_output: bool = False,
+    service_name: str | None = None,
+    service_version: str | None = None,
+    environment: str | None = None,
+):
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        add_trace_context,
+        add_event_name,
+        # Last, so nothing added above escapes it
         redact_sensitive,
     ]
 
     if json_output:
-        renderer = structlog.processors.JSONRenderer()
+        service = {
+            "service.name": service_name,
+            "service.version": service_version,
+            "deployment.environment.name": environment,
+        }
+        render = [
+            service_fields({k: v for k, v in service.items() if v}),
+            # JSONRenderer only prints `exc_info: true`; this adds the traceback
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ]
     else:
-        renderer = structlog.dev.ConsoleRenderer()
+        render = [structlog.dev.ConsoleRenderer()]
 
     structlog.configure(
         processors=[
@@ -89,8 +145,7 @@ def configure_logging(log_level: str = "INFO", json_output: bool = False):
     formatter = structlog.stdlib.ProcessorFormatter(
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            _extract_otel_context,
-            renderer,
+            *render,
         ],
         foreign_pre_chain=shared_processors,
     )

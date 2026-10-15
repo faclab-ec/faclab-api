@@ -2,6 +2,7 @@
 *.py[cod]
 .*
 !.gitignore
+!.env.example
 !.dockerignore
 !.github/
 __pycache__/

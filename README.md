@@ -233,6 +233,9 @@ Variables principales (la lista completa esta en `config/base.py`):
 | `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
 | `JWT_SECRET` | Por defecto un valor de desarrollo | **Obligatoria**, unica y de 32 caracteres o mas |
 | `DOCS_ENABLED` | Por defecto `true` | Por defecto `false` |
+| `OTEL_ENABLED`, `OTEL_OTLP_ENDPOINT` | `.env.example` apunta a SigNoz local (`http://signoz-otel-collector:4317`, levantado con `faclab-infra/scripts/signoz.sh up`) | Endpoint del collector |
+| `OTEL_EXPORTER_OTLP_INSECURE` | Por defecto `true` (sin TLS) | Por defecto `false` (TLS) |
+| `SERVICE_VERSION` | Por defecto `dev` | La imagen lo fija en el build: `--build-arg SERVICE_VERSION=<tag o SHA>` |
 
 Si falta alguna variable obligatoria, el arranque falla con un mensaje que las nombra.
 

@@ -8,5 +8,6 @@ class Config(BaseConfig):
         "CORS_ORIGINS", ["http://localhost:3000", "http://localhost:5173"]
     )
     DOCS_ENABLED = env.bool("DOCS_ENABLED", True)
-    # Local runs over plain HTTP
+    # Local runs over plain HTTP, also towards the SigNoz collector
     AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", False)
+    OTEL_EXPORTER_OTLP_INSECURE = env.bool("OTEL_EXPORTER_OTLP_INSECURE", True)

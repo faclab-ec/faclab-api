@@ -9,6 +9,7 @@ import structlog
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaError
 from opentelemetry import trace
+from opentelemetry.propagate import extract, inject
 
 from src.shared.infra.telemetry_instruments import (
     kafka_messages_sent,
@@ -94,15 +95,37 @@ class KafkaEventProducer:
         self, topic: str, value: dict[str, Any], headers: list[tuple[str, bytes]]
     ) -> None:
         """Send a message and wait for the broker's ack; raise if it fails, so
-        the outbox relay keeps the message and retries it."""
+        the outbox relay keeps the message and retries it.
+
+        `headers` carry the trace context of the operation that created the
+        message (the request that wrote it to the outbox). The `send` span is
+        its child, so the message and whatever consumes it stay in that trace,
+        and the consumer receives this span as its parent.
+        """
         if self._loop is None or self._producer is None:
             raise RuntimeError("Kafka producer is not started")
 
+        carrier = {key: raw.decode("utf-8", "replace") for key, raw in headers}
+        event_id = value.get("event_id")
+        attributes = {
+            "messaging.system": "kafka",
+            "messaging.operation.type": "send",
+            "messaging.operation.name": "send",
+            "messaging.destination.name": topic,
+        }
+        if event_id is not None:
+            attributes["messaging.message.id"] = str(event_id)
+
         with tracer.start_as_current_span(
-            f"kafka.send.{topic}", attributes={"kafka.topic": topic}
+            f"send {topic}",
+            context=extract(carrier),
+            kind=trace.SpanKind.PRODUCER,
+            attributes=attributes,
         ):
+            inject(carrier)
+            outgoing = [(key, val.encode("utf-8")) for key, val in carrier.items()]
             future = asyncio.run_coroutine_threadsafe(
-                self._producer.send_and_wait(topic, value, headers=headers),
+                self._producer.send_and_wait(topic, value, headers=outgoing),
                 self._loop,
             )
             try:
@@ -111,9 +134,7 @@ class KafkaEventProducer:
                 kafka_send_errors.add(1, {"kafka.topic": topic})
                 raise
             kafka_messages_sent.add(1, {"kafka.topic": topic})
-            logger.info(
-                "kafka_message_sent", topic=topic, event_id=value.get("event_id")
-            )
+            logger.info("kafka_message_sent", topic=topic, event_id=event_id)
 
     def close(self) -> None:
         if self._loop is None:
