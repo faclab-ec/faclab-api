@@ -281,6 +281,31 @@ Puntos fuertes verificados:
   tipeo de `prettier` y es un paquete que altera el formato al azar [V]. *Actualización S1.1:* CI en
   GitHub Actions, `package-lock.json` versionado y `pettier` eliminado; el Dockerfile queda para S1.3.
 
+*Actualización S1.3 (2026-10-15):*
+
+- **Configuración** (`src/config/`, zod):
+  - `NODE_ENV` acepta `local` (por defecto) o `production`.
+  - Las URLs del SRI salen de una sola tabla (`src/config/sri.ts`) elegida por `SRI_ENVIRONMENT`:
+    `test` (`celcer`) o `production` (`cel`). Local solo admite `test`.
+  - Producción no arranca sin `SRI_ENVIRONMENT`, `KAFKA_BROKERS`, `AWS_REGION`, los tres nombres de
+    tabla, `S3_CERTIFICATES_BUCKET`, `CORS_ORIGINS` (sin `*`), `JWT_SECRET` y
+    `CERTIFICATE_PASSWORD_KEY`. El mensaje sale por stderr y nombra las variables, nunca sus valores.
+  - Cada arranque registra `sriEnvironment` y el host del SRI. Con `NODE_ENV=production` y
+    `SRI_ENVIRONMENT=test` emite un aviso.
+  - `npm run dev` y `npm start` cargan `.env` si existe (`--env-file-if-exists`), y hay
+    `.env.example`.
+- **Build**: `npm start` no funcionaba porque `tsc` no reescribía el alias `#/` [V]. Ahora el build
+  corre `tsc-alias`.
+- **Imagen**:
+  - `node:22-bookworm-slim` en tres etapas: `build`, `deps` (solo producción, con el binario nativo de
+    Kafka) y `production`.
+  - Corre como `app` (uid 10001) con código de solo lectura.
+  - `HEALTHCHECK` contra `/health`.
+  - El job `image` de CI la construye y comprueba que no arranque sin configuración [V, `docker run`
+    contra faclab-infra].
+- **Pendiente**: nada cruza todavía `CompanyConfig.environment` (el `ambiente` del comprobante) con
+  `SRI_ENVIRONMENT` (S2.8).
+
 ### 4.3 Contrato `sales.confirmed`
 
 | Campo | Core envía | Invoicing exige | Estado |
@@ -302,6 +327,20 @@ Puntos fuertes verificados:
 - `check:contract` compara 18 enums con el OpenAPI del core; se omite si no hay `OPENAPI_URL` y no
   cubre facturación [V].
 - Sin Dockerfile ni configuración de servidor estático [V].
+
+*Actualización S1.3 (2026-10-15):*
+
+- **Imagen**:
+  - Build con Node 22 y Caddy en Alpine, de unos 60 MB.
+  - Corre como `app` en el puerto 8080, sin capacidades extra, así que arranca con `cap_drop: ALL`.
+  - Para las rutas del SPA (`/pos`) devuelve `index.html` con `no-cache`; un asset inexistente da 404.
+  - Assets con hash en caché `immutable` y compresión zstd o gzip [V, `docker run`].
+- **URLs de API en tiempo de ejecución**:
+  - `index.html` carga `/config.js` antes del bundle. El contenedor lo escribe al arrancar desde
+    `API_BASE_URL` e `INVOICING_API_URL`, que son obligatorias y se validan, y lo sirve con `no-store`.
+  - En desarrollo `public/config.js` está vacío y mandan los `VITE_*`.
+- **CI**: el job `image` construye la imagen y prueba el fallback, `config.js` y el 404.
+- **Pendiente**: sin CSP ni otras cabeceras de seguridad aparte de `X-Content-Type-Options`.
 
 ## 6. Observabilidad
 

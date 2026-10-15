@@ -41,7 +41,7 @@
 
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
-| G-07 | Producción usa las URLs del SRI de pruebas (`celcer`) y el broker `localhost:29092` | V | `faclab-invoicing/src/config/production.ts:27-34` | Facturas "autorizadas" sin validez tributaria | P0 | S1.3 |
+| G-07 | Producción usa las URLs del SRI de pruebas (`celcer`) y el broker `localhost:29092` | V | `faclab-invoicing/src/config/production.ts:27-34` | Facturas "autorizadas" sin validez tributaria | P0 | S1.3 (resuelta: `SRI_ENVIRONMENT` elige `celcer` o `cel` y, como `KAFKA_BROKERS`, la región, las tablas y el bucket, es obligatoria en producción) |
 | G-08 | El core envía `email`, `phone`, `address`, `sku` o `product_name` nulos y facturación los exige | V | `src/invoicing/infra/event_handlers.py:42-50`, `faclab-invoicing/.../schemas.ts:18-30` | La venta va a la cola de mensajes fallidos (DLQ, *dead letter queue*) y nunca se factura | P0 | S1.6 |
 | G-09 | Guardar la configuración del emisor lee y reescribe el contador: puede retroceder y repetir secuenciales; la primera factura sale con 000000002 | V | `company-config.commands.ts:40-46`, `dynamo-company-config.repository.ts:22-53` | Rechazo por secuencial duplicado; huecos | P0 | S2.7, S2.8 |
 | G-10 | No se guarda número ni fecha de autorización ni el XML autorizado | V | `invoice.mapper.ts:29-55` | No se puede entregar ni conservar el comprobante autorizado | P0 | S4.1 |
@@ -105,7 +105,7 @@
 | G-53 | Ningún repositorio tiene CI | V | Solo `.github/pull_request_template.md` | Regresiones sin detectar | P0 | S1.1 (resuelta: CI en los cuatro repos) |
 | G-54 | Healthcheck roto (`curl` no existe) y sin endpoints de salud | V | `docker inspect`, `docker-compose.yml:17-22`, `main.py:409-411` | Orquestador sin señal de salud | P1 | S1.2 (resuelta: `/health/live`, `/health/ready` y healthchecks sin curl) |
 | G-55 | Imagen de producción como root, con herramientas de compilación y un solo proceso | V | `Dockerfile:31-37` | Superficie de ataque y capacidad limitada | P1 | S1.2 (resuelta: imagen sin compiladores, usuario `app`, `WEB_CONCURRENCY` workers) |
-| G-56 | Invoicing y web sin Dockerfile; `package-lock.json` de invoicing ignorado; dependencia `pettier` | V | `faclab-invoicing/.gitignore:4`, `package.json:68` | Builds no reproducibles | P1 | S1.1 (parcial: lock versionado y sin `pettier`), S1.3 |
+| G-56 | Invoicing y web sin Dockerfile; `package-lock.json` de invoicing ignorado; dependencia `pettier` | V | `faclab-invoicing/.gitignore:4`, `package.json:68` | Builds no reproducibles | P1 | S1.1 (lock versionado y sin `pettier`) y S1.3 (resuelta: Dockerfiles de invoicing y web, construidos en CI) |
 | G-57 | Sin tags ni versionado coordinado entre repos | V | `git tag` vacío en los cuatro | Despliegues incompatibles | P2 | S8.2 |
 | G-58 | PostgreSQL 14 llega al fin de soporte el 12/11/2026 | V | `docker-compose.yml`, política de versiones de PostgreSQL | Sin parches de seguridad | P1 | S1.2 (resuelta: compose local y CI en PostgreSQL 17) |
 | G-59 | Sin infraestructura de producción, respaldos ni plan de recuperación | V | No hay manifiestos en ningún repo | Pérdida de datos tributarios | P0 (antes del piloto) | S8.1, S8.3 |
