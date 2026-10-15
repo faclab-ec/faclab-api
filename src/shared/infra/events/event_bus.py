@@ -7,6 +7,7 @@ import structlog
 from opentelemetry import trace
 
 from src.shared.domain.events import DomainEvent
+from src.shared.domain.exceptions import BaseError
 from src.shared.infra.telemetry_instruments import (
     event_handler_errors,
     events_published,
@@ -35,12 +36,16 @@ class EventBus:
         event_type_name = event_type.__name__
         handlers = cls._subscribers.get(event_type, [])
 
+        # A handler's error reaches the request through here; the handler's
+        # own span records it, with the status that matches its kind
         with tracer.start_as_current_span(
             f"event.publish.{event_type_name}",
             attributes={
                 "event.type": event_type_name,
                 "event.handler_count": len(handlers),
             },
+            record_exception=False,
+            set_status_on_exception=False,
         ):
             logger.info(
                 "event_published",
@@ -57,6 +62,8 @@ class EventBus:
                         "event.type": event_type_name,
                         "event.handler": handler_name,
                     },
+                    record_exception=False,
+                    set_status_on_exception=False,
                 ) as span:
                     try:
                         if cls._accepts_session.get(id(handler), False):
@@ -64,6 +71,16 @@ class EventBus:
                         else:
                             handler(event)
                         span.set_status(trace.StatusCode.OK)
+                    except BaseError as e:
+                        # E.g. not enough stock: the request answers 4xx
+                        logger.warning(
+                            "event_handler_rejected",
+                            handler=handler_name,
+                            event_type=event_type_name,
+                            error_code=e.error_code,
+                        )
+                        span.set_attribute("faclab.error.code", e.error_code)
+                        raise
                     except Exception as e:
                         logger.error(
                             "event_handler_error",

@@ -6,6 +6,7 @@ from typing import Generic, TypeVar
 import structlog
 from opentelemetry import trace
 
+from src.shared.domain.exceptions import BaseError
 from src.shared.infra.telemetry_instruments import (
     handler_duration,
     handler_errors,
@@ -35,8 +36,13 @@ class CommandHandler(Generic[TCommand, TResult], ABC):
             "command.name": command_name,
         }
 
+        # The status is set below: a domain error is an expected outcome, not
+        # a failure of the system
         with tracer.start_as_current_span(
-            f"command.{command_name}", attributes=attributes
+            f"command.{command_name}",
+            attributes=attributes,
+            record_exception=False,
+            set_status_on_exception=False,
         ) as span:
             logger.info(
                 "command_started",
@@ -58,6 +64,20 @@ class CommandHandler(Generic[TCommand, TResult], ABC):
                 handler_duration.record(elapsed_ms, attributes)
                 span.set_status(trace.StatusCode.OK)
                 return result
+            except BaseError as exc:
+                elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+                logger.warning(
+                    "command_rejected",
+                    command=command_name,
+                    handler=handler_name,
+                    error_code=exc.error_code,
+                    error_type=type(exc).__name__,
+                    duration_ms=elapsed_ms,
+                )
+                handler_errors.add(1, {**attributes, "error.kind": "domain"})
+                handler_duration.record(elapsed_ms, attributes)
+                span.set_attribute("faclab.error.code", exc.error_code)
+                raise
             except Exception as exc:
                 elapsed = time.perf_counter() - start
                 elapsed_ms = round(elapsed * 1000, 2)
@@ -69,7 +89,7 @@ class CommandHandler(Generic[TCommand, TResult], ABC):
                     error_type=type(exc).__name__,
                     duration_ms=elapsed_ms,
                 )
-                handler_errors.add(1, attributes)
+                handler_errors.add(1, {**attributes, "error.kind": "unexpected"})
                 handler_duration.record(elapsed_ms, attributes)
                 span.set_status(trace.StatusCode.ERROR, str(exc))
                 span.record_exception(exc)
