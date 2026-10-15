@@ -75,8 +75,6 @@ configure_logging(
 
 logger = structlog.get_logger(__name__)
 
-origins = ["http://localhost:3000", "http://localhost:5173"]
-
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -126,6 +124,7 @@ app = FastAPI(
     version=_docs.version,
     description=_docs.description,
     openapi_tags=_docs.openapi_tags,
+    openapi_url="/openapi.json" if _docs.enabled else None,
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,
@@ -181,7 +180,7 @@ _SCALAR_TEMPLATE = """<!DOCTYPE html>
     data-url="{schema_url}"
     data-configuration='{config}'
   ></script>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.74.0"></script>
 </body>
 </html>"""
 
@@ -372,7 +371,7 @@ app.add_middleware(AuthMiddleware, token_service=JwtTokenService())
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -396,7 +395,7 @@ app.include_router(health_router.router)
 logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())
 
 # ---------------------------------------------------------------------------
-# Doc endpoints (only registered when DOCS_ENABLED=true)
+# Doc endpoints and root redirect (only registered when DOCS_ENABLED=true)
 # ---------------------------------------------------------------------------
 
 if _docs.enabled:
@@ -424,15 +423,9 @@ if _docs.enabled:
     async def pos_openapi_schema():
         return JSONResponse(_filtered_schema(("/api/pos", "/api/auth")))
 
-
-# ---------------------------------------------------------------------------
-# Root
-# ---------------------------------------------------------------------------
-
-
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse("/docs")
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return RedirectResponse("/docs")
 
 
 wireup_fastapi_setup(wireup_container, app)
