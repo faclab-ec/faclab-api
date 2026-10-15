@@ -90,7 +90,7 @@
 | G-43 | El refresh token no rota ni detecta reutilización | V | `src/auth/app/commands/refresh_token.py:32-51` | Un refresh robado sirve durante 7 días | P1 | S1.4 (resuelta: rota en cada refresh; reutilizarlo revoca la sesión, `TOKEN_REUSED`) |
 | G-44 | Tokens (incluido el refresh) en `localStorage` | V | `faclab-web/src/shared/lib/auth/tokenStorage.ts` | Robo de tokens mediante inyección de scripts (XSS) | P2 | S1.4 (resuelta: refresh en cookie HttpOnly `SameSite=Strict`, access token en memoria) |
 | G-45 | Textos internos de `ValueError` y PyJWT en las respuestas | V | `src/shared/infra/middlewares.py:188-195`, `token_service.py:80` | Fuga de detalles internos | P2 | S1.4 (resuelta: mensajes genéricos con código estable; el detalle solo va al log) |
-| G-46 | El log de validación puede incluir una contraseña en texto plano | P | `src/shared/infra/middlewares.py:127` | Credenciales en logs | P1 | S1.4 (resuelta: el log de validación no incluye `input` y hay redacción mínima de claves sensibles), S1.5 (política completa) |
+| G-46 | El log de validación puede incluir una contraseña en texto plano | P | `src/shared/infra/middlewares.py:127` | Credenciales en logs | P1 | S1.4 (resuelta: el log de validación no incluye `input` y hay redacción mínima de claves sensibles), S1.5 (resuelta: lista bloqueada completa de OBSERVABILITY.md §4.6) |
 | G-47 | Login sin hash para usuarios inexistentes (enumeración por tiempo) | P | `src/auth/app/commands/login.py:39-43` | Enumeración de usuarios | P3 | S1.4 (resuelta: hash ficticio para usuarios inexistentes; también se bloquean) |
 | G-48 | Invoicing comparte el secreto HS256 y puede emitir tokens para el core | V | `faclab-invoicing/src/shared/infra/http/auth.ts:45-109` | Un compromiso de invoicing compromete todo | P2 | S6.1 |
 | G-49 | Kafka sin TLS ni SASL; kafka-ui sin autenticación | V | `faclab-infra/docker-compose.yml` | Aceptable solo en red privada | P2 | S8.1 |
@@ -115,17 +115,17 @@
 
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
-| G-61 | El middleware de OTel queda dentro del de errores: logs HTTP sin `trace_id`; errores de dominio marcan el span como error | V | `main.py:227` vs `:360-368` | No se correlacionan logs y trazas; tasa de error inflada | P1 | S1.5 |
-| G-62 | El procesador que agrega `trace_id` a los logs nunca se ejecuta | V | `src/shared/infra/logging.py:42-49` | Ídem | P1 | S1.5 |
-| G-63 | Probablemente no hay spans de consultas SQL | P | `src/shared/infra/database.py:3`, `main.py:46` | Sin visibilidad de la base | P2 | S1.5 |
-| G-64 | Sin `service.version`; sampler no *parent-based*; exportador sin TLS fijo | V | `src/shared/infra/adapters/telemetry.py:39-58` | Trazas cortadas entre servicios; sin comparación por versión | P2 | S1.5 |
-| G-65 | Errores de dominio registrados como ERROR | V | `src/shared/app/commands.py` | Ruido que tapa errores reales | P2 | S1.5 |
-| G-66 | Sin redacción de datos sensibles en logs (core e invoicing) | V | `logging.py`, `faclab-invoicing/src/shared/logger.ts` | Fuga de datos personales o credenciales | P1 | S1.5 |
-| G-67 | Spans de Kafka sin convenciones semánticas; span del productor de invoicing huérfano; invoicing no vacía telemetría al apagar | V | `producer.py:96-111`, `kafka-producer.ts:25-35`, `server.ts:30` | Trazas incompletas | P2 | S1.5 |
+| G-61 | El middleware de OTel queda dentro del de errores: logs HTTP sin `trace_id`; errores de dominio marcan el span como error | V | `main.py:227` vs `:360-368` | No se correlacionan logs y trazas; tasa de error inflada | P1 | S1.5 (resuelta: el middleware de OTel se agrega al final y queda por fuera; un 404 de dominio deja el span sin error y con `http.response.status_code`) |
+| G-62 | El procesador que agrega `trace_id` a los logs nunca se ejecuta | V | `src/shared/infra/logging.py:42-49` | Ídem | P1 | S1.5 (resuelta: `add_trace_context` lee el span activo; cada log lleva `trace_id`, `span_id`, `http.request.id` y `event.name`) |
+| G-63 | Probablemente no hay spans de consultas SQL | P | `src/shared/infra/database.py:3`, `main.py:46` | Sin visibilidad de la base | P2 | S1.5 (resuelta: se instrumenta el engine de los requests; las consultas del relay y del readiness no inician trazas) |
+| G-64 | Sin `service.version`; sampler no *parent-based*; exportador sin TLS fijo | V | `src/shared/infra/adapters/telemetry.py:39-58` | Trazas cortadas entre servicios; sin comparación por versión | P2 | S1.5 (resuelta: `service.version` desde `SERVICE_VERSION`, `service.namespace`, `deployment.environment.name`, sampler `ParentBased` y TLS con `OTEL_EXPORTER_OTLP_INSECURE`) |
+| G-65 | Errores de dominio registrados como ERROR | V | `src/shared/app/commands.py` | Ruido que tapa errores reales | P2 | S1.5 (resuelta: comandos, consultas y handlers de eventos registran los errores de dominio como WARN sin marcar el span; `handler.errors` separa `error.kind`) |
+| G-66 | Sin redacción de datos sensibles en logs (core e invoicing) | V | `logging.py`, `faclab-invoicing/src/shared/logger.ts` | Fuga de datos personales o credenciales | P1 | S1.5 (resuelta: lista bloqueada de §4.6 en structlog y en pino, a cualquier profundidad; falta enmascarar cédula, RUC y email) |
+| G-67 | Spans de Kafka sin convenciones semánticas; span del productor de invoicing huérfano; invoicing no vacía telemetría al apagar | V | `producer.py:96-111`, `kafka-producer.ts:25-35`, `server.ts:30` | Trazas incompletas | P2 | S1.5 (resuelta: `send <tópico>` y `process <tópico>` con atributos `messaging.*` en core e invoicing; el relay continúa la traza del request; invoicing vacía la telemetría al salir) |
 | G-68 | Sin métricas de negocio ni de cola (outbox pendiente, edad, facturas pendientes, latencia del SRI por operación) | V | `telemetry_instruments.py`, `metrics.ts` | Los problemas los reportan los clientes | P1 | S7.1, S7.2 |
 | G-69 | Frontend sin telemetría | V | Búsqueda sin resultados | Errores de interfaz invisibles | P2 | S7.3 |
 | G-70 | SigNoz no desplegado; sin dashboards ni alertas versionados | V | `deploy/common/dashboards/.gitkeep` | Sin detección temprana | P1 | S7.5, S8.6 |
-| G-71 | `x-request-id` del cliente aceptado sin validar y no devuelto en la respuesta | V | `src/shared/infra/middlewares.py:152` | Inyección en logs; correlación difícil | P3 | S1.5 |
+| G-71 | `x-request-id` del cliente aceptado sin validar y no devuelto en la respuesta | V | `src/shared/infra/middlewares.py:152` | Inyección en logs; correlación difícil | P3 | S1.5 (resuelta: `RequestIdMiddleware` valida el UUID o genera uno, lo devuelve y lo agrega a logs y span) |
 
 ### 2.7 API e integraciones
 

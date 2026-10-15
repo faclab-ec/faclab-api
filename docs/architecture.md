@@ -266,7 +266,11 @@ src/shared/
 ```
 HTTP POST /api/admin/sales/{id}/items
     │
+    ├─ OpenTelemetryMiddleware (span del request, por fuera de todo)
     ├─ CORS Middleware
+    ├─ SecurityHeadersMiddleware
+    ├─ RequestIdMiddleware (X-Request-Id validado → logs, span y respuesta)
+    ├─ BodySizeLimitMiddleware
     ├─ ErrorHandlingMiddleware
     │      ├─ captura DomainError → 400
     │      ├─ captura NotFoundError → 404
@@ -291,27 +295,38 @@ HTTP POST /api/admin/sales/{id}/items
 
 ## Observabilidad
 
-Cada `CommandHandler` y `QueryHandler` instrumenta automaticamente:
+El estándar completo está en [architecture/OBSERVABILITY.md](architecture/OBSERVABILITY.md).
 
-```python
-# En CommandHandler.execute() (generado por el base)
-with tracer.start_as_current_span(handler_name) as span:
-    span.set_attribute("handler.type", "command")
-    try:
-        result = await self.execute(command)
-        invocation_counter.add(1, {"status": "success"})
-        duration_histogram.record(elapsed, {"status": "success"})
-        return result
-    except Exception as e:
-        span.record_exception(e)
-        invocation_counter.add(1, {"status": "error"})
-        raise
+- **Arranque** (`main.py`): `configure_logging()`, luego `OpenTelemetry.setup()` (proveedores de
+  trazas, métricas y logs), después el contenedor, que crea e instrumenta el engine de los requests, y al
+  final `instrument_app()`, para que el middleware de OTel quede por fuera de los propios.
+- **Recurso**: `service.name`, `service.namespace=faclab`, `service.version` (`SERVICE_VERSION`, de la
+  imagen) y `deployment.environment.name`.
+- **Trazas**:
+  - span HTTP con convenciones estables (`http.response.status_code`, `http.route`); `/health/*` no se traza;
+  - `command.*`, `query.*`, `event.publish.*` y `event.handle.*` por cada handler;
+  - consultas SQL del engine de los requests;
+  - `send <tópico>` (relay del outbox, hijo del contexto guardado con el mensaje) y `process <tópico>`
+    (consumidor).
+- **Errores**: un error de dominio (`BaseError`) es WARN y no marca el span como error; solo los
+  inesperados son ERROR. `handler.errors` lleva `error.kind=domain|unexpected`.
+- **Muestreo**: `ParentBased(TraceIdRatioBased)`; las consultas sin padre (polls del relay, readiness) no
+  inician trazas.
+- **Logs** (structlog): cada línea lleva `trace_id`, `span_id`, `http.request.id` (en HTTP) y `event.name`
+  (`outbox_publish_failed` → `outbox.publish.failed`). En JSON también el servicio, la versión, el
+  entorno y la traza de las excepciones. `redact_sensitive` oculta contraseñas, tokens, cookies, secretos,
+  certificados, claves privadas, XML y firmas.
+
+Variables:
+
 ```
-
-Configuracion OTEL via variables de entorno:
-
-```
-OTEL_OTLP_ENDPOINT=http://collector:4317
+OTEL_ENABLED=true
+OTEL_OTLP_ENDPOINT=http://signoz-otel-collector:4317   # SigNoz local en faclab_network
+OTEL_EXPORTER_OTLP_INSECURE=true                        # por defecto solo en local
 OTEL_SERVICE_NAME=faclab-core
 OTEL_SAMPLING_RATE=1.0
+SERVICE_VERSION=dev                                     # la imagen lo fija en el build
 ```
+
+SigNoz local: `faclab-infra/scripts/signoz.sh up` (la primera vez, crear la cuenta en
+`http://localhost:8080`).

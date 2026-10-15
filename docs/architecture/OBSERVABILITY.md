@@ -6,16 +6,18 @@
 
 ## 1. Estado actual
 
+Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71.
+
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
 | SDK | OTel Python 1.32 (trazas, métricas y logs por OTLP gRPC) | OTel sdk-node 0.214 | Ninguno |
-| Auto-instrumentación | FastAPI, SQLAlchemy (probablemente sin spans de consultas), logging | HTTP, AWS SDK, pino, Fastify | — |
-| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `kafka.send.*`, `kafka.consume.*` | Consumo y producción de Kafka, DLQ, SOAP | — |
+| Auto-instrumentación | FastAPI (middleware por fuera del de errores, convenciones HTTP estables) y SQLAlchemy del engine de los requests | HTTP, AWS SDK, pino, Fastify | — |
+| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>` (también la DLQ), SOAP | — |
 | Logs | structlog (JSON fuera de local) + OTLP | pino + OTLP | `console.error` |
-| Correlación de logs | **Rota** (G-61, G-62) | Por instrumentación de pino | — |
-| Métricas propias | `handler.*`, `events.*`, `kafka.*` | `kafka.consumer.*`, `dlq.message.count`, `soap.call.duration` | — |
-| Recurso | `service.name`, `deployment.environment` (sin versión) | `service.version` fijo en `1.0.0` | — |
-| Redacción | No | No | — |
+| Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` por instrumentación de pino | — |
+| Métricas propias | `handler.*` (con `error.kind`), `events.*`, `kafka.*` | `kafka.consumer.*`, `dlq.message.count`, `soap.call.duration` | — |
+| Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | — |
+| Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | — |
 | Dashboards y alertas | No existen | No existen | — |
 
 Lo que se conserva:
@@ -71,7 +73,7 @@ equivalentes.
 | `timestamp` | Sí | ISO 8601 en UTC |
 | `severity` | Sí | `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL` |
 | `message` | Sí | Frase legible: qué pasó y, si aplica, qué hacer |
-| `event.name` | Sí | Identificador estable `<dominio>.<acción>[.<resultado>]`, por ejemplo `sale.confirmed`, `outbox.publish.failed`, `sri.authorization.rejected` |
+| `event.name` | Sí | Identificador estable `<dominio>.<acción>[.<resultado>]`, por ejemplo `sale.confirmed`, `outbox.publish.failed`, `sri.authorization.rejected`. En el core sale del evento de structlog (`outbox_publish_failed` → `outbox.publish.failed`); un log de otra librería toma el nombre de su logger |
 | `service.name`, `service.version`, `deployment.environment.name` | Sí | Del recurso (los agrega el SDK o el Collector) |
 | `trace_id`, `span_id` | Si hay span activo | Correlación con trazas |
 | `http.request.id` | En HTTP | Id de solicitud (`X-Request-Id`), validado como UUID o generado |
@@ -168,8 +170,10 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
     inyecta el contexto activo (G-67).
   - El consumidor crea `process <tópico>` (kind CONSUMER) como hijo del contexto extraído.
   - Cuando procesa en lote, usa *links* en vez de padre.
-- Outbox: el relay crea `send <tópico>` con link al contexto guardado en el mensaje, en vez de una raíz
-  huérfana.
+- Outbox: el relay crea `send <tópico>` como **hijo** del contexto guardado con el mensaje e inyecta su
+  propio contexto. Así la venta queda en una sola traza: request → `send sales.confirmed` →
+  `process sales.confirmed` → `send invoices` → `process invoices`. Un link en vez de padre la partiría
+  en dos (decidido en S1.5). Los links quedan para lotes y mensajes fallidos.
 - Reintentos y mensajes fallidos: cada intento es un span nuevo con `faclab.retry.attempt`. El envío a
   fallidos crea un span `dead_letter <tópico>` con link al original.
 
@@ -193,6 +197,9 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 ### 5.3 Muestreo
 
 - `ParentBased(TraceIdRatioBased(r))` en todos los servicios; `r = 1.0` mientras el volumen lo permita.
+- En el core, la raíz no inicia trazas para spans CLIENT sin padre (`SkipBackgroundQueries`): son las
+  consultas del relay del outbox y del readiness, cada pocos segundos. Una consulta dentro de un request
+  o de un mensaje sigue la decisión de su padre.
 - Cuando se necesite reducir costo, se aplica `tail_sampling` en el Collector: 100 % de las trazas con
   error, 100 % de las que superan 1 s y un porcentaje del resto.
 
@@ -285,6 +292,11 @@ advertencias se revisan en horario laboral.
 
 ### 9.1 Python (faclab-core)
 
+Implementado en S1.5 (`src/shared/infra/adapters/telemetry.py`, `logging.py`, `middlewares.py`):
+`OpenTelemetry.setup()` antes del engine y de la app, `instrument_app()` después de los middlewares,
+`OTEL_SEMCONV_STABILITY_OPT_IN=http` por defecto y `RequestIdMiddleware`. En JSON, cada línea lleva
+además `service.name`, `service.version` y `deployment.environment.name`, y la traza de las excepciones.
+
 - Paquetes `opentelemetry-*` alineados en una sola versión.
 - Inicialización:
   - Configurar los proveedores **antes** de crear el engine y la app.
@@ -299,10 +311,14 @@ advertencias se revisan en horario laboral.
   4. `JSONRenderer` fuera de local.
 - Contexto: `bind_contextvars(tenant_id=..., branch_id=..., request_id=...)` al entrar en cada solicitud,
   mensaje o tarea, y limpieza al salir.
-- Exportador con TLS configurable (`OTEL_EXPORTER_OTLP_INSECURE` solo en local).
+- Exportador con TLS configurable (`OTEL_EXPORTER_OTLP_INSECURE`: verdadero por defecto solo en local).
 - `shutdown()` en el lifespan, como ya existe.
 
 ### 9.2 Node (faclab-invoicing)
+
+Implementado en S1.5. La redacción usa `formatters.log` de pino en vez de `redact`: compara las claves sin
+distinguir mayúsculas y a cualquier profundidad, igual que el core, y corre antes de serializar, así que
+también cubre lo que la instrumentación de pino envía por OTLP. `sdk.shutdown()` espera como máximo 5 s.
 
 - `@opentelemetry/sdk-node` con `service.version` del build, no fijo.
 - pino con `redact` para las claves de la lista bloqueada.
@@ -336,11 +352,19 @@ advertencias se revisan en horario laboral.
   - Spans de las rutas críticas.
   - Dashboard o alerta si el cambio introduce un modo de fallo nuevo.
 
+### 10.1 SigNoz local
+
+`faclab-infra/scripts/signoz.sh up` levanta SigNoz (v0.118.0) y une su collector a `faclab_network`. Los
+contenedores exportan a `http://signoz-otel-collector:4317` y los procesos del host a
+`http://localhost:4317`. La primera vez hay que crear la cuenta de administrador en
+`http://localhost:8080`: hasta entonces SigNoz no le entrega configuración al collector y nada escucha
+en 4317.
+
 ## 11. Implementación por sesiones
 
 | Sesión | Alcance |
 |---|---|
-| S1.5 | Corregir correlación, middleware, SQL, recurso, sampler, niveles, redacción, spans de Kafka, apagado de invoicing; SigNoz local conectado a `faclab_network` |
+| S1.5 | Corregir correlación, middleware, SQL, recurso, sampler, niveles, redacción, spans de Kafka, apagado de invoicing; SigNoz local conectado a `faclab_network` (terminada 2026-10-15) |
 | S7.1 | Métricas técnicas y de negocio del core (outbox, fallidos, ventas, inventario, login) |
 | S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, certificados) |
 | S7.3 | SDK web, errores de interfaz y web vitals |
