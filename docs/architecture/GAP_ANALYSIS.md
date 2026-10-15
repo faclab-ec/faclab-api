@@ -83,15 +83,15 @@
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
 | G-38 | No hay `.dockerignore` y el Dockerfile hace `COPY . .` | V | `Dockerfile:24,33` | `.env`, `.venv`, `.git` y datos de Postgres dentro de la imagen | P0 | S1.2 (resuelta: `.dockerignore` e imagen de producción con copia explícita) |
-| G-39 | Campos de actor tomados del cuerpo de la solicitud | V | `src/pos/sales/infra/validators.py:69-73`, `src/pos/cash/infra/validators.py:16-20`, `src/pos/refund/infra/validators.py:37-41` | Suplantación en caja, devoluciones y ajustes | P0 | S1.4 |
+| G-39 | Campos de actor tomados del cuerpo de la solicitud | V | `src/pos/sales/infra/validators.py:69-73`, `src/pos/cash/infra/validators.py:16-20`, `src/pos/refund/infra/validators.py:37-41` | Suplantación en caja, devoluciones y ajustes | P0 | S1.4 (resuelta: turnos, ventas POS, caja, devoluciones, ajustes y transferencias toman el autor del token; nombre completo del usuario o su username) |
 | G-40 | `DOCS_ENABLED` activo por defecto en producción | V | `config/base.py:73` | Exposición del contrato interno | P1 | S1.2 (resuelta: falso por defecto fuera de local; también apaga `/openapi.json`) |
 | G-41 | CORS fijo en código | V | `main.py:70` | No se puede desplegar el frontend en otro dominio | P1 | S1.2 (resuelta: `CORS_ORIGINS`, obligatoria fuera de local) |
-| G-42 | Sin límite de intentos de login ni rate limiting | V | Búsqueda sin resultados | Fuerza bruta | P1 | S1.4, S6.3 |
-| G-43 | El refresh token no rota ni detecta reutilización | V | `src/auth/app/commands/refresh_token.py:32-51` | Un refresh robado sirve durante 7 días | P1 | S1.4 |
-| G-44 | Tokens (incluido el refresh) en `localStorage` | V | `faclab-web/src/shared/lib/auth/tokenStorage.ts` | Robo de tokens mediante inyección de scripts (XSS) | P2 | S1.4 |
-| G-45 | Textos internos de `ValueError` y PyJWT en las respuestas | V | `src/shared/infra/middlewares.py:188-195`, `token_service.py:80` | Fuga de detalles internos | P2 | S1.4 |
-| G-46 | El log de validación puede incluir una contraseña en texto plano | P | `src/shared/infra/middlewares.py:127` | Credenciales en logs | P1 | S1.4, S1.5 |
-| G-47 | Login sin hash para usuarios inexistentes (enumeración por tiempo) | P | `src/auth/app/commands/login.py:39-43` | Enumeración de usuarios | P3 | S1.4 |
+| G-42 | Sin límite de intentos de login ni rate limiting | V | Búsqueda sin resultados | Fuerza bruta | P1 | S1.4 (resuelta para el login: bloqueo por usuario e IP, `LOGIN_LOCKED`), S6.3 (límite general del API) |
+| G-43 | El refresh token no rota ni detecta reutilización | V | `src/auth/app/commands/refresh_token.py:32-51` | Un refresh robado sirve durante 7 días | P1 | S1.4 (resuelta: rota en cada refresh; reutilizarlo revoca la sesión, `TOKEN_REUSED`) |
+| G-44 | Tokens (incluido el refresh) en `localStorage` | V | `faclab-web/src/shared/lib/auth/tokenStorage.ts` | Robo de tokens mediante inyección de scripts (XSS) | P2 | S1.4 (resuelta: refresh en cookie HttpOnly `SameSite=Strict`, access token en memoria) |
+| G-45 | Textos internos de `ValueError` y PyJWT en las respuestas | V | `src/shared/infra/middlewares.py:188-195`, `token_service.py:80` | Fuga de detalles internos | P2 | S1.4 (resuelta: mensajes genéricos con código estable; el detalle solo va al log) |
+| G-46 | El log de validación puede incluir una contraseña en texto plano | P | `src/shared/infra/middlewares.py:127` | Credenciales en logs | P1 | S1.4 (resuelta: el log de validación no incluye `input` y hay redacción mínima de claves sensibles), S1.5 (política completa) |
+| G-47 | Login sin hash para usuarios inexistentes (enumeración por tiempo) | P | `src/auth/app/commands/login.py:39-43` | Enumeración de usuarios | P3 | S1.4 (resuelta: hash ficticio para usuarios inexistentes; también se bloquean) |
 | G-48 | Invoicing comparte el secreto HS256 y puede emitir tokens para el core | V | `faclab-invoicing/src/shared/infra/http/auth.ts:45-109` | Un compromiso de invoicing compromete todo | P2 | S6.1 |
 | G-49 | Kafka sin TLS ni SASL; kafka-ui sin autenticación | V | `faclab-infra/docker-compose.yml` | Aceptable solo en red privada | P2 | S8.1 |
 | G-50 | No hay bitácora de auditoría | V | Búsqueda sin resultados | Sin trazabilidad de cambios de precio, ajustes, caja y usuarios | P1 | S3.5 |
