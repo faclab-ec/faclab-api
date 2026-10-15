@@ -57,6 +57,11 @@ COPY alembic ./alembic
 COPY config ./config
 COPY src ./src
 
+# Tag or commit SHA, reported as service.version in every log and span:
+# docker build --target production --build-arg SERVICE_VERSION=$(git rev-parse --short HEAD) .
+ARG SERVICE_VERSION=dev
+ENV SERVICE_VERSION=${SERVICE_VERSION}
+
 # uvicorn reads both: WEB_CONCURRENCY is the number of workers, and the API is
 # only reachable through the reverse proxy on the internal network (ADR-0011),
 # so its X-Forwarded-* headers are trusted

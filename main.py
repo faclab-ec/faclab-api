@@ -58,6 +58,7 @@ from src.shared.infra.logging import configure_logging
 from src.shared.infra.middlewares import (
     BodySizeLimitMiddleware,
     ErrorHandlingMiddleware,
+    RequestIdMiddleware,
     SecurityHeadersMiddleware,
     http_exception_handler,
     request_validation_exception_handler,
@@ -73,9 +74,17 @@ from src.suppliers.infra.routes import (
 configure_logging(
     log_level=config.LOG_LEVEL,
     json_output=config.ENVIRONMENT != "local",
+    service_name=config.OTEL_SERVICE_NAME,
+    service_version=config.SERVICE_VERSION,
+    environment=config.OTEL_ENVIRONMENT,
 )
 
 logger = structlog.get_logger(__name__)
+
+# Providers first: the database engine (created with the DI container) and the
+# app are instrumented against them
+otel = OpenTelemetry()
+otel.setup(config.get_otel_config())
 
 # ---------------------------------------------------------------------------
 # App
@@ -232,11 +241,8 @@ def _filtered_schema(path_prefixes: tuple[str, ...]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# OTEL + DI
+# DI (creates the requests' database engine)
 # ---------------------------------------------------------------------------
-
-otel = OpenTelemetry()
-otel.instrument(app, config.get_otel_config())
 
 wireup_container = create_wireup_container()
 src.wireup_container = wireup_container
@@ -359,28 +365,42 @@ auth_router.include_router(AuthRouter().router, tags=["Auth"])
 # Middleware
 # ---------------------------------------------------------------------------
 
-# FastAPI handles these before ErrorHandlingMiddleware sees them; register
-# handlers so they still use the error envelope.
-app.add_exception_handler(
-    RequestValidationError,
-    request_validation_exception_handler,  # ty: ignore[invalid-argument-type]
-)
-app.add_exception_handler(
-    StarletteHTTPException,
-    http_exception_handler,  # ty: ignore[invalid-argument-type]
-)
-app.add_middleware(AuthMiddleware, token_service=JwtTokenService())
-app.add_middleware(ErrorHandlingMiddleware)
-app.add_middleware(BodySizeLimitMiddleware, max_bytes=config.MAX_REQUEST_BODY_BYTES)
-app.add_middleware(SecurityHeadersMiddleware)
-# Added last so it is the outermost: 413s and errors keep their CORS headers
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+def add_middlewares(target: FastAPI) -> None:
+    """Error handlers and middlewares of the API. Each `add_middleware` wraps
+    the previous ones, so the last one added runs first."""
+    # FastAPI handles these before ErrorHandlingMiddleware sees them; register
+    # handlers so they still use the error envelope.
+    target.add_exception_handler(
+        RequestValidationError,
+        request_validation_exception_handler,  # ty: ignore[invalid-argument-type]
+    )
+    target.add_exception_handler(
+        StarletteHTTPException,
+        http_exception_handler,  # ty: ignore[invalid-argument-type]
+    )
+    target.add_middleware(AuthMiddleware, token_service=JwtTokenService())
+    target.add_middleware(ErrorHandlingMiddleware)
+    target.add_middleware(
+        BodySizeLimitMiddleware, max_bytes=config.MAX_REQUEST_BODY_BYTES
+    )
+    # Outside the size limit, so a 413 carries the request id too
+    target.add_middleware(RequestIdMiddleware)
+    target.add_middleware(SecurityHeadersMiddleware)
+    # 413s and errors keep their CORS headers
+    target.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+add_middlewares(app)
+# After every middleware, so OTel's is the outermost: the error middleware runs
+# inside the request span and the span ends with the final status code
+otel.instrument_app(app)
 
 app.include_router(admin_router)
 app.include_router(pos_router)

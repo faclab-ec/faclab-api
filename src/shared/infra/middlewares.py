@@ -159,25 +159,53 @@ async def http_exception_handler(
     return JSONResponse(status_code=exc.status_code, content=body, headers=exc.headers)
 
 
+def _valid_request_id(value: str | None) -> str:
+    """The client's X-Request-Id when it is a UUID, a new one otherwise: the id
+    reaches logs and responses, so free text from outside never does."""
+    if value:
+        try:
+            return str(uuid.UUID(value))
+        except ValueError:
+            pass
+    return str(uuid.uuid4())
+
+
+class RequestIdMiddleware:
+    """Gives each request an id: `request.state.request_id`, `http.request.id`
+    in its logs and span, and the `X-Request-Id` response header."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = _valid_request_id(Headers(scope=scope).get("x-request-id"))
+        scope.setdefault("state", {})["request_id"] = request_id
+        trace.get_current_span().set_attribute("http.request.id", request_id)
+
+        async def send_with_request_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Request-Id"] = request_id
+            await send(message)
+
+        with structlog.contextvars.bound_contextvars(**{"http.request.id": request_id}):
+            await self.app(scope, receive, send_with_request_id)
+
+
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-        request.state.request_id = request_id
-        bind_vars = {"request_id": request_id}
-
-        span = trace.get_current_span()
-        ctx = span.get_span_context()
-        if ctx.is_valid:
-            bind_vars["trace_id"] = format(ctx.trace_id, "032x")
-            bind_vars["span_id"] = format(ctx.span_id, "016x")
-
-        structlog.contextvars.bind_contextvars(**bind_vars)
-
+        request_id = _request_id(request)
         try:
             response = await call_next(request)
             return response
         except BaseError as exc:
+            # Expected outcome (4xx): a warning, and the request span keeps
+            # its status; only the code is recorded to search by it
             status = _resolve_status(exc)
+            trace.get_current_span().set_attribute("faclab.error.code", exc.error_code)
             logger.warning(
                 "domain_error",
                 error_code=exc.error_code,
@@ -209,16 +237,15 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=422, content=body)
         except Exception as exc:
             logger.exception("unhandled_exception", error=str(exc))
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
             body = _build_error_response(
                 error_code="INTERNAL_ERROR",
                 message="Internal Server Error",
                 request_id=request_id,
             )
             return JSONResponse(status_code=500, content=body)
-        finally:
-            structlog.contextvars.unbind_contextvars(
-                "request_id", "trace_id", "span_id"
-            )
 
 
 _SECURITY_HEADERS = {
@@ -302,6 +329,7 @@ class BodySizeLimitMiddleware:
         body = _build_error_response(
             error_code="REQUEST_TOO_LARGE",
             message=f"Request body exceeds {self.max_bytes} bytes",
-            request_id=headers.get("x-request-id") or str(uuid.uuid4()),
+            request_id=scope.get("state", {}).get("request_id")
+            or _valid_request_id(headers.get("x-request-id")),
         )
         await JSONResponse(status_code=413, content=body)(scope, receive, send)
