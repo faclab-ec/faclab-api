@@ -1,6 +1,6 @@
 # ADR-0003: Identidad global con membresías, token por empresa y sucursal validada
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-10-15; empresa y membresías implementadas en S2.1, sucursal pendiente en S2.5)
 - **Relacionado:** [ADR-0002](0002-multiempresa-base-compartida-con-rls.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -35,6 +35,22 @@ La empresa activa no puede depender de un `tenant_id` enviado libremente por el 
     consultar la base.
 - Usuarios de plataforma (soporte, operación SaaS) usan un rol de plataforma separado, sin membresía
   implícita en las empresas.
+
+### Precisiones de la implementación (S2.1)
+
+- Con una sola empresa activa, el login abre la sesión directamente. Con varias, devuelve un token de
+  selección de 5 minutos (`typ=selection`, que no sirve como access token) y la lista. Sin ninguna,
+  responde `NO_ACTIVE_TENANT` (403).
+- Cambiar de empresa es `select-tenant` con el access token vigente: exige que la sesión actual siga
+  activa y la cierra.
+- Un token de acceso sin `tid` recibe `TENANT_REQUIRED` (401).
+- La contraseña y el nombre son globales. Por eso, el admin de una empresa no puede cambiarlos si el
+  usuario también pertenece a otra (`USER_IN_OTHER_TENANTS`, 409).
+- Activar y desactivar desde la administración actúan sobre la membresía. `users.is_active` queda como
+  bloqueo global de la cuenta.
+- Pendiente:
+  - el rol de plataforma (S8.5);
+  - `user_branch_access`, `bids` y `X-Branch-Id` (S2.5).
 
 ## Consecuencias
 

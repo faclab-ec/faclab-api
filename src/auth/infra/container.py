@@ -6,8 +6,10 @@ from src.auth.app.commands.deactivate_user import DeactivateUserCommandHandler
 from src.auth.app.commands.login import LoginCommandHandler
 from src.auth.app.commands.logout import LogoutCommandHandler
 from src.auth.app.commands.refresh_token import RefreshTokenCommandHandler
+from src.auth.app.commands.select_tenant import SelectTenantCommandHandler
 from src.auth.app.commands.update_user_profile import UpdateUserProfileCommandHandler
 from src.auth.app.commands.update_user_role import UpdateUserRoleCommandHandler
+from src.auth.app.queries.get_my_tenants import GetMyTenantsQueryHandler
 from src.auth.app.queries.get_users import (
     GetUserByIdQueryHandler,
     ListUsersQueryHandler,
@@ -36,6 +38,7 @@ INJECTABLES = [
     LoginCommandHandler,
     LogoutCommandHandler,
     RefreshTokenCommandHandler,
+    SelectTenantCommandHandler,
     ChangePasswordCommandHandler,
     UpdateUserRoleCommandHandler,
     UpdateUserProfileCommandHandler,
@@ -44,4 +47,5 @@ INJECTABLES = [
     AdminResetPasswordCommandHandler,
     ListUsersQueryHandler,
     GetUserByIdQueryHandler,
+    GetMyTenantsQueryHandler,
 ]

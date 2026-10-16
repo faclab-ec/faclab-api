@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import IntEnum
+from uuid import UUID
 
 from src.shared.domain.entities import Entity
 
@@ -15,10 +16,13 @@ class Role(IntEnum):
 
 @dataclass
 class User(Entity):
+    """Identidad global: el usuario y el email son únicos en la plataforma.
+    El rol vive en cada membresía (`src/tenancy`); `is_active` bloquea la
+    cuenta en todas las empresas."""
+
     username: str
     email: str
     password_hash: str
-    role: Role = Role.VIEWER
     id: int | None = None
     is_active: bool = True
     must_change_password: bool = False
@@ -36,9 +40,6 @@ class User(Entity):
 
     def deactivate(self) -> None:
         self.is_active = False
-
-    def change_role(self, role: Role) -> None:
-        self.role = role
 
     def change_password(self, password_hash: str) -> None:
         """El usuario fijó su propia contraseña"""
@@ -61,7 +62,8 @@ class User(Entity):
 class AuthSession(Entity):
     """Sesión abierta con un login.
 
-    Sus tokens llevan su id (`sid`). El refresh solo funciona mientras la
+    Pertenece a una empresa (`tenant_id`): sus tokens llevan esa empresa
+    (`tid`) y su id (`sid`). El refresh solo funciona mientras la
     sesión esté activa, así que revocarla (logout, cambio de contraseña,
     desactivar al usuario) cierra la sesión aunque el refresh token no haya
     vencido. Cada refresh extiende su vencimiento.
@@ -74,6 +76,7 @@ class AuthSession(Entity):
 
     user_id: int
     expires_at: datetime
+    tenant_id: UUID
     id: int | None = None
     revoked_at: datetime | None = None
     created_at: datetime | None = None
@@ -134,9 +137,13 @@ class LoginLockoutPolicy:
 
 @dataclass(frozen=True)
 class AuthenticatedUser:
+    """Quien hace la solicitud, según su access token: el rol y los permisos
+    son los de su membresía en la empresa `tenant_id`."""
+
     id: int
     username: str
     role: Role
+    tenant_id: UUID
     permissions: frozenset = field(default_factory=frozenset)
     must_change_password: bool = False
     session_id: int | None = None

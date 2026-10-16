@@ -16,6 +16,14 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
     TokenReusedError,
 )
+from src.tenancy.app.types import TenantAccess
+from src.tenancy.domain.entities import Membership, Tenant
+
+TENANT = Tenant(ruc="1799999990001", legal_name="Empresa")
+ACCESS = TenantAccess(
+    tenant=TENANT,
+    membership=Membership(tenant_id=TENANT.id, user_id=1, role=Role.MANAGER, id=3),
+)
 
 
 def _user(**overrides) -> User:
@@ -24,7 +32,6 @@ def _user(**overrides) -> User:
         "username": "alice",
         "email": "alice@example.com",
         "password_hash": "h",
-        "role": Role.ADMIN,
         "is_active": True,
     }
     defaults.update(overrides)
@@ -35,6 +42,7 @@ def _session(**overrides) -> AuthSession:
     defaults: dict[str, Any] = {
         "id": 7,
         "user_id": 1,
+        "tenant_id": TENANT.id,
         "expires_at": datetime.now() + timedelta(days=1),
         "refresh_jti": "current",
     }
@@ -47,6 +55,7 @@ def _claims(sid: int | None = 7, jti: str | None = "current") -> TokenClaims:
         sub=1,
         username="alice",
         role=1,
+        tid=TENANT.id,
         typ="refresh",
         iat=0,
         exp=0,
@@ -56,12 +65,14 @@ def _claims(sid: int | None = 7, jti: str | None = "current") -> TokenClaims:
     )
 
 
-def _handler(user=None, session=None, claims=None):
+def _handler(user=None, session=None, claims=None, access=ACCESS):
     repo = MagicMock()
     repo.get_by_id.return_value = user
     session_repo = MagicMock()
     session_repo.first_for_update.return_value = session
     session_repo.update.side_effect = lambda s: s
+    memberships = MagicMock()
+    memberships.active_access.return_value = access
     token_service = MagicMock()
     token_service.refresh_ttl_seconds = 604800
     token_service.refresh_reuse_grace_seconds = 30
@@ -69,7 +80,7 @@ def _handler(user=None, session=None, claims=None):
     token_service.issue_pair.return_value = TokenPair(
         access_token="a2", refresh_token="r2", expires_in=900
     )
-    handler = RefreshTokenCommandHandler(repo, session_repo, token_service)
+    handler = RefreshTokenCommandHandler(repo, session_repo, memberships, token_service)
     return handler, repo, session_repo, token_service
 
 
@@ -79,13 +90,16 @@ def test_refresh_rotates_the_token_and_extends_the_session():
 
     result = handler.handle(RefreshTokenCommand(refresh_token="old"))
 
-    assert result.access_token == "a2"
+    assert result.pair.access_token == "a2"
+    assert result.tenant == TENANT
     token_service.decode_refresh.assert_called_once_with("old")
     session_repo.first_for_update.assert_called_once_with(id=7)
     assert session.refresh_jti not in (None, "current")
     assert session.previous_refresh_jti == "current"
     assert session.refreshed_at is not None
-    token_service.issue_pair.assert_called_once_with(_user(), 7, session.refresh_jti)
+    token_service.issue_pair.assert_called_once_with(
+        _user(), ACCESS.membership, 7, session.refresh_jti
+    )
     session_repo.update.assert_called_once_with(session)
     assert session.expires_at > datetime.now() + timedelta(days=6)
 
@@ -102,7 +116,9 @@ def test_the_token_just_replaced_gets_the_current_one_within_the_grace():
 
     # Not rotated again, so both tabs end up with the same token
     assert (session.refresh_jti, session.previous_refresh_jti) == ("new", "current")
-    token_service.issue_pair.assert_called_once_with(_user(), 7, "new")
+    token_service.issue_pair.assert_called_once_with(
+        _user(), ACCESS.membership, 7, "new"
+    )
     assert session.revoked_at is None
 
 
@@ -174,6 +190,24 @@ def test_refresh_inactive_user_raises_invalid_token():
 
     with pytest.raises(InvalidTokenError):
         handler.handle(RefreshTokenCommand(refresh_token="old"))
+
+
+def test_the_session_keeps_its_tenant_with_the_current_role():
+    handler, _, _, token_service = _handler(_user(), _session())
+
+    handler.handle(RefreshTokenCommand(refresh_token="old"))
+
+    memberships = handler.memberships
+    memberships.active_access.assert_called_once_with(1, TENANT.id)
+    assert token_service.issue_pair.call_args.args[1].role == Role.MANAGER
+
+
+def test_a_session_ends_when_its_membership_or_tenant_is_no_longer_active():
+    handler, _, _, token_service = _handler(_user(), _session(), access=None)
+
+    with pytest.raises(InvalidTokenError):
+        handler.handle(RefreshTokenCommand(refresh_token="old"))
+    token_service.issue_pair.assert_not_called()
 
 
 def test_refresh_unknown_user_raises_invalid_token():

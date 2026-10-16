@@ -1,10 +1,15 @@
-"""Bootstrap the initial admin user. Idempotent.
+"""Bootstrap the default tenant and its first admin. Idempotent.
 
 Usage:
     AUTH_SEED_USERNAME=admin \\
     AUTH_SEED_EMAIL=admin@faclab.local \\
     AUTH_SEED_PASSWORD=ChangeMe123! \\
+    [AUTH_SEED_TENANT_RUC=1799999990001] \\
+    [AUTH_SEED_TENANT_NAME="Empresa de prueba"] \\
     python -m src.auth.seed
+
+The tenant settings have local defaults (a made-up RUC); staging and production
+require them. More tenants: `python -m src.tenancy.provision`.
 """
 
 import sys
@@ -12,49 +17,49 @@ import sys
 import structlog
 from environs import Env
 
-import src
-from src.auth.app.commands.create_user import (
-    CreateUserCommand,
-    CreateUserCommandHandler,
-)
-from src.auth.app.repositories import UserRepository
-from src.auth.domain.entities import Role
-from src.container import create_wireup_container
-from src.shared.infra.events.scope import create_sync_scope
+from src.shared.domain.exceptions import BaseError
+from src.tenancy.app.commands.provision_tenant import ProvisionTenantCommand
+from src.tenancy.provision import provision
 
 logger = structlog.get_logger(__name__)
+
+# Valid check digit, made up: no real company
+LOCAL_TENANT_RUC = "1799999990001"
+LOCAL_TENANT_NAME = "Empresa de prueba"
 
 
 def main() -> int:
     env = Env()
     env.read_env()
+    if env("ENVIRONMENT", "local") == "local":
+        ruc = env("AUTH_SEED_TENANT_RUC", LOCAL_TENANT_RUC)
+        legal_name = env("AUTH_SEED_TENANT_NAME", LOCAL_TENANT_NAME)
+    else:
+        ruc = env("AUTH_SEED_TENANT_RUC")
+        legal_name = env("AUTH_SEED_TENANT_NAME")
     username = env("AUTH_SEED_USERNAME")
-    email = env("AUTH_SEED_EMAIL")
-    password = env("AUTH_SEED_PASSWORD")
+    command = ProvisionTenantCommand(
+        ruc=ruc,
+        legal_name=legal_name,
+        admin_username=username,
+        admin_email=env("AUTH_SEED_EMAIL"),
+        admin_password=env("AUTH_SEED_PASSWORD"),
+    )
 
-    src.wireup_container = create_wireup_container()
+    try:
+        result = provision(command)
+    except BaseError as exc:
+        logger.error("auth_seed_failed", error_code=exc.error_code, error=str(exc))
+        return 1
 
-    with create_sync_scope() as scope:
-        repo = scope.get(UserRepository)
-        if repo.get_by_username(username) is not None:
-            logger.info("auth_seed_skip_exists", username=username)
-            return 0
-
-        handler = scope.get(CreateUserCommandHandler)
-        result = handler.handle(
-            CreateUserCommand(
-                username=username,
-                email=email,
-                password=password,
-                role=Role.ADMIN.value,
-                is_active=True,
-            )
-        )
-        logger.info(
-            "auth_seed_created",
-            user_id=result["id"],
-            username=username,
-        )
+    logger.info(
+        "auth_seed_done",
+        tenant_id=str(result["tenant_id"]),
+        tenant_created=result["tenant_created"],
+        username=username,
+        user_created=result["user_created"],
+        membership_created=result["membership_created"],
+    )
     return 0
 
 

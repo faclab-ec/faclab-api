@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -18,6 +19,30 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+class SelectTenantRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    tenant_id: UUID = Field(description="One of the tenants the login listed")
+
+
+class TenantResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: UUID
+    ruc: str
+    legal_name: str
+    trade_name: str | None = None
+
+
+class TenantAccessResponse(TenantResponse):
+    role: int = Field(
+        description=(
+            "The user's role in this tenant "
+            "(1=ADMIN, 2=MANAGER, 3=OPERATOR, 4=VIEWER, 5=CASHIER)"
+        )
+    )
+
+
 class TokenPairResponse(BaseModel):
     """The refresh token is not here: it goes in the HttpOnly `faclab_refresh`
     cookie."""
@@ -27,6 +52,20 @@ class TokenPairResponse(BaseModel):
     access_token: str = Field(description="Short-lived access token")
     token_type: str = Field("Bearer", description="Token scheme")
     expires_in: int = Field(description="Access token lifetime in seconds")
+    tenant: TenantResponse = Field(description="The tenant of the session")
+
+
+class TenantSelectionResponse(BaseModel):
+    """Login of a user with several tenants: no session yet. Exchange the
+    selection token for one in POST /api/auth/select-tenant."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    selection_token: str = Field(
+        description="Send it as `Authorization: Bearer` to select-tenant"
+    )
+    expires_in: int = Field(description="Selection token lifetime in seconds")
+    tenants: list[TenantAccessResponse]
 
 
 class AuthenticatedUserResponse(BaseModel):
@@ -48,6 +87,13 @@ class AuthenticatedUserResponse(BaseModel):
             "permission-gated route; all protected endpoints will return 403 "
             "PASSWORD_CHANGE_REQUIRED."
         ),
+    )
+    tenant: TenantResponse = Field(
+        description="The tenant of the session; role and permissions are those here"
+    )
+    tenants: list[TenantAccessResponse] = Field(
+        default=[],
+        description="Every tenant the user can switch to with select-tenant",
     )
 
 

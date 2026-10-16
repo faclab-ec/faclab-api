@@ -38,5 +38,8 @@ downgrade:  ## Downgrade the database to the previous migration
 seed:  ## Seed the database with test data
 	docker compose run --rm api python -m scripts.seed
 
-seed-admin:  ## Bootstrap the initial admin user (idempotent)
+seed-admin:  ## Bootstrap the default tenant and its first admin (idempotent)
 	docker compose run --rm api python -m src.auth.seed
+
+provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ..."
+	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m src.tenancy.provision $(args)

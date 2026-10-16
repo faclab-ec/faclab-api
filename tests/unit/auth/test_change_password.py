@@ -7,7 +7,7 @@ from src.auth.app.commands.change_password import (
     ChangePasswordCommand,
     ChangePasswordCommandHandler,
 )
-from src.auth.domain.entities import Role, User
+from src.auth.domain.entities import User
 from src.auth.domain.events import UserPasswordChanged
 from src.auth.domain.exceptions import InvalidCredentialsError
 from src.shared.domain.exceptions import NotFoundError
@@ -19,7 +19,6 @@ def _make_user(**overrides):
         "username": "testuser",
         "email": "test@example.com",
         "password_hash": "hashed_old",
-        "role": Role.ADMIN,
     }
     defaults.update(overrides)
     return User(**defaults)

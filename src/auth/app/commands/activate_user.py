@@ -1,27 +1,34 @@
 from dataclasses import dataclass
+from uuid import UUID
 
 from wireup import injectable
 
+from src.auth.app.commands.members import get_user, lock_membership, member_dict
 from src.auth.app.repositories import UserRepository
 from src.shared.app.commands import Command, CommandHandler
-from src.shared.domain.exceptions import NotFoundError
+from src.tenancy.app.repositories import MembershipRepository
 
 
 @dataclass
 class ActivateUserCommand(Command):
+    tenant_id: UUID
     user_id: int = 0
 
 
 @injectable(lifetime="scoped")
 class ActivateUserCommandHandler(CommandHandler[ActivateUserCommand, dict]):
-    def __init__(self, repo: UserRepository):
+    """Devuelve al usuario a la empresa (activa su membresía)"""
+
+    def __init__(self, repo: UserRepository, memberships: MembershipRepository):
         self.repo = repo
+        self.memberships = memberships
 
     def _handle(self, command: ActivateUserCommand) -> dict:
-        user = self.repo.get_by_id(command.user_id)
-        if user is None:
-            raise NotFoundError(f"User with id {command.user_id} not found")
+        membership = lock_membership(
+            self.memberships, command.tenant_id, command.user_id
+        )
+        user = get_user(self.repo, command.user_id)
 
-        user.activate()
-        user = self.repo.update(user)
-        return user.dict()
+        membership.activate()
+        membership = self.memberships.update(membership)
+        return member_dict(user, membership)

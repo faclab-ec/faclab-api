@@ -5,6 +5,7 @@ from src.auth.domain.exceptions import (
     InvalidTokenError,
     PasswordChangeRequiredError,
     PermissionDeniedError,
+    TenantRequiredError,
     TokenExpiredError,
 )
 from src.auth.domain.permissions import Permission
@@ -24,6 +25,8 @@ def get_current_user(request: Request) -> AuthenticatedUser:
         raise TokenExpiredError("access token expired")
     if reason == "invalid_token":
         raise InvalidTokenError("invalid access token")
+    if reason == "tenant_required":
+        raise TenantRequiredError()
     raise PermissionDeniedError("authentication required")
 
 

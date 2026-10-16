@@ -1,13 +1,17 @@
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
+import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 import main  # configures logging at import, so caplog's handler comes after it
+from config import config
 from src.auth.domain.entities import Role, User
 from src.auth.infra.token_service import JwtTokenService
 from src.shared.infra.middlewares import (
@@ -15,17 +19,38 @@ from src.shared.infra.middlewares import (
     ErrorHandlingMiddleware,
     SecurityHeadersMiddleware,
 )
+from src.tenancy.domain.entities import Membership
 
 
 def _access_token() -> str:
-    user = User(
-        id=1,
-        username="ana",
-        email="ana@example.com",
-        password_hash="h",
-        role=Role.ADMIN,
+    user = User(id=1, username="ana", email="ana@example.com", password_hash="h")
+    membership = Membership(tenant_id=uuid4(), user_id=1, role=Role.ADMIN)
+    return JwtTokenService().issue_pair(user, membership, 1, "jti").access_token
+
+
+def test_a_token_without_tenant_must_log_in_again():
+    now = datetime.now(UTC)
+    legacy = jwt.encode(
+        {
+            "sub": "1",
+            "sid": 1,
+            "username": "ana",
+            "role": int(Role.ADMIN),
+            "typ": "access",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+            "iss": config.JWT_ISSUER,
+        },
+        config.JWT_SECRET,
+        algorithm="HS256",
     )
-    return JwtTokenService().issue_pair(user, 1, "jti").access_token
+
+    response = TestClient(main.app).get(
+        "/api/admin/products", headers={"Authorization": f"Bearer {legacy}"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["errors"][0]["code"] == "TENANT_REQUIRED"
 
 
 def test_a_short_new_password_does_not_reach_the_log(caplog):

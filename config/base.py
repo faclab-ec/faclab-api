@@ -81,6 +81,9 @@ class BaseConfig:
     # (two tabs refreshing at once, a lost response) gets the current session
     # instead of revoking it. 0 makes every reuse revoke the session
     JWT_REFRESH_REUSE_GRACE_SECONDS = env.int("JWT_REFRESH_REUSE_GRACE_SECONDS", 30)
+    # A user with several tenants gets a selection token at login and trades it
+    # for a session of one tenant in POST /api/auth/select-tenant
+    JWT_SELECTION_TTL_SECONDS = env.int("JWT_SELECTION_TTL_SECONDS", 300)
 
     #
     # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)
@@ -134,7 +137,7 @@ Authentication endpoints live under `/api/auth` and are included in **all three 
 
 ## Authentication
 
-All endpoints — except `POST /api/auth/login`, `POST /api/auth/refresh` and `POST /api/auth/logout` — require a **JWT Bearer token** (`HS256`) in the `Authorization` header:
+All endpoints — except `POST /api/auth/login`, `POST /api/auth/select-tenant`, `POST /api/auth/refresh` and `POST /api/auth/logout` — require a **JWT Bearer token** (`HS256`) in the `Authorization` header:
 
 ```
 Authorization: Bearer <accessToken>
@@ -142,11 +145,13 @@ Authorization: Bearer <accessToken>
 
 ### Flow
 
-1. **Login** — `POST /api/auth/login` with `{ "username": "...", "password": "..." }`. The body carries the `accessToken`; the refresh token comes in the `faclab_refresh` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/api/auth`).
-2. **Authenticated calls** — send `Authorization: Bearer <accessToken>` on every request.
+1. **Login** — `POST /api/auth/login` with `{ "username": "...", "password": "..." }`. Every token belongs to one tenant (company), the `tid` claim:
+   - a user with **one** active tenant gets the `accessToken` and its `tenant` in the body, and the refresh token in the `faclab_refresh` cookie (`HttpOnly`, `SameSite=Strict`, `Path=/api/auth`);
+   - a user with **several** gets a short-lived `selectionToken` and the list of `tenants`, and calls `POST /api/auth/select-tenant` with `{ "tenantId": "..." }` and `Authorization: Bearer <selectionToken>`, which answers like a one-tenant login.
+2. **Authenticated calls** — send `Authorization: Bearer <accessToken>` on every request. **Switching tenants** is `POST /api/auth/select-tenant` with the current access token: it opens a session for the new tenant and closes the current one.
 3. **Refresh** — when the access token expires (the API responds with a `TOKEN_EXPIRED` error), `POST /api/auth/refresh` with no body: the cookie identifies the session. Each refresh rotates the cookie; presenting an already used refresh token revokes the session (`TOKEN_REUSED`).
 4. **Logout** — `POST /api/auth/logout` revokes the session and clears the cookie.
-5. **Profile / change password** — `GET /api/auth/me` and `POST /api/auth/change-password` operate on the currently authenticated user.
+5. **Profile / change password** — `GET /api/auth/me` (the user, the active tenant and the tenants the user can switch to) and `POST /api/auth/change-password` operate on the currently authenticated user.
 
 Browsers must send these three auth calls with credentials (`withCredentials` / `credentials: "include"`). By default, after 5 failed logins in 15 minutes the username is locked for 15 minutes (`LOGIN_LOCKED`, 429), even with the right password.
 
@@ -156,16 +161,17 @@ Browsers must send these three auth calls with credentials (`withCredentials` / 
 |-------|-------------|--------------|
 | Access | 15 minutes | `JWT_ACCESS_TTL_SECONDS` |
 | Refresh | 7 days | `JWT_REFRESH_TTL_SECONDS` |
+| Tenant selection | 5 minutes | `JWT_SELECTION_TTL_SECONDS` |
 
 The signing secret is `JWT_SECRET` and the issuer claim is `JWT_ISSUER` (default `faclab-core`).
 
 ### Roles & permissions
 
-Authorization is permission-based. Each user holds a single role, and each role expands to a set of granular permissions (e.g. `product:read`, `sale:cancel`, `pos:operate`, `user:manage`). Endpoints declare the permissions they require; missing permissions return a `PERMISSION_DENIED` error.
+Authorization is permission-based. A user holds one role in each tenant (its membership), and each role expands to a set of granular permissions (e.g. `product:read`, `sale:cancel`, `pos:operate`, `user:manage`). Endpoints declare the permissions they require; missing permissions return a `PERMISSION_DENIED` error.
 
 | Role | Intended for | Highlights |
 |------|--------------|------------|
-| **ADMIN** | System owner / IT | Full access, including user management. |
+| **ADMIN** | Company owner / IT | Full access to the tenant, including its user management. |
 | **MANAGER** | Store / branch manager | Everything except user management and POS. Can confirm purchases, cancel sales, approve refunds. |
 | **OPERATOR** | Back-office / warehouse staff | Inventory writes (movements, lots, serials, adjustments, transfers), product/customer/supplier writes, sale & purchase create — no critical approvals, no POS, no user management. |
 | **VIEWER** | Auditors / accountants | Read-only across the catalog, inventory, sales, purchases, customers, suppliers, alerts and reports. |
@@ -179,8 +185,11 @@ Authorization is permission-based. Each user holds a single role, and each role 
 | 401 | `TOKEN_EXPIRED` | Access (or refresh) token expired — call `/api/auth/refresh` or log in again. |
 | 401 | `INVALID_TOKEN` | Token is malformed or signed with a wrong secret, or its session ended — log in again. |
 | 401 | `TOKEN_REUSED` | An already used refresh token was presented; the session was revoked — log in again. |
+| 401 | `TENANT_REQUIRED` | The access token has no tenant (issued before tenants existed) — log in again. |
 | 403 | `PERMISSION_DENIED` | No token, or authenticated but missing one or more permissions required by the endpoint. |
 | 403 | `PASSWORD_CHANGE_REQUIRED` | The user must change their password first. |
+| 403 | `NO_ACTIVE_TENANT` | Right credentials, but the user has no active membership in an active tenant. |
+| 403 | `TENANT_ACCESS_DENIED` | `select-tenant` with a tenant the user can't enter. |
 | 429 | `LOGIN_LOCKED` | Too many failed logins for this username or client; wait and try again. |
 
 ### Trying it from this UI

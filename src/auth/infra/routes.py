@@ -13,6 +13,15 @@ from src.auth.app.commands.refresh_token import (
     RefreshTokenCommand,
     RefreshTokenCommandHandler,
 )
+from src.auth.app.commands.select_tenant import (
+    SelectTenantCommand,
+    SelectTenantCommandHandler,
+)
+from src.auth.app.commands.sessions import OpenedSession
+from src.auth.app.queries.get_my_tenants import (
+    GetMyTenantsQuery,
+    GetMyTenantsQueryHandler,
+)
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.exceptions import InvalidTokenError
 from src.auth.infra.cookies import (
@@ -25,6 +34,10 @@ from src.auth.infra.validators import (
     AuthenticatedUserResponse,
     ChangePasswordRequest,
     LoginRequest,
+    SelectTenantRequest,
+    TenantAccessResponse,
+    TenantResponse,
+    TenantSelectionResponse,
     TokenPairResponse,
 )
 from src.shared.infra.dependencies import get_meta
@@ -44,15 +57,32 @@ class AuthRouter:
     def _setup_routes(self):
         self.router.post(
             "/login",
-            response_model=DataResponse[TokenPairResponse],
+            response_model=DataResponse[TokenPairResponse | TenantSelectionResponse],
             summary="Login with username and password",
             description=(
-                "Returns the access token and sets the refresh token in the "
-                "HttpOnly `faclab_refresh` cookie (Path=/api/auth). Too many "
-                "failures lock the username or the client IP: `LOGIN_LOCKED` (429)."
+                "A user with one active tenant gets the access token and the "
+                "tenant, and the refresh token in the HttpOnly `faclab_refresh` "
+                "cookie (Path=/api/auth). A user with several gets a "
+                "`selectionToken` and the `tenants` to choose from with "
+                "`POST /api/auth/select-tenant`. Without an active tenant: "
+                "`NO_ACTIVE_TENANT` (403). Too many failures lock the username or "
+                "the client IP: `LOGIN_LOCKED` (429)."
             ),
             responses=RESPONSES_COMMAND,
         )(self.login)
+        self.router.post(
+            "/select-tenant",
+            response_model=DataResponse[TokenPairResponse],
+            summary="Open a session in one of the user's tenants",
+            description=(
+                "Send the login's `selectionToken`, or the current access token to "
+                "switch tenants (the current session ends), as "
+                "`Authorization: Bearer`. Answers like a one-tenant login and sets "
+                "the refresh cookie. A tenant the user can't enter: "
+                "`TENANT_ACCESS_DENIED` (403)."
+            ),
+            responses=RESPONSES_COMMAND,
+        )(self.select_tenant)
         self.router.post(
             "/refresh",
             response_model=DataResponse[TokenPairResponse],
@@ -90,23 +120,48 @@ class AuthRouter:
         request: Request,
         response: Response,
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[TokenPairResponse]:
-        pair = handler.handle(
+    ) -> DataResponse[TokenPairResponse | TenantSelectionResponse]:
+        result = handler.handle(
             LoginCommand(
                 username=credentials.username,
                 password=credentials.password,
                 ip_address=request.client.host if request.client else None,
             )
         )
-        set_refresh_cookie(response, pair.refresh_token)
+        if result.session is not None:
+            return DataResponse(data=_session(response, result.session), meta=meta)
+        if result.selection is None:
+            raise RuntimeError("login returned neither a session nor a selection")
         return DataResponse(
-            data=TokenPairResponse(
-                access_token=pair.access_token,
-                token_type=pair.token_type,
-                expires_in=pair.expires_in,
+            data=TenantSelectionResponse(
+                selection_token=result.selection.token,
+                expires_in=result.selection.expires_in,
+                tenants=[
+                    TenantAccessResponse.model_validate(
+                        {**access.tenant.dict(), "role": access.membership.role}
+                    )
+                    for access in result.tenants
+                ],
             ),
             meta=meta,
         )
+
+    def select_tenant(
+        self,
+        handler: Injected[SelectTenantCommandHandler],
+        body: SelectTenantRequest,
+        request: Request,
+        response: Response,
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[TokenPairResponse]:
+        header = request.headers.get("authorization") or ""
+        scheme, _, token = header.partition(" ")
+        if scheme.lower() != "bearer" or not token.strip():
+            raise InvalidTokenError("no token; log in again")
+        session = handler.handle(
+            SelectTenantCommand(tenant_id=body.tenant_id, token=token.strip())
+        )
+        return DataResponse(data=_session(response, session), meta=meta)
 
     def refresh(
         self,
@@ -117,16 +172,8 @@ class AuthRouter:
     ) -> DataResponse[TokenPairResponse]:
         if not refresh_token:
             raise InvalidTokenError("no refresh token; log in again")
-        pair = handler.handle(RefreshTokenCommand(refresh_token=refresh_token))
-        set_refresh_cookie(response, pair.refresh_token)
-        return DataResponse(
-            data=TokenPairResponse(
-                access_token=pair.access_token,
-                token_type=pair.token_type,
-                expires_in=pair.expires_in,
-            ),
-            meta=meta,
-        )
+        session = handler.handle(RefreshTokenCommand(refresh_token=refresh_token))
+        return DataResponse(data=_session(response, session), meta=meta)
 
     def logout(
         self,
@@ -142,9 +189,13 @@ class AuthRouter:
 
     def me(
         self,
+        handler: Injected[GetMyTenantsQueryHandler],
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[AuthenticatedUserResponse]:
+        tenants = handler.handle(
+            GetMyTenantsQuery(tenant_id=user.tenant_id, user_id=user.id)
+        )
         return DataResponse(
             data=AuthenticatedUserResponse(
                 id=user.id,
@@ -153,6 +204,11 @@ class AuthRouter:
                 role=int(user.role),
                 permissions=sorted(p.value for p in user.permissions),
                 must_change_password=user.must_change_password,
+                tenant=TenantResponse.model_validate(tenants["tenant"]),
+                tenants=[
+                    TenantAccessResponse.model_validate(access)
+                    for access in tenants["tenants"]
+                ],
             ),
             meta=meta,
         )
@@ -171,3 +227,14 @@ class AuthRouter:
                 keep_session_id=user.session_id,
             )
         )
+
+
+def _session(response: Response, session: OpenedSession) -> TokenPairResponse:
+    """Sets the session's refresh cookie and returns the rest of its tokens"""
+    set_refresh_cookie(response, session.pair.refresh_token)
+    return TokenPairResponse(
+        access_token=session.pair.access_token,
+        token_type=session.pair.token_type,
+        expires_in=session.pair.expires_in,
+        tenant=TenantResponse.model_validate(session.tenant.dict()),
+    )

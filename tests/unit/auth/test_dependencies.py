@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
@@ -7,6 +8,7 @@ from src.auth.domain.exceptions import (
     InvalidTokenError,
     PasswordChangeRequiredError,
     PermissionDeniedError,
+    TenantRequiredError,
     TokenExpiredError,
 )
 from src.auth.domain.permissions import Permission
@@ -15,6 +17,8 @@ from src.auth.infra.dependencies import (
     get_optional_user,
     require_permission,
 )
+
+TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
 
 def _request(**state):
@@ -26,6 +30,7 @@ def _admin() -> AuthenticatedUser:
         id=1,
         username="admin",
         role=Role.ADMIN,
+        tenant_id=TENANT,
         permissions=frozenset({Permission.USER_MANAGE}),
     )
 
@@ -54,6 +59,11 @@ def test_get_current_user_raises_invalid_token():
         get_current_user(_request(current_user=None, auth_error="invalid_token"))
 
 
+def test_get_current_user_raises_tenant_required():
+    with pytest.raises(TenantRequiredError):
+        get_current_user(_request(current_user=None, auth_error="tenant_required"))
+
+
 def test_get_current_user_returns_user():
     user = _admin()
     assert get_current_user(_request(current_user=user)) is user
@@ -70,6 +80,7 @@ def test_require_permission_raises_when_missing():
         id=2,
         username="viewer",
         role=Role.VIEWER,
+        tenant_id=TENANT,
         permissions=frozenset(),
     )
     dep = require_permission(Permission.USER_MANAGE)
@@ -82,6 +93,7 @@ def test_require_permission_blocks_when_must_change_password():
         id=3,
         username="cashier",
         role=Role.CASHIER,
+        tenant_id=TENANT,
         permissions=frozenset({Permission.POS_OPERATE}),
         must_change_password=True,
     )

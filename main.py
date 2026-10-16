@@ -161,7 +161,11 @@ def _custom_openapi() -> dict:
         }
     }
     schema["security"] = [{"bearerAuth": []}]
-    for public_path in ("/api/auth/login", "/api/auth/refresh"):
+    for public_path in (
+        "/api/auth/login",
+        "/api/auth/select-tenant",
+        "/api/auth/refresh",
+    ):
         path_item = schema.get("paths", {}).get(public_path, {})
         for operation in path_item.values():
             if isinstance(operation, dict):

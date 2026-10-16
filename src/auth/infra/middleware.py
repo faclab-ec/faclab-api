@@ -2,7 +2,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.app.services.token_service import TokenService
 from src.auth.domain.entities import AuthenticatedUser, Role
-from src.auth.domain.exceptions import InvalidTokenError, TokenExpiredError
+from src.auth.domain.exceptions import (
+    InvalidTokenError,
+    TenantRequiredError,
+    TokenExpiredError,
+)
 from src.auth.domain.permissions import permissions_for
 
 
@@ -20,11 +24,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = header.split(" ", 1)[1].strip()
             try:
                 claims = self._token_service.decode_access(token)
+                if claims.role is None or claims.tid is None:
+                    raise InvalidTokenError("invalid token")
                 role = Role(claims.role)
                 request.state.current_user = AuthenticatedUser(
                     id=claims.sub,
                     username=claims.username,
                     role=role,
+                    tenant_id=claims.tid,
                     permissions=permissions_for(role),
                     must_change_password=claims.must_change_password,
                     session_id=claims.sid,
@@ -32,6 +39,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
             except TokenExpiredError:
                 request.state.auth_error = "token_expired"
+            except TenantRequiredError:
+                request.state.auth_error = "tenant_required"
             except InvalidTokenError:
                 request.state.auth_error = "invalid_token"
 

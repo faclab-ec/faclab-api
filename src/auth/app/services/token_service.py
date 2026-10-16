@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 from src.auth.domain.entities import User
+from src.tenancy.domain.entities import Membership
 
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "selection"]
 
 
 @dataclass(frozen=True)
@@ -16,16 +18,25 @@ class TokenPair:
 
 
 @dataclass(frozen=True)
+class SelectionToken:
+    """Proves the password was right; only good for choosing a tenant"""
+
+    token: str
+    expires_in: int
+
+
+@dataclass(frozen=True)
 class TokenClaims:
     sub: int
     username: str
-    role: int
     typ: TokenType
     iat: int
     exp: int
     iss: str
+    role: int | None = None  # the membership's role; selection tokens have none
+    tid: UUID | None = None  # the session's tenant; selection tokens have none
     must_change_password: bool = False
-    sid: int | None = None  # AuthSession id; tokens issued before sessions have none
+    sid: int | None = None  # AuthSession id; selection tokens have none
     jti: str | None = None  # refresh tokens only: which rotation of the session
     name: str | None = None  # access tokens only: the user's full name, if set
 
@@ -42,12 +53,25 @@ class TokenService(ABC):
         """How long the refresh token just replaced is still accepted"""
 
     @abstractmethod
-    def issue_pair(self, user: User, session_id: int, refresh_jti: str) -> TokenPair:
-        """Access and refresh tokens of the session; the refresh token carries
-        `refresh_jti`, the rotation the session currently accepts."""
+    def issue_pair(
+        self, user: User, membership: Membership, session_id: int, refresh_jti: str
+    ) -> TokenPair:
+        """Access and refresh tokens of the session, for the membership's tenant
+        (`tid`) and role; the refresh token carries `refresh_jti`, the rotation
+        the session currently accepts."""
 
     @abstractmethod
-    def decode_access(self, token: str) -> TokenClaims: ...
+    def issue_selection(self, user: User) -> SelectionToken:
+        """Short-lived token of a user with several tenants, exchanged for a
+        pair in POST /api/auth/select-tenant"""
+
+    @abstractmethod
+    def decode_access(self, token: str) -> TokenClaims:
+        """Raises TenantRequiredError when the token has no tenant"""
 
     @abstractmethod
     def decode_refresh(self, token: str) -> TokenClaims: ...
+
+    @abstractmethod
+    def decode_selection(self, token: str) -> TokenClaims:
+        """A selection token, or an access token of a user switching tenants"""

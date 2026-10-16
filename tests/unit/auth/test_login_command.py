@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.auth.app.commands.login import LoginCommand, LoginCommandHandler
+from src.auth.app.commands.login import LoginCommand, LoginCommandHandler, LoginResult
 from src.auth.app.repositories import LoginFailureRepository
-from src.auth.app.services.token_service import TokenPair
+from src.auth.app.services.token_service import SelectionToken, TokenPair
 from src.auth.domain.entities import (
     AuthSession,
     LoginFailure,
@@ -19,7 +19,10 @@ from src.auth.domain.exceptions import (
     InvalidCredentialsError,
     LoginFailedError,
     LoginLockedError,
+    NoActiveTenantError,
 )
+from src.tenancy.app.types import TenantAccess
+from src.tenancy.domain.entities import Membership, Tenant
 
 
 class InMemoryLoginFailures(LoginFailureRepository):
@@ -69,14 +72,27 @@ def _user(**overrides) -> User:
         "username": "alice",
         "email": "alice@example.com",
         "password_hash": "hashed",
-        "role": Role.ADMIN,
         "is_active": True,
     }
     defaults.update(overrides)
     return User(**defaults)
 
 
-def _handler(user=None, verify=True, failures=None):
+def _access(ruc: str = "1799999990001", role: Role = Role.ADMIN) -> TenantAccess:
+    tenant = Tenant(ruc=ruc, legal_name=f"Empresa {ruc}")
+    membership = Membership(tenant_id=tenant.id, user_id=1, role=role, id=5)
+    return TenantAccess(tenant=tenant, membership=membership)
+
+
+ONE_TENANT = [_access()]
+
+
+def _token(result: LoginResult) -> str:
+    assert result.session is not None
+    return result.session.pair.access_token
+
+
+def _handler(user=None, verify=True, failures=None, accesses=ONE_TENANT):
     repo = MagicMock()
     repo.get_by_username.return_value = user
     repo.update.side_effect = lambda u: u
@@ -86,18 +102,31 @@ def _handler(user=None, verify=True, failures=None):
     session_repo.create.side_effect = lambda session: AuthSession(
         id=42,
         user_id=session.user_id,
+        tenant_id=session.tenant_id,
         expires_at=session.expires_at,
         refresh_jti=session.refresh_jti,
     )
+    memberships = MagicMock()
+    memberships.active_accesses.return_value = accesses
     token_service = MagicMock()
     token_service.refresh_ttl_seconds = 604800
     token_service.issue_pair.return_value = TokenPair(
         access_token="a", refresh_token="r", expires_in=900
     )
+    token_service.issue_selection.return_value = SelectionToken(
+        token="s", expires_in=300
+    )
     publisher = MagicMock()
     failures = failures if failures is not None else InMemoryLoginFailures()
     handler = LoginCommandHandler(
-        repo, session_repo, failures, POLICY, hasher, token_service, publisher
+        repo,
+        session_repo,
+        failures,
+        memberships,
+        POLICY,
+        hasher,
+        token_service,
+        publisher,
     )
     return handler, repo, publisher, session_repo, token_service, hasher, failures
 
@@ -106,8 +135,11 @@ def test_login_with_valid_credentials_returns_pair_and_updates_last_login():
     handler, repo, publisher, *_ = _handler(user=_user())
     result = handler.handle(LoginCommand(username="alice", password="pw"))
 
-    assert result.access_token == "a"
-    assert result.refresh_token == "r"
+    assert result.session is not None
+    assert result.session.pair.access_token == "a"
+    assert result.session.pair.refresh_token == "r"
+    assert result.session.tenant == ONE_TENANT[0].tenant
+    assert result.selection is None
     repo.update.assert_called_once()
     updated = repo.update.call_args[0][0]
     assert updated.last_login_at is not None
@@ -162,8 +194,58 @@ def test_login_opens_a_session_that_lasts_as_long_as_the_refresh_token():
     assert session.user_id == 1
     assert (session.expires_at - datetime.now()).days == 6  # 7 days minus a moment
     assert session.refresh_jti
-    user, session_id, refresh_jti = token_service.issue_pair.call_args.args
+    user, membership, session_id, refresh_jti = token_service.issue_pair.call_args.args
     assert (user.id, session_id, refresh_jti) == (1, 42, session.refresh_jti)
+    assert membership is ONE_TENANT[0].membership
+
+
+def test_the_session_of_a_one_tenant_user_belongs_to_that_tenant():
+    access = _access(role=Role.CASHIER)
+    handler, _, _, session_repo, token_service, *_ = _handler(
+        user=_user(), accesses=[access]
+    )
+
+    handler.handle(LoginCommand(username="alice", password="pw"))
+
+    [session] = session_repo.create.call_args.args
+    assert session.tenant_id == access.tenant.id
+    assert token_service.issue_pair.call_args.args[1].role == Role.CASHIER
+
+
+def test_a_user_with_several_tenants_gets_a_selection_token_and_no_session():
+    accesses = [_access("1799999990001"), _access("0999999999001", Role.VIEWER)]
+    handler, repo, publisher, session_repo, token_service, *_ = _handler(
+        user=_user(), accesses=accesses
+    )
+
+    result = handler.handle(LoginCommand(username="alice", password="pw"))
+
+    assert result.session is None
+    assert result.selection == SelectionToken(token="s", expires_in=300)
+    assert result.tenants == accesses
+    session_repo.create.assert_not_called()
+    token_service.issue_pair.assert_not_called()
+    # The credentials were right: it is a login
+    repo.update.assert_called_once()
+    assert isinstance(publisher.publish.call_args[0][0], UserLoggedIn)
+
+
+def test_a_user_without_an_active_tenant_cannot_log_in():
+    failures = InMemoryLoginFailures()
+    failures.add(LoginFailure(username="alice", attempted_at=datetime.now()))
+    handler, repo, _, session_repo, *_ = _handler(
+        user=_user(), accesses=[], failures=failures
+    )
+
+    with pytest.raises(NoActiveTenantError) as exc:
+        handler.handle(LoginCommand(username="alice", password="pw"))
+
+    assert exc.value.error_code == "NO_ACTIVE_TENANT"
+    assert not exc.value.commit_transaction
+    session_repo.create.assert_not_called()
+    repo.update.assert_not_called()
+    # Right password: not one more failure, and nothing to clear either
+    assert len(failures.failures) == 1
 
 
 # Lockout
@@ -209,7 +291,7 @@ def test_failures_below_the_limit_do_not_lock():
     _fail_times(bad, 2)
 
     good, *_ = _handler(user=_user(), verify=True, failures=failures)
-    assert good.handle(LoginCommand(username="alice", password="pw")).access_token
+    assert _token(good.handle(LoginCommand(username="alice", password="pw")))
 
 
 def test_failures_outside_the_window_do_not_add_up():
@@ -221,7 +303,7 @@ def test_failures_outside_the_window_do_not_add_up():
     # The first two are outside the window that ends at the last failure, so
     # only one counts
     good, *_ = _handler(user=_user(), verify=True, failures=failures)
-    assert good.handle(LoginCommand(username="alice", password="pw")).access_token
+    assert _token(good.handle(LoginCommand(username="alice", password="pw")))
 
 
 def test_unknown_usernames_lock_too():
@@ -243,9 +325,9 @@ def test_failures_from_one_ip_lock_that_ip_for_every_username():
     with pytest.raises(LoginLockedError):
         good.handle(LoginCommand(username="alice", password="pw", ip_address="9.9.9.9"))
     # Another client can still log in as alice
-    assert good.handle(
-        LoginCommand(username="alice", password="pw", ip_address="5.5.5.5")
-    ).access_token
+    assert _token(
+        good.handle(LoginCommand(username="alice", password="pw", ip_address="5.5.5.5"))
+    )
 
 
 def test_a_successful_login_keeps_the_ip_failures():

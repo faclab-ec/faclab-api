@@ -11,6 +11,7 @@ import sys
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +25,9 @@ from src.auth.infra.models import AuthSessionModel, UserModel
 from src.auth.infra.token_service import JwtTokenService
 from src.shared.infra.database import Base
 from src.shared.infra.events.event_bus import EventBus
+from src.tenancy.domain.entities import Membership
+from src.tenancy.infra.models import MembershipModel
+from tests.integration.postgres.tenants import ensure_tenant
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -115,26 +119,43 @@ def client(pg_engine: Engine) -> TestClient:
 
 
 @pytest.fixture
+def tenant(pg_engine: Engine) -> UUID:
+    """The default tenant, where `auth_headers` users work unless told otherwise"""
+    return ensure_tenant(pg_engine)
+
+
+@pytest.fixture
 def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
-    """Return bearer headers for a persisted user with the given role."""
+    """Return bearer headers for a persisted user with the given role in a
+    tenant (the default one unless `tenant_id` is given)."""
 
     def _headers(
-        role: Role = Role.ADMIN, full_name: str | None = None
+        role: Role = Role.ADMIN,
+        full_name: str | None = None,
+        tenant_id: UUID | None = None,
+        username: str | None = None,
     ) -> dict[str, str]:
+        tenant_id = tenant_id or ensure_tenant(pg_engine)
+        username = username or f"{role.name.lower()}-test"
         with Session(bind=pg_engine) as session:
             model = UserModel(
-                username=f"{role.name.lower()}-test",
-                email=f"{role.name.lower()}@test.local",
+                username=username,
+                email=f"{username}@test.local",
                 password_hash="not-used",
-                role=int(role),
                 is_active=True,
                 must_change_password=False,
                 full_name=full_name,
             )
             session.add(model)
             session.flush()
+            session.add(
+                MembershipModel(
+                    tenant_id=tenant_id, user_id=model.id, role=int(role), active=True
+                )
+            )
             auth_session = AuthSessionModel(
                 user_id=model.id,
+                tenant_id=tenant_id,
                 expires_at=datetime.now() + timedelta(days=1),
                 refresh_jti="test-jti",
             )
@@ -146,10 +167,14 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
                 username=model.username,
                 email=model.email,
                 password_hash=model.password_hash,
-                role=role,
                 full_name=full_name,
             )
-        token = JwtTokenService().issue_pair(user, session_id, "test-jti").access_token
+        membership = Membership(tenant_id=tenant_id, user_id=model.id, role=role)
+        token = (
+            JwtTokenService()
+            .issue_pair(user, membership, session_id, "test-jti")
+            .access_token
+        )
         return {"Authorization": f"Bearer {token}"}
 
     return _headers

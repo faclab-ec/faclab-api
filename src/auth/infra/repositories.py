@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
@@ -9,7 +10,8 @@ from src.auth.app.repositories import (
     LoginFailureRepository,
     UserRepository,
 )
-from src.auth.domain.entities import AuthSession, LoginFailure, User
+from src.auth.app.types import TenantMember
+from src.auth.domain.entities import AuthSession, LoginFailure, Role, User
 from src.auth.domain.exceptions import (
     EmailAlreadyExistsError,
     UsernameAlreadyExistsError,
@@ -17,6 +19,8 @@ from src.auth.domain.exceptions import (
 from src.auth.infra.mappers import AuthSessionMapper, LoginFailureMapper, UserMapper
 from src.auth.infra.models import AuthSessionModel, LoginFailureModel, UserModel
 from src.shared.infra.repositories import SqlAlchemyRepository
+from src.tenancy.infra.mappers import MembershipMapper
+from src.tenancy.infra.models import MembershipModel
 
 
 @injectable(lifetime="scoped", as_type=UserRepository)
@@ -27,14 +31,65 @@ class SqlAlchemyUserRepository(SqlAlchemyRepository[User], UserRepository):
         "ix_users_email": EmailAlreadyExistsError,
     }
 
-    def __init__(self, session: Session, mapper: UserMapper):
+    def __init__(
+        self,
+        session: Session,
+        mapper: UserMapper,
+        membership_mapper: MembershipMapper,
+    ):
         super().__init__(session, mapper)
+        self.membership_mapper = membership_mapper
 
     def get_by_username(self, username: str) -> User | None:
         return self.first(username=username)
 
     def get_by_email(self, email: str) -> User | None:
         return self.first(email=email)
+
+    def get_member(self, tenant_id: UUID, user_id: int) -> TenantMember | None:
+        statement = _members(tenant_id).where(UserModel.id == user_id)
+        row = self.session.execute(statement).first()
+        return self._member(row) if row is not None else None
+
+    def paginate_members(
+        self,
+        tenant_id: UUID,
+        *,
+        role: Role | None = None,
+        is_active: bool | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        criteria = []
+        if role is not None:
+            criteria.append(MembershipModel.role == int(role))
+        if is_active is not None:
+            criteria.append(MembershipModel.active.is_(is_active))
+        statement = _members(tenant_id).where(*criteria).order_by(UserModel.id)
+        if limit is not None:
+            statement = statement.limit(limit)
+        if offset is not None:
+            statement = statement.offset(offset)
+        total = self.session.scalar(
+            select(func.count(MembershipModel.id))
+            .where(MembershipModel.tenant_id == tenant_id)
+            .where(*criteria)
+        )
+        return {
+            "total": total or 0,
+            "limit": limit,
+            "offset": offset,
+            "items": [
+                self._member(row).dict() for row in self.session.execute(statement)
+            ],
+        }
+
+    def _member(self, row) -> TenantMember:
+        user, membership = row
+        return TenantMember(
+            user=self.mapper.to_entity(user),
+            membership=self.membership_mapper.to_entity(membership),
+        )
 
 
 @injectable(lifetime="scoped", as_type=AuthSessionRepository)
@@ -47,7 +102,11 @@ class SqlAlchemyAuthSessionRepository(
         super().__init__(session, mapper)
 
     def revoke_all_for_user(
-        self, user_id: int, now: datetime, keep_session_id: int | None = None
+        self,
+        user_id: int,
+        now: datetime,
+        keep_session_id: int | None = None,
+        tenant_id: UUID | None = None,
     ) -> int:
         statement = (
             update(AuthSessionModel)
@@ -57,6 +116,8 @@ class SqlAlchemyAuthSessionRepository(
         )
         if keep_session_id is not None:
             statement = statement.where(AuthSessionModel.id != keep_session_id)
+        if tenant_id is not None:
+            statement = statement.where(AuthSessionModel.tenant_id == tenant_id)
         result = self.session.execute(statement)
         self.session.flush()
         return result.rowcount
@@ -101,6 +162,15 @@ class SqlAlchemyLoginFailureRepository(LoginFailureRepository):
             delete(LoginFailureModel).where(LoginFailureModel.attempted_at < before)
         )
         self.session.flush()
+
+
+def _members(tenant_id: UUID):
+    """Users with a membership in the tenant, each with that membership"""
+    return (
+        select(UserModel, MembershipModel)
+        .join(MembershipModel, MembershipModel.user_id == UserModel.id)
+        .where(MembershipModel.tenant_id == tenant_id)
+    )
 
 
 def _by_key(statement, username: str | None, ip_address: str | None):
