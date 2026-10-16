@@ -5,18 +5,28 @@ signed → sent → authorized | rejected) y publica ahí cada transición. Core
 con su propio consumer group y solo actúa cuando el SRI autoriza la factura: la
 venta pasa a INVOICED. La forma del mensaje es el contrato
 `contracts/events/invoices/v1.schema.json`.
+
+La venta se busca en la empresa del mensaje (header `faclab-tenant-id`), que el
+consumidor fija antes de llamar al handler. faclab-invoicing todavía no la envía:
+mientras tanto, un mensaje sin empresa corre en la de su venta (ver
+`_tenant_of_sale`).
 """
 
 from typing import Any
+from uuid import UUID
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from src.sales.app.commands.invoice_sale import (
     InvoiceSaleCommand,
     InvoiceSaleCommandHandler,
 )
 from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.infra.models import SaleModel
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tenant import TenantContext, TenantSource, current_tenant
 from src.shared.infra.events.scope import create_sync_scope
 
 logger = structlog.get_logger(__name__)
@@ -66,8 +76,21 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
         )
         return
 
+    tenant = None
+    if current_tenant() is None:
+        tenant_id = _tenant_of_sale(sale_id)
+        if tenant_id is None:
+            logger.error(
+                "invoice_not_applied",
+                sale_id=sale_id,
+                invoice_id=invoice_id,
+                error="sale not found",
+            )
+            return
+        tenant = TenantContext(tenant_id, TenantSource.MESSAGE)
+
     try:
-        with create_sync_scope() as scope:
+        with create_sync_scope(tenant=tenant) as scope:
             scope.get(InvoiceSaleCommandHandler).handle(
                 InvoiceSaleCommand(sale_id=sale_id, invoice_id=invoice_id)
             )
@@ -79,4 +102,19 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
             sale_id=sale_id,
             invoice_id=invoice_id,
             error=exc.message,
+        )
+
+
+def _tenant_of_sale(sale_id: int) -> UUID | None:
+    """La empresa de una venta, para un mensaje que no trae la suya.
+
+    Temporal hasta S2.8, cuando faclab-invoicing copie a sus mensajes el header
+    `faclab-tenant-id` del `sales.confirmed` que factura. Los ids de venta son
+    globales, así que no hay ambigüedad. Es una lectura de plataforma, fuera de
+    cualquier empresa: con RLS (S2.4) necesitará el rol `faclab_worker`.
+    """
+    with create_sync_scope() as scope:
+        session = scope.get(Session)
+        return session.scalar(
+            select(SaleModel.tenant_id).where(SaleModel.id == sale_id)
         )
