@@ -1,19 +1,24 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 
-class SerialNumberModel(Base):
+class SerialNumberModel(TenantScoped, Base):
     __tablename__ = "serial_numbers"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "serial_number", name="uq_serial_numbers_tenant_serial_number"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(
         ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    serial_number: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    serial_number: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="available")
     lot_id: Mapped[int | None] = mapped_column(
         ForeignKey("lots.id", ondelete="SET NULL")

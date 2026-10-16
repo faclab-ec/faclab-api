@@ -3,10 +3,10 @@ from datetime import datetime
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 
-class InventoryAdjustmentModel(Base):
+class InventoryAdjustmentModel(TenantScoped, Base):
     __tablename__ = "inventory_adjustments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -19,7 +19,7 @@ class InventoryAdjustmentModel(Base):
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.now)
 
 
-class AdjustmentItemModel(Base):
+class AdjustmentItemModel(TenantScoped, Base):
     __tablename__ = "adjustment_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)

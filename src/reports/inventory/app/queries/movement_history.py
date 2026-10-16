@@ -9,6 +9,7 @@ from src.catalog.product.infra.models import ProductModel
 from src.inventory.location.infra.models import LocationModel
 from src.inventory.movement.infra.models import MovementModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -45,6 +46,7 @@ class GetMovementHistoryReportQueryHandler(
             MovementModel.date,
             MovementModel.created_at,
         ).join(ProductModel, ProductModel.id == MovementModel.product_id)
+        q = q.filter(*tenant_criteria(MovementModel, ProductModel))
 
         if query.product_id is not None:
             q = q.filter(MovementModel.product_id == query.product_id)
@@ -60,7 +62,8 @@ class GetMovementHistoryReportQueryHandler(
             )
         if query.warehouse_id is not None:
             location_subq = select(LocationModel.id).where(
-                LocationModel.warehouse_id == query.warehouse_id
+                LocationModel.warehouse_id == query.warehouse_id,
+                *tenant_criteria(LocationModel),
             )
             q = q.filter(MovementModel.location_id.in_(location_subq))
 

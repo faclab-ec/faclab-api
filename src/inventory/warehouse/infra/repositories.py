@@ -15,7 +15,7 @@ class SqlAlchemyWarehouseRepository(
 ):
     __model__ = WarehouseModel
     __unique_errors__ = {
-        "warehouses_code_key": WarehouseCodeAlreadyExistsError,
+        "uq_warehouses_tenant_code": WarehouseCodeAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: WarehouseMapper):

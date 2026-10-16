@@ -11,6 +11,7 @@ from src.inventory.location.infra.models import LocationModel
 from src.inventory.movement.infra.models import MovementModel
 from src.inventory.stock.infra.models import StockModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -47,6 +48,7 @@ class GetInventoryValuationQueryHandler(QueryHandler[GetInventoryValuationQuery,
                 func.sum(StockModel.quantity).label("quantity"),
             )
             .join(StockModel, StockModel.product_id == ProductModel.id)
+            .filter(*tenant_criteria(ProductModel, StockModel))
             .filter(ProductModel.is_service == False)  # noqa: E712
             .filter(ProductModel.purchase_price.isnot(None))
             .filter(ProductModel.purchase_price > 0)
@@ -54,7 +56,10 @@ class GetInventoryValuationQueryHandler(QueryHandler[GetInventoryValuationQuery,
         if warehouse_id is not None:
             q = q.join(
                 LocationModel, LocationModel.id == StockModel.location_id
-            ).filter(LocationModel.warehouse_id == warehouse_id)
+            ).filter(
+                LocationModel.warehouse_id == warehouse_id,
+                *tenant_criteria(LocationModel),
+            )
         q = q.group_by(
             ProductModel.id,
             ProductModel.name,
@@ -89,6 +94,7 @@ class GetInventoryValuationQueryHandler(QueryHandler[GetInventoryValuationQuery,
                 func.sum(MovementModel.quantity).label("quantity"),
             )
             .join(MovementModel, MovementModel.product_id == ProductModel.id)
+            .filter(*tenant_criteria(ProductModel, MovementModel))
             .filter(ProductModel.is_service == False)  # noqa: E712
             .filter(ProductModel.purchase_price.isnot(None))
             .filter(ProductModel.purchase_price > 0)
@@ -98,7 +104,10 @@ class GetInventoryValuationQueryHandler(QueryHandler[GetInventoryValuationQuery,
             location_ids = [
                 row[0]
                 for row in self.session.query(LocationModel.id)
-                .filter(LocationModel.warehouse_id == warehouse_id)
+                .filter(
+                    LocationModel.warehouse_id == warehouse_id,
+                    *tenant_criteria(LocationModel),
+                )
                 .all()
             ]
             q = q.filter(MovementModel.location_id.in_(location_ids))

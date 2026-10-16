@@ -12,6 +12,7 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.infra.models import MovementModel
 from src.inventory.stock.infra.models import StockModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -96,13 +97,15 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
                 ).label("total_out"),
             )
             .join(ProductModel, ProductModel.id == MovementModel.product_id)
+            .filter(*tenant_criteria(MovementModel, ProductModel))
             .filter(MovementModel.date >= from_datetime)
             .filter(MovementModel.date <= to_datetime)
             .filter(ProductModel.is_service == False)  # noqa: E712
         )
         if warehouse_id is not None:
             location_subq = select(LocationModel.id).where(
-                LocationModel.warehouse_id == warehouse_id
+                LocationModel.warehouse_id == warehouse_id,
+                *tenant_criteria(LocationModel),
             )
             q = q.filter(MovementModel.location_id.in_(location_subq))
         return q.group_by(
@@ -113,10 +116,13 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
         q = self.session.query(
             StockModel.product_id,
             func.sum(StockModel.quantity).label("current_stock"),
-        )
+        ).filter(*tenant_criteria(StockModel))
         if warehouse_id is not None:
             q = q.join(
                 LocationModel, LocationModel.id == StockModel.location_id
-            ).filter(LocationModel.warehouse_id == warehouse_id)
+            ).filter(
+                LocationModel.warehouse_id == warehouse_id,
+                *tenant_criteria(LocationModel),
+            )
         rows = q.group_by(StockModel.product_id).all()
         return {row.product_id: row.current_stock or 0 for row in rows}

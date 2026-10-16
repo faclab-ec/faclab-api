@@ -1,19 +1,30 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 
-class StockTransferModel(Base):
+class StockTransferModel(TenantScoped, Base):
     __tablename__ = "stock_transfers"
+    __table_args__ = (
+        # Composite: both locations are of the transfer's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "source_location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_stock_transfers_source_location_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "destination_location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_stock_transfers_destination_location_tenant",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    source_location_id: Mapped[int] = mapped_column(
-        ForeignKey("locations.id"), index=True
-    )
-    destination_location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"))
+    source_location_id: Mapped[int] = mapped_column(index=True)
+    destination_location_id: Mapped[int]
     status: Mapped[str] = mapped_column(default="draft")
     transfer_date: Mapped[datetime | None]
     requested_by: Mapped[str | None]
@@ -21,7 +32,7 @@ class StockTransferModel(Base):
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.now)
 
 
-class StockTransferItemModel(Base):
+class StockTransferItemModel(TenantScoped, Base):
     __tablename__ = "stock_transfer_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
