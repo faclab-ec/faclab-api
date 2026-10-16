@@ -2,10 +2,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 if TYPE_CHECKING:
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from src.inventory.stock.infra.models import StockModel
 
 
-class CategoryModel(Base):
+class CategoryModel(TenantScoped, Base):
     __tablename__ = "categories"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -23,14 +23,20 @@ class CategoryModel(Base):
     products: Mapped[list["ProductModel"]] = relationship(back_populates="category")
 
 
-class ProductModel(Base):
+class ProductModel(TenantScoped, Base):
     __tablename__ = "products"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "sku", name="uq_products_tenant_sku"),
+        UniqueConstraint("tenant_id", "barcode", name="uq_products_tenant_barcode"),
+        # Target of the composite foreign keys from items, stock and movements
+        UniqueConstraint("tenant_id", "id", name="uq_products_tenant_id_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    sku: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    sku: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
-    barcode: Mapped[str | None] = mapped_column(String(64), unique=True)
+    barcode: Mapped[str | None] = mapped_column(String(64))
     purchase_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     sale_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     tax_code: Mapped[str] = mapped_column(String(16), nullable=False, default="VAT_15")

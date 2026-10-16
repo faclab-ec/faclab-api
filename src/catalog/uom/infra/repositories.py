@@ -15,7 +15,7 @@ class SqlAlchemyUnitOfMeasureRepository(
 ):
     __model__ = UnitOfMeasureModel
     __unique_errors__ = {
-        "units_of_measure_symbol_key": UnitOfMeasureSymbolAlreadyExistsError,
+        "uq_units_of_measure_tenant_symbol": UnitOfMeasureSymbolAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: UnitOfMeasureMapper):

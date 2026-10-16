@@ -9,8 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from src.catalog.product.infra.models import CategoryModel, ProductModel
 from src.catalog.uom.infra.models import UnitOfMeasureModel
@@ -27,27 +26,22 @@ from src.reports.inventory.app.queries.valuation import (
     GetInventoryValuationQuery,
     GetInventoryValuationQueryHandler,
 )
-from src.shared.infra.database import Base
+from tests.sqlite import sqlite_session
 
-_TABLES = [
-    Base.metadata.tables[model.__tablename__]
-    for model in (
-        CategoryModel,
-        UnitOfMeasureModel,
-        ProductModel,
-        WarehouseModel,
-        LocationModel,
-        MovementModel,
-        StockModel,
-    )
-]
+_MODELS = (
+    CategoryModel,
+    UnitOfMeasureModel,
+    ProductModel,
+    WarehouseModel,
+    LocationModel,
+    MovementModel,
+    StockModel,
+)
 
 
 @pytest.fixture
-def session() -> Iterator[Session]:
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine, tables=_TABLES)
-    db = sessionmaker(bind=engine)()
+def session(in_tenant) -> Iterator[Session]:
+    db = sqlite_session(_MODELS)
     db.add(
         ProductModel(
             id=1, name="Product A", sku="SKU-A", purchase_price=Decimal("10.00")
