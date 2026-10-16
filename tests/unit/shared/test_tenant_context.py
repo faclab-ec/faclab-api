@@ -19,7 +19,8 @@ from src.shared.domain.tenant import (
     use_tenant,
 )
 from src.shared.infra.events.scope import create_sync_scope
-from src.shared.infra.tenant import tenant_context, tenant_scope
+from src.shared.infra.tenant import tenant_context, tenant_criteria, tenant_scope
+from tests.tenant_notes import NoteModel
 
 TENANT_A = TenantContext(
     UUID("00000000-0000-4000-8000-0000000000a1"), TenantSource.TASK
@@ -36,6 +37,19 @@ def test_there_is_no_tenant_by_default():
     assert current_tenant_id() is None
     with pytest.raises(TenantContextRequiredError, match="listing requires"):
         require_tenant("listing")
+
+
+def test_tenant_criteria_keep_a_query_in_the_context_tenant():
+    with use_tenant(TENANT_A):
+        (criterion,) = tenant_criteria(NoteModel)
+
+    assert str(criterion) == "tenant_scoped_notes.tenant_id = :tenant_id_1"
+    assert criterion.right.value == TENANT_A.tenant_id
+
+
+def test_tenant_criteria_without_a_context_fail():
+    with pytest.raises(TenantContextRequiredError, match="reading NoteModel"):
+        tenant_criteria(NoteModel)
 
 
 def test_a_nested_context_restores_the_outer_one():

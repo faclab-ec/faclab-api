@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any
 
 import structlog
 from opentelemetry import trace
@@ -24,6 +25,16 @@ def tenant_scope(context: TenantContext) -> Generator[TenantContext, None, None]
         structlog.contextvars.bound_contextvars(**{TENANT_ID_ATTRIBUTE: tenant_id}),
     ):
         yield context
+
+
+def tenant_criteria(*models: Any) -> list[Any]:
+    """The conditions that keep a query in the context's tenant, one per
+    tenant-scoped model it reads. The base repository adds them by itself;
+    queries written by hand (read models, reports, custom repository methods)
+    add them explicitly. Without a context it raises."""
+    names = ", ".join(model.__name__ for model in models)
+    tenant_id = require_tenant(f"reading {names}").tenant_id
+    return [model.tenant_id == tenant_id for model in models]
 
 
 @injectable(lifetime="scoped")
