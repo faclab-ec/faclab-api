@@ -1,21 +1,40 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 
-class PurchaseOrderModel(Base):
+class PurchaseOrderModel(TenantScoped, Base):
     __tablename__ = "purchase_orders"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "order_number", name="uq_purchase_orders_tenant_order_number"
+        ),
+        # Composite: the supplier is of the order's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_id"],
+            ["suppliers.tenant_id", "suppliers.id"],
+            name="fk_purchase_orders_supplier_tenant",
+            ondelete="RESTRICT",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    supplier_id: Mapped[int] = mapped_column(
-        ForeignKey("suppliers.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
-    order_number: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    supplier_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    order_number: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
     subtotal: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False, default=0)
     tax: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False, default=0)
@@ -37,7 +56,7 @@ class PurchaseOrderModel(Base):
     )
 
 
-class PurchaseOrderItemModel(Base):
+class PurchaseOrderItemModel(TenantScoped, Base):
     __tablename__ = "purchase_order_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -54,7 +73,7 @@ class PurchaseOrderItemModel(Base):
     purchase_order: Mapped["PurchaseOrderModel"] = relationship(back_populates="items")
 
 
-class PurchaseReceiptModel(Base):
+class PurchaseReceiptModel(TenantScoped, Base):
     __tablename__ = "purchase_receipts"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -75,7 +94,7 @@ class PurchaseReceiptModel(Base):
     )
 
 
-class PurchaseReceiptItemModel(Base):
+class PurchaseReceiptItemModel(TenantScoped, Base):
     __tablename__ = "purchase_receipt_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
