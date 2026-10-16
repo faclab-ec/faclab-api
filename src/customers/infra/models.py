@@ -1,19 +1,24 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 
-class CustomerModel(Base):
+class CustomerModel(TenantScoped, Base):
     __tablename__ = "customers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "tax_id", name="uq_customers_tenant_tax_id"),
+        # Target of the composite foreign key from sales
+        UniqueConstraint("tenant_id", "id", name="uq_customers_tenant_id_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    tax_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    tax_id: Mapped[str] = mapped_column(String(32), nullable=False)
     tax_type: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     email: Mapped[str | None] = mapped_column(String(128))
     phone: Mapped[str | None] = mapped_column(String(32))
@@ -33,7 +38,7 @@ class CustomerModel(Base):
     )
 
 
-class CustomerContactModel(Base):
+class CustomerContactModel(TenantScoped, Base):
     __tablename__ = "customer_contacts"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

@@ -4,16 +4,21 @@ from decimal import Decimal
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 
-class SupplierModel(Base):
+class SupplierModel(TenantScoped, Base):
     __tablename__ = "suppliers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "tax_id", name="uq_suppliers_tenant_tax_id"),
+        # Target of the composite foreign key from purchase orders
+        UniqueConstraint("tenant_id", "id", name="uq_suppliers_tenant_id_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    tax_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    tax_id: Mapped[str] = mapped_column(String(32), nullable=False)
     tax_type: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     email: Mapped[str | None] = mapped_column(String(128))
     phone: Mapped[str | None] = mapped_column(String(32))
@@ -36,7 +41,7 @@ class SupplierModel(Base):
     )
 
 
-class SupplierContactModel(Base):
+class SupplierContactModel(TenantScoped, Base):
     __tablename__ = "supplier_contacts"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -51,7 +56,7 @@ class SupplierContactModel(Base):
     supplier: Mapped["SupplierModel"] = relationship(back_populates="contacts")
 
 
-class SupplierProductModel(Base):
+class SupplierProductModel(TenantScoped, Base):
     __tablename__ = "supplier_products"
     __table_args__ = (UniqueConstraint("supplier_id", "product_id"),)
 

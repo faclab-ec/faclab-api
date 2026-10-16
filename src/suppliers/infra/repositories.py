@@ -28,7 +28,7 @@ from src.suppliers.infra.models import (
 class SqlAlchemySupplierRepository(SqlAlchemyRepository[Supplier], SupplierRepository):
     __model__ = SupplierModel
     __unique_errors__ = {
-        "suppliers_tax_id_key": SupplierTaxIdAlreadyExistsError,
+        "uq_suppliers_tenant_tax_id": SupplierTaxIdAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: SupplierMapper):
