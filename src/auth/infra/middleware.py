@@ -8,9 +8,18 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
 )
 from src.auth.domain.permissions import permissions_for
+from src.shared.domain.tenant import TenantContext, TenantSource
+from src.shared.infra.tenant import tenant_scope
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
+    """Reads the Bearer access token into `request.state.current_user` and runs
+    the rest of the request in the token's tenant (`TenantContext`).
+
+    It never rejects: an invalid token only records why in
+    `request.state.auth_error`, and `require_permission` answers 401/403 on the
+    routes that need a user."""
+
     def __init__(self, app, token_service: TokenService):
         super().__init__(app)
         self._token_service = token_service
@@ -41,7 +50,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.auth_error = "token_expired"
             except TenantRequiredError:
                 request.state.auth_error = "tenant_required"
-            except InvalidTokenError:
+            except (InvalidTokenError, ValueError):
+                # ValueError: a signed token with a role that doesn't exist
                 request.state.auth_error = "invalid_token"
 
-        return await call_next(request)
+        user = request.state.current_user
+        if user is None:
+            return await call_next(request)
+        context = TenantContext(user.tenant_id, TenantSource.REQUEST, user_id=user.id)
+        with tenant_scope(context):
+            return await call_next(request)

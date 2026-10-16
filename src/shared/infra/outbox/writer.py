@@ -6,9 +6,11 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.shared.domain.tenant import require_tenant
 from src.shared.infra.kafka.producer import json_default
 from src.shared.infra.outbox import relay
 from src.shared.infra.outbox.models import OutboxMessageModel
+from src.shared.infra.tenant import TENANT_HEADER
 
 
 @injectable(lifetime="scoped")
@@ -18,6 +20,9 @@ class OutboxWriter:
     Publicar directo a Kafka antes del commit es una escritura doble: una venta
     revertida podía llegar a facturación. El relay publica estos mensajes solo
     cuando la transacción ya se confirmó.
+
+    Cada mensaje pertenece a la empresa del contexto: se guarda en `tenant_id`
+    y viaja en el header `faclab-tenant-id`. Sin contexto, falla.
     """
 
     def __init__(self, session: Session):
@@ -26,13 +31,15 @@ class OutboxWriter:
     def add(
         self, topic: str, payload: dict[str, Any], event_type: str, event_id: str
     ) -> None:
-        headers: dict[str, str] = {}
+        tenant_id = require_tenant("writing to the outbox").tenant_id
+        headers: dict[str, str] = {TENANT_HEADER: str(tenant_id)}
         inject(carrier=headers)
         self.session.add(
             OutboxMessageModel(
                 event_id=event_id,
                 event_type=event_type,
                 topic=topic,
+                tenant_id=tenant_id,
                 # Stored as plain JSON: Decimal -> str, datetime -> ISO 8601
                 payload=json.loads(json.dumps(payload, default=json_default)),
                 headers=headers,

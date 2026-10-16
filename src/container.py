@@ -35,6 +35,7 @@ def create_wireup_container():
     from src.shared.infra.database import create_session_factory
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
     from src.shared.infra.outbox.writer import OutboxWriter
+    from src.shared.infra.tenant import tenant_context
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
     from src.tenancy.infra.container import INJECTABLES as TENANCY_INJECTABLES
 
@@ -47,6 +48,7 @@ def create_wireup_container():
     container = create_async_container(
         injectables=[
             get_db_session,
+            tenant_context,
             EventBusPublisher,
             OutboxWriter,
             *AUTH_INJECTABLES,

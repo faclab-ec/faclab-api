@@ -122,7 +122,7 @@ def test_create_user_adds_it_to_the_tenant_with_the_role():
     assert (result["role"], result["is_active"]) == (Role.CASHIER, True)
     event = publisher.publish.call_args.args[0]
     assert isinstance(event, UserCreated)
-    assert (event.tenant_id, event.role) == (str(TENANT), Role.CASHIER.value)
+    assert (event.tenant_id, event.role) == (TENANT, Role.CASHIER.value)
 
 
 def test_the_authenticated_user_signs_with_the_full_name_or_the_username():

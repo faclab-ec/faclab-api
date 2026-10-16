@@ -6,6 +6,10 @@ puede llegar más de una vez, así que los handlers deben ser idempotentes. Si e
 handler falla, el consumidor vuelve a ese offset y lo reintenta tras
 `retry_delay`, sin saltarse mensajes ni alterar el orden de la partición. Un
 mensaje que no es un objeto JSON se descarta.
+
+El handler corre en la empresa del mensaje: el header `faclab-tenant-id` o, si
+no viene, el campo `tenant_id` del sobre. Un mensaje sin empresa se procesa sin
+contexto; uno con una empresa que no es un UUID se descarta.
 """
 
 import asyncio
@@ -13,6 +17,7 @@ import json
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+from uuid import UUID
 
 import structlog
 from aiokafka import AIOKafkaConsumer, TopicPartition
@@ -20,15 +25,35 @@ from aiokafka.errors import KafkaError
 from opentelemetry import trace
 from opentelemetry.propagate import extract
 
+from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.telemetry_instruments import (
     kafka_consume_errors,
     kafka_messages_consumed,
 )
+from src.shared.infra.tenant import TENANT_HEADER, tenant_scope
 
 logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
 
 MessageHandler = Callable[[dict[str, Any]], None]
+
+
+class InvalidTenantError(ValueError):
+    pass
+
+
+def message_tenant(
+    carrier: Mapping[str, str], message: Mapping[str, Any]
+) -> UUID | None:
+    """The tenant a message belongs to: its header, or its envelope's
+    `tenant_id`; None when it carries neither."""
+    value = carrier.get(TENANT_HEADER) or message.get("tenant_id")
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
+    except ValueError as exc:
+        raise InvalidTenantError(str(value)) from exc
 
 
 class KafkaMessageConsumer:
@@ -135,6 +160,14 @@ class KafkaMessageConsumer:
             logger.error("kafka_message_discarded", topic=topic, reason="not JSON")
             return True
 
+        carrier = {key: raw.decode("utf-8", "replace") for key, raw in headers}
+        try:
+            tenant_id = message_tenant(carrier, message)
+        except InvalidTenantError:
+            # Retrying never makes it valid, and guessing the tenant is worse
+            logger.error("kafka_message_discarded", topic=topic, reason="bad tenant")
+            return True
+
         attributes: dict[str, str | int] = {
             "messaging.system": "kafka",
             "messaging.operation.type": "process",
@@ -148,7 +181,6 @@ class KafkaMessageConsumer:
             attributes["messaging.kafka.offset"] = offset
 
         # Child of the producer's span, so the message continues its trace
-        carrier = {key: raw.decode("utf-8", "replace") for key, raw in headers}
         with tracer.start_as_current_span(
             f"process {topic}",
             context=extract(carrier),
@@ -156,7 +188,12 @@ class KafkaMessageConsumer:
             attributes=attributes,
         ) as span:
             try:
-                self._handlers[topic](message)
+                if tenant_id is None:
+                    self._handlers[topic](message)
+                else:
+                    context = TenantContext(tenant_id, TenantSource.MESSAGE)
+                    with tenant_scope(context):
+                        self._handlers[topic](message)
             except Exception as exc:
                 kafka_consume_errors.add(1, {"kafka.topic": topic})
                 logger.exception("kafka_message_failed", topic=topic)

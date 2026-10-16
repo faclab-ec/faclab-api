@@ -97,6 +97,9 @@ class ProductRepository(SqlAlchemyRepository[Product]):
     __model__ = ProductModel
 ```
 
+Si el modelo declara `__tenant_scoped__ = True` (y tiene la columna `tenant_id`), el repositorio base trabaja
+solo en la empresa del contexto: ver [Contexto de empresa](#contexto-de-empresa).
+
 ### Mapper Pattern
 
 `Mapper[E, M]` en `src/shared/infra/mappers.py` mapea por convencion entre entidades de dominio y modelos SQLAlchemy usando introspeccion:
@@ -176,6 +179,41 @@ Dataclasses frozen con validacion en construccion:
 
 Los montos son `Decimal`; `round_money()` (`src/shared/domain/money.py`) redondea los totales a centavos. `TaxCode` y `TaxType` (`src/shared/domain/tax.py`) son el código de IVA y el tipo de identificación del SRI.
 
+## Contexto de empresa
+
+Cada empresa (tenant) es un RUC. El código sabe en qué empresa corre por un `TenantContext`
+(`src/shared/domain/tenant.py`): empresa, origen (`request`, `message` o `task`), usuario y, desde S2.5,
+sucursal. Es inmutable y vive en un `ContextVar`, así que lo heredan el threadpool de FastAPI (las rutas son
+síncronas) y las tareas de asyncio, pero no un hilo nuevo.
+
+Dónde se fija (siempre con `tenant_scope()` de `src/shared/infra/tenant.py`, que además agrega
+`faclab.tenant.id` a los logs y al span activo):
+
+| Origen | Quién | De dónde sale la empresa |
+|---|---|---|
+| Request | `AuthMiddleware` | El `tid` del access token. Un token sin `tid` responde 401 `TENANT_REQUIRED`; una ruta pública corre sin contexto |
+| Mensaje de Kafka | `KafkaMessageConsumer` | El header `faclab-tenant-id` o, si no viene, el `tenant_id` del sobre. Un mensaje sin empresa se procesa sin contexto; uno con una empresa que no es UUID se descarta |
+| Tarea o script | `create_sync_scope(tenant=TenantContext(...))` | La que elige la tarea, explícitamente |
+
+Qué hace con él cada pieza:
+
+- **Sesión de base**: `create_session_maker` registra un hook `after_begin` que, si hay contexto, ejecuta
+  `set_config('app.tenant_id', <empresa>, true)` (equivale a `SET LOCAL`) al empezar cada transacción. El
+  valor muere con la transacción y no pasa a otro request que reutilice la conexión. Row-Level Security lo
+  usará en S2.4.
+- **Repositorio base**: en un modelo con `__tenant_scoped__ = True`, `create` asigna el `tenant_id` del
+  contexto y todas las lecturas (`get_by_id`, `first`, `filter*`, `count*`, `paginate*`), `update` y
+  `delete` filtran por él, así que el id de otra empresa no se encuentra. Sin contexto lanza
+  `TenantContextRequiredError`; una entidad que trae otra empresa, `TenantMismatchError` (los dos son errores
+  de programación: 500). Las consultas que un repositorio escribe por su cuenta no están cubiertas.
+- **Eventos de dominio**: `DomainEvent.tenant_id` toma la empresa del contexto al crearse.
+- **Outbox**: `OutboxWriter.add` exige contexto, guarda `outbox_messages.tenant_id` y agrega el header
+  `faclab-tenant-id`, que el relay envía a Kafka con el mensaje.
+- **Inyección**: un handler puede recibir `TenantContext` por wireup (factory `tenant_context`, scoped).
+
+Por ahora ningún modelo de negocio declara `__tenant_scoped__`: S2.3 agrega `tenant_id` a cada tabla y la
+marca, y S2.4 activa RLS.
+
 ## Inyeccion de Dependencias
 
 El contenedor wireup gestiona tres lifetimes:
@@ -232,6 +270,7 @@ src/shared/
 ├── domain/
 │   ├── entities.py           # Entity base class
 │   ├── events.py             # DomainEvent abstract base
+│   ├── tenant.py             # TenantContext y su ContextVar
 │   ├── value_objects.py      # Email, TaxId
 │   ├── money.py              # round_money
 │   ├── tax.py                # TaxCode (IVA), TaxType (identificación)
@@ -247,6 +286,7 @@ src/shared/
     ├── repositories.py       # SqlAlchemyRepository[E] implementacion
     ├── mappers.py            # Mapper[E, M] base declarativo
     ├── middlewares.py        # ErrorHandlingMiddleware
+    ├── tenant.py             # tenant_scope: contexto + logs + span
     ├── logging.py            # structlog configuration
     ├── telemetry_instruments.py  # OTEL histogramas y contadores
     ├── events/
@@ -273,6 +313,7 @@ HTTP POST /api/admin/sales/{id}/items
     ├─ SecurityHeadersMiddleware
     ├─ RequestIdMiddleware (X-Request-Id validado → logs, span y respuesta)
     ├─ BodySizeLimitMiddleware
+    ├─ AuthMiddleware (Bearer → usuario; el resto corre en la empresa del token)
     ├─ ErrorHandlingMiddleware
     │      ├─ captura DomainError → 400
     │      ├─ captura NotFoundError → 404
@@ -280,7 +321,7 @@ HTTP POST /api/admin/sales/{id}/items
     │
     ├─ FastAPI Router → SaleRouter.add_item()
     │
-    ├─ wireup scope creado (DB session compartida)
+    ├─ wireup scope creado (DB session compartida; cada transacción con SET LOCAL app.tenant_id)
     │
     ├─ AddSaleItemHandler.execute(AddSaleItemCommand)
     │      ├─ OTEL span iniciado

@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, Index, String, Text, text
+from sqlalchemy import JSON, DateTime, Index, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base
@@ -30,6 +31,9 @@ class OutboxMessageModel(Base):
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
     topic: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # Tenant of the transaction that wrote it (also in the faclab-tenant-id
+    # header). Nullable until the S2.3 baseline; the writer always sets it
+    tenant_id: Mapped[UUID | None] = mapped_column(Uuid)
     # Trace context of the request that wrote the message (W3C traceparent...)
     headers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
