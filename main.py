@@ -383,8 +383,9 @@ def add_middlewares(target: FastAPI) -> None:
         StarletteHTTPException,
         http_exception_handler,  # ty: ignore[invalid-argument-type]
     )
-    target.add_middleware(AuthMiddleware, token_service=JwtTokenService())
     target.add_middleware(ErrorHandlingMiddleware)
+    # Outside the error handler, so its logs carry the request's tenant
+    target.add_middleware(AuthMiddleware, token_service=JwtTokenService())
     target.add_middleware(
         BodySizeLimitMiddleware, max_bytes=config.MAX_REQUEST_BODY_BYTES
     )

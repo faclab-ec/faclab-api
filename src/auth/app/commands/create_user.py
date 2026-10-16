@@ -81,7 +81,7 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
                 user_id=user.require_id(),
                 username=user.username,
                 email=user.email,
-                tenant_id=str(command.tenant_id),
+                tenant_id=command.tenant_id,
                 role=membership.role.value,
             )
         )

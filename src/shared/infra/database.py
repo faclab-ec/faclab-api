@@ -1,10 +1,11 @@
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import Connection, create_engine, event, text
+from sqlalchemy.orm import DeclarativeBase, Session, SessionTransaction, sessionmaker
 from wireup import injectable
 
 from src.shared.domain.exceptions import BaseError
+from src.shared.domain.tenant import current_tenant_id
 from src.shared.infra.adapters import OpenTelemetry
 
 
@@ -24,7 +25,25 @@ def create_session_maker(
     engine = create_engine(connection_string)
     if traced:
         OpenTelemetry().instrument_engine(engine)
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    event.listen(factory, "after_begin", set_tenant_setting)
+    return factory
+
+
+def set_tenant_setting(
+    _session: Session, _transaction: SessionTransaction, connection: Connection
+) -> None:
+    """Each transaction starts with `SET LOCAL app.tenant_id` (as `set_config`,
+    which takes parameters) when there is a tenant context: the value dies with
+    the transaction, so it never leaks to a request that reuses the pooled
+    connection. Row-Level Security reads it (S2.4)."""
+    tenant_id = current_tenant_id()
+    if tenant_id is None or connection.dialect.name != "postgresql":
+        return
+    connection.execute(
+        text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 def create_session_factory(connection_string: str):

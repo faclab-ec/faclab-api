@@ -31,6 +31,9 @@ from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.writer import OutboxWriter
 from tests.contract.contracts import errors, examples, validator
 
+# The outbox only writes inside a tenant context
+pytestmark = pytest.mark.usefixtures("in_tenant")
+
 SCHEMA = validator("sales.confirmed")
 EXAMPLES = examples("sales.confirmed")
 

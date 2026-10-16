@@ -1,3 +1,4 @@
+import contextvars
 from datetime import datetime
 from decimal import Decimal
 
@@ -5,11 +6,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.shared.domain.tenant import TenantContextRequiredError
 from src.shared.infra.database import Base
 from src.shared.infra.outbox import relay as relay_module
 from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.relay import OutboxRelay
 from src.shared.infra.outbox.writer import OutboxWriter
+from tests.conftest import TEST_TENANT_ID
+
+# The outbox only writes inside a tenant context
+pytestmark = pytest.mark.usefixtures("in_tenant")
 
 
 @pytest.fixture
@@ -104,3 +110,41 @@ def test_commit_wakes_the_running_relay(session_factory, monkeypatch):
         session.commit()
 
     assert woken == [True]
+
+
+def test_a_message_belongs_to_the_context_tenant(session_factory):
+    with session_factory() as session:
+        OutboxWriter(session).add("topic.a", {"id": "a"}, "Test", "a")
+        session.commit()
+        message = session.query(OutboxMessageModel).one()
+
+    assert message.tenant_id == TEST_TENANT_ID
+    assert message.headers["faclab-tenant-id"] == str(TEST_TENANT_ID)
+
+
+def test_the_relay_sends_the_tenant_header(session_factory):
+    _write(session_factory, "a")
+    publisher = HeaderRecorder()
+
+    OutboxRelay(session_factory, publisher).publish_pending()
+
+    [headers] = publisher.headers
+    assert ("faclab-tenant-id", str(TEST_TENANT_ID).encode()) in headers
+
+
+def test_writing_without_a_tenant_fails(session_factory):
+    def write() -> None:
+        with session_factory() as session:
+            OutboxWriter(session).add("topic.a", {"id": "a"}, "Test", "a")
+
+    # A fresh context: outside the tenant this module's tests run in
+    with pytest.raises(TenantContextRequiredError):
+        contextvars.Context().run(write)
+
+
+class HeaderRecorder:
+    def __init__(self):
+        self.headers: list[list[tuple[str, bytes]]] = []
+
+    def publish(self, topic, value, headers):
+        self.headers.append(headers)

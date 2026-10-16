@@ -1,10 +1,15 @@
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 import pytest
 
 from src.shared.domain.events import DomainEvent
+from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.shared.infra.events.event_bus import EventBus
+
+TENANT_ID = UUID("00000000-0000-4000-8000-0000000000a1")
+OTHER_TENANT_ID = UUID("00000000-0000-4000-8000-0000000000b2")
 
 
 @dataclass
@@ -70,8 +75,34 @@ def test_event_to_dict():
     assert d["event_type"] == "OrderCreated"
     assert d["aggregate_id"] == 42
     assert d["payload"] == {"order_total": 99.99}
+    assert d["tenant_id"] is None
     assert "event_id" in d
     assert "occurred_at" in d
+
+
+def test_an_event_belongs_to_the_tenant_it_was_raised_in():
+    with use_tenant(TenantContext(TENANT_ID, TenantSource.REQUEST)):
+        event = OrderCreated(aggregate_id=42)
+
+    assert event.tenant_id == TENANT_ID
+    assert event.to_dict()["tenant_id"] == str(TENANT_ID)
+    assert OrderCreated(aggregate_id=43).tenant_id is None
+
+
+def test_a_platform_task_can_name_the_tenant_of_an_event():
+    event = OrderCreated(aggregate_id=42, tenant_id=OTHER_TENANT_ID)
+
+    assert event.tenant_id == OTHER_TENANT_ID
+
+
+def test_handlers_receive_the_event_with_its_tenant():
+    received = []
+    EventBus.subscribe(OrderCreated, lambda event: received.append(event.tenant_id))
+
+    with use_tenant(TenantContext(TENANT_ID, TenantSource.REQUEST)):
+        EventBus.publish(OrderCreated(aggregate_id=1))
+
+    assert received == [TENANT_ID]
 
 
 def test_a_domain_error_in_a_handler_does_not_fail_its_span(span_exporter):

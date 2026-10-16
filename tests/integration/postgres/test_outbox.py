@@ -57,13 +57,14 @@ def _messages(db_session: Session) -> list[OutboxMessageModel]:
     return list(db_session.scalars(select(OutboxMessageModel)))
 
 
-def test_confirmed_sale_is_queued_and_relayed(pos, db_session, pg_engine):
+def test_confirmed_sale_is_queued_and_relayed(pos, db_session, pg_engine, tenant):
     cashier, product = pos
 
     sale = _checkout(cashier, product["id"], 2, "23.00").json()["data"]
 
     [message] = _messages(db_session)
     assert message.topic == "sales.confirmed"
+    assert message.tenant_id == tenant
     assert message.published_at is None
     assert message.payload["payload"]["sale_id"] == sale["id"]
     assert message.payload["payload"]["total"] == "23.00"
@@ -72,8 +73,9 @@ def test_confirmed_sale_is_queued_and_relayed(pos, db_session, pg_engine):
     publisher = FakePublisher()
     assert OutboxRelay(sessionmaker(bind=pg_engine), publisher).publish_pending() == 1
 
-    [(topic, value, _headers)] = publisher.sent
+    [(topic, value, headers)] = publisher.sent
     assert (topic, value) == ("sales.confirmed", message.payload)
+    assert ("faclab-tenant-id", str(tenant).encode()) in headers
     db_session.expire_all()
     assert _messages(db_session)[0].published_at is not None
 

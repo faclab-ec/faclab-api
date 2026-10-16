@@ -3,13 +3,14 @@ from typing import Any, ClassVar, Generic, TypeVar
 
 from sqlalchemy import asc, desc, func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Query, Session
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from src.shared.app.repositories import Repository
 from src.shared.domain.entities import Entity
 from src.shared.domain.exceptions import AlreadyExistsError, NotFoundError
 from src.shared.domain.specifications import Specification
+from src.shared.domain.tenant import TenantMismatchError, require_tenant
 from src.shared.infra.mappers import Mapper
 
 E = TypeVar("E", bound="Entity")
@@ -19,6 +20,16 @@ OrderCriteria = str | Any
 
 
 class SqlAlchemyRepository(Repository[E], Generic[E]):
+    """Base repository.
+
+    A model whose class declares `__tenant_scoped__ = True` (and has a
+    `tenant_id` column) belongs to a tenant: `create` takes the tenant from the
+    context and every read, update and delete only sees that tenant's rows, so
+    another tenant's id is simply not found. Without a context they raise
+    `TenantContextRequiredError`. Queries that subclasses write themselves are
+    not covered.
+    """
+
     __model__: ClassVar[type[Any]]
     # Unique constraint (or unique index) name -> error raised when it is violated
     __unique_errors__: ClassVar[dict[str, Callable[[], AlreadyExistsError]]] = {}
@@ -26,6 +37,42 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
     def __init__(self, session: Session, mapper: Mapper[E, Any]):
         self.session = session
         self.mapper = mapper
+
+    @property
+    def _tenant_scoped(self) -> bool:
+        return getattr(self.__model__, "__tenant_scoped__", False)
+
+    def _tenant_criteria(self) -> Criteria:
+        """The tenant filter every read of a tenant-scoped model adds"""
+        if not self._tenant_scoped:
+            return []
+        tenant_id = require_tenant(f"reading {self.__model__.__name__}").tenant_id
+        return [self.__model__.tenant_id == tenant_id]
+
+    def _query(self, *columns: Any) -> Query:
+        """Query of the model (or of `columns`), limited to the context tenant"""
+        query = self.session.query(*(columns or (self.__model__,)))
+        criteria = self._tenant_criteria()
+        return query.filter(*criteria) if criteria else query
+
+    def _get_model(self, id: int | None) -> Any:
+        if not self._tenant_scoped:
+            return self.session.get(self.__model__, id)
+        return self._query().filter(self.__model__.id == id).first()
+
+    def _values(self, entity: E, creating: bool) -> dict[str, Any]:
+        """The entity's columns; for a tenant-scoped model the tenant always
+        comes from the context, and an entity carrying another one is rejected."""
+        values = self.mapper.to_dict(entity)
+        if not self._tenant_scoped:
+            return values
+        tenant_id = require_tenant(f"writing {self.__model__.__name__}").tenant_id
+        given = values.pop("tenant_id", None)
+        if given is not None and given != tenant_id:
+            raise TenantMismatchError(given, tenant_id)
+        if creating:
+            values["tenant_id"] = tenant_id
+        return values
 
     def _save(self) -> None:
         try:
@@ -45,7 +92,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             Created entity
         """
-        model = self.__model__(**self.mapper.to_dict(entity))
+        model = self.__model__(**self._values(entity, creating=True))
         self.session.add(model)
         self._save()
         return self.mapper.to_entity(model)
@@ -60,11 +107,12 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Raises:
             ValueError: If entity with given ID does not exist
         """
-        model = self.session.get(self.__model__, entity.id)
+        values = self._values(entity, creating=False)
+        model = self._get_model(entity.id)
         if not model:
             raise NotFoundError(f"Entity with id {entity.id} not found")
 
-        for key, value in self.mapper.to_dict(entity).items():
+        for key, value in values.items():
             setattr(model, key, value)
         self._save()
         return self.mapper.to_entity(model)
@@ -77,7 +125,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Raises:
             ValueError: If entity with given ID does not exist
         """
-        model = self.session.get(self.__model__, id)
+        model = self._get_model(id)
         if not model:
             raise NotFoundError(f"Entity with id {id} not found")
 
@@ -92,8 +140,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             Entity if found, None otherwise
         """
-        model = self.session.get(self.__model__, id)
-        return self.mapper.to_entity(model)
+        return self.mapper.to_entity(self._get_model(id))
 
     def get_by_ids(self, ids: Iterable[int]) -> list[E]:
         """
@@ -114,7 +161,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             List of all entities
         """
-        models = self.session.query(self.__model__).all()
+        models = self._query().all()
         return [self.mapper.to_entity(model) for model in models]
 
     def first(self, **kwargs) -> E | None:
@@ -139,7 +186,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         criteria = [
             getattr(self.__model__, key) == value for key, value in filters.items()
         ]
-        query = self.session.query(self.__model__).filter(*criteria)
+        query = self._query().filter(*criteria)
         if for_update:
             query = query.with_for_update()
         return self.mapper.to_entity(query.first())
@@ -164,8 +211,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             List of entities that match the criteria
         """
-        query = self.session.query(self.__model__)
-        query = query.filter(*criteria)
+        query = self._query().filter(*criteria)
 
         if order_by:
             if isinstance(order_by, str):
@@ -193,7 +239,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         Returns:
             Count of entities that match the criteria
         """
-        query = self.session.query(func.count(self.__model__.id))
+        query = self._query(func.count(self.__model__.id))
         for key, value in kwargs.items():
             query = query.filter(getattr(self.__model__, key) == value)
         return query.scalar()
@@ -232,9 +278,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
 
     def count_by_spec(self, spec: Specification) -> int:
         criteria = spec.to_query_criteria()
-        return (
-            self.session.query(func.count(self.__model__.id)).filter(*criteria).scalar()
-        )
+        return self._query(func.count(self.__model__.id)).filter(*criteria).scalar()
 
     def paginate(self, limit=None, offset=None, **kwargs) -> dict:
         items = self.filter_by(limit=limit, offset=offset, **kwargs)
