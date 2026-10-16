@@ -30,7 +30,7 @@
 
 | ID | Hallazgo | Clas. | Evidencia | Riesgo | Prio. | Sesión |
 |---|---|---|---|---|---|---|
-| G-01 | No existe tenant ni aislamiento lógico de datos | V | Búsqueda de tenant/company/branch sin resultados en `src`, `alembic` | Imposible ofrecer SaaS; acceso cruzado si se comparte la base | P0 | S2.1–S2.4 |
+| G-01 | No existe tenant ni aislamiento lógico de datos | V | Búsqueda de tenant/company/branch sin resultados en `src`, `alembic` | Imposible ofrecer SaaS; acceso cruzado si se comparte la base | P0 | S2.1–S2.4 (S2.1 hecha: empresas, membresías, token con `tid` y administración de usuarios por empresa; el aislamiento de datos sigue pendiente en S2.2–S2.4) |
 | G-02 | No existen sucursales, establecimientos, puntos de emisión ni terminales | V | Modelos en `src/**/infra/models.py` | No se puede emitir desde varios establecimientos ni separar cajas | P0 | S2.5 |
 | G-03 | Un solo turno abierto en todo el sistema; cajero como texto libre | V | `src/pos/shift/app/commands/open_shift.py:32`, `src/pos/shift/infra/models.py:14-29` | Dos cajas no pueden operar a la vez; cierre de caja sin responsable | P0 | S2.6 |
 | G-04 | El POS descuenta stock de una fila arbitraria y escribe movimientos sin ubicación | V | `confirm_sale.py:66,83`, `quick_sale.py:128,157`, `src/shared/infra/repositories.py:138-145` | Stock por bodega incorrecto; kárdex inconsistente | P0 | S2.6 |

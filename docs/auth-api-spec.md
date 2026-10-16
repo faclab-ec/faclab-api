@@ -13,8 +13,9 @@ This document is a self-contained contract for implementing authentication and a
 
 - **Content-Type**: `application/json` on all writes.
 - **Auth header** (protected routes): `Authorization: Bearer <accessToken>`.
-- **Public routes** (no auth): `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`.
-- **Refresh cookie**: the refresh token never appears in a body. Login and refresh set it in the `faclab_refresh` cookie (`HttpOnly; Secure; SameSite=Strict; Path=/api/auth`; without `Secure` locally), refresh reads it and logout clears it. Browsers must send these three calls with credentials (`withCredentials: true` / `credentials: "include"`); the API allows credentials for the origins in `CORS_ORIGINS`.
+- **Public routes** (no auth header required): `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`. `POST /api/auth/select-tenant` authenticates itself with the login's selection token or the current access token.
+- **Tenants**: every session and token belongs to one tenant (company, one RUC); see §2.0. The frontend never sends a tenant id except to `select-tenant`.
+- **Refresh cookie**: the refresh token never appears in a body. Login, select-tenant and refresh set it in the `faclab_refresh` cookie (`HttpOnly; Secure; SameSite=Strict; Path=/api/auth`; without `Secure` locally), refresh reads it and logout clears it. Browsers must send these calls with credentials (`withCredentials: true` / `credentials: "include"`); the API allows credentials for the origins in `CORS_ORIGINS`.
 - **Response envelope** (success):
   ```json
   { "data": { ... }, "meta": { "requestId": "uuid", "timestamp": "ISO-8601" } }
@@ -32,6 +33,13 @@ This document is a self-contained contract for implementing authentication and a
 ---
 
 ## 2. Data Model
+
+### 2.0 Tenants and memberships
+
+- A **tenant** is a company (one RUC): `{ id (UUID), ruc, legalName, tradeName }`.
+- A **user** is global: username and email are unique across the platform, and the password and full name are the same in every tenant.
+- A **membership** gives the user a role in a tenant. Role and permissions in a session are those of the membership in the session's tenant; the same person may be ADMIN in one company and VIEWER in another.
+- The tenant of a session comes from the token (`tid`); switching tenants means new tokens (§3.1bis).
 
 ### 2.1 Role (integer codes)
 
@@ -105,37 +113,76 @@ Admin: `user:manage`
 
 Validation: `username` 1..64 chars, `password` 1..128 chars.
 
-**200 Response** (plus `Set-Cookie: faclab_refresh=...; HttpOnly; Path=/api/auth; SameSite=strict`)
+**200 Response, one active tenant**: the session opens in it (plus `Set-Cookie: faclab_refresh=...; HttpOnly; Path=/api/auth; SameSite=strict`)
 ```json
 {
   "data": {
     "accessToken": "eyJhbGciOi...",
     "tokenType": "Bearer",
-    "expiresIn": 900
+    "expiresIn": 900,
+    "tenant": { "id": "6f1c…", "ruc": "1799999990001", "legalName": "Ferretería Ejemplo S.A.", "tradeName": null }
   },
   "meta": { "requestId": "...", "timestamp": "..." }
 }
 ```
 
+**200 Response, several active tenants**: no session and no cookie yet; choose one with §3.1bis
+```json
+{
+  "data": {
+    "selectionToken": "eyJhbGciOi...",
+    "expiresIn": 300,
+    "tenants": [
+      { "id": "6f1c…", "ruc": "1799999990001", "legalName": "Ferretería Ejemplo S.A.", "tradeName": null, "role": 1 },
+      { "id": "a20e…", "ruc": "0999999999001", "legalName": "Comercial Dos S.A.", "tradeName": "Comercial Dos", "role": 4 }
+    ]
+  },
+  "meta": { "requestId": "...", "timestamp": "..." }
+}
+```
+Tell them apart by `accessToken` vs `selectionToken`. Only active memberships in active tenants are listed, sorted by `legalName`.
+
 **Errors**
 | Status | Code | Meaning |
 |---|---|---|
-| 401 | `INVALID_CREDENTIALS` | Wrong user/pass **or** user inactive |
+| 401 | `INVALID_CREDENTIALS` | Wrong user/pass **or** user account blocked |
+| 403 | `NO_ACTIVE_TENANT` | Right credentials, but no active membership in an active tenant |
 | 429 | `LOGIN_LOCKED` | Too many failed attempts for this username or client IP; wait and retry |
 | 422 | `VALIDATION_ERROR` | Missing/invalid body |
 
 **Lockout**: by default 5 failures for a username within 15 minutes lock it for 15 minutes, counted from the last failure; 20 failures from one client IP lock that IP the same way. While locked the password is not checked (the right one also gets `LOGIN_LOCKED`) and attempts are not counted, so the lock ends on time. Unknown usernames lock too, and their response takes as long as a real check, so neither reveals whether a username exists. A successful login clears the username's failures. Settings: `LOGIN_MAX_FAILURES_PER_USER`, `LOGIN_MAX_FAILURES_PER_IP`, `LOGIN_FAILURE_WINDOW_SECONDS`, `LOGIN_LOCKOUT_SECONDS`.
 
 **Frontend behavior**
-- On 200: keep `accessToken` **in memory only** and compute `accessExpiresAt = now + expiresIn*1000`. The browser keeps the refresh cookie.
-- Then call `GET /api/auth/me` to hydrate the session (role + permissions).
+- On 200 with `accessToken`: keep it **in memory only** and compute `accessExpiresAt = now + expiresIn*1000`. The browser keeps the refresh cookie.
+- On 200 with `selectionToken`: show the tenant picker (keep the selection token in memory; it expires in `expiresIn` seconds), then call §3.1bis.
+- Then call `GET /api/auth/me` to hydrate the session (tenant, role, permissions).
 - On `LOGIN_LOCKED`: show "Demasiados intentos fallidos. Espera unos minutos e intenta de nuevo."
+- On `NO_ACTIVE_TENANT`: show "Tu usuario no tiene acceso a ninguna empresa activa."
+
+### 3.1bis `POST /api/auth/select-tenant`
+
+Opens a session in one of the user's tenants. Used after a login that returned `selectionToken`, and to **switch tenants** from an open session.
+
+**Request**: `Authorization: Bearer <selectionToken>` (after login) or `Authorization: Bearer <accessToken>` (switching), with credentials, and
+```json
+{ "tenantId": "a20e…" }
+```
+
+**200 Response**: same shape as a one-tenant login (`accessToken`, `tokenType`, `expiresIn`, `tenant`) and a new refresh cookie. When switching, the current session is closed: its refresh token stops working.
+
+**Errors**
+| Status | Code | Meaning |
+|---|---|---|
+| 401 | `INVALID_TOKEN` | No token, a refresh token, or the current session already ended (logout) → force re-login |
+| 401 | `TOKEN_EXPIRED` | Selection token expired → log in again |
+| 403 | `TENANT_ACCESS_DENIED` | The user has no active membership in that tenant, or the tenant is suspended |
+| 422 | `VALIDATION_ERROR` | `tenantId` missing or not a UUID |
 
 ### 3.2 `POST /api/auth/refresh`
 
 **Request**: no body; the `faclab_refresh` cookie identifies the session.
 
-**200 Response**: same shape as `/login`, with a new access token and a new refresh cookie of the same session. The session's expiry moves forward 7 days.
+**200 Response**: same shape as a one-tenant `/login` (with the session's `tenant`), with a new access token and a new refresh cookie of the same session. The session's expiry moves forward 7 days. The tenant doesn't change; the role is re-read from the membership, so a role change shows up here.
 
 **Rotation**: each refresh replaces the refresh token; only the newest one is valid. Presenting an already used refresh token means it may have been stolen, so the session is revoked and the call fails with `TOKEN_REUSED`. One exception keeps concurrent tabs (or a lost response) working: the token replaced less than `JWT_REFRESH_REUSE_GRACE_SECONDS` ago (default 30) gets the current session's token back without rotating again.
 
@@ -143,7 +190,7 @@ Validation: `username` 1..64 chars, `password` 1..128 chars.
 | Status | Code | Meaning |
 |---|---|---|
 | 401 | `TOKEN_EXPIRED` | Refresh token expired → force re-login |
-| 401 | `INVALID_TOKEN` | No cookie, not a refresh token / malformed, or its session ended (logout, password change or reset, user deactivated, or opened before rotation existed) → force re-login |
+| 401 | `INVALID_TOKEN` | No cookie, not a refresh token / malformed, or its session ended (logout, password change or reset, removed from the tenant, tenant suspended, switched tenants) → force re-login |
 | 401 | `TOKEN_REUSED` | An already used refresh token; the session is now revoked → force re-login |
 
 ### 3.3 `POST /api/auth/logout`
@@ -169,13 +216,18 @@ No body. Requires `Authorization: Bearer <access>`.
     "fullName": "Ana Pérez",
     "role": 1,
     "permissions": ["product:read", "product:write", "user:manage", "..."],
-    "mustChangePassword": false
+    "mustChangePassword": false,
+    "tenant": { "id": "6f1c…", "ruc": "1799999990001", "legalName": "Ferretería Ejemplo S.A.", "tradeName": null },
+    "tenants": [
+      { "id": "6f1c…", "ruc": "1799999990001", "legalName": "Ferretería Ejemplo S.A.", "tradeName": null, "role": 1 },
+      { "id": "a20e…", "ruc": "0999999999001", "legalName": "Comercial Dos S.A.", "tradeName": "Comercial Dos", "role": 4 }
+    ]
   },
   "meta": { "requestId": "...", "timestamp": "..." }
 }
 ```
 
-Use this to build the in-memory session (`role`, `permissions: Set<string>`, `mustChangePassword`).
+Use this to build the in-memory session (`tenant`, `role`, `permissions: Set<string>`, `mustChangePassword`). `role` and `permissions` are those of the membership in `tenant`; `tenants` lists where the user can switch to (show a switcher only when there is more than one).
 
 > **`mustChangePassword`**: when `true`, every permission-gated endpoint returns 403 `PASSWORD_CHANGE_REQUIRED`. Only `/api/auth/me` and `/api/auth/change-password` keep working. The frontend MUST redirect the user to a mandatory change-password screen and block the rest of the app until the flag flips back to `false` (which requires a new login or a fresh `/me` after change-password).
 
@@ -184,6 +236,7 @@ Use this to build the in-memory session (`role`, `permissions: Set<string>`, `mu
 |---|---|---|
 | 401 | `TOKEN_EXPIRED` | Try refresh, then retry once |
 | 401 | `INVALID_TOKEN` | Force re-login |
+| 401 | `TENANT_REQUIRED` | Token issued before tenants existed → force re-login |
 | 403 | `PERMISSION_DENIED` | Missing/absent `Authorization` header |
 
 ### 4.2 `POST /api/auth/change-password`
@@ -217,6 +270,8 @@ Validation: `newPassword` ≥ 8 chars, ≤ 128.
 ## 5. Admin-only Endpoints — User Management
 
 Base prefix: `/api/admin/users`. All require permission `user:manage` (only `ADMIN` has it today). Any other role must get a 403 `PERMISSION_DENIED` and see a generic "no access" UI.
+
+Everything here happens **inside the caller's tenant** (the `tid` of the token): the list shows the members of that tenant, `role` and `isActive` are those of the membership, and a user who isn't a member answers 404 `NOT_FOUND`.
 
 ### 5.1 `GET /api/admin/users` — list users (paginated)
 
@@ -252,7 +307,7 @@ Base prefix: `/api/admin/users`. All require permission `user:manage` (only `ADM
 
 ### 5.2 `GET /api/admin/users/{userId}` — get by id
 
-404 `NOT_FOUND` if missing.
+404 `NOT_FOUND` if missing or not a member of the caller's tenant.
 
 ### 5.3 `POST /api/admin/users` — create
 
@@ -270,6 +325,8 @@ Validation: `username` 1..64, `email` 1..128, `password` 8..128, `role` 1..5 (de
 
 `fullName` is the name the user signs documents with (shift cashier, POS sale, cash movement, refund, adjustment, transfer); without one, the username signs. The API takes it from the token, never from the request body.
 
+The user is created with a membership in the caller's tenant and the given `role`. Usernames and emails are unique across the platform: one taken in another company also answers 409. (Adding an existing user of another company is not possible from here yet.)
+
 **200 Response**: `DataResponse<UserResponse>` (same shape as list item).
 
 **Errors**
@@ -283,21 +340,21 @@ Validation: `username` 1..64, `email` 1..128, `password` 8..128, `role` 1..5 (de
 
 **Request** `{ "role": 3 }` (1..5)
 
-Returns updated `UserResponse`. 404 if user missing, 422 on bad role, 409 `LAST_ADMIN` when it would leave no active admin.
+Changes the role in the caller's tenant only. Returns updated `UserResponse`. 404 if user missing, 422 on bad role, 409 `LAST_ADMIN` when it would leave the tenant without an active admin.
 
 ### 5.4bis `PUT /api/admin/users/{userId}/profile`
 
 **Request** `{ "fullName": "Luis Cajero" }` (≤ 64; empty or `null` clears it)
 
-Returns updated `UserResponse`. 404 if user missing. Access tokens already issued keep the previous name until their next refresh.
+Returns updated `UserResponse`. 404 if user missing. Access tokens already issued keep the previous name until their next refresh. The name is the same in every tenant: 409 `USER_IN_OTHER_TENANTS` if the user also belongs to another one.
 
 ### 5.5 `POST /api/admin/users/{userId}/activate`
 
-No body. Returns updated `UserResponse`. Idempotent-ish (re-activating active user is safe; check server if needed).
+No body. Gives the user back access to the caller's tenant (activates the membership). Returns updated `UserResponse`; re-activating an active user is safe.
 
 ### 5.6 `POST /api/admin/users/{userId}/deactivate`
 
-No body. Returns updated `UserResponse`. Every session of the user is revoked: their **access tokens still work until they expire**, but `/refresh` fails with `INVALID_TOKEN`. 409 `LAST_ADMIN` if they are the only active admin.
+No body. Removes the user from the caller's tenant (deactivates the membership); their other tenants don't change. Returns updated `UserResponse`. Their sessions in this tenant are revoked: their **access tokens still work until they expire**, but `/refresh` fails with `INVALID_TOKEN`. 409 `LAST_ADMIN` if they are the tenant's only active admin.
 
 ### 5.7 `POST /api/admin/users/{userId}/reset-password` — admin-assisted reset
 
@@ -314,7 +371,8 @@ Validation: `newPassword` 8..128 chars.
 **Errors**
 | Status | Code | Meaning |
 |---|---|---|
-| 404 | `NOT_FOUND` | Target user id does not exist |
+| 404 | `NOT_FOUND` | Target user id does not exist or isn't a member of the caller's tenant |
+| 409 | `USER_IN_OTHER_TENANTS` | The user also belongs to another tenant: the password works there too, so this tenant can't change it |
 | 422 | `VALIDATION_ERROR` | `newPassword` too short |
 | 403 | `PERMISSION_DENIED` | Caller lacks `user:manage` |
 
@@ -355,13 +413,15 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 |---|---|---|
 | Access | 900 s (15 min) | `JWT_ACCESS_TTL_SECONDS` |
 | Refresh | 604800 s (7 days) | `JWT_REFRESH_TTL_SECONDS` |
+| Tenant selection | 300 s (5 min) | `JWT_SELECTION_TTL_SECONDS` |
 
 - Tokens are JWT HS256 (opaque to the frontend; do **not** parse claims client-side for auth decisions — rely on `/me`).
 - On login, `expiresIn` is the access TTL in seconds.
-- Login opens a **session** (`auth_sessions`); both tokens carry its id in the `sid` claim. `/refresh` only works while the session is active and pushes its expiry forward, so an active user stays signed in.
+- Login (one tenant) or select-tenant opens a **session** (`auth_sessions`) in one tenant; both tokens carry its id in the `sid` claim and the tenant in `tid`. `/refresh` only works while the session is active and pushes its expiry forward, so an active user stays signed in.
+- An access token without `tid` answers 401 `TENANT_REQUIRED` on every protected route: log in again.
 - The refresh token also carries `jti`, the rotation the session currently accepts (`auth_sessions.refresh_jti`). See §3.2 for rotation, the grace for the token just replaced and `TOKEN_REUSED`.
-- Sessions end on `POST /api/auth/logout`, on a password change (every session except the one that made the change), on an admin reset or on deactivation. Access tokens are not checked against the session and expire on their own.
-- The access token also carries `perms` (the role's permission strings) so other services, such as faclab-invoicing, authorize the same way as this API, and `name` (the user's full name) when one is set.
+- Sessions end on `POST /api/auth/logout`, on a password change (every session except the one that made the change), on an admin reset, when the user is removed from the tenant, and when switching tenants (the previous one). Access tokens are not checked against the session and expire on their own.
+- The access token also carries `role` and `perms` (the membership's role and its permission strings) so other services, such as faclab-invoicing, authorize the same way as this API, and `name` (the user's full name) when one is set.
 
 ---
 
@@ -373,12 +433,16 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 | `TOKEN_EXPIRED` | 401 | Access or refresh token past `exp` | Access → attempt refresh; Refresh → force re-login |
 | `INVALID_TOKEN` | 401 | Bad signature, wrong typ (sent refresh where access needed), malformed; on refresh, no cookie or the session ended. The message is always the generic "invalid token" | Force re-login |
 | `TOKEN_REUSED` | 401 | An already used refresh token was presented; the session was revoked | Force re-login |
+| `TENANT_REQUIRED` | 401 | Access token without tenant (issued before tenants existed) | Force re-login |
 | `LOGIN_LOCKED` | 429 | Too many failed logins for the username or the client IP | Show the lockout message; let the user retry later |
 | `PERMISSION_DENIED` | 403 | No auth header OR user lacks required permission | No header → force login; lacks perm → show "no access" view |
 | `PASSWORD_CHANGE_REQUIRED` | 403 | User has `mustChangePassword=true` and is calling a permission-gated route | Redirect to change-password screen; only `/me` and `/change-password` are reachable |
+| `NO_ACTIVE_TENANT` | 403 | Login with right credentials but no active membership in an active tenant | Show "sin acceso a ninguna empresa" |
+| `TENANT_ACCESS_DENIED` | 403 | `select-tenant` with a tenant the user can't enter | Refresh the tenant list (`/me` or log in again) |
 | `USERNAME_ALREADY_EXISTS` | 409 | Create user conflict | Mark `username` field error |
 | `EMAIL_ALREADY_EXISTS` | 409 | Create user conflict | Mark `email` field error |
-| `LAST_ADMIN` | 409 | Deactivating or demoting the only active admin | Explain that another admin is needed first |
+| `LAST_ADMIN` | 409 | Deactivating or demoting the tenant's only active admin | Explain that another admin is needed first |
+| `USER_IN_OTHER_TENANTS` | 409 | Reset password or rename a user who also belongs to another tenant | Explain that the user (or the platform) must do it |
 | `NOT_FOUND` | 404 | User id missing | Show "user not found" |
 | `VALIDATION_ERROR` | 422 | Body/query validation failed | Use `errors[i].field` for inline errors |
 | `INTERNAL_ERROR` | 500 | Unexpected server failure | Generic toast + retry |
@@ -411,10 +475,11 @@ Single axios/fetch wrapper with:
 
 On app start / after login:
 ```
-POST /api/auth/login → access token (+ refresh cookie)
-GET  /api/auth/me    → { id, username, fullName, role, permissions, mustChangePassword }
+POST /api/auth/login          → access token (+ refresh cookie), or selectionToken + tenants
+POST /api/auth/select-tenant  → (several tenants) access token (+ refresh cookie)
+GET  /api/auth/me             → { id, username, fullName, role, permissions, mustChangePassword, tenant, tenants }
 ```
-Store `{ id, username, role, permissions: new Set(permissions), mustChangePassword }` in app state (e.g. Pinia/Zustand/React context).
+Store `{ id, username, tenant, tenants, role, permissions: new Set(permissions), mustChangePassword }` in app state (e.g. Pinia/Zustand/React context). Switching tenants: `POST /api/auth/select-tenant` with the current access token, then reload `/me` and drop every cache of the previous tenant.
 
 **If `mustChangePassword === true`**: do NOT navigate to the normal home. Route to the mandatory change-password screen and render nothing else. The router guard below handles this centrally.
 
@@ -488,8 +553,9 @@ Show role as a badge with the label from §2.1. Map integer → label in a singl
 
 ### 8.10 Inactive user handling
 
-- Login with inactive user → 401 `INVALID_CREDENTIALS` (same wording as wrong password — intentional).
-- Active session that is deactivated mid-flight → access token keeps working until it expires; next `/refresh` returns `INVALID_TOKEN` → force re-login. Don't try to detect this proactively.
+- Login with a blocked account → 401 `INVALID_CREDENTIALS` (same wording as wrong password — intentional).
+- Login of a user removed from every tenant → 403 `NO_ACTIVE_TENANT`.
+- Active session whose user is removed from the tenant mid-flight → access token keeps working until it expires; next `/refresh` returns `INVALID_TOKEN` → force re-login. Don't try to detect this proactively.
 
 ---
 
@@ -501,8 +567,8 @@ All protected endpoints (admin + POS) follow the same auth-error convention. Any
 
 ## 10. Local development
 
-- Bootstrap seed creates an `admin` user: username `admin`, password `ChangeMe123!` (see `src/auth/seed.py`).
-- Swagger/Scalar: `/docs`, `/docs/admin`, `/docs/pos` — "Auth" tag shows the 4 common endpoints; "Users" tag shows the admin CRUD.
+- `make seed-admin` creates the default tenant (a made-up RUC locally) and its `admin` user from the `AUTH_SEED_*` settings (see `src/auth/seed.py`). More tenants: `make provision-tenant args="..."` (see `docs/auth-spec.md`).
+- Swagger/Scalar: `/docs`, `/docs/admin`, `/docs/pos` — "Auth" tag shows the common auth endpoints; "Users" tag shows the admin CRUD.
 - To test quickly:
   ```bash
   TOKEN=$(curl -s -c cookies.txt -XPOST localhost:3000/api/auth/login \

@@ -36,6 +36,14 @@
   sobre un esquema que va a cambiar. Las capacidades imprescindibles (F-01 a F-05) son requisito del
   piloto.
 
+### Pendientes detectados al ejecutar las sesiones
+
+- **Login con email y descartar el nombre de usuario** (detectado en S2.1). Con identidad global, el
+  `username` es único en toda la plataforma. Dos empresas no pueden usar el mismo nombre (`caja1`) y
+  el 409 revela que el nombre ya existe en otra. Pasar al login con email y descartar `username`
+  mitiga esos choques. Conviene decidirlo antes de S2.9 (pantalla de login) o, a más tardar, en S8.5
+  (onboarding).
+
 ## 2. Dependencias
 
 ```mermaid

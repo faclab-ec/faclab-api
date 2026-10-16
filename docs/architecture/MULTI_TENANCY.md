@@ -5,6 +5,20 @@
 > ([ADR-0003](ADR/0003-identidad-global-y-contexto-de-sucursal.md)). Hoy no existe nada de esto
 > (G-01 a G-06). Este documento es conceptual: el esquema se implementa en las sesiones S2.1 a S2.9.
 
+**Implementado (S2.1, 2026-10-15):**
+
+- `tenants` (UUID, RUC validado y único, razón social, nombre comercial, estado `active`/`suspended`) y
+  `memberships` (usuario, empresa, rol, activo; única por usuario y empresa), en el módulo
+  `src/tenancy/`.
+- `users` como identidad global, sin rol. `auth_sessions.tenant_id`.
+- Login con selección de empresa, `POST /api/auth/select-tenant` (también para cambiar de empresa),
+  token con `tid` y `role`/`perms` de la membresía.
+- Administración de usuarios y regla `LAST_ADMIN` por empresa.
+- Alta por CLI (`python -m src.tenancy.provision`).
+
+Todavía **no hay aislamiento de datos**: las tablas de negocio no tienen `tenant_id` (S2.2–S2.4). El
+rol de plataforma queda para S8.5.
+
 ## 1. Niveles
 
 | Nivel | Qué es | Ejemplos |
@@ -224,8 +238,10 @@ Casos:
 
 1. **Alta** (comando de plataforma, S2.1; asistente en S8.5):
    - Crea la empresa con RUC validado (`TaxId` ya existe en `src/shared/domain/value_objects.py`).
+     Hecho en S2.1: `ProvisionTenantCommand` y `python -m src.tenancy.provision`, idempotente; un
+     usuario existente se une con su contraseña.
    - Crea la sucursal matriz (establecimiento 001), el punto de emisión 001, una bodega con su ubicación
-     por defecto y una terminal.
+     por defecto y una terminal (S2.5).
    - Crea la membresía del primer administrador.
 2. **Perfil fiscal y certificado** en facturación; el emisor queda listo según el readiness existente.
 3. **Datos iniciales**: importación de productos, clientes, proveedores y saldos de inventario (S5.8).
