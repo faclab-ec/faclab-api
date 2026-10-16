@@ -4,11 +4,11 @@ from decimal import Decimal
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn, PercentageColumn
 
 
-class RefundModel(Base):
+class RefundModel(TenantScoped, Base):
     __tablename__ = "pos_refunds"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -43,7 +43,7 @@ class RefundModel(Base):
     )
 
 
-class RefundItemModel(Base):
+class RefundItemModel(TenantScoped, Base):
     __tablename__ = "pos_refund_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -72,7 +72,7 @@ class RefundItemModel(Base):
     refund: Mapped["RefundModel"] = relationship(back_populates="items")
 
 
-class RefundPaymentModel(Base):
+class RefundPaymentModel(TenantScoped, Base):
     __tablename__ = "pos_refund_payments"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

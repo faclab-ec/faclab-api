@@ -32,8 +32,8 @@ class OutboxMessageModel(Base):
     topic: Mapped[str] = mapped_column(String(128), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     # Tenant of the transaction that wrote it (also in the faclab-tenant-id
-    # header). Nullable until the S2.3 baseline; the writer always sets it
-    tenant_id: Mapped[UUID | None] = mapped_column(Uuid)
+    # header). Infrastructure: the relay reads every tenant's messages
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     # Trace context of the request that wrote the message (W3C traceparent...)
     headers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -12,16 +12,20 @@ from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.infra.tenant import tenant_criteria
 
 
 def compute_cash_summary(session: Session, shift_id: int) -> dict:
-    """Compute cash summary for a shift. Pure function reusable by CloseShift and reports."""
+    """Compute cash summary for a shift. Pure function reusable by CloseShift and reports.
+    Only the context tenant's rows count."""
 
     # Cash sales: SUM of CASH payments from completed sales in this shift
     cash_sales = (
         session.query(func.coalesce(func.sum(PaymentModel.amount), Decimal("0")))
         .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
-        .filter(SaleModel.shift_id == shift_id)
+        .filter(
+            SaleModel.shift_id == shift_id, *tenant_criteria(PaymentModel, SaleModel)
+        )
         .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
         .filter(PaymentModel.payment_method == "CASH")
         .scalar()
@@ -31,7 +35,10 @@ def compute_cash_summary(session: Session, shift_id: int) -> dict:
     cash_refunds = (
         session.query(func.coalesce(func.sum(RefundPaymentModel.amount), Decimal("0")))
         .join(RefundModel, RefundModel.id == RefundPaymentModel.refund_id)
-        .filter(RefundModel.shift_id == shift_id)
+        .filter(
+            RefundModel.shift_id == shift_id,
+            *tenant_criteria(RefundPaymentModel, RefundModel),
+        )
         .filter(RefundModel.status == "COMPLETED")
         .filter(RefundPaymentModel.payment_method == "CASH")
         .scalar()
@@ -40,7 +47,9 @@ def compute_cash_summary(session: Session, shift_id: int) -> dict:
     # Cash in: SUM of IN cash movements in this shift
     cash_in = (
         session.query(func.coalesce(func.sum(CashMovementModel.amount), Decimal("0")))
-        .filter(CashMovementModel.shift_id == shift_id)
+        .filter(
+            CashMovementModel.shift_id == shift_id, *tenant_criteria(CashMovementModel)
+        )
         .filter(CashMovementModel.type == "IN")
         .scalar()
     )
@@ -48,7 +57,9 @@ def compute_cash_summary(session: Session, shift_id: int) -> dict:
     # Cash out: SUM of OUT cash movements in this shift
     cash_out = (
         session.query(func.coalesce(func.sum(CashMovementModel.amount), Decimal("0")))
-        .filter(CashMovementModel.shift_id == shift_id)
+        .filter(
+            CashMovementModel.shift_id == shift_id, *tenant_criteria(CashMovementModel)
+        )
         .filter(CashMovementModel.type == "OUT")
         .scalar()
     )

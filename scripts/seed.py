@@ -1,10 +1,25 @@
+"""Datos de ejemplo para desarrollo local. Borra los datos de negocio.
+
+Crea (o reutiliza) dos empresas con el administrador de `AUTH_SEED_*`: la de
+`make seed-admin` y una segunda de ejemplo. Las dos reciben el mismo catálogo,
+con los mismos SKU, identificaciones, códigos de bodega y números de orden de
+compra, para probar que cada empresa ve solo lo suyo. Al iniciar sesión, el
+administrador elige la empresa.
+
+Usage:
+    AUTH_SEED_USERNAME=admin AUTH_SEED_EMAIL=admin@faclab.local \\
+    AUTH_SEED_PASSWORD=... python -m scripts.seed
+"""
+
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from environs import Env
-from sqlalchemy import create_engine, delete
+from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
+from src.auth.seed import LOCAL_TENANT_NAME, LOCAL_TENANT_RUC
 from src.catalog.product.infra.models import CategoryModel, ProductModel
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerContactModel, CustomerModel
@@ -32,11 +47,20 @@ from src.purchasing.infra.models import (
     PurchaseReceiptModel,
 )
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
+from src.shared.domain.tenant import TenantContext, TenantSource
+from src.shared.infra.database import create_session_maker
+from src.shared.infra.tenant import tenant_scope
 from src.suppliers.infra.models import (
     SupplierContactModel,
     SupplierModel,
     SupplierProductModel,
 )
+from src.tenancy.app.commands.provision_tenant import ProvisionTenantCommand
+from src.tenancy.provision import provision
+
+# Made up, with a valid check digit: no real company
+SECOND_TENANT_RUC = "0999999999001"
+SECOND_TENANT_NAME = "Ferretería Demo Dos"
 
 TRUNCATE_ORDER = [
     StockTransferItemModel,
@@ -80,13 +104,37 @@ def ensure_local_environment() -> None:
         )
 
 
-def get_session() -> Session:
+def get_session_maker() -> sessionmaker[Session]:
+    """The app's session maker: new rows get the tenant of the context"""
     env = Env()
     env.read_env()
-    db_url = env("DATABASE_URL", "sqlite:///./default.db")
-    engine = create_engine(db_url)
-    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    return factory()
+    return create_session_maker(env("DATABASE_URL", "sqlite:///./default.db"))
+
+
+def provision_tenants() -> list[UUID]:
+    """The seed admin's tenant and a second one, both with that admin.
+    Idempotent: existing tenants, user and memberships are reused."""
+    env = Env()
+    env.read_env()
+    tenants = [
+        (
+            env("AUTH_SEED_TENANT_RUC", LOCAL_TENANT_RUC),
+            env("AUTH_SEED_TENANT_NAME", LOCAL_TENANT_NAME),
+        ),
+        (SECOND_TENANT_RUC, SECOND_TENANT_NAME),
+    ]
+    return [
+        provision(
+            ProvisionTenantCommand(
+                ruc=ruc,
+                legal_name=legal_name,
+                admin_username=env("AUTH_SEED_USERNAME"),
+                admin_email=env("AUTH_SEED_EMAIL"),
+                admin_password=env("AUTH_SEED_PASSWORD", None),
+            )
+        )["tenant_id"]
+        for ruc, legal_name in tenants
+    ]
 
 
 def truncate_all(session: Session):
@@ -1709,81 +1757,90 @@ def seed_transfers(
     return transfers, transfer_items
 
 
+def seed_tenant(session: Session) -> None:
+    """The whole catalog and its history in the context's tenant"""
+    print("Sembrando categorías...")
+    categories = seed_categories(session)
+
+    print("Sembrando unidades de medida...")
+    uoms = seed_uoms(session)
+
+    print("Sembrando bodegas...")
+    warehouses = seed_warehouses(session)
+
+    print("Sembrando ubicaciones...")
+    locations = seed_locations(session, warehouses)
+
+    print("Sembrando productos...")
+    products = seed_products(session, categories, uoms)
+
+    print("Sembrando clientes...")
+    customers = seed_customers(session)
+
+    print("Sembrando contactos de clientes...")
+    seed_customer_contacts(session, customers)
+
+    print("Sembrando proveedores...")
+    suppliers = seed_suppliers(session)
+
+    print("Sembrando contactos de proveedores...")
+    seed_supplier_contacts(session, suppliers)
+
+    print("Sembrando productos de proveedores...")
+    seed_supplier_products(session, suppliers, products)
+
+    print("Sembrando órdenes de compra...")
+    seed_purchase_orders(session, suppliers, products, locations)
+
+    print("Sembrando lotes...")
+    lots = seed_lots(session, products)
+
+    print("Sembrando movimientos y stock...")
+    seed_movements_and_stocks(session, products, locations, lots)
+
+    print("Sembrando números de serie...")
+    seed_serial_numbers(session, products, lots, locations)
+
+    print("Sembrando ventas...")
+    seed_sales(session, customers, products)
+
+    print("Sembrando ajustes de inventario...")
+    seed_adjustments(session, warehouses, products, locations)
+
+    print("Sembrando transferencias...")
+    seed_transfers(session, locations, products)
+
+    print(f"  - {len(categories)} categorías")
+    print(f"  - {len(uoms)} unidades de medida")
+    print(f"  - {len(warehouses)} bodegas")
+    print(f"  - {len(locations)} ubicaciones")
+    print(f"  - {len(products)} productos")
+    print(f"  - {len(customers)} clientes")
+    print(f"  - {len(suppliers)} proveedores")
+    print(f"  - {len(lots)} lotes")
+
+
 def main():
     ensure_local_environment()
-    session = get_session()
-    try:
+    tenant_ids = provision_tenants()
+    factory = get_session_maker()
+
+    with factory() as session:
         print("Truncando datos existentes...")
         truncate_all(session)
-
-        print("Sembrando categorías...")
-        categories = seed_categories(session)
-
-        print("Sembrando unidades de medida...")
-        uoms = seed_uoms(session)
-
-        print("Sembrando bodegas...")
-        warehouses = seed_warehouses(session)
-
-        print("Sembrando ubicaciones...")
-        locations = seed_locations(session, warehouses)
-
-        print("Sembrando productos...")
-        products = seed_products(session, categories, uoms)
-
-        print("Sembrando clientes...")
-        customers = seed_customers(session)
-
-        print("Sembrando contactos de clientes...")
-        seed_customer_contacts(session, customers)
-
-        print("Sembrando proveedores...")
-        suppliers = seed_suppliers(session)
-
-        print("Sembrando contactos de proveedores...")
-        seed_supplier_contacts(session, suppliers)
-
-        print("Sembrando productos de proveedores...")
-        seed_supplier_products(session, suppliers, products)
-
-        print("Sembrando órdenes de compra...")
-        seed_purchase_orders(session, suppliers, products, locations)
-
-        print("Sembrando lotes...")
-        lots = seed_lots(session, products)
-
-        print("Sembrando movimientos y stock...")
-        seed_movements_and_stocks(session, products, locations, lots)
-
-        print("Sembrando números de serie...")
-        seed_serial_numbers(session, products, lots, locations)
-
-        print("Sembrando ventas...")
-        seed_sales(session, customers, products)
-
-        print("Sembrando ajustes de inventario...")
-        seed_adjustments(session, warehouses, products, locations)
-
-        print("Sembrando transferencias...")
-        seed_transfers(session, locations, products)
-
         session.commit()
-        print("\nSeed completado exitosamente!")
-        print(f"  - {len(categories)} categorías")
-        print(f"  - {len(uoms)} unidades de medida")
-        print(f"  - {len(warehouses)} bodegas")
-        print(f"  - {len(locations)} ubicaciones")
-        print(f"  - {len(products)} productos")
-        print(f"  - {len(customers)} clientes")
-        print(f"  - {len(suppliers)} proveedores")
-        print(f"  - {len(lots)} lotes")
 
-    except Exception as e:
-        session.rollback()
-        print(f"\nError durante el seed: {e}")
-        raise
-    finally:
-        session.close()
+    # One transaction per tenant, each in its own context
+    for tenant_id in tenant_ids:
+        print(f"\nEmpresa {tenant_id}")
+        with (
+            tenant_scope(TenantContext(tenant_id, TenantSource.TASK)),
+            factory() as session,
+        ):
+            seed_tenant(session)
+            session.commit()
+
+    print("\nSeed completado exitosamente!")
 
 
 if __name__ == "__main__":

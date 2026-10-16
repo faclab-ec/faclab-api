@@ -4,11 +4,11 @@ from decimal import Decimal
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 
-class CashMovementModel(Base):
+class CashMovementModel(TenantScoped, Base):
     __tablename__ = "pos_cash_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

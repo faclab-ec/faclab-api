@@ -16,13 +16,14 @@ EXAMPLES = examples("invoices")
 
 
 @pytest.fixture
-def command_handler(monkeypatch) -> MagicMock:
+def command_handler(monkeypatch, in_tenant) -> MagicMock:
+    """Runs in the message's tenant, as the consumer sets it from the header"""
     handler = MagicMock()
     scope = MagicMock()
     scope.get.return_value = handler
 
     @contextmanager
-    def fake_scope():
+    def fake_scope(tenant=None):
         yield scope
 
     monkeypatch.setattr(invoice_messages, "create_sync_scope", fake_scope)

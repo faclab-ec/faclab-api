@@ -8,6 +8,7 @@ from wireup import injectable
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -31,6 +32,7 @@ class GetSalesByPaymentMethodQueryHandler(
                 func.sum(PaymentModel.amount).label("total_amount"),
             )
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
+            .filter(*tenant_criteria(PaymentModel, SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
         )
 

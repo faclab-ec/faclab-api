@@ -1,17 +1,28 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, UniqueConstraint, text
+from sqlalchemy import ForeignKeyConstraint, Index, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 if TYPE_CHECKING:
     from src.catalog.product.infra.models import ProductModel
 
 
-class StockModel(Base):
+class StockModel(TenantScoped, Base):
     __tablename__ = "stocks"
     __table_args__ = (
+        # Composite: the product and the location are of the stock's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_stocks_product_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_stocks_location_tenant",
+        ),
         UniqueConstraint("product_id", "location_id", name="uq_stock_product_location"),
         # NULLs are distinct in a unique constraint, so the one above lets a
         # product have several stock rows without location. Postgres 14 has no
@@ -26,11 +37,9 @@ class StockModel(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
+    product_id: Mapped[int] = mapped_column(nullable=False)
     quantity: Mapped[int] = mapped_column(nullable=False)
-    location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("locations.id"), index=True
-    )
+    location_id: Mapped[int | None] = mapped_column(index=True)
     reserved_quantity: Mapped[int] = mapped_column(default=0)
 
     product: Mapped["ProductModel"] = relationship(back_populates="stocks")

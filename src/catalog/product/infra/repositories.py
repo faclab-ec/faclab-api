@@ -24,8 +24,8 @@ class SqlAlchemyCategoryRepository(SqlAlchemyRepository[Category], CategoryRepos
 class SqlAlchemyProductRepository(SqlAlchemyRepository[Product], ProductRepository):
     __model__ = ProductModel
     __unique_errors__ = {
-        "products_sku_key": ProductSkuAlreadyExistsError,
-        "products_barcode_key": ProductBarcodeAlreadyExistsError,
+        "uq_products_tenant_sku": ProductSkuAlreadyExistsError,
+        "uq_products_tenant_barcode": ProductBarcodeAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: ProductMapper):

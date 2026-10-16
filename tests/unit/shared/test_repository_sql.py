@@ -1,22 +1,17 @@
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
-from src.shared.infra.database import Base
 from src.suppliers.infra.mappers import SupplierMapper
 from src.suppliers.infra.models import SupplierModel
 from src.suppliers.infra.repositories import SqlAlchemySupplierRepository
+from tests.sqlite import sqlite_session
 
 
 @pytest.fixture
-def session() -> Iterator[Session]:
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(
-        engine, tables=[Base.metadata.tables[SupplierModel.__tablename__]]
-    )
-    db = sessionmaker(bind=engine)()
+def session(in_tenant) -> Iterator[Session]:
+    db = sqlite_session([SupplierModel])
     for n in (1, 2, 3):
         db.add(SupplierModel(id=n, name=f"Supplier {n}", tax_id=f"099000000{n}001"))
     db.commit()

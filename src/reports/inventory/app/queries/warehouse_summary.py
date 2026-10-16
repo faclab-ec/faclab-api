@@ -10,6 +10,7 @@ from src.inventory.location.infra.models import LocationModel
 from src.inventory.stock.infra.models import StockModel
 from src.inventory.warehouse.infra.models import WarehouseModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -48,6 +49,11 @@ class GetWarehouseSummaryQueryHandler(
             .join(LocationModel, LocationModel.warehouse_id == WarehouseModel.id)
             .join(StockModel, StockModel.location_id == LocationModel.id)
             .join(ProductModel, ProductModel.id == StockModel.product_id)
+            .filter(
+                *tenant_criteria(
+                    WarehouseModel, LocationModel, StockModel, ProductModel
+                )
+            )
             .filter(WarehouseModel.is_active == True)  # noqa: E712
             .filter(ProductModel.is_service == False)  # noqa: E712
             .filter(StockModel.quantity > 0)

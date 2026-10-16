@@ -11,10 +11,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 
-class LotModel(Base):
+class LotModel(TenantScoped, Base):
     __tablename__ = "lots"
     __table_args__ = (
         UniqueConstraint("product_id", "lot_number", name="uq_lot_product_lot_number"),
@@ -39,7 +39,7 @@ class LotModel(Base):
     )
 
 
-class MovementLotItemModel(Base):
+class MovementLotItemModel(TenantScoped, Base):
     __tablename__ = "movement_lot_items"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

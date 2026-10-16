@@ -15,7 +15,7 @@ class SqlAlchemySerialNumberRepository(
 ):
     __model__ = SerialNumberModel
     __unique_errors__ = {
-        "serial_numbers_serial_number_key": SerialNumberAlreadyExistsError,
+        "uq_serial_numbers_tenant_serial_number": SerialNumberAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: SerialNumberMapper):

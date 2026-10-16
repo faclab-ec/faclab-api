@@ -86,13 +86,13 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [payment]
+                mock.filter.return_value.all.return_value = [payment]
             elif model_name == "CustomerModel":
-                mock.filter_by.return_value.first.return_value = customer
+                mock.filter.return_value.first.return_value = customer
             elif model_name == "ShiftModel":
-                mock.filter_by.return_value.first.return_value = shift
+                mock.filter.return_value.first.return_value = shift
             else:
                 # SaleItemModel + ProductModel.name join
                 mock.join.return_value.filter.return_value.all.return_value = [
@@ -133,9 +133,9 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [payment]
+                mock.filter.return_value.all.return_value = [payment]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item, "Product A")
@@ -173,9 +173,9 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [payment]
+                mock.filter.return_value.all.return_value = [payment]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item_0, "Product Zero"),
@@ -218,9 +218,9 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [
+                mock.filter.return_value.all.return_value = [
                     _make_payment_model(amount=Decimal("159"))
                 ]
             else:
@@ -257,9 +257,9 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [payment]
+                mock.filter.return_value.all.return_value = [payment]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = items
             return mock
@@ -294,9 +294,9 @@ class TestGenerateReceiptQueryHandler:
             model_name = getattr(model, "__name__", str(model))
 
             if model_name == "SaleModel":
-                mock.filter_by.return_value.first.return_value = sale
+                mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter_by.return_value.all.return_value = [payment]
+                mock.filter.return_value.all.return_value = [payment]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item, "Product A")
@@ -315,7 +315,7 @@ class TestGenerateReceiptQueryHandler:
 
         query_mock = handler.session.query
         mock = MagicMock()
-        mock.filter_by.return_value.first.return_value = None
+        mock.filter.return_value.first.return_value = None
         query_mock.return_value = mock
 
         with pytest.raises(NotFoundError):

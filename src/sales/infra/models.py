@@ -1,22 +1,35 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn, PercentageColumn
 
 
-class SaleModel(Base):
+class SaleModel(TenantScoped, Base):
     """Modelo SQLAlchemy para Sales"""
 
     __tablename__ = "sales"
+    __table_args__ = (
+        # Composite: the customer is of the sale's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "customer_id"],
+            ["customers.tenant_id", "customers.id"],
+            name="fk_sales_customer_tenant",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    customer_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("customers.id"), nullable=True, index=True
-    )
+    customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     is_final_consumer: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
@@ -62,18 +75,24 @@ class SaleModel(Base):
     )
 
 
-class SaleItemModel(Base):
+class SaleItemModel(TenantScoped, Base):
     """Modelo SQLAlchemy para Sale Items"""
 
     __tablename__ = "sale_items"
+    __table_args__ = (
+        # Composite: the product is of the sale's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_sale_items_product_tenant",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     sale_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    product_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("products.id"), nullable=False, index=True
-    )
+    product_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     discount: Mapped[Decimal] = mapped_column(
@@ -90,7 +109,7 @@ class SaleItemModel(Base):
     sale: Mapped["SaleModel"] = relationship(back_populates="items")
 
 
-class PaymentModel(Base):
+class PaymentModel(TenantScoped, Base):
     """Modelo SQLAlchemy para Payments"""
 
     __tablename__ = "payments"

@@ -1,6 +1,7 @@
 # ADR-0002: Multiempresa en base compartida con `tenant_id` y Row-Level Security
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-10-16; filtro en la aplicación, restricciones compuestas y nueva línea
+  base implementados en S2.2–S2.3; RLS y roles pendientes en S2.4)
 - **Relacionado:** [MULTI_TENANCY.md](../MULTI_TENANCY.md), [ADR-0003](0003-identidad-global-y-contexto-de-sucursal.md)
 
 ## Contexto

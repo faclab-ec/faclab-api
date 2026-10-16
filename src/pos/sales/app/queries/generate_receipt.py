@@ -12,6 +12,7 @@ from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import TaxCode
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -27,7 +28,11 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         self.session = session
 
     def _handle(self, query: GenerateReceiptQuery) -> dict:
-        sale = self.session.query(SaleModel).filter_by(id=query.sale_id).first()
+        sale = (
+            self.session.query(SaleModel)
+            .filter(SaleModel.id == query.sale_id, *tenant_criteria(SaleModel))
+            .first()
+        )
         if not sale:
             raise NotFoundError(f"Sale with id {query.sale_id} not found")
 
@@ -35,7 +40,10 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         item_rows = (
             self.session.query(SaleItemModel, ProductModel.name)
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
-            .filter(SaleItemModel.sale_id == query.sale_id)
+            .filter(
+                SaleItemModel.sale_id == query.sale_id,
+                *tenant_criteria(SaleItemModel, ProductModel),
+            )
             .all()
         )
 
@@ -84,7 +92,11 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
 
         # Fetch payments
         payment_rows = (
-            self.session.query(PaymentModel).filter_by(sale_id=query.sale_id).all()
+            self.session.query(PaymentModel)
+            .filter(
+                PaymentModel.sale_id == query.sale_id, *tenant_criteria(PaymentModel)
+            )
+            .all()
         )
         payments = [
             {
@@ -101,7 +113,12 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         customer = None
         if sale.customer_id:
             cust = (
-                self.session.query(CustomerModel).filter_by(id=sale.customer_id).first()
+                self.session.query(CustomerModel)
+                .filter(
+                    CustomerModel.id == sale.customer_id,
+                    *tenant_criteria(CustomerModel),
+                )
+                .first()
             )
             if cust:
                 customer = {
@@ -113,7 +130,11 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         # Fetch cashier name from shift
         cashier = None
         if sale.shift_id:
-            shift = self.session.query(ShiftModel).filter_by(id=sale.shift_id).first()
+            shift = (
+                self.session.query(ShiftModel)
+                .filter(ShiftModel.id == sale.shift_id, *tenant_criteria(ShiftModel))
+                .first()
+            )
             if shift:
                 cashier = shift.cashier_name
 

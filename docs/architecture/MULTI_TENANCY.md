@@ -25,12 +25,33 @@
 - `SET LOCAL app.tenant_id` (como `set_config(..., true)`) en `after_begin` de cada sesión.
 - Repositorio base: en un modelo con `__tenant_scoped__ = True`, `create` asigna la empresa del contexto y
   todas las lecturas, `update` y `delete` filtran por ella; sin contexto falla.
-- `DomainEvent.tenant_id`, `outbox_messages.tenant_id` (nullable hasta la línea base de S2.3) y el header
-  `faclab-tenant-id` en cada mensaje.
+- `DomainEvent.tenant_id`, `outbox_messages.tenant_id` y el header `faclab-tenant-id` en cada mensaje.
 - Logs y span del request con `faclab.tenant.id`.
 
-Todavía **no hay aislamiento de datos**: ninguna tabla de negocio tiene `tenant_id` ni la marca (S2.3) y
-no hay RLS (S2.4). El rol de plataforma queda para S8.5.
+**Implementado (S2.3, 2026-10-16):**
+
+- Las 31 tablas de negocio tienen `tenant_id UUID NOT NULL` con FK a `tenants` y la marca de empresa
+  (mixin `TenantScoped` en `src/shared/infra/database.py`). La clasificación quedó como en §3, con tres
+  grupos: plataforma sin empresa (`tenants`, `users`, `login_failures`); con `tenant_id` pero leídas
+  entre empresas por auth, la provisión y el relay (`memberships`, `auth_sessions`, `outbox_messages`,
+  esta última ya `NOT NULL`); y negocio. Las sucursales llegan en S2.5.
+- Restricciones únicas por empresa: SKU, código de barras, símbolo de unidad, `tax_id` de clientes y
+  proveedores, código de bodega, serie y número de orden de compra (`uq_<tabla>_tenant_<columna>`). Las
+  que dependen de un padre de la empresa (código de ubicación por bodega, lote por producto, stock por
+  producto y ubicación) no cambian. El número de orden de compra es correlativo por empresa.
+- FKs compuestas `(tenant_id, x_id)` (`fk_<tabla>_<destino>_tenant`) en venta → cliente, ítem de
+  venta → producto, stock → producto y ubicación, movimiento → producto y ubicaciones, orden de compra
+  → proveedor y transferencia → ubicaciones, con `UNIQUE (tenant_id, id)` en clientes, productos,
+  ubicaciones y proveedores.
+- Hook `before_flush` en cada sesión: toda fila nueva de una tabla por empresa recibe la empresa del
+  contexto, aunque no pase por el repositorio base. Las consultas escritas a mano (reportes de inventario
+  y POS, resumen de caja, recibo, número de orden de compra) filtran cada tabla con `tenant_criteria`.
+- Nueva línea base de migraciones (`80ccdab134c7`) en lugar de la cadena anterior.
+- `make seed` crea dos empresas con el mismo catálogo y el administrador del seed en ambas.
+- Temporal hasta S2.8: un mensaje de `invoices` sin empresa corre en la de su venta (búsqueda por id).
+
+El filtro está en la aplicación; la segunda barrera en la base (RLS) es S2.4. El rol de plataforma queda
+para S8.5.
 
 ## 1. Niveles
 
@@ -178,7 +199,7 @@ sequenceDiagram
 | Base de datos | `set_config('app.tenant_id', tid, true)` (= `SET LOCAL`) en `after_begin` de la sesión (S2.2); RLS como segunda barrera (S2.4) |
 | Eventos de dominio | Cada `DomainEvent` lleva `tenant_id` del contexto (S2.2) |
 | Outbox y Kafka | Columna `tenant_id` y header `faclab-tenant-id` (S2.2); clave de partición y envelope con `tenant_id` (ADR-0006, S2.8) |
-| Consumidores | Abren el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre antes de llamar al handler (S2.2). Sin empresa, el mensaje se procesa sin contexto: hoy `invoices` no la trae |
+| Consumidores | Abren el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre antes de llamar al handler (S2.2). Sin empresa, el mensaje se procesa sin contexto: hoy `invoices` no la trae y su handler la toma de la venta (S2.3, temporal hasta S2.8) |
 | Tareas periódicas | Recorren empresas explícitamente y abren un contexto por empresa (`create_sync_scope(tenant=...)`) |
 | Archivos | Claves `tenants/{tenant_id}/...` en el almacenamiento de objetos; nunca rutas que el cliente arme |
 | Reportes | Corren dentro del contexto (RLS). Los consolidados de la empresa agregan todas las sucursales permitidas; los de plataforma usan el rol `faclab_worker` |
@@ -190,9 +211,11 @@ sequenceDiagram
 - Restricciones únicas compuestas: `(tenant_id, sku)`, `(tenant_id, barcode)`, `(tenant_id, tax_id)`
   en clientes y proveedores, `(tenant_id, code)` en bodegas, `(tenant_id, establishment_code)` en
   sucursales, `(tenant_id, branch_id, code)` en puntos de emisión, `(tenant_id, serial_number)`.
+  Hechas en S2.3 salvo las de sucursales y puntos de emisión (S2.5).
 - Claves foráneas compuestas `(tenant_id, x_id)` en relaciones críticas (venta → cliente, ítem →
   producto, stock → ubicación, terminal → ubicación), con `UNIQUE (tenant_id, id)` en la tabla
-  referida. Así la base impide mezclar empresas aunque falle la aplicación.
+  referida. Así la base impide mezclar empresas aunque falle la aplicación. Hechas en S2.3 (lista en el
+  bloque de arriba); la de terminal llega con S2.6.
 - Índice único parcial: un turno `OPEN` por terminal.
 - Índices que empiezan por `tenant_id` en todas las consultas de listado.
 

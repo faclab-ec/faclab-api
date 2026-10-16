@@ -4,11 +4,11 @@ from decimal import Decimal
 from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 from src.shared.infra.precision import MoneyColumn
 
 
-class ShiftModel(Base):
+class ShiftModel(TenantScoped, Base):
     """Modelo SQLAlchemy para Shifts"""
 
     __tablename__ = "pos_shifts"

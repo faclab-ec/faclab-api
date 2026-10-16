@@ -1,17 +1,20 @@
 from datetime import datetime
 
-from sqlalchemy import String
+from sqlalchemy import String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.shared.infra.database import Base
+from src.shared.infra.database import Base, TenantScoped
 
 
-class WarehouseModel(Base):
+class WarehouseModel(TenantScoped, Base):
     __tablename__ = "warehouses"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_warehouses_tenant_code"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
     address: Mapped[str | None] = mapped_column(String(256))
     city: Mapped[str | None] = mapped_column(String(64))
     country: Mapped[str | None] = mapped_column(String(64))

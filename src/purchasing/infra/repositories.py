@@ -36,17 +36,18 @@ class SqlAlchemyPurchaseOrderRepository(
 ):
     __model__ = PurchaseOrderModel
     __unique_errors__ = {
-        "purchase_orders_order_number_key": PurchaseOrderNumberAlreadyExistsError,
+        "uq_purchase_orders_tenant_order_number": PurchaseOrderNumberAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: PurchaseOrderMapper):
         super().__init__(session, mapper)
 
     def last_sequence_for_prefix(self, prefix: str) -> int:
+        """Numbers are per tenant: only the context tenant's orders count"""
         order_number = self.__model__.order_number
         suffix = func.substr(order_number, len(prefix) + 1)
         return (
-            self.session.query(func.max(cast(suffix, Integer)))
+            self._query(func.max(cast(suffix, Integer)))
             .filter(order_number.like(f"{prefix}%"))
             .scalar()
             or 0

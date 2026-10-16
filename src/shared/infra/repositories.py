@@ -12,6 +12,7 @@ from src.shared.domain.exceptions import AlreadyExistsError, NotFoundError
 from src.shared.domain.specifications import Specification
 from src.shared.domain.tenant import TenantMismatchError, require_tenant
 from src.shared.infra.mappers import Mapper
+from src.shared.infra.tenant import tenant_criteria
 
 E = TypeVar("E", bound="Entity")
 
@@ -27,7 +28,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
     context and every read, update and delete only sees that tenant's rows, so
     another tenant's id is simply not found. Without a context they raise
     `TenantContextRequiredError`. Queries that subclasses write themselves are
-    not covered.
+    not covered: they add `tenant_criteria(...)` explicitly.
     """
 
     __model__: ClassVar[type[Any]]
@@ -46,8 +47,7 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         """The tenant filter every read of a tenant-scoped model adds"""
         if not self._tenant_scoped:
             return []
-        tenant_id = require_tenant(f"reading {self.__model__.__name__}").tenant_id
-        return [self.__model__.tenant_id == tenant_id]
+        return tenant_criteria(self.__model__)
 
     def _query(self, *columns: Any) -> Query:
         """Query of the model (or of `columns`), limited to the context tenant"""

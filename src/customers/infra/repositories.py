@@ -13,7 +13,7 @@ from src.shared.infra.repositories import SqlAlchemyRepository
 class SqlAlchemyCustomerRepository(SqlAlchemyRepository[Customer], CustomerRepository):
     __model__ = CustomerModel
     __unique_errors__ = {
-        "customers_tax_id_key": CustomerTaxIdAlreadyExistsError,
+        "uq_customers_tenant_tax_id": CustomerTaxIdAlreadyExistsError,
     }
 
     def __init__(self, session: Session, mapper: CustomerMapper):

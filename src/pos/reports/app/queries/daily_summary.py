@@ -11,6 +11,7 @@ from src.pos.refund.infra.models import RefundModel
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -33,6 +34,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
                 func.count(SaleModel.id).label("count"),
                 func.coalesce(func.sum(SaleModel.total), Decimal("0")).label("total"),
             )
+            .filter(*tenant_criteria(SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
@@ -47,6 +49,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
                 func.sum(PaymentModel.amount).label("total"),
             )
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
+            .filter(*tenant_criteria(PaymentModel, SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
@@ -66,6 +69,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             )
             .join(SaleModel, SaleModel.id == SaleItemModel.sale_id)
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
+            .filter(*tenant_criteria(SaleItemModel, SaleModel, ProductModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
@@ -81,6 +85,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
                 func.count(RefundModel.id).label("count"),
                 func.coalesce(func.sum(RefundModel.total), Decimal("0")).label("total"),
             )
+            .filter(*tenant_criteria(RefundModel))
             .filter(RefundModel.status == "COMPLETED")
             .filter(RefundModel.refund_date >= day_start)
             .filter(RefundModel.refund_date <= day_end)
