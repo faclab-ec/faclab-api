@@ -45,6 +45,7 @@ from src.suppliers.infra.models import (  # noqa: F401
     SupplierModel,
     SupplierProductModel,
 )
+from src.tenancy.infra.models import MembershipModel, TenantModel  # noqa: F401
 
 env = Env()
 env.read_env()

@@ -52,7 +52,10 @@ from src.shared.infra.validators import (
     PaginatedDataResponse,
 )
 
-_perm = [Depends(require_permission(Permission.USER_MANAGE))]
+# The same callable in the route's dependencies and in its `caller` parameter,
+# so FastAPI runs it once per request
+_manage = require_permission(Permission.USER_MANAGE)
+_perm = [Depends(_manage)]
 
 
 class UserAdminRouter:
@@ -64,7 +67,7 @@ class UserAdminRouter:
         self.router.get(
             "",
             response_model=PaginatedDataResponse[UserResponse],
-            summary="List all users",
+            summary="List the users of the caller's tenant",
             responses=RESPONSES_LIST,
             dependencies=_perm,
         )(self.list_users)
@@ -78,14 +81,14 @@ class UserAdminRouter:
         self.router.post(
             "",
             response_model=DataResponse[UserResponse],
-            summary="Create a new user",
+            summary="Create a user in the caller's tenant",
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.create_user)
         self.router.put(
             "/{user_id}/role",
             response_model=DataResponse[UserResponse],
-            summary="Update user role",
+            summary="Update the user's role in the caller's tenant",
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.update_role)
@@ -99,14 +102,14 @@ class UserAdminRouter:
         self.router.post(
             "/{user_id}/activate",
             response_model=DataResponse[UserResponse],
-            summary="Activate a user",
+            summary="Give the user back access to the caller's tenant",
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.activate)
         self.router.post(
             "/{user_id}/deactivate",
             response_model=DataResponse[UserResponse],
-            summary="Deactivate a user",
+            summary="Remove the user's access to the caller's tenant",
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.deactivate)
@@ -122,10 +125,14 @@ class UserAdminRouter:
         self,
         handler: Injected[ListUsersQueryHandler],
         query_params: UserQueryParams = Depends(),
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> PaginatedDataResponse[UserResponse]:
         result = handler.handle(
-            ListUsersQuery(**query_params.model_dump(exclude_none=True))
+            ListUsersQuery(
+                tenant_id=caller.tenant_id,
+                **query_params.model_dump(exclude_none=True),
+            )
         )
         return PaginatedDataResponse(
             data=[UserResponse.model_validate(u) for u in result["items"]],
@@ -140,19 +147,24 @@ class UserAdminRouter:
         self,
         handler: Injected[GetUserByIdQueryHandler],
         user_id: int,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
-        result = handler.handle(GetUserByIdQuery(user_id=user_id))
+        result = handler.handle(
+            GetUserByIdQuery(tenant_id=caller.tenant_id, user_id=user_id)
+        )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
     def create_user(
         self,
         handler: Injected[CreateUserCommandHandler],
         body: CreateUserRequest,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
         result = handler.handle(
             CreateUserCommand(
+                tenant_id=caller.tenant_id,
                 username=body.username,
                 email=body.email,
                 password=body.password,
@@ -167,9 +179,14 @@ class UserAdminRouter:
         handler: Injected[UpdateUserRoleCommandHandler],
         user_id: int,
         body: UpdateUserRoleRequest,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
-        result = handler.handle(UpdateUserRoleCommand(user_id=user_id, role=body.role))
+        result = handler.handle(
+            UpdateUserRoleCommand(
+                tenant_id=caller.tenant_id, user_id=user_id, role=body.role
+            )
+        )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
     def update_profile(
@@ -177,10 +194,15 @@ class UserAdminRouter:
         handler: Injected[UpdateUserProfileCommandHandler],
         user_id: int,
         body: UpdateUserProfileRequest,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
         result = handler.handle(
-            UpdateUserProfileCommand(user_id=user_id, full_name=body.full_name)
+            UpdateUserProfileCommand(
+                tenant_id=caller.tenant_id,
+                user_id=user_id,
+                full_name=body.full_name,
+            )
         )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
@@ -188,18 +210,24 @@ class UserAdminRouter:
         self,
         handler: Injected[ActivateUserCommandHandler],
         user_id: int,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
-        result = handler.handle(ActivateUserCommand(user_id=user_id))
+        result = handler.handle(
+            ActivateUserCommand(tenant_id=caller.tenant_id, user_id=user_id)
+        )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
     def deactivate(
         self,
         handler: Injected[DeactivateUserCommandHandler],
         user_id: int,
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
-        result = handler.handle(DeactivateUserCommand(user_id=user_id))
+        result = handler.handle(
+            DeactivateUserCommand(tenant_id=caller.tenant_id, user_id=user_id)
+        )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
 
     def reset_password(
@@ -207,11 +235,12 @@ class UserAdminRouter:
         handler: Injected[AdminResetPasswordCommandHandler],
         user_id: int,
         body: AdminResetPasswordRequest,
-        caller: AuthenticatedUser = Depends(require_permission(Permission.USER_MANAGE)),
+        caller: AuthenticatedUser = Depends(_manage),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[UserResponse]:
         result = handler.handle(
             AdminResetPasswordCommand(
+                tenant_id=caller.tenant_id,
                 user_id=user_id,
                 new_password=body.new_password,
                 reset_by_user_id=caller.id,

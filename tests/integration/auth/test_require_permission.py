@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from src.auth.domain.entities import AuthenticatedUser, Role
@@ -11,6 +13,7 @@ def _make_user(role: Role) -> AuthenticatedUser:
         id=1,
         username="testuser",
         role=role,
+        tenant_id=uuid4(),
         permissions=permissions_for(role),
     )
 

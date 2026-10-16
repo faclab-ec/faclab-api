@@ -1,12 +1,16 @@
-from src.auth.app.repositories import UserRepository
-from src.auth.domain.entities import Role, User
+from src.auth.domain.entities import User
 from src.auth.domain.exceptions import LastAdminError
+from src.tenancy.app.repositories import MembershipRepository
+from src.tenancy.domain.entities import Membership
 
 
-def ensure_not_last_admin(user: User, repo: UserRepository) -> None:
-    """Falla si `user` es el único admin activo: sin él nadie podría gestionar
-    usuarios"""
-    if user.role != Role.ADMIN or not user.is_active:
+def ensure_not_last_admin(
+    user: User, membership: Membership, memberships: MembershipRepository
+) -> None:
+    """Falla si `user` es el único admin activo de la empresa de `membership`:
+    sin él nadie podría gestionar sus usuarios. Bloquea las membresías de los
+    admins, así que dos solicitudes que los degradan van una tras otra."""
+    if not (membership.is_admin and membership.active and user.is_active):
         return
-    if repo.count_by(role=int(Role.ADMIN), is_active=True) <= 1:
+    if memberships.lock_active_admins(membership.tenant_id) <= 1:
         raise LastAdminError(user.require_id())

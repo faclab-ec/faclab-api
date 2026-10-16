@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
 
 import jwt
 import structlog
@@ -6,14 +8,20 @@ from wireup import injectable
 
 from config import config
 from src.auth.app.services.token_service import (
+    SelectionToken,
     TokenClaims,
     TokenPair,
     TokenService,
     TokenType,
 )
 from src.auth.domain.entities import User
-from src.auth.domain.exceptions import InvalidTokenError, TokenExpiredError
+from src.auth.domain.exceptions import (
+    InvalidTokenError,
+    TenantRequiredError,
+    TokenExpiredError,
+)
 from src.auth.domain.permissions import permissions_for
+from src.tenancy.domain.entities import Membership
 
 _ALGORITHM = "HS256"
 
@@ -26,6 +34,7 @@ class JwtTokenService(TokenService):
         self._secret = config.JWT_SECRET
         self._access_ttl = config.JWT_ACCESS_TTL_SECONDS
         self._refresh_ttl = config.JWT_REFRESH_TTL_SECONDS
+        self._selection_ttl = config.JWT_SELECTION_TTL_SECONDS
         self._issuer = config.JWT_ISSUER
         self._reuse_grace = config.JWT_REFRESH_REUSE_GRACE_SECONDS
 
@@ -37,10 +46,19 @@ class JwtTokenService(TokenService):
     def refresh_reuse_grace_seconds(self) -> int:
         return self._reuse_grace
 
-    def issue_pair(self, user: User, session_id: int, refresh_jti: str) -> TokenPair:
-        access = self._encode(user, session_id, "access", self._access_ttl)
-        refresh = self._encode(
-            user, session_id, "refresh", self._refresh_ttl, jti=refresh_jti
+    def issue_pair(
+        self, user: User, membership: Membership, session_id: int, refresh_jti: str
+    ) -> TokenPair:
+        access = self._session_token(
+            user, membership, session_id, "access", self._access_ttl
+        )
+        refresh = self._session_token(
+            user,
+            membership,
+            session_id,
+            "refresh",
+            self._refresh_ttl,
+            jti=refresh_jti,
         )
         return TokenPair(
             access_token=access,
@@ -48,43 +66,64 @@ class JwtTokenService(TokenService):
             expires_in=self._access_ttl,
         )
 
+    def issue_selection(self, user: User) -> SelectionToken:
+        payload = self._payload(user, "selection", self._selection_ttl)
+        return SelectionToken(
+            token=jwt.encode(payload, self._secret, algorithm=_ALGORITHM),
+            expires_in=self._selection_ttl,
+        )
+
     def decode_access(self, token: str) -> TokenClaims:
-        return self._decode(token, expected_typ="access")
+        claims = self._decode(token, accepted=("access",))
+        if claims.tid is None:
+            raise TenantRequiredError()
+        if claims.role is None:
+            logger.info("token_rejected", reason="access token without role")
+            raise InvalidTokenError("invalid token")
+        return claims
 
     def decode_refresh(self, token: str) -> TokenClaims:
-        return self._decode(token, expected_typ="refresh")
+        return self._decode(token, accepted=("refresh",))
 
-    def _encode(
-        self,
-        user: User,
-        session_id: int,
-        typ: TokenType,
-        ttl_seconds: int,
-        jti: str | None = None,
-    ) -> str:
+    def decode_selection(self, token: str) -> TokenClaims:
+        return self._decode(token, accepted=("selection", "access"))
+
+    def _payload(self, user: User, typ: TokenType, ttl_seconds: int) -> dict[str, Any]:
         now = datetime.now(UTC)
-        payload = {
+        return {
             "sub": str(user.id),
-            "sid": session_id,
             "username": user.username,
-            "role": int(user.role),
             "typ": typ,
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
             "iss": self._issuer,
             "mcp": bool(user.must_change_password),
         }
+
+    def _session_token(
+        self,
+        user: User,
+        membership: Membership,
+        session_id: int,
+        typ: TokenType,
+        ttl_seconds: int,
+        jti: str | None = None,
+    ) -> str:
+        payload = self._payload(user, typ, ttl_seconds)
+        payload["sid"] = session_id
+        payload["tid"] = str(membership.tenant_id)
+        payload["role"] = int(membership.role)
         if typ == "access":
             # Other services (faclab-invoicing) authorize with these, so they
             # don't need their own copy of the role -> permissions table
-            payload["perms"] = sorted(p.value for p in permissions_for(user.role))
+            payload["perms"] = sorted(p.value for p in permissions_for(membership.role))
             if user.full_name:
                 payload["name"] = user.full_name
         if jti is not None:
             payload["jti"] = jti
         return jwt.encode(payload, self._secret, algorithm=_ALGORITHM)
 
-    def _decode(self, token: str, expected_typ: TokenType) -> TokenClaims:
+    def _decode(self, token: str, accepted: tuple[TokenType, ...]) -> TokenClaims:
         try:
             payload = jwt.decode(
                 token,
@@ -100,10 +139,10 @@ class JwtTokenService(TokenService):
             logger.info("token_rejected", reason=str(exc))
             raise InvalidTokenError("invalid token") from exc
 
-        if payload.get("typ") != expected_typ:
+        if payload.get("typ") not in accepted:
             logger.info(
                 "token_rejected",
-                reason=f"expected {expected_typ} token, got {payload.get('typ')}",
+                reason=f"expected {'/'.join(accepted)} token, got {payload.get('typ')}",
             )
             raise InvalidTokenError("invalid token")
 
@@ -111,16 +150,22 @@ class JwtTokenService(TokenService):
             return TokenClaims(
                 sub=int(payload["sub"]),
                 username=payload["username"],
-                role=int(payload["role"]),
                 typ=payload["typ"],
                 iat=int(payload["iat"]),
                 exp=int(payload["exp"]),
                 iss=payload["iss"],
+                role=_optional(payload, "role", int),
+                tid=_optional(payload, "tid", lambda value: UUID(str(value))),
                 must_change_password=bool(payload.get("mcp", False)),
-                sid=int(payload["sid"]) if payload.get("sid") is not None else None,
-                jti=str(payload["jti"]) if payload.get("jti") is not None else None,
+                sid=_optional(payload, "sid", int),
+                jti=_optional(payload, "jti", str),
                 name=payload.get("name") or None,
             )
         except (KeyError, TypeError, ValueError) as exc:
             logger.info("token_rejected", reason="malformed claims")
             raise InvalidTokenError("invalid token") from exc
+
+
+def _optional(payload: dict[str, Any], key: str, convert):
+    value = payload.get(key)
+    return convert(value) if value is not None else None

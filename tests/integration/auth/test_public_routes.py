@@ -14,6 +14,8 @@ HEALTH_ROUTES = {"GET /health/live", "GET /health/ready"}
 
 PUBLIC_ROUTES = HEALTH_ROUTES | {
     "POST /api/auth/login",
+    # Authenticates itself with the login's selection token or an access token
+    "POST /api/auth/select-tenant",
     "POST /api/auth/refresh",
     # Ends the session of the refresh token in the body
     "POST /api/auth/logout",

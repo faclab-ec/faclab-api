@@ -36,6 +36,7 @@ def create_wireup_container():
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
     from src.shared.infra.outbox.writer import OutboxWriter
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
+    from src.tenancy.infra.container import INJECTABLES as TENANCY_INJECTABLES
 
     db_connection_string = config.DB_CONNECTION_STRING
     if not db_connection_string:
@@ -49,6 +50,7 @@ def create_wireup_container():
             EventBusPublisher,
             OutboxWriter,
             *AUTH_INJECTABLES,
+            *TENANCY_INJECTABLES,
             *CATALOG_INJECTABLES,
             *UOM_INJECTABLES,
             *WAREHOUSE_INJECTABLES,
