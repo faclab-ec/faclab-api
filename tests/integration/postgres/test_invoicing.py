@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from config import config
 from src.auth.domain.entities import Role
 from src.invoicing.infra.invoice_messages import handle_invoice_message
+from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.outbox.models import OutboxMessageModel
+from src.shared.infra.tenant import tenant_scope
 from tests.contract.contracts import errors, validator
 from tests.integration.postgres.api import (
     Api,
@@ -22,6 +24,7 @@ from tests.integration.postgres.api import (
     make_product,
     make_warehouse,
 )
+from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
 
 
 @pytest.fixture
@@ -118,6 +121,7 @@ def test_authorized_invoice_marks_the_sale_invoiced(pos):
     cashier, _ = pos
     sale = _checkout(pos, [1, 0, 0])
 
+    # faclab-invoicing doesn't send the tenant yet: it runs in the sale's
     handle_invoice_message(_authorized(sale["id"]))
     # Kafka can deliver the same message again
     handle_invoice_message(_authorized(sale["id"]))
@@ -154,6 +158,17 @@ def test_other_invoice_results_leave_the_sale_alone(pos):
 
     assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
     assert cashier.get(f"/api/pos/sales/{cancelled['id']}")["status"] == "CANCELLED"
+
+
+def test_an_invoice_result_of_another_tenant_leaves_the_sale_alone(pos, pg_engine):
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+    other = ensure_tenant(pg_engine, OTHER_TENANT_RUC)
+
+    with tenant_scope(TenantContext(other, TenantSource.MESSAGE)):
+        handle_invoice_message(_authorized(sale["id"]))
+
+    assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
 
 
 def test_a_confirmed_sale_can_be_sent_to_invoicing_again(

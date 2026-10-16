@@ -16,9 +16,12 @@ _SRC = Path(__file__).parent.parent / "src"
 
 
 def load_all_models() -> None:
-    """Imports every `src/**/infra/models.py`, so `Base.metadata` and the
-    mappers know every table, as in the app and the migrations."""
-    for path in sorted(_SRC.rglob("infra/models.py")):
+    """Imports every `models.py` under an `infra` package of `src`, so
+    `Base.metadata` and the mappers know every table, as in the app and the
+    migrations."""
+    for path in sorted(_SRC.rglob("models.py")):
+        if "infra" not in path.parts:
+            continue
         module = ".".join(path.relative_to(_SRC.parent).with_suffix("").parts)
         importlib.import_module(module)
 
