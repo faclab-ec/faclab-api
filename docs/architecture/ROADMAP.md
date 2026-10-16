@@ -43,6 +43,12 @@
   el 409 revela que el nombre ya existe en otra. Pasar al login con email y descartar `username`
   mitiga esos choques. Conviene decidirlo antes de S2.9 (pantalla de login) o, a más tardar, en S8.5
   (onboarding).
+- **Empresa en los mensajes de `invoices`** (detectado en S2.2). El consumidor del core abre el
+  contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre, pero faclab-invoicing todavía
+  no envía ninguno. Cuando S2.3 declare `sales` por empresa, `InvoiceSaleCommand` fallará sin contexto
+  y el mensaje se reintentará sin fin. faclab-invoicing debe copiar a sus mensajes el header
+  `faclab-tenant-id` del `sales.confirmed` que recibe: en S2.3 o, a más tardar, antes de desplegar S2.3
+  (S2.8 cambia el contrato completo).
 
 ## 2. Dependencias
 

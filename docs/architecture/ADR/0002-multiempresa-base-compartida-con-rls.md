@@ -25,8 +25,10 @@ pequeñas y medianas, desplegado en un VPS (decisión del usuario). Hoy no hay d
 1. **Filtro en la aplicación**: el repositorio base asigna y filtra `tenant_id` a partir del contexto
    de la solicitud o del mensaje; nunca desde el cuerpo.
 2. **Row-Level Security** de PostgreSQL en cada tabla de negocio:
-   `USING (tenant_id = current_setting('app.tenant_id')::uuid)` y el mismo `WITH CHECK`. La sesión
-   ejecuta `SET LOCAL app.tenant_id` al iniciar cada transacción.
+   `USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)` y el mismo
+   `WITH CHECK`. La sesión ejecuta `SET LOCAL app.tenant_id` al iniciar cada transacción (hecho en
+   S2.2, como `set_config(..., true)`). El `nullif` cubre las conexiones que ya tuvieron el valor y
+   devuelven `''` en vez de null.
 3. **Roles de base de datos**:
    - `faclab_owner` es dueño de las tablas y ejecuta migraciones.
    - `faclab_app` no es dueño y no puede saltarse RLS.

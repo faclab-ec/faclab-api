@@ -16,8 +16,21 @@
 - Administración de usuarios y regla `LAST_ADMIN` por empresa.
 - Alta por CLI (`python -m src.tenancy.provision`).
 
-Todavía **no hay aislamiento de datos**: las tablas de negocio no tienen `tenant_id` (S2.2–S2.4). El
-rol de plataforma queda para S8.5.
+**Implementado (S2.2, 2026-10-15):**
+
+- `TenantContext` (empresa, origen, usuario y, desde S2.5, sucursal) en un `ContextVar`
+  (`src/shared/domain/tenant.py`). Lo fijan `AuthMiddleware` desde el `tid`, el consumidor de Kafka desde
+  el header `faclab-tenant-id` (o el `tenant_id` del sobre) y las tareas con
+  `create_sync_scope(tenant=...)`. Wireup lo inyecta como `TenantContext` (scoped).
+- `SET LOCAL app.tenant_id` (como `set_config(..., true)`) en `after_begin` de cada sesión.
+- Repositorio base: en un modelo con `__tenant_scoped__ = True`, `create` asigna la empresa del contexto y
+  todas las lecturas, `update` y `delete` filtran por ella; sin contexto falla.
+- `DomainEvent.tenant_id`, `outbox_messages.tenant_id` (nullable hasta la línea base de S2.3) y el header
+  `faclab-tenant-id` en cada mensaje.
+- Logs y span del request con `faclab.tenant.id`.
+
+Todavía **no hay aislamiento de datos**: ninguna tabla de negocio tiene `tenant_id` ni la marca (S2.3) y
+no hay RLS (S2.4). El rol de plataforma queda para S8.5.
 
 ## 1. Niveles
 
@@ -161,12 +174,12 @@ sequenceDiagram
 |---|---|
 | Autenticación | Claim `tid` emitido por el core tras validar la membresía. El frontend no envía `tenant_id` |
 | Sucursal | Encabezado `X-Branch-Id` validado contra `user_branch_access` (o `bids` del token) |
-| API | `TenantContext` y `BranchContext` en el scope de wireup; el repositorio base asigna y filtra |
-| Base de datos | `SET LOCAL app.tenant_id` en `after_begin` de la sesión; RLS como segunda barrera |
-| Eventos de dominio | Cada `DomainEvent` lleva `tenant_id` del contexto |
-| Outbox y Kafka | Columna `tenant_id`, clave de partición y header `faclab-tenant-id`; envelope con `tenant_id` (ADR-0006) |
-| Consumidores | Abren el contexto con el `tenant_id` del mensaje antes de tocar la base |
-| Tareas periódicas | Recorren empresas explícitamente y abren un contexto por empresa |
+| API | `TenantContext` (S2.2; `AuthMiddleware` lo fija desde el `tid`) y `BranchContext` (S2.5) en el scope de wireup; el repositorio base asigna y filtra en los modelos con `__tenant_scoped__` |
+| Base de datos | `set_config('app.tenant_id', tid, true)` (= `SET LOCAL`) en `after_begin` de la sesión (S2.2); RLS como segunda barrera (S2.4) |
+| Eventos de dominio | Cada `DomainEvent` lleva `tenant_id` del contexto (S2.2) |
+| Outbox y Kafka | Columna `tenant_id` y header `faclab-tenant-id` (S2.2); clave de partición y envelope con `tenant_id` (ADR-0006, S2.8) |
+| Consumidores | Abren el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre antes de llamar al handler (S2.2). Sin empresa, el mensaje se procesa sin contexto: hoy `invoices` no la trae |
+| Tareas periódicas | Recorren empresas explícitamente y abren un contexto por empresa (`create_sync_scope(tenant=...)`) |
 | Archivos | Claves `tenants/{tenant_id}/...` en el almacenamiento de objetos; nunca rutas que el cliente arme |
 | Reportes | Corren dentro del contexto (RLS). Los consolidados de la empresa agregan todas las sucursales permitidas; los de plataforma usan el rol `faclab_worker` |
 | Logs y trazas | Atributo `faclab.tenant.id` en spans y logs; nunca como etiqueta de métrica (ver OBSERVABILITY.md) |
@@ -190,12 +203,14 @@ sequenceDiagram
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON products
-  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+  USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);
 ```
 
-- Sin `app.tenant_id` definido, `current_setting(..., true)` devuelve null y la política no deja ver
-  filas: **falla cerrada**.
+- Sin `app.tenant_id` definido, la expresión da null y la política no deja ver filas: **falla
+  cerrada**. El `nullif` hace falta porque una conexión en la que alguna vez se fijó el valor (aunque
+  fuera con `SET LOCAL`) devuelve `''`, no null, en las transacciones siguientes, y `''::uuid` falla
+  (comprobado en S2.2).
 - Roles:
   - `faclab_owner` es dueño de las tablas y ejecuta migraciones.
   - `faclab_app` es el que usa el API, sin `BYPASSRLS`.
