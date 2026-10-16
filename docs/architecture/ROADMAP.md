@@ -43,12 +43,17 @@
   el 409 revela que el nombre ya existe en otra. Pasar al login con email y descartar `username`
   mitiga esos choques. Conviene decidirlo antes de S2.9 (pantalla de login) o, a más tardar, en S8.5
   (onboarding).
-- **Empresa en los mensajes de `invoices`** (detectado en S2.2). El consumidor del core abre el
-  contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre, pero faclab-invoicing todavía
-  no envía ninguno. Cuando S2.3 declare `sales` por empresa, `InvoiceSaleCommand` fallará sin contexto
-  y el mensaje se reintentará sin fin. faclab-invoicing debe copiar a sus mensajes el header
-  `faclab-tenant-id` del `sales.confirmed` que recibe: en S2.3 o, a más tardar, antes de desplegar S2.3
-  (S2.8 cambia el contrato completo).
+- **Empresa en los mensajes de `invoices`** (detectado en S2.2; mitigado en S2.3). El consumidor del
+  core abre el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre, pero
+  faclab-invoicing todavía no envía ninguno. Desde S2.3, un mensaje sin empresa corre en la de su venta
+  (`_tenant_of_sale` en `src/invoicing/infra/invoice_messages.py`, búsqueda por el id global de la
+  venta), así que ya no se reintenta sin fin. Falta que faclab-invoicing copie a sus mensajes el header
+  del `sales.confirmed` que factura (S2.8, que cambia el contrato completo); entonces se quita el
+  respaldo. Con RLS (S2.4), esa búsqueda corre fuera de toda empresa y necesita el rol `faclab_worker`.
+- **Tablas leídas entre empresas y RLS** (detectado en S2.3). `memberships`, `auth_sessions` y
+  `outbox_messages` tienen `tenant_id`, pero el login, el refresh, la provisión y el relay las leen sin
+  contexto de empresa. S2.4 debe decidir su política (rol `faclab_worker`, funciones de plataforma o
+  sin RLS) en lugar de aplicarles la misma que a las tablas de negocio.
 
 ## 2. Dependencias
 
