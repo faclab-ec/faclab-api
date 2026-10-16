@@ -7,10 +7,13 @@ from wireup import injectable
 
 from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
 from src.pos.refund.infra.models import RefundModel
-from src.pos.reports.app.queries.x_report import GetXReportQuery, GetXReportQueryHandler
-from src.pos.shift.infra.models import ShiftModel
+from src.pos.reports.app.queries.x_report import (
+    GetXReportQuery,
+    GetXReportQueryHandler,
+    get_shift,
+)
 from src.shared.app.queries import Query, QueryHandler
-from src.shared.domain.exceptions import NotFoundError
+from src.shared.infra.tenant import tenant_criteria
 
 
 @dataclass
@@ -25,9 +28,7 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
         self.x_report_handler = x_report_handler
 
     def _handle(self, query: GetZReportQuery) -> dict:
-        shift = self.session.get(ShiftModel, query.shift_id)
-        if shift is None:
-            raise NotFoundError(f"Shift with id {query.shift_id} not found")
+        shift = get_shift(self.session, query.shift_id)
 
         # Get X-Report data
         x_data = self.x_report_handler._handle(GetXReportQuery(shift_id=query.shift_id))
@@ -38,7 +39,9 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
                 func.count(RefundModel.id).label("count"),
                 func.coalesce(func.sum(RefundModel.total), Decimal("0")).label("total"),
             )
-            .filter(RefundModel.shift_id == query.shift_id)
+            .filter(
+                RefundModel.shift_id == query.shift_id, *tenant_criteria(RefundModel)
+            )
             .filter(RefundModel.status == "COMPLETED")
             .one()
         )

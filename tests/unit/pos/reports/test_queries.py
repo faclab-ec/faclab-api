@@ -44,7 +44,7 @@ def _mock_shift_model(
 class TestXReport:
     def test_shift_not_found(self):
         session = _mock_session()
-        session.get.return_value = None
+        session.query.return_value.filter.return_value.first.return_value = None
         handler = GetXReportQueryHandler(session)
 
         with pytest.raises(NotFoundError):
@@ -57,7 +57,7 @@ class TestXReport:
         # Mock query chains
         query_mock = MagicMock()
         session.query.return_value = query_mock
-        session.get.return_value = shift
+        query_mock.first.return_value = shift
 
         # Sales aggregate
         sales_result = MagicMock()
@@ -91,7 +91,7 @@ class TestXReport:
 class TestZReport:
     def test_shift_not_found(self):
         session = _mock_session()
-        session.get.return_value = None
+        session.query.return_value.filter.return_value.first.return_value = None
         x_handler = GetXReportQueryHandler(session)
         handler = GetZReportQueryHandler(session, x_handler)
 
@@ -104,7 +104,7 @@ class TestZReport:
 
         query_mock = MagicMock()
         session.query.return_value = query_mock
-        session.get.return_value = shift
+        query_mock.first.return_value = shift
         query_mock.filter.return_value = query_mock
         query_mock.join.return_value = query_mock
         query_mock.group_by.return_value = query_mock

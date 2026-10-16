@@ -11,6 +11,19 @@ from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.infra.tenant import tenant_criteria
+
+
+def get_shift(session: Session, shift_id: int) -> ShiftModel:
+    """The context tenant's shift; another tenant's id is not found"""
+    shift = (
+        session.query(ShiftModel)
+        .filter(ShiftModel.id == shift_id, *tenant_criteria(ShiftModel))
+        .first()
+    )
+    if shift is None:
+        raise NotFoundError(f"Shift with id {shift_id} not found")
+    return shift
 
 
 @dataclass
@@ -24,9 +37,7 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
         self.session = session
 
     def _handle(self, query: GetXReportQuery) -> dict:
-        shift = self.session.get(ShiftModel, query.shift_id)
-        if shift is None:
-            raise NotFoundError(f"Shift with id {query.shift_id} not found")
+        shift = get_shift(self.session, query.shift_id)
 
         # Sales summary
         sales_agg = (
@@ -41,7 +52,7 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
                 ),
                 func.coalesce(func.sum(SaleModel.total), Decimal("0")).label("total"),
             )
-            .filter(SaleModel.shift_id == query.shift_id)
+            .filter(SaleModel.shift_id == query.shift_id, *tenant_criteria(SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .one()
         )
@@ -54,7 +65,10 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
                 func.sum(PaymentModel.amount).label("total"),
             )
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
-            .filter(SaleModel.shift_id == query.shift_id)
+            .filter(
+                SaleModel.shift_id == query.shift_id,
+                *tenant_criteria(PaymentModel, SaleModel),
+            )
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .group_by(PaymentModel.payment_method)
             .all()
@@ -72,7 +86,10 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
             )
             .join(SaleModel, SaleModel.id == SaleItemModel.sale_id)
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
-            .filter(SaleModel.shift_id == query.shift_id)
+            .filter(
+                SaleModel.shift_id == query.shift_id,
+                *tenant_criteria(SaleItemModel, SaleModel, ProductModel),
+            )
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
             .group_by(ProductModel.name, ProductModel.sku)
             .all()

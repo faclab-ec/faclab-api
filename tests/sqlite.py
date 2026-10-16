@@ -1,6 +1,8 @@
 """In-memory SQLite databases for the tests that run real SQL without PostgreSQL."""
 
+import importlib
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import event
@@ -9,6 +11,19 @@ from sqlalchemy.orm import Session
 from src.shared.infra.database import Base, create_session_maker
 from src.tenancy.infra.models import TenantModel
 from tests.conftest import TEST_TENANT_ID
+
+_SRC = Path(__file__).parent.parent / "src"
+
+
+def load_all_models() -> None:
+    """Imports every `src/**/infra/models.py`, so `Base.metadata` and the
+    mappers know every table, as in the app and the migrations."""
+    for path in sorted(_SRC.rglob("infra/models.py")):
+        module = ".".join(path.relative_to(_SRC.parent).with_suffix("").parts)
+        importlib.import_module(module)
+
+
+load_all_models()
 
 
 def sqlite_session(models: Iterable[Any], foreign_keys: bool = False) -> Session:
