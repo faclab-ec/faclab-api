@@ -1,6 +1,6 @@
 # ADR-0006: Contratos de eventos versionados y pruebas de contrato
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-10-15, implementado en S1.6)
 - **Relacionado:** [ADR-0005](0005-kafka-outbox-y-consumidores-idempotentes.md), [ADR-0009](0009-webhooks-firmados.md)
 
 ## Contexto
@@ -33,18 +33,25 @@ establecimiento y punto de emisión en la Etapa 2.
 3. **Pruebas de contrato**:
    - El core valida contra el esquema los mensajes que realmente produce.
    - Facturación valida sus esquemas zod contra los ejemplos.
-   - Los dos CI usan los mismos archivos: facturación los descarga del repositorio del core en una
-     versión fijada (tag o commit).
+   - Los dos CI usan los mismos archivos: facturación guarda una copia de `contracts/` fijada a un
+     commit del core (`contracts/source.json`), la actualiza con `npm run contracts:sync -- <ref>` y
+     su CI hace checkout del core en ese commit para comprobar que la copia es idéntica.
 4. **Compatibilidad**:
    - Agregar campos opcionales no cambia la versión.
    - Renombrar o quitar campos, cambiar tipos u obligar un campo nuevo crea `schema_version` + 1.
    - El productor publica la versión nueva solo cuando el consumidor ya acepta ambas. El orden de
      despliegue va en cada PR.
+   - Un mensaje sin `schema_version` es anterior a v1 y se lee como v1. Una versión desconocida no se
+     procesa: facturación la envía a su cola de mensajes fallidos y el core la registra y la descarta.
+   - Los esquemas son cerrados (`additionalProperties: false`) para que el productor no publique
+     campos sin documentarlos; los consumidores ignoran los campos que no conocen.
 5. **Campos nulos**: el contrato declara explícitamente qué campos aceptan `null`. Facturación no
    rechaza clientes sin email, teléfono o dirección; usa los valores que exige el SRI cuando faltan.
 
 ## Consecuencias
 
 - Se corrige G-08 en S1.6.
+- `invoices` v1 versiona el mensaje tal como existía (camelCase, sin `payload`) y agrega
+  `schema_version`; adoptar el envelope completo será su v2.
 - Los payloads de webhooks públicos (ADR-0009) reutilizan el mismo esquema de versionado, pero son
   contratos distintos (no se expone el evento interno tal cual).

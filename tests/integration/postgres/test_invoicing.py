@@ -1,6 +1,7 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
-message carries the invoice amounts, an authorized invoice from the `invoices`
-topic marks the sale as invoiced, and a confirmed sale can be sent again."""
+message follows its v1 contract and carries the invoice amounts, an authorized
+invoice from the `invoices` topic marks the sale as invoiced, and a confirmed
+sale can be sent again."""
 
 from decimal import Decimal
 
@@ -12,8 +13,10 @@ from config import config
 from src.auth.domain.entities import Role
 from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.shared.infra.outbox.models import OutboxMessageModel
+from tests.contract.contracts import errors, validator
 from tests.integration.postgres.api import (
     Api,
+    make_customer,
     make_location,
     make_movement,
     make_product,
@@ -40,9 +43,14 @@ def pos(client, admin, auth_headers) -> tuple[Api, list[tuple[int, str]]]:
     return cashier, products
 
 
-def _checkout(pos, quantities: list[int], **discount) -> dict:
+def _checkout(
+    pos, quantities: list[int], customer_id: int | None = None, **discount
+) -> dict:
     cashier, products = pos
-    sale = cashier.post("/api/pos/sales", {"isFinalConsumer": True})
+    sale = cashier.post(
+        "/api/pos/sales",
+        {"customerId": customer_id} if customer_id else {"isFinalConsumer": True},
+    )
     for (product_id, price), quantity in zip(products, quantities, strict=True):
         if quantity:
             cashier.post(
@@ -84,6 +92,26 @@ def test_sales_confirmed_lines_add_up_to_the_charged_total(
     assert bases == Decimal(str(sale["subtotal"])) - Decimal("1.00")
     assert bases + taxes == Decimal(message.payload["payload"]["total"])
     assert discounts == Decimal("1.00")
+
+
+def test_sales_confirmed_follows_the_v1_contract(
+    pos, client, admin, db_session: Session, monkeypatch
+):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    # Only name and tax id: no email, phone or address
+    customer = make_customer(Api(client, admin))
+
+    _checkout(pos, [1, 1, 1])
+    _checkout(pos, [2, 0, 1], customer_id=customer["id"])
+
+    final_consumer, without_contact = db_session.scalars(
+        select(OutboxMessageModel).order_by(OutboxMessageModel.id)
+    )
+    schema = validator("sales.confirmed")
+    assert errors(schema, final_consumer.payload) == []
+    assert errors(schema, without_contact.payload) == []
+    assert final_consumer.payload["payload"]["customer"] is None
+    assert without_contact.payload["payload"]["customer"]["email"] is None
 
 
 def test_authorized_invoice_marks_the_sale_invoiced(pos):

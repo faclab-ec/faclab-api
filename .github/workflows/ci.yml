@@ -76,6 +76,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements_dev.txt
 
+      # What core writes to Kafka against contracts/events (see contracts/README.md).
+      # `pytest` below runs them again; this step names the failure
+      - name: Contract tests
+        run: pytest tests/contract
+
       # Same as `make test`: the PostgreSQL tests are skipped without TEST_DATABASE_URL
       - name: Unit and integration tests
         run: pytest --cov=src --cov-report=

@@ -27,6 +27,7 @@ htmlcov
 # Not needed at runtime (compose mounts the source tree in development)
 tests
 docs
+contracts
 CLAUDE.md
 Dockerfile
 docker-compose*.yml

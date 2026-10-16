@@ -316,6 +316,23 @@ Puntos fuertes verificados:
 | `payments[].amount` | lo entregado, puede superar el total | se escribe tal cual en `pagos` | Riesgo de rechazo [PV] |
 | Versión del esquema | no existe | no existe | Sin versionado [V] |
 
+*Actualización S1.6 (2026-10-15):*
+
+- **Contrato**: `faclab-core/contracts/events/` tiene JSON Schema v1 y ejemplos de `sales.confirmed`
+  e `invoices`; `contracts/README.md` documenta cada campo y la política de compatibilidad
+  (ADR-0006). Los dos mensajes llevan `schema_version: 1`; uno sin el campo se lee como v1.
+- **Nulos**: `customer.email`, `phone`, `address`, `items[].sku` y `product_name` son nulables en
+  el contrato y en el zod de invoicing. El XML omite los datos de contacto que faltan (sin
+  `infoAdicional` vacío), omite `codigoAuxiliar` sin SKU y describe un producto inexistente como
+  `Producto <id>`. Los XML de los cuatro ejemplos validan contra `factura_V1.1.0.xsd` [V,
+  `xmllint`, prueba manual]; la validación XSD automática queda para S4.1.
+- **Pruebas de contrato**: el core valida lo que escribe en el outbox (`tests/contract`, y ventas
+  POS reales en `tests/integration/postgres`); invoicing valida cada ejemplo con zod, genera su XML
+  y valida con ajv lo que publica en `invoices`. Invoicing guarda una copia de `contracts/` fijada a
+  un commit del core y su CI la compara con el core en ese commit.
+- **Sigue igual**: `payments[].amount` es lo entregado y puede superar el total (riesgo de rechazo
+  [PV]); `FOREIGN_ID` se mapea a `07` (consumidor final) en vez de `08` [V].
+
 ## 5. faclab-web
 
 - Arquitectura por features con reglas de límites documentadas ([`faclab-web/docs/architecture.md`]) [V].
