@@ -65,6 +65,7 @@ def _handler(claims=None, user=None, access=ACCESS, current=None):
     )
     memberships = MagicMock()
     memberships.active_access.return_value = access
+    memberships.branch_ids.return_value = []
     token_service = MagicMock()
     token_service.refresh_ttl_seconds = 604800
     token_service.decode_selection.return_value = claims or _claims()
@@ -89,6 +90,15 @@ def test_the_selection_token_opens_a_session_in_the_chosen_tenant():
     assert result.tenant == OTHER
     assert result.pair.access_token == "a"
     session_repo.first_for_update.assert_not_called()
+
+
+def test_the_new_session_carries_the_branches_of_that_membership():
+    handler, _, memberships, token_service = _handler()
+    memberships.branch_ids.return_value = [4, 9]
+
+    handler.handle(SelectTenantCommand(tenant_id=OTHER.id, token="sel"))
+
+    assert token_service.issue_pair.call_args.kwargs == {"branch_ids": [4, 9]}
 
 
 def test_switching_with_an_access_token_closes_the_current_session():

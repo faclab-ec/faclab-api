@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from wireup import injectable
 
-from src.auth.app.commands.sessions import OpenedSession
+from src.auth.app.commands.sessions import OpenedSession, branch_limit
 from src.auth.app.repositories import AuthSessionRepository, UserRepository
 from src.auth.app.services.token_service import TokenService
 from src.auth.domain.exceptions import InvalidTokenError, TokenReusedError
@@ -77,6 +77,10 @@ class RefreshTokenCommandHandler(CommandHandler[RefreshTokenCommand, OpenedSessi
         session.extend(now + timedelta(seconds=self.token_service.refresh_ttl_seconds))
         session = self.session_repo.update(session)
         pair = self.token_service.issue_pair(
-            user, access.membership, session.require_id(), jti
+            user,
+            access.membership,
+            session.require_id(),
+            jti,
+            branch_ids=branch_limit(self.memberships, access.membership),
         )
         return OpenedSession(pair=pair, tenant=access.tenant)

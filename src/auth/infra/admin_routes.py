@@ -17,6 +17,10 @@ from src.auth.app.commands.deactivate_user import (
     DeactivateUserCommand,
     DeactivateUserCommandHandler,
 )
+from src.auth.app.commands.set_user_branches import (
+    SetUserBranchesCommand,
+    SetUserBranchesCommandHandler,
+)
 from src.auth.app.commands.update_user_profile import (
     UpdateUserProfileCommand,
     UpdateUserProfileCommandHandler,
@@ -24,6 +28,10 @@ from src.auth.app.commands.update_user_profile import (
 from src.auth.app.commands.update_user_role import (
     UpdateUserRoleCommand,
     UpdateUserRoleCommandHandler,
+)
+from src.auth.app.queries.get_user_branches import (
+    GetUserBranchesQuery,
+    GetUserBranchesQueryHandler,
 )
 from src.auth.app.queries.get_users import (
     GetUserByIdQuery,
@@ -39,6 +47,8 @@ from src.auth.infra.validators import (
     CreateUserRequest,
     UpdateUserProfileRequest,
     UpdateUserRoleRequest,
+    UserBranchesRequest,
+    UserBranchesResponse,
     UserQueryParams,
     UserResponse,
 )
@@ -92,6 +102,20 @@ class UserAdminRouter:
             responses=RESPONSES_COMMAND,
             dependencies=_perm,
         )(self.update_role)
+        self.router.get(
+            "/{user_id}/branches",
+            response_model=DataResponse[UserBranchesResponse],
+            summary="Get the branches the user is limited to",
+            responses=RESPONSES_QUERY,
+            dependencies=_perm,
+        )(self.get_branches)
+        self.router.put(
+            "/{user_id}/branches",
+            response_model=DataResponse[UserBranchesResponse],
+            summary="Limit the user to some branches of the caller's tenant",
+            responses=RESPONSES_COMMAND,
+            dependencies=_perm,
+        )(self.set_branches)
         self.router.put(
             "/{user_id}/profile",
             response_model=DataResponse[UserResponse],
@@ -188,6 +212,40 @@ class UserAdminRouter:
             )
         )
         return DataResponse(data=UserResponse.model_validate(result), meta=meta)
+
+    def get_branches(
+        self,
+        handler: Injected[GetUserBranchesQueryHandler],
+        user_id: int,
+        caller: AuthenticatedUser = Depends(_manage),
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[UserBranchesResponse]:
+        """An empty list means the user may enter every branch."""
+        result = handler.handle(
+            GetUserBranchesQuery(tenant_id=caller.tenant_id, user_id=user_id)
+        )
+        return DataResponse(data=UserBranchesResponse.model_validate(result), meta=meta)
+
+    def set_branches(
+        self,
+        handler: Injected[SetUserBranchesCommandHandler],
+        user_id: int,
+        body: UserBranchesRequest,
+        caller: AuthenticatedUser = Depends(_manage),
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[UserBranchesResponse]:
+        """Replace the user's branches; an empty list gives back all of them.
+        The user's tokens carry them (`bids`) from the next login or refresh,
+        and `X-Branch-Id` of another branch answers `BRANCH_ACCESS_DENIED`
+        (403). A branch that isn't the tenant's: `REFERENCE_NOT_FOUND` (422)."""
+        result = handler.handle(
+            SetUserBranchesCommand(
+                tenant_id=caller.tenant_id,
+                user_id=user_id,
+                branch_ids=body.branch_ids,
+            )
+        )
+        return DataResponse(data=UserBranchesResponse.model_validate(result), meta=meta)
 
     def update_profile(
         self,

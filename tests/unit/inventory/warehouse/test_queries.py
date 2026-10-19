@@ -20,6 +20,7 @@ from src.shared.domain.exceptions import NotFoundError
 def _make_warehouse(**overrides) -> Warehouse:
     defaults: dict[str, Any] = {
         "id": 1,
+        "branch_id": 1,
         "name": "Main Warehouse",
         "code": "WH-01",
         "city": "Guayaquil",
@@ -32,6 +33,18 @@ def _make_warehouse(**overrides) -> Warehouse:
 
 
 # --- GetAll ---
+
+
+def test_get_all_warehouses_filters_by_branch():
+    repo = Mock()
+    repo.paginate.return_value = _paginated([])
+    handler = GetAllWarehousesQueryHandler(repo)
+
+    handler.handle(GetAllWarehousesQuery(branch_id=2, is_active=True))
+
+    repo.paginate.assert_called_once_with(
+        limit=None, offset=None, branch_id=2, is_active=True
+    )
 
 
 def _paginated(items: list[Warehouse], limit=None, offset=None) -> dict:

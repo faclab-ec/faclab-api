@@ -108,6 +108,7 @@ def _handler(user=None, verify=True, failures=None, accesses=ONE_TENANT):
     )
     memberships = MagicMock()
     memberships.active_accesses.return_value = accesses
+    memberships.branch_ids.return_value = []
     token_service = MagicMock()
     token_service.refresh_ttl_seconds = 604800
     token_service.issue_pair.return_value = TokenPair(
@@ -197,6 +198,25 @@ def test_login_opens_a_session_that_lasts_as_long_as_the_refresh_token():
     user, membership, session_id, refresh_jti = token_service.issue_pair.call_args.args
     assert (user.id, session_id, refresh_jti) == (1, 42, session.refresh_jti)
     assert membership is ONE_TENANT[0].membership
+
+
+def test_the_tokens_carry_the_branches_the_membership_is_limited_to():
+    handler, _, _, _, token_service, *_ = _handler(user=_user())
+    memberships = handler.memberships
+    memberships.branch_ids.return_value = [3]
+
+    handler.handle(LoginCommand(username="alice", password="pw"))
+
+    memberships.branch_ids.assert_called_once_with(ONE_TENANT[0].membership.id)
+    assert token_service.issue_pair.call_args.kwargs == {"branch_ids": [3]}
+
+
+def test_a_membership_without_branches_may_enter_all_of_them():
+    handler, _, _, _, token_service, *_ = _handler(user=_user())
+
+    handler.handle(LoginCommand(username="alice", password="pw"))
+
+    assert token_service.issue_pair.call_args.kwargs == {"branch_ids": None}
 
 
 def test_the_session_of_a_one_tenant_user_belongs_to_that_tenant():

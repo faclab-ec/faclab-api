@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from wireup import injectable
@@ -18,7 +18,7 @@ from src.tenancy.domain.exceptions import (
     TenantRucAlreadyExistsError,
 )
 from src.tenancy.infra.mappers import MembershipMapper, TenantMapper
-from src.tenancy.infra.models import MembershipModel, TenantModel
+from src.tenancy.infra.models import MembershipModel, TenantModel, UserBranchAccessModel
 
 _RUC_UNIQUE = "tenants_ruc_key"
 
@@ -125,6 +125,31 @@ class SqlAlchemyMembershipRepository(
             .where(MembershipModel.active.is_(True))
         )
         return bool(self.session.scalar(statement))
+
+    def branch_ids(self, membership_id: int) -> list[int]:
+        statement = (
+            select(UserBranchAccessModel.branch_id)
+            .where(UserBranchAccessModel.membership_id == membership_id)
+            .order_by(UserBranchAccessModel.branch_id)
+        )
+        return list(self.session.scalars(statement))
+
+    def set_branches(self, membership: Membership, branch_ids: Iterable[int]) -> None:
+        membership_id = membership.require_id()
+        self.session.execute(
+            delete(UserBranchAccessModel).where(
+                UserBranchAccessModel.membership_id == membership_id
+            )
+        )
+        self.session.add_all(
+            UserBranchAccessModel(
+                tenant_id=membership.tenant_id,
+                membership_id=membership_id,
+                branch_id=branch_id,
+            )
+            for branch_id in sorted(set(branch_ids))
+        )
+        self.session.flush()
 
     def _active_access_query(self, user_id: int):
         return (

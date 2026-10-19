@@ -4,7 +4,7 @@ from uuid import UUID
 
 from wireup import injectable
 
-from src.auth.app.commands.sessions import OpenedSession, open_session
+from src.auth.app.commands.sessions import OpenedSession, branch_limit, open_session
 from src.auth.app.repositories import AuthSessionRepository, UserRepository
 from src.auth.app.services.token_service import TokenService
 from src.auth.domain.exceptions import InvalidTokenError, TenantAccessDeniedError
@@ -75,4 +75,5 @@ class SelectTenantCommandHandler(CommandHandler[SelectTenantCommand, OpenedSessi
             access.membership,
             access.tenant,
             now,
+            branch_ids=branch_limit(self.memberships, access.membership),
         )

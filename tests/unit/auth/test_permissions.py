@@ -63,3 +63,15 @@ def test_operator_cannot_cancel_sales():
 
 def test_manager_cannot_manage_users():
     assert Permission.USER_MANAGE not in permissions_for(Role.MANAGER)
+
+
+def test_only_the_admin_changes_the_structure():
+    for role in Role:
+        perms = permissions_for(role)
+        assert (Permission.ORGANIZATION_WRITE in perms) == (role == Role.ADMIN)
+
+
+def test_the_back_office_reads_the_structure_and_the_cashier_does_not():
+    readers = {r for r in Role if Permission.ORGANIZATION_READ in permissions_for(r)}
+
+    assert readers == {Role.ADMIN, Role.MANAGER, Role.OPERATOR, Role.VIEWER}

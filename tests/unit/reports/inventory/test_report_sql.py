@@ -124,7 +124,7 @@ def other_tenant_stock(session):
     session.add(TenantModel(id=OTHER_TENANT, ruc="0999999999001", legal_name="B"))
     session.commit()
     with use_tenant(TenantContext(OTHER_TENANT, TenantSource.TASK)):
-        session.add(WarehouseModel(id=2, name="B", code="WH-01"))
+        session.add(WarehouseModel(id=2, branch_id=2, name="B", code="WH-01"))
         session.add(LocationModel(id=2, warehouse_id=2, name="B", code="A1"))
         session.add(
             ProductModel(

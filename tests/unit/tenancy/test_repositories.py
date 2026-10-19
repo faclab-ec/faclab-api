@@ -12,10 +12,11 @@ from src.auth.infra.repositories import (
     SqlAlchemyAuthSessionRepository,
     SqlAlchemyUserRepository,
 )
+from src.organization.infra.models import BranchModel
 from src.shared.infra.database import Base
 from src.tenancy.domain.entities import Tenant, TenantStatus
 from src.tenancy.infra.mappers import MembershipMapper, TenantMapper
-from src.tenancy.infra.models import MembershipModel, TenantModel
+from src.tenancy.infra.models import MembershipModel, TenantModel, UserBranchAccessModel
 from src.tenancy.infra.repositories import (
     SqlAlchemyMembershipRepository,
     SqlAlchemyTenantRepository,
@@ -27,7 +28,14 @@ def session() -> Iterator[Session]:
     engine = create_engine("sqlite://")
     tables = [
         Base.metadata.tables[model.__tablename__]
-        for model in (UserModel, TenantModel, MembershipModel, AuthSessionModel)
+        for model in (
+            UserModel,
+            TenantModel,
+            MembershipModel,
+            AuthSessionModel,
+            BranchModel,
+            UserBranchAccessModel,
+        )
     ]
     Base.metadata.create_all(engine, tables=tables)
     db = sessionmaker(bind=engine)()
@@ -178,3 +186,28 @@ def test_sessions_can_be_revoked_in_one_tenant_only(session):
         select(AuthSessionModel.tenant_id).where(AuthSessionModel.revoked_at.is_(None))
     ).all()
     assert open_tenants == [b.id]
+
+
+def test_a_membership_without_branches_may_enter_all_of_them(session):
+    tenant = _tenant(session, "1799999990001", "Uno")
+    _member(session, tenant, _user(session, "ana"))
+    [membership] = _memberships(session).filter_by()
+
+    assert _memberships(session).branch_ids(membership.require_id()) == []
+
+
+def test_the_branches_of_a_membership_are_replaced(session):
+    tenant = _tenant(session, "1799999990001", "Uno")
+    _member(session, tenant, _user(session, "ana"))
+    memberships = _memberships(session)
+    [membership] = memberships.filter_by()
+
+    memberships.set_branches(membership, [3, 1, 3])
+    memberships.set_branches(membership, [2, 1])
+
+    assert memberships.branch_ids(membership.require_id()) == [1, 2]
+    rows = session.scalars(select(UserBranchAccessModel)).all()
+    assert {row.tenant_id for row in rows} == {tenant.id}
+
+    memberships.set_branches(membership, [])
+    assert memberships.branch_ids(membership.require_id()) == []

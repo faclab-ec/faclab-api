@@ -26,6 +26,7 @@ from src.shared.domain.exceptions import NotFoundError
 def _make_warehouse(**overrides) -> Warehouse:
     defaults: dict[str, Any] = {
         "id": 1,
+        "branch_id": 1,
         "name": "Main Warehouse",
         "code": "WH-01",
         "address": "Av. Principal 123",
@@ -60,6 +61,7 @@ def test_create_warehouse_returns_dict_with_correct_fields():
 
     result = handler.handle(
         CreateWarehouseCommand(
+            branch_id=1,
             name="Main Warehouse",
             code="WH-01",
             city="Guayaquil",
@@ -79,12 +81,13 @@ def test_create_warehouse_calls_repo_create():
     repo = _mock_repo(warehouse=_make_warehouse())
     handler = CreateWarehouseCommandHandler(repo)
 
-    handler.handle(CreateWarehouseCommand(name="Depot", code="DP-01"))
+    handler.handle(CreateWarehouseCommand(branch_id=3, name="Depot", code="DP-01"))
 
     repo.create.assert_called_once()
     created = repo.create.call_args[0][0]
     assert isinstance(created, Warehouse)
     assert created.code == "DP-01"
+    assert created.branch_id == 3
 
 
 def test_create_warehouse_minimal_fields():
@@ -94,7 +97,9 @@ def test_create_warehouse_minimal_fields():
     repo = _mock_repo(warehouse=warehouse)
     handler = CreateWarehouseCommandHandler(repo)
 
-    result = handler.handle(CreateWarehouseCommand(name="Simple", code="SP-01"))
+    result = handler.handle(
+        CreateWarehouseCommand(branch_id=1, name="Simple", code="SP-01")
+    )
 
     assert result["id"] == 1
     assert result["address"] is None
@@ -107,7 +112,9 @@ def test_create_warehouse_default_warehouse():
     handler = CreateWarehouseCommandHandler(repo)
 
     result = handler.handle(
-        CreateWarehouseCommand(name="Default WH", code="DWH-01", is_default=True)
+        CreateWarehouseCommand(
+            branch_id=1, name="Default WH", code="DWH-01", is_default=True
+        )
     )
 
     assert result["is_default"] is True
@@ -121,7 +128,9 @@ def test_create_warehouse_inactive():
     handler = CreateWarehouseCommandHandler(repo)
 
     result = handler.handle(
-        CreateWarehouseCommand(name="Closed WH", code="CWH-01", is_active=False)
+        CreateWarehouseCommand(
+            branch_id=1, name="Closed WH", code="CWH-01", is_active=False
+        )
     )
 
     assert result["is_active"] is False
@@ -145,6 +154,19 @@ def test_update_warehouse_returns_updated_dict():
     assert result["name"] == "New Name"
     assert result["code"] == "NEW-01"
     repo.update.assert_called_once()
+
+
+def test_update_warehouse_keeps_its_branch():
+    repo = Mock()
+    repo.get_by_id.return_value = _make_warehouse(branch_id=7)
+    repo.update.side_effect = lambda warehouse: warehouse
+    handler = UpdateWarehouseCommandHandler(repo)
+
+    result = handler.handle(
+        UpdateWarehouseCommand(warehouse_id=1, name="New Name", code="NEW-01")
+    )
+
+    assert result["branch_id"] == 7
 
 
 def test_update_warehouse_not_found_raises():

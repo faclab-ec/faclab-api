@@ -23,6 +23,7 @@ def create_wireup_container():
     from src.inventory.warehouse.infra.container import (
         INJECTABLES as WAREHOUSE_INJECTABLES,
     )
+    from src.organization.infra.container import INJECTABLES as ORGANIZATION_INJECTABLES
     from src.pos.cash.infra.container import POS_CASH_INJECTABLES
     from src.pos.refund.infra.container import POS_REFUND_INJECTABLES
     from src.pos.reports.infra.container import POS_REPORT_INJECTABLES
@@ -53,6 +54,7 @@ def create_wireup_container():
             OutboxWriter,
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
+            *ORGANIZATION_INJECTABLES,
             *CATALOG_INJECTABLES,
             *UOM_INJECTABLES,
             *WAREHOUSE_INJECTABLES,

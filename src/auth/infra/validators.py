@@ -68,6 +68,15 @@ class TenantSelectionResponse(BaseModel):
     tenants: list[TenantAccessResponse]
 
 
+class BranchAccessResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int = Field(description="Branch ID, the value of `X-Branch-Id`")
+    establishment_code: str = Field(description="SRI establishment code")
+    name: str
+    is_main: bool = Field(description="Whether it is the main branch (matriz)")
+
+
 class AuthenticatedUserResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -94,6 +103,12 @@ class AuthenticatedUserResponse(BaseModel):
     tenants: list[TenantAccessResponse] = Field(
         default=[],
         description="Every tenant the user can switch to with select-tenant",
+    )
+    branches: list[BranchAccessResponse] = Field(
+        default=[],
+        description=(
+            "The active branches of the tenant the user may enter, for `X-Branch-Id`"
+        ),
     )
 
 
@@ -124,6 +139,27 @@ class UpdateUserRoleRequest(BaseModel):
         ge=1,
         le=5,
         description="Role code (1=ADMIN, 2=MANAGER, 3=OPERATOR, 4=VIEWER, 5=CASHIER)",
+    )
+
+
+class UserBranchesRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    branch_ids: list[int] = Field(
+        description=(
+            "Branches of the tenant the user may enter; empty: all of them. "
+            "Applies from the user's next login or token refresh"
+        ),
+        max_length=1000,
+    )
+
+
+class UserBranchesResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    user_id: int
+    branch_ids: list[int] = Field(
+        description="Branches the user is limited to; empty: all of them"
     )
 
 

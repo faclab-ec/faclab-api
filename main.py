@@ -33,8 +33,13 @@ from src.inventory.stock.infra.routes import StockRouter
 from src.inventory.transfer.infra.routes import TransferItemRouter, TransferRouter
 from src.inventory.warehouse.infra.routes import WarehouseRouter
 from src.invoicing.infra.invoice_messages import INVOICES_TOPIC, handle_invoice_message
+from src.organization.infra.routes import (
+    BranchRouter,
+    EmissionPointRouter,
+    PosTerminalRouter,
+)
 from src.pos.cash.infra.routes import POSCashRouter
-from src.pos.infra.routes import POSCustomerRouter, POSProductRouter
+from src.pos.infra.routes import POSCustomerRouter, POSProductRouter, POSTerminalRouter
 from src.pos.refund.infra.routes import POSRefundRouter
 from src.pos.reports.infra.routes import POSReportRouter
 from src.pos.sales.infra.routes import POSSaleRouter
@@ -259,6 +264,15 @@ src.wireup_container = wireup_container
 # Admin API
 admin_router = APIRouter(prefix="/api/admin")
 admin_router.include_router(
+    BranchRouter().router, prefix="/branches", tags=["Branches"]
+)
+admin_router.include_router(
+    EmissionPointRouter().router, prefix="/emission-points", tags=["Emission Points"]
+)
+admin_router.include_router(
+    PosTerminalRouter().router, prefix="/pos-terminals", tags=["POS Terminals"]
+)
+admin_router.include_router(
     CategoryRouter().router, prefix="/categories", tags=["Categories"]
 )
 admin_router.include_router(
@@ -355,6 +369,9 @@ pos_router.include_router(
     POSCustomerRouter().router, prefix="/customers", tags=["Customer Search"]
 )
 pos_router.include_router(POSRefundRouter().router, prefix="/refunds", tags=["Refunds"])
+pos_router.include_router(
+    POSTerminalRouter().router, prefix="/terminals", tags=["Terminals"]
+)
 pos_router.include_router(
     POSCashRouter().router, prefix="/shifts", tags=["Cash Drawer"]
 )

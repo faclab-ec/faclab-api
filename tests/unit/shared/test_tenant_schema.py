@@ -14,7 +14,12 @@ load_all_models()
 PLATFORM_TABLES = {"tenants", "users", "login_failures"}
 # They carry their tenant, but auth, provisioning and the outbox relay read them
 # across tenants, so the base repository doesn't filter them
-CROSS_TENANT_TABLES = {"memberships", "auth_sessions", "outbox_messages"}
+CROSS_TENANT_TABLES = {
+    "memberships",
+    "user_branch_access",
+    "auth_sessions",
+    "outbox_messages",
+}
 # Relations the database keeps within one tenant: (table, column). PostgreSQL
 # checks foreign keys without row-level security, so a single-column key would
 # accept another tenant's id
@@ -48,6 +53,11 @@ COMPOSITE_FOREIGN_KEYS = {
     ("supplier_products", "product_id"),
     ("purchase_order_items", "product_id"),
     ("purchase_receipt_items", "location_id"),
+    ("warehouses", "branch_id"),
+    ("emission_points", "branch_id"),
+    ("pos_terminals", "branch_id"),
+    ("pos_terminals", "emission_point_id"),
+    ("pos_terminals", "default_location_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
@@ -93,7 +103,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 31
+    assert len(BUSINESS_TABLES) == 34
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

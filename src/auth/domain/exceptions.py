@@ -82,6 +82,31 @@ class TenantAccessDeniedError(ApplicationError):
         super().__init__(message)
 
 
+class BranchAccessDeniedError(ApplicationError):
+    """`X-Branch-Id` names a branch the user can't enter (claim `bids`)"""
+
+    error_code = "BRANCH_ACCESS_DENIED"
+
+    def __init__(self, message: str = "the user has no access to this branch"):
+        super().__init__(message)
+
+
+class InvalidBranchHeaderError(ApplicationError):
+    error_code = "INVALID_BRANCH_HEADER"
+
+    def __init__(self, message: str = "X-Branch-Id must be a branch id"):
+        super().__init__(message)
+
+
+class BranchRequiredError(ApplicationError):
+    """A branch operation without `X-Branch-Id`"""
+
+    error_code = "BRANCH_REQUIRED"
+
+    def __init__(self, message: str = "this operation needs the X-Branch-Id header"):
+        super().__init__(message)
+
+
 class UsernameAlreadyExistsError(AlreadyExistsError):
     error_code = "USERNAME_ALREADY_EXISTS"
 

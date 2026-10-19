@@ -10,6 +10,8 @@ from src.shared.domain.exceptions import NotFoundError
 
 @dataclass
 class UpdateWarehouseCommand(Command):
+    """The branch of a warehouse is fixed when it is created"""
+
     warehouse_id: int
     name: str
     code: str
@@ -34,6 +36,7 @@ class UpdateWarehouseCommandHandler(CommandHandler[UpdateWarehouseCommand, dict]
             raise NotFoundError(f"Warehouse {command.warehouse_id} not found")
         warehouse = Warehouse(
             id=command.warehouse_id,
+            branch_id=warehouse.branch_id,
             name=command.name,
             code=command.code,
             address=command.address,

@@ -5,7 +5,9 @@ Crea (o reutiliza) dos empresas con el administrador de `AUTH_SEED_*`: la de
 `make seed-admin` y una segunda de ejemplo. Las dos reciben el mismo catálogo,
 con los mismos SKU, identificaciones, códigos de bodega y números de orden de
 compra, para probar que cada empresa ve solo lo suyo. Al iniciar sesión, el
-administrador elige la empresa.
+administrador elige la empresa. Cada empresa tiene tres sucursales (Quito, la
+matriz, Guayaquil y Cuenca), cada una con su punto de emisión, su bodega y una
+terminal.
 
 Usage:
     AUTH_SEED_USERNAME=admin AUTH_SEED_EMAIL=admin@faclab.local \\
@@ -40,6 +42,11 @@ from src.inventory.transfer.infra.models import (
     StockTransferModel,
 )
 from src.inventory.warehouse.infra.models import WarehouseModel
+from src.organization.infra.models import (
+    BranchModel,
+    EmissionPointModel,
+    PosTerminalModel,
+)
 from src.pos.shift.infra.models import ShiftModel  # noqa: F401  # sales.shift_id FK
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
@@ -57,6 +64,7 @@ from src.suppliers.infra.models import (
     SupplierProductModel,
 )
 from src.tenancy.app.commands.provision_tenant import ProvisionTenantCommand
+from src.tenancy.infra.models import UserBranchAccessModel
 from src.tenancy.provision import provision
 
 # Made up, with a valid check digit: no real company
@@ -64,6 +72,8 @@ SECOND_TENANT_RUC = "0999999999001"
 SECOND_TENANT_NAME = "Ferretería Demo Dos"
 
 TRUNCATE_ORDER = [
+    UserBranchAccessModel,
+    PosTerminalModel,
     StockTransferItemModel,
     StockTransferModel,
     AdjustmentItemModel,
@@ -90,6 +100,8 @@ TRUNCATE_ORDER = [
     CategoryModel,
     UnitOfMeasureModel,
     WarehouseModel,
+    EmissionPointModel,
+    BranchModel,
 ]
 
 
@@ -183,7 +195,31 @@ def seed_uoms(session: Session) -> list[UnitOfMeasureModel]:
     return models
 
 
-def seed_warehouses(session: Session) -> list[WarehouseModel]:
+def seed_branches(session: Session) -> list[BranchModel]:
+    """Quito is the main branch (matriz); each one has emission point 001"""
+    data = [
+        ("001", "Matriz Quito", "Av. 10 de Agosto N37-45, Quito", True),
+        ("002", "Sucursal Guayaquil", "Km 6.5 Vía Daule, Guayaquil", False),
+        ("003", "Sucursal Cuenca", "Av. de las Américas 3-42, Cuenca", False),
+    ]
+    branches = [
+        BranchModel(establishment_code=code, name=name, address=address, is_main=main)
+        for code, name, address, main in data
+    ]
+    session.add_all(branches)
+    session.flush()
+    session.add_all(
+        EmissionPointModel(branch_id=branch.id, code="001", name="Caja principal")
+        for branch in branches
+    )
+    session.flush()
+    return branches
+
+
+def seed_warehouses(
+    session: Session, branches: list[BranchModel]
+) -> list[WarehouseModel]:
+    """One warehouse per branch, in the same order"""
     data = [
         {
             "name": "Bodega Central Quito",
@@ -219,7 +255,41 @@ def seed_warehouses(session: Session) -> list[WarehouseModel]:
             "email": "bodega.cue@faclab.ec",
         },
     ]
-    models = [WarehouseModel(**d) for d in data]
+    models = [
+        WarehouseModel(branch_id=branch.id, **d)
+        for branch, d in zip(branches, data, strict=True)
+    ]
+    session.add_all(models)
+    session.flush()
+    return models
+
+
+def seed_terminals(
+    session: Session,
+    branches: list[BranchModel],
+    warehouses: list[WarehouseModel],
+    locations: list[LocationModel],
+) -> list[PosTerminalModel]:
+    """A terminal per branch that sells from its warehouse's main storage (A1)"""
+    points = {
+        point.branch_id: point
+        for point in session.query(EmissionPointModel).filter(
+            EmissionPointModel.branch_id.in_([b.id for b in branches])
+        )
+    }
+    models = []
+    for branch, warehouse in zip(branches, warehouses, strict=True):
+        prefix = warehouse.code.split("-")[1]
+        storage = next(loc for loc in locations if loc.code == f"{prefix}-A1")
+        models.append(
+            PosTerminalModel(
+                branch_id=branch.id,
+                emission_point_id=points[branch.id].id,
+                default_location_id=storage.id,
+                code="CAJA-01",
+                name=f"Caja 1 {prefix}",
+            )
+        )
     session.add_all(models)
     session.flush()
     return models
@@ -1768,11 +1838,17 @@ def seed_tenant(session: Session) -> None:
     print("Sembrando unidades de medida...")
     uoms = seed_uoms(session)
 
+    print("Sembrando sucursales y puntos de emisión...")
+    branches = seed_branches(session)
+
     print("Sembrando bodegas...")
-    warehouses = seed_warehouses(session)
+    warehouses = seed_warehouses(session, branches)
 
     print("Sembrando ubicaciones...")
     locations = seed_locations(session, warehouses)
+
+    print("Sembrando terminales...")
+    terminals = seed_terminals(session, branches, warehouses, locations)
 
     print("Sembrando productos...")
     products = seed_products(session, categories, uoms)
@@ -1815,6 +1891,8 @@ def seed_tenant(session: Session) -> None:
 
     print(f"  - {len(categories)} categorías")
     print(f"  - {len(uoms)} unidades de medida")
+    print(f"  - {len(branches)} sucursales")
+    print(f"  - {len(terminals)} terminales")
     print(f"  - {len(warehouses)} bodegas")
     print(f"  - {len(locations)} ubicaciones")
     print(f"  - {len(products)} productos")

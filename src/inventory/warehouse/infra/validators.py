@@ -19,10 +19,17 @@ class WarehouseRequest(BaseModel):
     email: str | None = Field(None, description="Contact email address")
 
 
+class CreateWarehouseRequest(WarehouseRequest):
+    branch_id: int = Field(
+        ge=1, description="Branch of the warehouse; fixed once it is created"
+    )
+
+
 class WarehouseResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     id: int = Field(description="Warehouse ID")
+    branch_id: int = Field(description="Branch of the warehouse")
     name: str = Field(description="Warehouse name")
     code: str = Field(description="Unique warehouse code")
     address: str | None = Field(None, description="Street address")
@@ -36,4 +43,5 @@ class WarehouseResponse(BaseModel):
 
 
 class WarehouseQueryParams(QueryParams):
+    branch_id: int | None = Field(None, ge=1, description="Filter by branch")
     is_active: bool | None = Field(None, description="Filter by active status")
