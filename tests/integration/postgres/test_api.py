@@ -143,8 +143,10 @@ def test_product_with_movements_cannot_be_deleted(api):
 )
 def test_duplicate_unique_values_return_409(api, path, payload, code):
     make_product(api, "SKU-1", barcode="7860000000001")
-    make_warehouse(api, "WH1")
+    warehouse = make_warehouse(api, "WH1")
     api.post("/api/admin/units-of-measure", {"name": "Unidad", "symbol": "u"})
+    if path == "/api/admin/warehouses":
+        payload = {**payload, "branchId": warehouse["branchId"]}
 
     error = api.error("POST", path, 409, json=payload)
 

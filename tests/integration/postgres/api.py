@@ -54,9 +54,29 @@ def national_id(seed: int) -> str:
     return "".join(map(str, digits)) + str(check)
 
 
-def make_warehouse(api: Api, code: str = "WH1") -> dict:
+def make_branch(api: Api, code: str = "001", name: str | None = None) -> dict:
     return api.post(
-        "/api/admin/warehouses", {"name": f"Warehouse {code}", "code": code}
+        "/api/admin/branches",
+        {"establishmentCode": code, "name": name or f"Branch {code}"},
+    )
+
+
+def main_branch_id(api: Api) -> int:
+    """The caller's tenant's branch 001, created the first time it is needed"""
+    for branch in api.get("/api/admin/branches", params={"limit": 1000}):
+        if branch["establishmentCode"] == "001":
+            return branch["id"]
+    return make_branch(api, "001")["id"]
+
+
+def make_warehouse(api: Api, code: str = "WH1", branch_id: int | None = None) -> dict:
+    return api.post(
+        "/api/admin/warehouses",
+        {
+            "branchId": branch_id or main_branch_id(api),
+            "name": f"Warehouse {code}",
+            "code": code,
+        },
     )
 
 
