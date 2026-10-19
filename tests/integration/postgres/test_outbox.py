@@ -1,12 +1,14 @@
 """Kafka outbox against PostgreSQL: a confirmed sale leaves a message for
-faclab-invoicing in the same transaction, and the relay publishes it."""
+faclab-invoicing in the same transaction, and the relay (as faclab_worker)
+publishes it."""
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from config import config
 from src.auth.domain.entities import Role
+from src.shared.infra.database import worker_session_maker
 from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.relay import OutboxRelay
 from tests.integration.postgres.api import (
@@ -57,7 +59,7 @@ def _messages(db_session: Session) -> list[OutboxMessageModel]:
     return list(db_session.scalars(select(OutboxMessageModel)))
 
 
-def test_confirmed_sale_is_queued_and_relayed(pos, db_session, pg_engine, tenant):
+def test_confirmed_sale_is_queued_and_relayed(pos, db_session, tenant):
     cashier, product = pos
 
     sale = _checkout(cashier, product["id"], 2, "23.00").json()["data"]
@@ -71,7 +73,7 @@ def test_confirmed_sale_is_queued_and_relayed(pos, db_session, pg_engine, tenant
     assert message.payload["payload"]["items"][0]["sku"] == product["sku"]
 
     publisher = FakePublisher()
-    assert OutboxRelay(sessionmaker(bind=pg_engine), publisher).publish_pending() == 1
+    assert OutboxRelay(worker_session_maker(), publisher).publish_pending() == 1
 
     [(topic, value, headers)] = publisher.sent
     assert (topic, value) == ("sales.confirmed", message.payload)

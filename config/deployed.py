@@ -12,11 +12,16 @@ class DeployedConfig(BaseConfig):
     JWT_SECRET = env.str("JWT_SECRET", "")
 
     def __init__(self):
+        super().__init__()
         required = {
             "DATABASE_URL": self.DB_CONNECTION_STRING,
             "CORS_ORIGINS": self.CORS_ORIGINS,
             "JWT_SECRET": self.JWT_SECRET,
         }
+        # The outbox relay and the invoice consumer read across tenants, which
+        # the API's role can't do under row-level security
+        if self.KAFKA_ENABLED:
+            required["DATABASE_URL_WORKER"] = self.DB_WORKER_URL
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError(

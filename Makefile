@@ -17,8 +17,13 @@ down:  ## Stop the docker containers
 test:  ## Run tests
 	docker compose run --no-deps --rm api pytest --cov='src'
 
-test-integration:  ## Run the Postgres integration tests on a throwaway <db>_test database
-	docker compose run --rm api sh -c 'TEST_DATABASE_URL="$${DATABASE_URL%/*}/$${DATABASE_URL##*/}_test" pytest tests/integration/postgres $(args)'
+test-integration:  ## Run the Postgres integration tests on a throwaway <db>_test database, with the roles of .env
+	docker compose run --rm api sh -c 'DB="$${DATABASE_URL##*/}_test"; \
+		TEST_DATABASE_URL="$${DATABASE_URL_ADMIN%/*}/$$DB" \
+		TEST_DATABASE_URL_APP="$${DATABASE_URL%/*}/$$DB" \
+		TEST_DATABASE_URL_WORKER="$${DATABASE_URL_WORKER%/*}/$$DB" \
+		TEST_DATABASE_URL_MIGRATIONS="$${DATABASE_URL_MIGRATIONS%/*}/$$DB" \
+		pytest tests/integration/postgres $(args)'
 
 lint:  ## Fix linter errors
 	source .venv/bin/activate && ruff check --fix . && ruff format .

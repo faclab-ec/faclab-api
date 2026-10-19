@@ -1,3 +1,4 @@
+import functools
 from collections.abc import Iterable, Iterator
 from typing import Any
 from uuid import UUID
@@ -63,6 +64,16 @@ def create_session_maker(
     event.listen(factory, "after_begin", set_tenant_setting)
     event.listen(factory, "before_flush", assign_tenant)
     return factory
+
+
+@functools.cache
+def worker_session_maker() -> sessionmaker[Session]:
+    """Sessions as faclab_worker, which bypasses row-level security (S2.4): for
+    the outbox relay and the platform lookups that run outside every tenant,
+    never for a request. One engine per process."""
+    from config import config
+
+    return create_session_maker(config.DB_WORKER_CONNECTION_STRING)
 
 
 def set_tenant_setting(

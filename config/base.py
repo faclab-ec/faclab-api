@@ -39,9 +39,13 @@ class BaseConfig:
     LOG_LEVEL = env("LOG_LEVEL", "INFO")
 
     #
-    # Database config (required outside local)
+    # Database config (required outside local). The API connects as faclab_app,
+    # under row-level security; DATABASE_URL_WORKER is faclab_worker, which
+    # bypasses it, for the outbox relay and the platform lookups that run
+    # outside every tenant (S2.4)
     #
     DB_CONNECTION_STRING = env.str("DATABASE_URL", "")
+    DB_WORKER_URL = env.str("DATABASE_URL_WORKER", "")
 
     #
     # CORS: comma-separated origins allowed to call the API (required outside local)
@@ -553,6 +557,13 @@ All errors follow a consistent structure with one or more error entries:
             ],
         },
     ]
+
+    def __init__(self):
+        # Without its own URL the worker shares the API's (local SQLite, or a
+        # single role); set here so it sees the subclass's DB_CONNECTION_STRING
+        self.DB_WORKER_CONNECTION_STRING = (
+            self.DB_WORKER_URL or self.DB_CONNECTION_STRING
+        )
 
     def get_otel_config(self) -> OpenTelemetryConfig:
         return OpenTelemetryConfig(

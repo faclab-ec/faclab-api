@@ -1,4 +1,5 @@
-"""Datos de ejemplo para desarrollo local. Borra los datos de negocio.
+"""Datos de ejemplo para desarrollo local. Reemplaza los datos de negocio de sus
+dos empresas.
 
 Crea (o reutiliza) dos empresas con el administrador de `AUTH_SEED_*`: la de
 `make seed-admin` y una segunda de ejemplo. Las dos reciben el mismo catálogo,
@@ -137,9 +138,11 @@ def provision_tenants() -> list[UUID]:
     ]
 
 
-def truncate_all(session: Session):
+def truncate_tenant(session: Session, tenant_id: UUID):
+    """Deletes the tenant's business rows. Runs in its context: row-level
+    security keeps any other tenant out of reach anyway (S2.4)"""
     for model in TRUNCATE_ORDER:
-        session.execute(delete(model))
+        session.execute(delete(model).where(model.tenant_id == tenant_id))
     session.flush()
 
 
@@ -1825,18 +1828,15 @@ def main():
     tenant_ids = provision_tenants()
     factory = get_session_maker()
 
-    with factory() as session:
-        print("Truncando datos existentes...")
-        truncate_all(session)
-        session.commit()
-
-    # One transaction per tenant, each in its own context
+    # One transaction per tenant, each in its own context: its data is replaced
     for tenant_id in tenant_ids:
         print(f"\nEmpresa {tenant_id}")
         with (
             tenant_scope(TenantContext(tenant_id, TenantSource.TASK)),
             factory() as session,
         ):
+            print("Borrando sus datos existentes...")
+            truncate_tenant(session, tenant_id)
             seed_tenant(session)
             session.commit()
 

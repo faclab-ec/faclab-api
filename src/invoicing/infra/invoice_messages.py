@@ -17,7 +17,6 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from src.sales.app.commands.invoice_sale import (
     InvoiceSaleCommand,
@@ -27,6 +26,7 @@ from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.sales.infra.models import SaleModel
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import TenantContext, TenantSource, current_tenant
+from src.shared.infra.database import worker_session_maker
 from src.shared.infra.events.scope import create_sync_scope
 
 logger = structlog.get_logger(__name__)
@@ -111,10 +111,10 @@ def _tenant_of_sale(sale_id: int) -> UUID | None:
     Temporal hasta S2.8, cuando faclab-invoicing copie a sus mensajes el header
     `faclab-tenant-id` del `sales.confirmed` que factura. Los ids de venta son
     globales, así que no hay ambigüedad. Es una lectura de plataforma, fuera de
-    cualquier empresa: con RLS (S2.4) necesitará el rol `faclab_worker`.
+    cualquier empresa: con el rol del API, RLS no dejaría ver la venta, así que
+    usa `faclab_worker` (S2.4).
     """
-    with create_sync_scope() as scope:
-        session = scope.get(Session)
+    with worker_session_maker()() as session:
         return session.scalar(
             select(SaleModel.tenant_id).where(SaleModel.id == sale_id)
         )
