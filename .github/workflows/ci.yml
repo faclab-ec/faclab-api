@@ -85,11 +85,17 @@ jobs:
       - name: Unit and integration tests
         run: pytest --cov=src --cov-report=
 
-      # Same as `make test-integration`; the database name must end in _test
+      # Same as `make test-integration`; the database name must end in _test.
+      # The fixtures create the roles with these throwaway passwords; the app,
+      # the worker and the migrations run as them, under row-level security,
+      # and the tenant isolation suite fails the job if any route leaks
       - name: PostgreSQL tests
         if: ${{ !cancelled() }}
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/faclab_test
+          TEST_DATABASE_URL_APP: postgresql://faclab_app:faclab_app@localhost:5432/faclab_test
+          TEST_DATABASE_URL_WORKER: postgresql://faclab_worker:faclab_worker@localhost:5432/faclab_test
+          TEST_DATABASE_URL_MIGRATIONS: postgresql://faclab_owner:faclab_owner@localhost:5432/faclab_test
         run: pytest tests/integration/postgres --cov=src --cov-append --cov-report=
 
       - name: Coverage report

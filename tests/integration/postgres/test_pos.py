@@ -10,6 +10,7 @@ from main import app
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
+    make_customer,
     make_location,
     make_movement,
     make_product,
@@ -58,6 +59,14 @@ def _quick_sale(api: Api, product_id: int, quantity: int, amount: str, **extra):
             **extra,
         },
     )
+
+
+def test_pos_lists_the_customers(api, admin_api):
+    customer = make_customer(admin_api, seed=5, name="Cliente POS")
+
+    customers = api.get("/api/pos/customers")
+
+    assert [c["id"] for c in customers] == [customer["id"]]
 
 
 def test_quick_sale_with_card_and_global_discount(api, admin_api, product, shift):

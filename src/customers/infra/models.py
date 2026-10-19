@@ -1,7 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
@@ -12,7 +19,7 @@ class CustomerModel(TenantScoped, Base):
     __tablename__ = "customers"
     __table_args__ = (
         UniqueConstraint("tenant_id", "tax_id", name="uq_customers_tenant_tax_id"),
-        # Target of the composite foreign key from sales
+        # Target of the composite foreign keys from sales and contacts
         UniqueConstraint("tenant_id", "id", name="uq_customers_tenant_id_id"),
     )
 
@@ -40,11 +47,18 @@ class CustomerModel(TenantScoped, Base):
 
 class CustomerContactModel(TenantScoped, Base):
     __tablename__ = "customer_contacts"
+    __table_args__ = (
+        # Composite: the customer is of the contact's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "customer_id"],
+            ["customers.tenant_id", "customers.id"],
+            name="fk_customer_contacts_customer_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    customer_id: Mapped[int] = mapped_column(
-        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    customer_id: Mapped[int] = mapped_column(nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str | None] = mapped_column(String(64))
     email: Mapped[str | None] = mapped_column(String(128))

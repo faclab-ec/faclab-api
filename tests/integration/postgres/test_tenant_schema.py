@@ -1,6 +1,7 @@
 """Two tenants on one schema (S2.3): business identifiers are unique per
 tenant, each tenant only sees its rows, and composite foreign keys keep a
-relation inside one tenant even when the application doesn't check it."""
+relation inside one tenant even when the application doesn't check it (every
+reference a route can fill since S2.4)."""
 
 from uuid import UUID
 
@@ -12,6 +13,7 @@ from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
     make_customer,
+    make_location,
     make_product,
     make_supplier,
     make_warehouse,
@@ -131,3 +133,62 @@ def test_the_database_rejects_a_sale_with_another_tenants_customer(
     diag = getattr(error.value.orig, "diag", None)
     assert diag is not None
     assert diag.constraint_name == "fk_sales_customer_tenant"
+
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/admin/products",
+            lambda b: {"name": "P", "sku": "P-1", "categoryId": b["category"]},
+        ),
+        (
+            "/api/admin/locations",
+            lambda b: {"warehouseId": b["warehouse"], "name": "L", "code": "L1"},
+        ),
+        (
+            "/api/admin/lots",
+            lambda b: {
+                "productId": b["product"],
+                "lotNumber": "LOT-1",
+                "initialQuantity": 1,
+            },
+        ),
+    ],
+    ids=["product-category", "location-warehouse", "lot-product"],
+)
+def test_a_reference_to_another_tenants_row_is_rejected(api_a, api_b, path, payload):
+    b = {
+        "category": api_b.post("/api/admin/categories", {"name": "Cat B"})["id"],
+        "warehouse": make_warehouse(api_b, "WH-B")["id"],
+        "product": make_product(api_b, "SKU-B")["id"],
+    }
+
+    # Nothing looks these ids up: the composite foreign key rejects them
+    error = api_a.error("POST", path, 422, json=payload(b))
+
+    assert error["code"] == "REFERENCE_NOT_FOUND"
+
+
+def test_deleting_a_location_clears_only_the_serials_location(api_a, pg_engine, tenant):
+    warehouse = make_warehouse(api_a)
+    location = make_location(api_a, warehouse["id"])
+    product = make_product(api_a)
+    serial = api_a.post(
+        "/api/admin/serials",
+        {
+            "productId": product["id"],
+            "serialNumber": "SN-1",
+            "locationId": location["id"],
+        },
+    )
+
+    api_a.delete(f"/api/admin/locations/{location['id']}")
+
+    assert api_a.get(f"/api/admin/serials/{serial['id']}")["locationId"] is None
+    with pg_engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT tenant_id FROM serial_numbers WHERE id = :id"),
+            {"id": serial["id"]},
+        ).one()
+    assert row.tenant_id == tenant

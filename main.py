@@ -44,7 +44,7 @@ from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
-from src.shared.infra.database import create_session_maker
+from src.shared.infra.database import worker_session_maker
 from src.shared.infra.health import (
     HealthCheckAccessFilter,
     HealthRouter,
@@ -104,9 +104,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     consumer = None
     if producer:
         producer.start()
+        # Reads every tenant's messages: faclab_worker, not the API's role
         outbox_relay.start(
             OutboxRelay(
-                create_session_maker(config.DB_CONNECTION_STRING),
+                worker_session_maker(),
                 producer,
                 poll_interval=config.OUTBOX_POLL_INTERVAL_SECONDS,
             )

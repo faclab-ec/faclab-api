@@ -55,8 +55,13 @@ env.read_env()
 config = context.config
 
 
-db_url = env("DATABASE_URL", "sqlite:///./default.db")
-config.set_main_option("sqlalchemy.url", db_url)
+# Migrations run as faclab_owner, the owner of the tables (S2.4); without its own
+# URL they use the API's (local SQLite)
+db_url = env("DATABASE_URL_MIGRATIONS", "") or env(
+    "DATABASE_URL", "sqlite:///./default.db"
+)
+# The ini parser interpolates "%": a password may contain it
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

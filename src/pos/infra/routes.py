@@ -166,7 +166,8 @@ class POSCustomerRouter:
         """List all customers for POS lookup."""
         result = handler.handle(GetAllCustomersQuery())
         return ListResponse(
-            data=[CustomerResponse.model_validate(c) for c in result], meta=meta
+            data=[CustomerResponse.model_validate(c) for c in result["items"]],
+            meta=meta,
         )
 
     def get_by_id(

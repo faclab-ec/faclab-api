@@ -58,14 +58,21 @@ class PurchaseOrderModel(TenantScoped, Base):
 
 class PurchaseOrderItemModel(TenantScoped, Base):
     __tablename__ = "purchase_order_items"
+    __table_args__ = (
+        # Composite: the product is of the order's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_purchase_order_items_product_tenant",
+            ondelete="RESTRICT",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     purchase_order_id: Mapped[int] = mapped_column(
         ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
+    product_id: Mapped[int] = mapped_column(nullable=False, index=True)
     quantity_ordered: Mapped[int] = mapped_column(Integer, nullable=False)
     quantity_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unit_cost: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
@@ -96,6 +103,16 @@ class PurchaseReceiptModel(TenantScoped, Base):
 
 class PurchaseReceiptItemModel(TenantScoped, Base):
     __tablename__ = "purchase_receipt_items"
+    __table_args__ = (
+        # Composite: the location is of the receipt's tenant. SET NULL (column)
+        # clears only the location, never tenant_id
+        ForeignKeyConstraint(
+            ["tenant_id", "location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_purchase_receipt_items_location_tenant",
+            ondelete="SET NULL (location_id)",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     purchase_receipt_id: Mapped[int] = mapped_column(
@@ -110,9 +127,7 @@ class PurchaseReceiptItemModel(TenantScoped, Base):
         ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
     )
     quantity_received: Mapped[int] = mapped_column(Integer, nullable=False)
-    location_id: Mapped[int | None] = mapped_column(
-        ForeignKey("locations.id", ondelete="SET NULL")
-    )
+    location_id: Mapped[int | None]
     lot_number: Mapped[str | None] = mapped_column(String(64))
     serial_numbers: Mapped[list[str] | None] = mapped_column(JSON)
 

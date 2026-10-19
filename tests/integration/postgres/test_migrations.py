@@ -5,7 +5,7 @@ import sys
 
 from sqlalchemy import inspect
 
-from tests.integration.postgres.conftest import ROOT
+from tests.integration.postgres.support import ROOT
 
 
 def _alembic(*args: str) -> subprocess.CompletedProcess:
