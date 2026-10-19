@@ -36,7 +36,9 @@ sucursal), `name`, `is_active`
 
 Una caja del POS. Emite por un punto de emision de su sucursal y descuenta stock de una
 ubicacion de una bodega de esa sucursal (`EMISSION_POINT_OUTSIDE_BRANCH`,
-`LOCATION_OUTSIDE_BRANCH`). Los turnos por terminal llegan en S2.6.
+`LOCATION_OUTSIDE_BRANCH`). Desde S2.6 cada terminal tiene como maximo un turno abierto
+(indice unico parcial), sus ventas y devoluciones mueven el stock de su ubicacion por defecto y se
+numeran por sucursal (`document_sequences`, `V-001-000123` y `D-001-000045`).
 
 **Campos:** `id`, `branch_id` (fijo desde que se crea), `emission_point_id`,
 `default_location_id`, `code` (unico por sucursal), `name`, `is_active`
@@ -54,7 +56,16 @@ algunas sucursales; sin filas entra a todas. Se administra con
 ruta autenticada que reciba `X-Branch-Id` lo valida (422 `INVALID_BRANCH_HEADER`, 403
 `BRANCH_ACCESS_DENIED`) y la solicitud corre en esa sucursal (`TenantContext.branch_id`, logs y
 span con `faclab.branch.id`). Las rutas de sucursal lo exigen con `require_branch`
-(`BRANCH_REQUIRED`); hoy solo `GET /api/pos/terminals`, y desde S2.6 turnos, ventas y caja.
+(`BRANCH_REQUIRED`): `GET /api/pos/terminals` y, desde S2.6, las operaciones del POS
+(`pos_terminal` con `X-Terminal-Id`, `pos_branch` para las de una venta, un turno o una
+devolucion existentes; ver `pos-api-spec.md` §0).
+
+### DocumentSequence
+
+Numeracion de documentos internos por sucursal (ADR-0012, S2.6): `tenant_id`, `branch_id`,
+`doc_type` (`SALE`, `REFUND`) y `last_value`, el ultimo numero emitido. `DocumentNumbering` lo
+incrementa con un upsert dentro de la transaccion del documento y lo formatea con el codigo de
+establecimiento de la sucursal.
 
 ---
 

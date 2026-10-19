@@ -1,6 +1,6 @@
 # ADR-0012: Numeración de documentos internos y tributarios
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes en S2.8)
 - **Relacionado:** [ADR-0004](0004-persistencia-de-facturacion-en-postgresql.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -26,6 +26,28 @@
   - Un rechazo consume el secuencial (comportamiento actual).
 - El core envía en el mensaje el establecimiento y el punto de emisión de la venta (ADR-0006);
   facturación no los decide.
+
+### Precisiones de la implementación (S2.6)
+
+- `document_sequences (id, tenant_id, branch_id, doc_type, last_value)` en `src/organization/`, con
+  `UNIQUE (tenant_id, branch_id, doc_type)`, FK compuesta a la sucursal y RLS forzado. Guarda el último
+  número emitido, no el siguiente: cada número es un upsert atómico,
+  `INSERT … ON CONFLICT DO UPDATE SET last_value = last_value + 1 RETURNING last_value`, así el primer
+  documento de un tipo crea el contador en 1 sin un paso de alta
+  (`SqlAlchemyDocumentSequenceRepository`, también en SQLite para las pruebas).
+- `DocumentNumbering.next(branch_id, doc_type)` lo formatea con el código de establecimiento de la
+  sucursal: `V-001-000123` (ventas) y `D-001-000045` (devoluciones). El documento guarda el número ya
+  formateado, que conserva el código con el que se emitió. Unicidad en el documento:
+  `uq_sales_tenant_branch_number` y `uq_pos_refunds_tenant_branch_number`.
+- El número se asigna cuando el documento surte efecto (venta confirmada, devolución procesada): un
+  borrador descartado o una devolución cancelada no consumen números, y una venta cancelada conserva
+  el suyo. Si la operación falla, el rollback deshace también el contador.
+- Orden de bloqueos: cada documento del POS bloquea primero sus filas de stock (por producto) y al
+  final el contador, así dos ventas de productos distintos solo se esperan en el número y no hay
+  ciclos entre ventas y devoluciones.
+- El formato es fijo por ahora; el formato configurable por empresa y la numeración de cotizaciones,
+  órdenes de compra, ajustes, transferencias y cierres quedan para sus sesiones (anotado en
+  ROADMAP.md).
 
 ## Consecuencias
 
