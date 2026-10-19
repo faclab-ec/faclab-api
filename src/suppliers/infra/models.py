@@ -1,7 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
@@ -12,7 +19,8 @@ class SupplierModel(TenantScoped, Base):
     __tablename__ = "suppliers"
     __table_args__ = (
         UniqueConstraint("tenant_id", "tax_id", name="uq_suppliers_tenant_tax_id"),
-        # Target of the composite foreign key from purchase orders
+        # Target of the composite foreign keys from purchase orders, contacts
+        # and supplier products
         UniqueConstraint("tenant_id", "id", name="uq_suppliers_tenant_id_id"),
     )
 
@@ -43,11 +51,18 @@ class SupplierModel(TenantScoped, Base):
 
 class SupplierContactModel(TenantScoped, Base):
     __tablename__ = "supplier_contacts"
+    __table_args__ = (
+        # Composite: the supplier is of the contact's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_id"],
+            ["suppliers.tenant_id", "suppliers.id"],
+            name="fk_supplier_contacts_supplier_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    supplier_id: Mapped[int] = mapped_column(
-        ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    supplier_id: Mapped[int] = mapped_column(nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     role: Mapped[str | None] = mapped_column(String(64))
     email: Mapped[str | None] = mapped_column(String(128))
@@ -58,15 +73,26 @@ class SupplierContactModel(TenantScoped, Base):
 
 class SupplierProductModel(TenantScoped, Base):
     __tablename__ = "supplier_products"
-    __table_args__ = (UniqueConstraint("supplier_id", "product_id"),)
+    __table_args__ = (
+        UniqueConstraint("supplier_id", "product_id"),
+        # Composite: the supplier and the product are of the row's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_id"],
+            ["suppliers.tenant_id", "suppliers.id"],
+            name="fk_supplier_products_supplier_tenant",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_supplier_products_product_tenant",
+            ondelete="CASCADE",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    supplier_id: Mapped[int] = mapped_column(
-        ForeignKey("suppliers.id", ondelete="CASCADE"), nullable=False
-    )
-    product_id: Mapped[int] = mapped_column(
-        ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    supplier_id: Mapped[int] = mapped_column(nullable=False)
+    product_id: Mapped[int] = mapped_column(nullable=False, index=True)
     purchase_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     supplier_sku: Mapped[str | None] = mapped_column(String(64))
     min_order_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

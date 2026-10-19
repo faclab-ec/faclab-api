@@ -10,6 +10,8 @@ class WarehouseModel(TenantScoped, Base):
     __tablename__ = "warehouses"
     __table_args__ = (
         UniqueConstraint("tenant_id", "code", name="uq_warehouses_tenant_code"),
+        # Target of the composite foreign keys from locations and adjustments
+        UniqueConstraint("tenant_id", "id", name="uq_warehouses_tenant_id_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

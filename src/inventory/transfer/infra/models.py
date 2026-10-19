@@ -34,14 +34,27 @@ class StockTransferModel(TenantScoped, Base):
 
 class StockTransferItemModel(TenantScoped, Base):
     __tablename__ = "stock_transfer_items"
+    __table_args__ = (
+        # Composite: the product and lot are of the item's tenant. SET NULL
+        # (column) clears only the lot, never tenant_id
+        ForeignKeyConstraint(
+            ["tenant_id", "product_id"],
+            ["products.tenant_id", "products.id"],
+            name="fk_stock_transfer_items_product_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "lot_id"],
+            ["lots.tenant_id", "lots.id"],
+            name="fk_stock_transfer_items_lot_tenant",
+            ondelete="SET NULL (lot_id)",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     transfer_id: Mapped[int] = mapped_column(
         ForeignKey("stock_transfers.id", ondelete="CASCADE"), index=True
     )
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    product_id: Mapped[int]
     quantity: Mapped[int]
-    lot_id: Mapped[int | None] = mapped_column(
-        ForeignKey("lots.id", ondelete="SET NULL"), nullable=True
-    )
+    lot_id: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None]

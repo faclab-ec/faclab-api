@@ -11,6 +11,7 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.infra.models import MovementModel
 from src.inventory.stock.infra.models import StockModel
 from src.inventory.warehouse.infra.models import WarehouseModel
+from tests.conftest import TEST_TENANT_ID
 from tests.sqlite import sqlite_session
 
 _MODELS = (
@@ -52,3 +53,19 @@ def test_deleting_product_without_history_succeeds(session):
     session.commit()
 
     assert session.get(ProductModel, 1) is None
+
+
+def test_deleting_category_keeps_its_products_in_the_tenant(session):
+    category = CategoryModel(id=1, name="Herramientas")
+    session.add(category)
+    session.flush()
+    product = session.get(ProductModel, 1)
+    product.category = category
+    session.commit()
+
+    session.delete(category)
+    session.commit()
+
+    product = session.get(ProductModel, 1)
+    assert product.category_id is None
+    assert product.tenant_id == TEST_TENANT_ID

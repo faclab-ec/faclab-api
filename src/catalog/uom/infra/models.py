@@ -10,6 +10,8 @@ class UnitOfMeasureModel(TenantScoped, Base):
         UniqueConstraint(
             "tenant_id", "symbol", name="uq_units_of_measure_tenant_symbol"
         ),
+        # Target of the composite foreign key from products
+        UniqueConstraint("tenant_id", "id", name="uq_units_of_measure_tenant_id_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
