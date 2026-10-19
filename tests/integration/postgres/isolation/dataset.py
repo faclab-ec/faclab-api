@@ -9,6 +9,7 @@ from typing import Any
 
 from tests.integration.postgres.api import (
     Api,
+    make_branch,
     make_customer,
     make_location,
     make_movement,
@@ -60,9 +61,24 @@ def build_tenant(api: Api, marker: str, seed: int) -> Ids:
     )["id"]
     ids["product_out"] = make_product(api, f"{m}-SKU-2", name=f"{m} Clavo")["id"]
 
-    ids["warehouse"] = make_warehouse(api, f"{m}-WH1")["id"]
+    ids["branch"] = make_branch(api, "001", name=f"{m} Matriz")["id"]
+    ids["emission_point"] = api.post(
+        "/api/admin/emission-points",
+        {"branchId": ids["branch"], "code": "001", "name": f"{m} Caja"},
+    )["id"]
+    ids["warehouse"] = make_warehouse(api, f"{m}-WH1", branch_id=ids["branch"])["id"]
     ids["location"] = make_location(api, ids["warehouse"], f"{m}-A1")["id"]
     ids["location2"] = make_location(api, ids["warehouse"], f"{m}-A2")["id"]
+    ids["terminal"] = api.post(
+        "/api/admin/pos-terminals",
+        {
+            "branchId": ids["branch"],
+            "emissionPointId": ids["emission_point"],
+            "defaultLocationId": ids["location"],
+            "code": f"{m}-CAJA-01",
+            "name": f"{m} Caja 1",
+        },
+    )["id"]
     make_movement(api, ids["product"], 50, ids["location"])
     # Out of stock: a stock row at zero
     make_movement(api, ids["product_out"], 5, ids["location"])

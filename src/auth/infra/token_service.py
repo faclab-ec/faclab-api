@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -47,10 +48,21 @@ class JwtTokenService(TokenService):
         return self._reuse_grace
 
     def issue_pair(
-        self, user: User, membership: Membership, session_id: int, refresh_jti: str
+        self,
+        user: User,
+        membership: Membership,
+        session_id: int,
+        refresh_jti: str,
+        *,
+        branch_ids: Collection[int] | None = None,
     ) -> TokenPair:
         access = self._session_token(
-            user, membership, session_id, "access", self._access_ttl
+            user,
+            membership,
+            session_id,
+            "access",
+            self._access_ttl,
+            branch_ids=branch_ids,
         )
         refresh = self._session_token(
             user,
@@ -108,6 +120,7 @@ class JwtTokenService(TokenService):
         typ: TokenType,
         ttl_seconds: int,
         jti: str | None = None,
+        branch_ids: Collection[int] | None = None,
     ) -> str:
         payload = self._payload(user, typ, ttl_seconds)
         payload["sid"] = session_id
@@ -119,6 +132,10 @@ class JwtTokenService(TokenService):
             payload["perms"] = sorted(p.value for p in permissions_for(membership.role))
             if user.full_name:
                 payload["name"] = user.full_name
+            # Only when the membership is limited to some branches: without
+            # the claim the user may enter all of them
+            if branch_ids is not None:
+                payload["bids"] = sorted(set(branch_ids))
         if jti is not None:
             payload["jti"] = jti
         return jwt.encode(payload, self._secret, algorithm=_ALGORITHM)
@@ -160,10 +177,17 @@ class JwtTokenService(TokenService):
                 sid=_optional(payload, "sid", int),
                 jti=_optional(payload, "jti", str),
                 name=payload.get("name") or None,
+                bids=_optional(payload, "bids", _branch_ids),
             )
         except (KeyError, TypeError, ValueError) as exc:
             logger.info("token_rejected", reason="malformed claims")
             raise InvalidTokenError("invalid token") from exc
+
+
+def _branch_ids(value: Any) -> frozenset[int]:
+    if not isinstance(value, list):
+        raise TypeError("bids must be a list")
+    return frozenset(int(branch_id) for branch_id in value)
 
 
 def _optional(payload: dict[str, Any], key: str, convert):

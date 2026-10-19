@@ -304,6 +304,45 @@ def test_a_token_without_tenant_must_log_in_again(client, admin):
     assert _error_code(response) == "TENANT_REQUIRED"
 
 
+def test_provisioning_leaves_the_tenant_ready_to_operate(
+    client, monkeypatch, pg_engine
+):
+    for _ in range(2):
+        assert _provision(monkeypatch, OTHER_TENANT_RUC, "duena") == 0
+
+    token = _login(client, "duena").json()["data"]["accessToken"]
+    api = Api(client, _bearer(token))
+    [branch] = api.get("/api/admin/branches")
+    [point] = api.get("/api/admin/emission-points")
+    [warehouse] = api.get("/api/admin/warehouses")
+    [location] = api.get("/api/admin/locations")
+    [terminal] = api.get("/api/admin/pos-terminals")
+    assert (branch["establishmentCode"], branch["isMain"]) == ("001", True)
+    assert (point["branchId"], point["code"]) == (branch["id"], "001")
+    assert (warehouse["branchId"], warehouse["isDefault"]) == (branch["id"], True)
+    assert location["warehouseId"] == warehouse["id"]
+    assert terminal["branchId"] == branch["id"]
+    assert terminal["emissionPointId"] == point["id"]
+    assert terminal["defaultLocationId"] == location["id"]
+    # The POS of that branch finds its terminal
+    branch_headers = {**_bearer(token), "X-Branch-Id": str(branch["id"])}
+    terminals = Api(client, branch_headers).get("/api/pos/terminals")
+    assert [t["code"] for t in terminals] == ["CAJA-01"]
+    error = api.error("DELETE", f"/api/admin/branches/{branch['id']}", 409)
+    assert error["code"] == "MAIN_BRANCH_DELETION"
+    with pg_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT (SELECT count(*) FROM branches),"
+                " (SELECT count(*) FROM emission_points),"
+                " (SELECT count(*) FROM warehouses),"
+                " (SELECT count(*) FROM locations),"
+                " (SELECT count(*) FROM pos_terminals)"
+            )
+        ).one()
+    assert tuple(rows) == (1, 1, 1, 1, 1)
+
+
 def test_provisioning_twice_leaves_one_tenant_one_admin(client, monkeypatch, pg_engine):
     for _ in range(2):
         assert (

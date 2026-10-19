@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, UniqueConstraint
+from sqlalchemy import ForeignKeyConstraint, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base, TenantScoped
@@ -12,9 +12,16 @@ class WarehouseModel(TenantScoped, Base):
         UniqueConstraint("tenant_id", "code", name="uq_warehouses_tenant_code"),
         # Target of the composite foreign keys from locations and adjustments
         UniqueConstraint("tenant_id", "id", name="uq_warehouses_tenant_id_id"),
+        # Composite: the branch is of the warehouse's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "branch_id"],
+            ["branches.tenant_id", "branches.id"],
+            name="fk_warehouses_branch_tenant",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    branch_id: Mapped[int] = mapped_column(nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     code: Mapped[str] = mapped_column(String(32), nullable=False)
     address: Mapped[str | None] = mapped_column(String(256))

@@ -9,6 +9,7 @@ from src.shared.app.commands import Command, CommandHandler
 
 @dataclass
 class CreateWarehouseCommand(Command):
+    branch_id: int
     name: str
     code: str
     address: str | None = None
@@ -28,6 +29,7 @@ class CreateWarehouseCommandHandler(CommandHandler[CreateWarehouseCommand, dict]
 
     def _handle(self, command: CreateWarehouseCommand) -> dict:
         warehouse = Warehouse(
+            branch_id=command.branch_id,
             name=command.name,
             code=command.code,
             address=command.address,

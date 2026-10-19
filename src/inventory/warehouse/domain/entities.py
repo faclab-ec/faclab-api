@@ -6,6 +6,7 @@ from src.shared.domain.entities import Entity
 
 @dataclass
 class Warehouse(Entity):
+    branch_id: int
     name: str
     code: str
     id: int | None = None

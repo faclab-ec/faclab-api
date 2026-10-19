@@ -242,6 +242,35 @@ def test_access_token_carries_the_full_name_when_set():
     assert svc.decode_access(unnamed.access_token).name is None
 
 
+def test_the_access_token_lists_the_branches_the_membership_is_limited_to():
+    svc = _service()
+
+    pair = svc.issue_pair(_user(), _membership(), 7, "j", branch_ids=[5, 2, 5])
+
+    claims = jwt.decode(pair.access_token, options={"verify_signature": False})
+    assert claims["bids"] == [2, 5]
+    assert svc.decode_access(pair.access_token).bids == frozenset({2, 5})
+    refresh = jwt.decode(pair.refresh_token, options={"verify_signature": False})
+    assert "bids" not in refresh
+
+
+def test_without_branches_the_token_has_no_bids_claim():
+    svc = _service()
+
+    pair = svc.issue_pair(_user(), _membership(), 7, "j")
+
+    claims = jwt.decode(pair.access_token, options={"verify_signature": False})
+    assert "bids" not in claims
+    assert svc.decode_access(pair.access_token).bids is None
+
+
+def test_a_malformed_bids_claim_is_an_invalid_token():
+    token = jwt.encode(_payload(bids="1,2"), "test-secret", algorithm="HS256")
+
+    with pytest.raises(InvalidTokenError):
+        _service().decode_access(token)
+
+
 @pytest.mark.parametrize(
     "token_of",
     [

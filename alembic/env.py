@@ -24,6 +24,11 @@ from src.inventory.transfer.infra.models import (  # noqa: F401
     StockTransferModel,
 )
 from src.inventory.warehouse.infra.models import WarehouseModel  # noqa: F401
+from src.organization.infra.models import (  # noqa: F401
+    BranchModel,
+    EmissionPointModel,
+    PosTerminalModel,
+)
 from src.pos.cash.infra.models import CashMovementModel  # noqa: F401
 from src.pos.refund.infra.models import (  # noqa: F401
     RefundItemModel,
@@ -45,7 +50,11 @@ from src.suppliers.infra.models import (  # noqa: F401
     SupplierModel,
     SupplierProductModel,
 )
-from src.tenancy.infra.models import MembershipModel, TenantModel  # noqa: F401
+from src.tenancy.infra.models import (  # noqa: F401
+    MembershipModel,
+    TenantModel,
+    UserBranchAccessModel,
+)
 
 env = Env()
 env.read_env()

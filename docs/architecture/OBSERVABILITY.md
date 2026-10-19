@@ -78,7 +78,7 @@ equivalentes.
 | `trace_id`, `span_id` | Si hay span activo | Correlación con trazas |
 | `http.request.id` | En HTTP | Id de solicitud (`X-Request-Id`), validado como UUID o generado |
 | `faclab.tenant.id` | Si hay contexto | UUID de la empresa (no es dato personal) |
-| `faclab.branch.id` | Si aplica | Id de sucursal |
+| `faclab.branch.id` | Si aplica | Id de sucursal: el `X-Branch-Id` validado de la solicitud (S2.5), en logs y en el span del request |
 | `user.id` | Solo en eventos de seguridad y auditoría | Id interno, nunca usuario ni email |
 | `faclab.operation` | En operaciones de negocio | Nombre del comando o consulta, por ejemplo `ConfirmSaleCommand` |
 | `duration_ms` | En operaciones medidas | Número |

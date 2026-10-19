@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Literal
 from uuid import UUID
@@ -39,6 +40,8 @@ class TokenClaims:
     sid: int | None = None  # AuthSession id; selection tokens have none
     jti: str | None = None  # refresh tokens only: which rotation of the session
     name: str | None = None  # access tokens only: the user's full name, if set
+    # access tokens only: the branches the user may enter; None means all
+    bids: frozenset[int] | None = None
 
 
 class TokenService(ABC):
@@ -54,11 +57,18 @@ class TokenService(ABC):
 
     @abstractmethod
     def issue_pair(
-        self, user: User, membership: Membership, session_id: int, refresh_jti: str
+        self,
+        user: User,
+        membership: Membership,
+        session_id: int,
+        refresh_jti: str,
+        *,
+        branch_ids: Collection[int] | None = None,
     ) -> TokenPair:
         """Access and refresh tokens of the session, for the membership's tenant
         (`tid`) and role; the refresh token carries `refresh_jti`, the rotation
-        the session currently accepts."""
+        the session currently accepts. `branch_ids` are the branches the
+        membership is limited to (`bids` in the access token); None, all."""
 
     @abstractmethod
     def issue_selection(self, user: User) -> SelectionToken:

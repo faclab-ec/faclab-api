@@ -93,9 +93,8 @@ class Tenant:
             kwargs["json"] = route.body(ids)
         if route.query and query:
             kwargs["params"] = route.query(ids)
-        response = self.api.client.request(
-            method, path, headers=self.api.headers, **kwargs
-        )
+        headers = {**self.api.headers, **(route.headers(ids) if route.headers else {})}
+        response = self.api.client.request(method, path, headers=headers, **kwargs)
         return Outcome.of(response)
 
 

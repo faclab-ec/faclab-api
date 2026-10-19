@@ -65,7 +65,7 @@ def _claims(sid: int | None = 7, jti: str | None = "current") -> TokenClaims:
     )
 
 
-def _handler(user=None, session=None, claims=None, access=ACCESS):
+def _handler(user=None, session=None, claims=None, access=ACCESS, branch_ids=()):
     repo = MagicMock()
     repo.get_by_id.return_value = user
     session_repo = MagicMock()
@@ -73,6 +73,7 @@ def _handler(user=None, session=None, claims=None, access=ACCESS):
     session_repo.update.side_effect = lambda s: s
     memberships = MagicMock()
     memberships.active_access.return_value = access
+    memberships.branch_ids.return_value = list(branch_ids)
     token_service = MagicMock()
     token_service.refresh_ttl_seconds = 604800
     token_service.refresh_reuse_grace_seconds = 30
@@ -98,7 +99,7 @@ def test_refresh_rotates_the_token_and_extends_the_session():
     assert session.previous_refresh_jti == "current"
     assert session.refreshed_at is not None
     token_service.issue_pair.assert_called_once_with(
-        _user(), ACCESS.membership, 7, session.refresh_jti
+        _user(), ACCESS.membership, 7, session.refresh_jti, branch_ids=None
     )
     session_repo.update.assert_called_once_with(session)
     assert session.expires_at > datetime.now() + timedelta(days=6)
@@ -117,9 +118,17 @@ def test_the_token_just_replaced_gets_the_current_one_within_the_grace():
     # Not rotated again, so both tabs end up with the same token
     assert (session.refresh_jti, session.previous_refresh_jti) == ("new", "current")
     token_service.issue_pair.assert_called_once_with(
-        _user(), ACCESS.membership, 7, "new"
+        _user(), ACCESS.membership, 7, "new", branch_ids=None
     )
     assert session.revoked_at is None
+
+
+def test_refresh_reads_the_branches_the_membership_is_limited_to_again():
+    handler, _, _, token_service = _handler(_user(), _session(), branch_ids=[2, 5])
+
+    handler.handle(RefreshTokenCommand(refresh_token="current"))
+
+    assert token_service.issue_pair.call_args.kwargs == {"branch_ids": [2, 5]}
 
 
 @pytest.mark.parametrize(

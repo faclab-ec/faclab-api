@@ -9,6 +9,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 @dataclass
 class GetAllWarehousesQuery(Query):
+    branch_id: int | None = None
     is_active: bool | None = None
     limit: int | None = None
     offset: int | None = None
@@ -20,7 +21,9 @@ class GetAllWarehousesQueryHandler(QueryHandler[GetAllWarehousesQuery, dict]):
         self.repo = repo
 
     def _handle(self, query: GetAllWarehousesQuery) -> dict:
-        filters = {}
+        filters: dict = {}
+        if query.branch_id is not None:
+            filters["branch_id"] = query.branch_id
         if query.is_active is not None:
             filters["is_active"] = query.is_active
         return self.repo.paginate(limit=query.limit, offset=query.offset, **filters)

@@ -17,6 +17,45 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 
 ## Admin API
 
+### Sucursales — `/api/admin/branches`
+
+Lectura con `organization:read`; crear, editar y borrar con `organization:write` (solo ADMIN).
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `POST` | `/api/admin/branches` | Crear sucursal (`establishmentCode` de tres digitos, unico por empresa) |
+| `GET` | `/api/admin/branches` | Listar sucursales; `isActive` |
+| `GET` | `/api/admin/branches/{id}` | Obtener por ID |
+| `PUT` | `/api/admin/branches/{id}` | Actualizar codigo, nombre, direccion o estado (`isMain` no cambia) |
+| `DELETE` | `/api/admin/branches/{id}` | Eliminar (no la matriz: `MAIN_BRANCH_DELETION`; no una en uso: `RECORD_IN_USE`) |
+
+### Puntos de Emision — `/api/admin/emission-points`
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `POST` | `/api/admin/emission-points` | Crear punto de emision (`branchId`, `code` de tres digitos, unico por sucursal) |
+| `GET` | `/api/admin/emission-points` | Listar; `branchId`, `isActive` |
+| `GET` | `/api/admin/emission-points/{id}` | Obtener por ID |
+| `PUT` | `/api/admin/emission-points/{id}` | Actualizar codigo, nombre o estado (la sucursal no cambia) |
+| `DELETE` | `/api/admin/emission-points/{id}` | Eliminar (no uno con terminales: `RECORD_IN_USE`) |
+
+### Terminales POS — `/api/admin/pos-terminals`
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `POST` | `/api/admin/pos-terminals` | Crear terminal: punto de emision y ubicacion por defecto de la misma sucursal (`EMISSION_POINT_OUTSIDE_BRANCH`, `LOCATION_OUTSIDE_BRANCH`) |
+| `GET` | `/api/admin/pos-terminals` | Listar; `branchId`, `isActive` |
+| `GET` | `/api/admin/pos-terminals/{id}` | Obtener por ID |
+| `PUT` | `/api/admin/pos-terminals/{id}` | Actualizar punto de emision, ubicacion, codigo, nombre o estado (la sucursal no cambia) |
+| `DELETE` | `/api/admin/pos-terminals/{id}` | Eliminar |
+
+### Encabezado `X-Branch-Id`
+
+La sucursal de la operacion. Toda ruta autenticada que lo recibe lo valida: 422
+`INVALID_BRANCH_HEADER` si no es un id, 403 `BRANCH_ACCESS_DENIED` si el usuario esta limitado a
+otras sucursales (claim `bids`). Las rutas de sucursal lo exigen (`BRANCH_REQUIRED`, 400): hoy
+`GET /api/pos/terminals`; turnos, ventas y caja desde S2.6.
+
 ### Categorias — `/api/admin/categories`
 
 | Metodo | Ruta | Descripcion |
@@ -51,10 +90,10 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 
 | Metodo | Ruta | Descripcion |
 |---|---|---|
-| `POST` | `/api/admin/warehouses` | Crear almacen |
-| `GET` | `/api/admin/warehouses` | Listar almacenes |
+| `POST` | `/api/admin/warehouses` | Crear almacen en una sucursal (`branchId` obligatorio) |
+| `GET` | `/api/admin/warehouses` | Listar almacenes; `branchId`, `isActive` |
 | `GET` | `/api/admin/warehouses/{id}` | Obtener por ID |
-| `PUT` | `/api/admin/warehouses/{id}` | Actualizar |
+| `PUT` | `/api/admin/warehouses/{id}` | Actualizar (la sucursal no cambia) |
 | `DELETE` | `/api/admin/warehouses/{id}` | Eliminar |
 
 ### Ubicaciones — `/api/admin/locations`
@@ -263,6 +302,12 @@ La documentacion interactiva (Scalar) esta disponible cuando `DOCS_ENABLED=true`
 | `POST` | `/api/pos/sales/{id}/cancel` | Anular venta (atomico con inventario) |
 
 > La creacion y gestion de items se realiza desde Admin (`/api/admin/sales`).
+
+### Terminales POS — `/api/pos/terminals`
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| `GET` | `/api/pos/terminals` | Terminales activas de la sucursal de `X-Branch-Id` (obligatorio), para elegir la del POS |
 
 ### Productos POS — `/api/pos/products`
 

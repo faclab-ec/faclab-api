@@ -4,7 +4,7 @@ from typing import NoReturn
 
 from wireup import injectable
 
-from src.auth.app.commands.sessions import OpenedSession, open_session
+from src.auth.app.commands.sessions import OpenedSession, branch_limit, open_session
 from src.auth.app.repositories import (
     AuthSessionRepository,
     LoginFailureRepository,
@@ -112,6 +112,7 @@ class LoginCommandHandler(CommandHandler[LoginCommand, LoginResult]):
                 access.membership,
                 access.tenant,
                 now,
+                branch_ids=branch_limit(self.memberships, access.membership),
             )
         )
 

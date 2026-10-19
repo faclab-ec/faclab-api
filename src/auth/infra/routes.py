@@ -32,6 +32,7 @@ from src.auth.infra.cookies import (
 from src.auth.infra.dependencies import get_current_user
 from src.auth.infra.validators import (
     AuthenticatedUserResponse,
+    BranchAccessResponse,
     ChangePasswordRequest,
     LoginRequest,
     SelectTenantRequest,
@@ -39,6 +40,10 @@ from src.auth.infra.validators import (
     TenantResponse,
     TenantSelectionResponse,
     TokenPairResponse,
+)
+from src.organization.app.queries.branch import (
+    GetAccessibleBranchesQuery,
+    GetAccessibleBranchesQueryHandler,
 )
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
@@ -190,11 +195,15 @@ class AuthRouter:
     def me(
         self,
         handler: Injected[GetMyTenantsQueryHandler],
+        branches_handler: Injected[GetAccessibleBranchesQueryHandler],
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[AuthenticatedUserResponse]:
         tenants = handler.handle(
             GetMyTenantsQuery(tenant_id=user.tenant_id, user_id=user.id)
+        )
+        branches = branches_handler.handle(
+            GetAccessibleBranchesQuery(branch_ids=user.branch_ids)
         )
         return DataResponse(
             data=AuthenticatedUserResponse(
@@ -208,6 +217,9 @@ class AuthRouter:
                 tenants=[
                     TenantAccessResponse.model_validate(access)
                     for access in tenants["tenants"]
+                ],
+                branches=[
+                    BranchAccessResponse.model_validate(branch) for branch in branches
                 ],
             ),
             meta=meta,

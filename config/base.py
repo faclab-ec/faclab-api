@@ -305,7 +305,32 @@ All errors follow a consistent structure with one or more error entries:
             "name": "Users",
             "description": (
                 "Administer system users: create, list, view, update role, "
-                "activate and deactivate. Requires the `user:manage` permission."
+                "activate and deactivate, and limit them to some branches. "
+                "Requires the `user:manage` permission."
+            ),
+        },
+        # Admin — Organization
+        {
+            "name": "Branches",
+            "description": (
+                "The tenant's branches: SRI establishments with a three-digit code "
+                "(001-999), unique in the tenant. The main branch (matriz) is "
+                "created at provisioning. Requires `organization:read` / "
+                "`organization:write`."
+            ),
+        },
+        {
+            "name": "Emission Points",
+            "description": (
+                "SRI emission points of a branch, with a three-digit code unique "
+                "in the branch."
+            ),
+        },
+        {
+            "name": "POS Terminals",
+            "description": (
+                "POS terminals of a branch: each issues by an emission point and "
+                "takes stock from a location of a warehouse of the same branch."
             ),
         },
         # Admin — Catalog
@@ -446,6 +471,13 @@ All errors follow a consistent structure with one or more error entries:
             "description": "Customer lookup for point-of-sale, including search by tax ID (RUC).",
         },
         {
+            "name": "Terminals",
+            "description": (
+                "The active terminals of the branch in `X-Branch-Id`, to choose "
+                "the one the POS runs on."
+            ),
+        },
+        {
             "name": "Shifts",
             "description": (
                 "Shift management: open and close cashier shifts, "
@@ -486,6 +518,10 @@ All errors follow a consistent structure with one or more error entries:
         {
             "name": "Administration",
             "tags": ["Auth", "Users"],
+        },
+        {
+            "name": "Organization",
+            "tags": ["Branches", "Emission Points", "POS Terminals"],
         },
         {
             "name": "Catalog",
@@ -547,6 +583,7 @@ All errors follow a consistent structure with one or more error entries:
         {
             "name": "POS",
             "tags": [
+                "Terminals",
                 "Product Search",
                 "Customer Search",
                 "Shifts",

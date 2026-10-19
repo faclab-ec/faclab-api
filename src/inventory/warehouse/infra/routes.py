@@ -22,6 +22,7 @@ from src.inventory.warehouse.app.queries.get_warehouse import (
     GetWarehouseByIdQueryHandler,
 )
 from src.inventory.warehouse.infra.validators import (
+    CreateWarehouseRequest,
     WarehouseQueryParams,
     WarehouseRequest,
     WarehouseResponse,
@@ -84,11 +85,12 @@ class WarehouseRouter:
 
     def create(
         self,
-        body: WarehouseRequest,
+        body: CreateWarehouseRequest,
         handler: Injected[CreateWarehouseCommandHandler],
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[WarehouseResponse]:
-        """Create a new warehouse facility."""
+        """Create a warehouse in a branch. A branch that doesn't exist answers
+        `REFERENCE_NOT_FOUND` (422)."""
         result = handler.handle(
             CreateWarehouseCommand(**body.model_dump(by_alias=False))
         )
@@ -101,7 +103,8 @@ class WarehouseRouter:
         handler: Injected[UpdateWarehouseCommandHandler],
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[WarehouseResponse]:
-        """Update a warehouse's name, code, address, or active status."""
+        """Update a warehouse's name, code, address, or active status. Its branch
+        doesn't change."""
         result = handler.handle(
             UpdateWarehouseCommand(warehouse_id=id, **body.model_dump(by_alias=False))
         )
@@ -117,7 +120,7 @@ class WarehouseRouter:
         query_params: WarehouseQueryParams = Depends(),
         meta: Meta = Depends(get_meta),
     ) -> PaginatedDataResponse[WarehouseResponse]:
-        """List warehouses. Optionally filter by active status."""
+        """List warehouses. Optionally filter by branch and active status."""
         result = handler.handle(
             GetAllWarehousesQuery(**query_params.model_dump(exclude_none=True))
         )

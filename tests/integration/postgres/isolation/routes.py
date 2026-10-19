@@ -5,7 +5,8 @@ A route is checked by what it takes:
 - `path`: the dataset keys its path ids come from. Called by tenant A with B's
   ids, it must answer exactly as with ids that don't exist (`MISSING`); a GET
   must also answer B with its own data.
-- `refs`: keys of the path, body or query that point to another row. Each one,
+- `refs`: keys of the path, body, query or headers that point to another row.
+  Each one,
   swapped for B's, must look missing too, and the call with A's own row must
   succeed (or, for a GET, answer something else), so the swap is what fails.
 - A GET without path ids is a listing: after B exists it answers A exactly as
@@ -36,6 +37,7 @@ class Route:
     path: tuple[str, ...] = ()
     body: Body | None = None
     query: Body | None = None
+    headers: Body | None = None
     refs: tuple[str, ...] = ()
     needs_query: bool = False
     created: str | None = None
@@ -85,6 +87,19 @@ def _warehouse(ids: Ids) -> dict:
     return {"warehouseId": ids["warehouse"]}
 
 
+def _branch(ids: Ids) -> dict:
+    return {"branchId": ids["branch"]}
+
+
+def _terminal(code: str) -> Body:
+    return lambda ids: {
+        "emissionPointId": ids["emission_point"],
+        "defaultLocationId": ids["location"],
+        "code": f"{ids['marker']}-{code}",
+        "name": f"{ids['marker']} Caja",
+    }
+
+
 def _payment(amount: str) -> Body:
     return lambda ids: {"amount": amount, "paymentMethod": "CASH"}
 
@@ -93,6 +108,42 @@ ADMIN = "/api/admin"
 POS = "/api/pos"
 
 ROUTES: dict[str, Route] = {
+    # Organization
+    f"POST {ADMIN}/branches": Route(
+        body=lambda ids: {"establishmentCode": "009", "name": f"{ids['marker']} Sur"},
+        created=f"{ADMIN}/branches/{{}}",
+    ),
+    f"GET {ADMIN}/branches": Route(),
+    f"GET {ADMIN}/branches/{{id}}": Route(path=("branch",)),
+    f"PUT {ADMIN}/branches/{{id}}": Route(
+        path=("branch",),
+        body=lambda ids: {"establishmentCode": "001", "name": f"{ids['marker']} M"},
+    ),
+    f"DELETE {ADMIN}/branches/{{id}}": Route(path=("branch",)),
+    f"POST {ADMIN}/emission-points": Route(
+        body=lambda ids: {"branchId": ids["branch"], "code": "002"}, refs=("branch",)
+    ),
+    f"GET {ADMIN}/emission-points": Route(query=_branch, refs=("branch",)),
+    f"GET {ADMIN}/emission-points/{{id}}": Route(path=("emission_point",)),
+    f"PUT {ADMIN}/emission-points/{{id}}": Route(
+        path=("emission_point",), body=lambda ids: {"code": "001"}
+    ),
+    f"DELETE {ADMIN}/emission-points/{{id}}": Route(path=("emission_point",)),
+    f"POST {ADMIN}/pos-terminals": Route(
+        body=lambda ids: {"branchId": ids["branch"], **_terminal("CAJA-NEW")(ids)},
+        refs=("branch", "emission_point", "location"),
+    ),
+    f"GET {ADMIN}/pos-terminals": Route(query=_branch, refs=("branch",)),
+    f"GET {ADMIN}/pos-terminals/{{id}}": Route(path=("terminal",)),
+    f"PUT {ADMIN}/pos-terminals/{{id}}": Route(
+        path=("terminal",),
+        body=_terminal("CAJA-01"),
+        refs=("emission_point", "location"),
+    ),
+    f"DELETE {ADMIN}/pos-terminals/{{id}}": Route(path=("terminal",)),
+    f"GET {POS}/terminals": Route(
+        headers=lambda ids: {"X-Branch-Id": str(ids["branch"])}, refs=("branch",)
+    ),
     # Catalog
     f"POST {ADMIN}/categories": Route(
         body=_name("Nueva"), created=f"{ADMIN}/categories/{{}}"
@@ -122,10 +173,14 @@ ROUTES: dict[str, Route] = {
     f"DELETE {ADMIN}/products/{{id}}": Route(path=("product",)),
     # Inventory
     f"POST {ADMIN}/warehouses": Route(
-        body=lambda ids: {"name": "Bodega", "code": f"{ids['marker']}-WH-NEW"},
-        created=f"{ADMIN}/warehouses/{{}}",
+        body=lambda ids: {
+            "branchId": ids["branch"],
+            "name": "Bodega",
+            "code": f"{ids['marker']}-WH-NEW",
+        },
+        refs=("branch",),
     ),
-    f"GET {ADMIN}/warehouses": Route(),
+    f"GET {ADMIN}/warehouses": Route(query=_branch, refs=("branch",)),
     f"GET {ADMIN}/warehouses/{{id}}": Route(path=("warehouse",)),
     f"PUT {ADMIN}/warehouses/{{id}}": Route(
         path=("warehouse",),
@@ -380,6 +435,12 @@ ROUTES: dict[str, Route] = {
         created=f"{ADMIN}/users/{{}}",
     ),
     f"GET {ADMIN}/users/{{user_id}}": Route(path=("user",)),
+    f"GET {ADMIN}/users/{{user_id}}/branches": Route(path=("user",)),
+    f"PUT {ADMIN}/users/{{user_id}}/branches": Route(
+        path=("user",),
+        body=lambda ids: {"branchIds": [ids["branch"]]},
+        refs=("branch",),
+    ),
     f"PUT {ADMIN}/users/{{user_id}}/role": Route(
         path=("user",), body=lambda ids: {"role": 3}
     ),
@@ -521,7 +582,10 @@ ROUTES: dict[str, Route] = {
     ),
     "POST /api/auth/refresh": Route(exempt="keeps the session's tenant"),
     "POST /api/auth/logout": Route(exempt="revokes the caller's session"),
-    "GET /api/auth/me": Route(exempt="the caller's own tenants (test_tenancy.py)"),
+    "GET /api/auth/me": Route(
+        exempt="the caller's own tenants and branches (test_tenancy.py, "
+        "test_organization.py)"
+    ),
     "POST /api/auth/change-password": Route(exempt="the caller's own password"),
     "GET /health/live": Route(exempt="no data"),
     "GET /health/ready": Route(exempt="no data"),

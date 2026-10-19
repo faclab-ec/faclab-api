@@ -7,9 +7,11 @@ from src.auth.app.commands.login import LoginCommandHandler
 from src.auth.app.commands.logout import LogoutCommandHandler
 from src.auth.app.commands.refresh_token import RefreshTokenCommandHandler
 from src.auth.app.commands.select_tenant import SelectTenantCommandHandler
+from src.auth.app.commands.set_user_branches import SetUserBranchesCommandHandler
 from src.auth.app.commands.update_user_profile import UpdateUserProfileCommandHandler
 from src.auth.app.commands.update_user_role import UpdateUserRoleCommandHandler
 from src.auth.app.queries.get_my_tenants import GetMyTenantsQueryHandler
+from src.auth.app.queries.get_user_branches import GetUserBranchesQueryHandler
 from src.auth.app.queries.get_users import (
     GetUserByIdQueryHandler,
     ListUsersQueryHandler,
@@ -45,6 +47,8 @@ INJECTABLES = [
     DeactivateUserCommandHandler,
     ActivateUserCommandHandler,
     AdminResetPasswordCommandHandler,
+    SetUserBranchesCommandHandler,
+    GetUserBranchesQueryHandler,
     ListUsersQueryHandler,
     GetUserByIdQueryHandler,
     GetMyTenantsQueryHandler,

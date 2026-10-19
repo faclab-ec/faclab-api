@@ -49,3 +49,12 @@ class MembershipRepository(Repository[Membership]):
     @abstractmethod
     def has_active_elsewhere(self, user_id: int, tenant_id: UUID) -> bool:
         """Whether the user has an active membership in another tenant"""
+
+    @abstractmethod
+    def branch_ids(self, membership_id: int) -> list[int]:
+        """The branches the membership is limited to, sorted; empty when it
+        may enter all of them"""
+
+    @abstractmethod
+    def set_branches(self, membership: Membership, branch_ids: Iterable[int]) -> None:
+        """Replace the membership's branches; none means all of them"""

@@ -1,10 +1,10 @@
-"""POS read-only routes for products and customers"""
+"""POS read-only routes for products, customers and terminals"""
 
 from fastapi import APIRouter, Depends, Query
 from wireup import Injected
 
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import require_branch, require_permission
 from src.catalog.product.app.queries.get_products import (
     GetAllProductsQuery,
     GetAllProductsQueryHandler,
@@ -27,6 +27,11 @@ from src.customers.app.queries.customer import (
     GetCustomerByTaxIdQueryHandler,
 )
 from src.customers.infra.validators import CustomerResponse
+from src.organization.app.queries.pos_terminal import (
+    GetBranchTerminalsQuery,
+    GetBranchTerminalsQueryHandler,
+)
+from src.organization.infra.validators import PosTerminalResponse
 from src.pos.infra.validators import QuickCustomerRequest
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
@@ -189,3 +194,33 @@ class POSCustomerRouter:
         """Look up a customer by their tax ID (RUC / CI)."""
         result = handler.handle(GetCustomerByTaxIdQuery(tax_id=tax_id))
         return DataResponse(data=CustomerResponse.model_validate(result), meta=meta)
+
+
+class POSTerminalRouter:
+    def __init__(self):
+        self.router = APIRouter()
+        self._setup_routes()
+
+    def _setup_routes(self):
+        self.router.get(
+            "",
+            response_model=ListResponse[PosTerminalResponse],
+            summary="List the branch's terminals",
+            responses=RESPONSES_LIST,
+            dependencies=[Depends(require_permission(Permission.POS_OPERATE))],
+        )(self.get_all)
+
+    def get_all(
+        self,
+        handler: Injected[GetBranchTerminalsQueryHandler],
+        branch_id: int = Depends(require_branch),
+        meta: Meta = Depends(get_meta),
+    ) -> ListResponse[PosTerminalResponse]:
+        """List the active terminals of the branch in `X-Branch-Id`, for the POS
+        to choose the one it runs on. Without the header: `BRANCH_REQUIRED`
+        (400); a branch that doesn't exist: `NOT_FOUND`; an inactive one:
+        `BRANCH_INACTIVE` (409)."""
+        result = handler.handle(GetBranchTerminalsQuery(branch_id=branch_id))
+        return ListResponse(
+            data=[PosTerminalResponse.model_validate(t) for t in result], meta=meta
+        )

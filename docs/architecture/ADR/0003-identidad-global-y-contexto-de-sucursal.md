@@ -1,6 +1,6 @@
 # ADR-0003: Identidad global con membresías, token por empresa y sucursal validada
 
-- **Estado:** aceptado (2026-10-15; empresa y membresías implementadas en S2.1, sucursal pendiente en S2.5)
+- **Estado:** aceptado (2026-10-15; empresa y membresías implementadas en S2.1, sucursal en S2.5)
 - **Relacionado:** [ADR-0002](0002-multiempresa-base-compartida-con-rls.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -49,8 +49,24 @@ La empresa activa no puede depender de un `tenant_id` enviado libremente por el 
 - Activar y desactivar desde la administración actúan sobre la membresía. `users.is_active` queda como
   bloqueo global de la cuenta.
 - Pendiente:
-  - el rol de plataforma (S8.5);
-  - `user_branch_access`, `bids` y `X-Branch-Id` (S2.5).
+  - el rol de plataforma (S8.5).
+
+### Precisiones de la implementación (S2.5)
+
+- `user_branch_access` lleva también `tenant_id`, con FKs compuestas a la membresía y a la sucursal.
+  No tiene RLS, como `memberships`: auth la lee al emitir tokens. Una sucursal con accesos no se puede
+  borrar, porque el usuario pasaría a entrar a todas.
+- `bids` va en el access token siempre que la membresía tenga filas, con la lista completa; sin el
+  claim, el usuario entra a todas. No hay umbral de "pocas": una ferretería tiene pocas sucursales y
+  el token no crece de forma apreciable. Si algún día se necesita, el umbral se agrega con un claim
+  distinto para "consultar la base", nunca omitiendo `bids`, que significa todas.
+- Un cambio de accesos rige desde el próximo login o refresh (como un cambio de rol) y no revoca
+  sesiones: el access token anterior dura como máximo 15 minutos.
+- `X-Branch-Id` se valida contra `bids` en `AuthMiddleware`, sin consultar la base; toda ruta
+  autenticada rechaza uno ajeno (`BRANCH_ACCESS_DENIED`, 403). Que la sucursal exista y esté activa lo
+  revisa cada operación de sucursal (`require_branch` y su comando).
+- Administración: `GET`/`PUT /api/admin/users/{id}/branches` (`user:manage`); `/api/auth/me` devuelve
+  las sucursales a las que el usuario puede entrar, para el selector.
 
 ## Consecuencias
 

@@ -148,8 +148,13 @@ class AuthenticatedUser:
     must_change_password: bool = False
     session_id: int | None = None
     full_name: str | None = None
+    # Sucursales a las que puede entrar (claim `bids`); None son todas
+    branch_ids: frozenset[int] | None = None
 
     @property
     def display_name(self) -> str:
         """Nombre que se guarda como autor de lo que hace este usuario"""
         return self.full_name or self.username
+
+    def can_enter_branch(self, branch_id: int) -> bool:
+        return self.branch_ids is None or branch_id in self.branch_ids

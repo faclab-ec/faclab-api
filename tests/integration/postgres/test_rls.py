@@ -162,7 +162,7 @@ def test_every_tenant_scoped_table_forces_its_policy(pg_engine):
             )
         ).all()
 
-    assert len(TENANT_SCOPED) == 31
+    assert len(TENANT_SCOPED) == 34
     assert forced == set(TENANT_SCOPED)
     assert [row.tablename for row in policies] == TENANT_SCOPED
     for row in policies:
@@ -182,7 +182,13 @@ def test_platform_tables_have_no_rls(pg_engine):
         names=PLATFORM,
     )
 
-    assert set(PLATFORM) >= {"tenants", "users", "memberships", "outbox_messages"}
+    assert set(PLATFORM) >= {
+        "tenants",
+        "users",
+        "memberships",
+        "user_branch_access",
+        "outbox_messages",
+    }
     assert secured == []
 
 

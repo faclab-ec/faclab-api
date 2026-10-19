@@ -46,6 +46,10 @@ class Permission(StrEnum):
     REPORT_INVENTORY_READ = "report:inventory:read"
     REPORT_POS_READ = "report:pos:read"
 
+    # Organization: branches, emission points and POS terminals
+    ORGANIZATION_READ = "organization:read"
+    ORGANIZATION_WRITE = "organization:write"
+
     # Admin
     USER_MANAGE = "user:manage"
 
@@ -61,11 +65,13 @@ _ALL_READS = frozenset(
         Permission.ALERT_READ,
         Permission.REPORT_INVENTORY_READ,
         Permission.REPORT_POS_READ,
+        Permission.ORGANIZATION_READ,
     }
 )
 
+# The structure (SRI establishments and emission points) is the admin's
 _MANAGER_PERMS = frozenset(Permission) - frozenset(
-    {Permission.USER_MANAGE, Permission.POS_OPERATE}
+    {Permission.USER_MANAGE, Permission.POS_OPERATE, Permission.ORGANIZATION_WRITE}
 )
 
 _OPERATOR_PERMS = frozenset(
@@ -90,6 +96,7 @@ _OPERATOR_PERMS = frozenset(
         Permission.SUPPLIER_READ,
         Permission.SUPPLIER_WRITE,
         Permission.REPORT_INVENTORY_READ,
+        Permission.ORGANIZATION_READ,
     }
 )
 
