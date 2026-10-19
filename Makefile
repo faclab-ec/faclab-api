@@ -26,6 +26,9 @@ lint:  ## Fix linter errors
 typecheck:  ## Type check with ty
 	source .venv/bin/activate && ty check
 
+db-roles:  ## Create or update the database roles and the database (idempotent; before `make upgrade`)
+	docker compose run --no-deps --rm api python -m src.shared.infra.db_roles
+
 migrations:  ## Create a new migration with Alembic
 	docker compose run --no-deps --rm api alembic revision --autogenerate -m "$(m)"
 
