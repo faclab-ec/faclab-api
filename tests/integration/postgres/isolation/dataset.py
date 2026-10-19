@@ -79,6 +79,17 @@ def build_tenant(api: Api, marker: str, seed: int) -> Ids:
             "name": f"{m} Caja 1",
         },
     )["id"]
+    # A terminal without a shift: opening one there is a call that succeeds
+    ids["terminal2"] = api.post(
+        "/api/admin/pos-terminals",
+        {
+            "branchId": ids["branch"],
+            "emissionPointId": ids["emission_point"],
+            "defaultLocationId": ids["location"],
+            "code": f"{m}-CAJA-02",
+            "name": f"{m} Caja 2",
+        },
+    )["id"]
     make_movement(api, ids["product"], 50, ids["location"])
     # Out of stock: a stock row at zero
     make_movement(api, ids["product_out"], 5, ids["location"])
@@ -173,6 +184,15 @@ def build_tenant(api: Api, marker: str, seed: int) -> Ids:
         },
     )["id"]
 
+    # The POS runs at the first terminal
+    api = Api(
+        api.client,
+        {
+            **api.headers,
+            "X-Branch-Id": str(ids["branch"]),
+            "X-Terminal-Id": str(ids["terminal"]),
+        },
+    )
     ids["shift"] = api.post("/api/pos/shifts/open", {"openingBalance": "100.00"})["id"]
     ids["cash_movement"] = api.post(
         f"/api/pos/shifts/{ids['shift']}/cash-movements",

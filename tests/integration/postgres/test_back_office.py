@@ -8,9 +8,11 @@ from src.auth.domain.entities import Role
 from src.sales.infra.models import SaleItemModel
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 
@@ -21,14 +23,20 @@ def admin_api(client, admin) -> Api:
 
 
 @pytest.fixture
-def cashier(client, auth_headers) -> Api:
-    return Api(client, auth_headers(Role.CASHIER))
+def shelf(admin_api) -> dict:
+    return make_location(admin_api, make_warehouse(admin_api)["id"])
 
 
 @pytest.fixture
-def product(admin_api) -> dict:
+def cashier(client, auth_headers, admin_api, shelf) -> Api:
+    """A cashier at a terminal that sells from the shelf"""
+    terminal = make_terminal(admin_api, shelf["id"])
+    return Api(client, at_terminal(auth_headers(Role.CASHIER), terminal))
+
+
+@pytest.fixture
+def product(admin_api, shelf) -> dict:
     """10 units at a purchase price of 6.00, sold at 10.00 + VAT 15%."""
-    shelf = make_location(admin_api, make_warehouse(admin_api)["id"])
     product = make_product(admin_api, purchasePrice="6.00", minStock=20)
     make_movement(admin_api, product["id"], 10, shelf["id"])
     return product

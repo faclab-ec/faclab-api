@@ -8,9 +8,11 @@ import pytest
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 
@@ -124,11 +126,19 @@ def test_adjustments_and_transfers_filtered_by_status(api):
     assert len(transfers) == 1
 
 
-def test_parked_sales(api, client, auth_headers):
-    pos = Api(client, auth_headers(Role.CASHIER))
-    pos.post("/api/pos/shifts/open", {"openingBalance": "0"})
+def test_parked_sales_of_the_terminal(api, client, auth_headers):
+    location = make_location(api, make_warehouse(api)["id"])
+    cashier = auth_headers(Role.CASHIER)
+    pos = Api(client, at_terminal(cashier, make_terminal(api, location["id"])))
+    other = Api(
+        client, at_terminal(cashier, make_terminal(api, location["id"], code="CAJA-02"))
+    )
+    for terminal in (pos, other):
+        terminal.post("/api/pos/shifts/open", {"openingBalance": "0"})
     parked = pos.post("/api/pos/sales", {"isFinalConsumer": True})
     pos.post("/api/pos/sales", {"isFinalConsumer": True})
+    elsewhere = other.post("/api/pos/sales", {"isFinalConsumer": True})
     pos.post(f"/api/pos/sales/{parked['id']}/park")
+    other.post(f"/api/pos/sales/{elsewhere['id']}/park")
 
     assert [s["id"] for s in pos.get("/api/pos/sales/parked")] == [parked["id"]]

@@ -12,10 +12,12 @@ from sqlalchemy.exc import IntegrityError
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_customer,
     make_location,
     make_product,
     make_supplier,
+    make_terminal,
     make_warehouse,
 )
 from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
@@ -100,10 +102,12 @@ def test_purchase_order_numbers_are_per_tenant(api_a, api_b):
 
 
 def test_a_sale_of_one_tenant_rejects_another_tenants_customer(
-    client, auth_headers, api_b
+    client, auth_headers, api_a, api_b
 ):
     customer_b = make_customer(api_b, seed=3)
-    cashier = Api(client, auth_headers(Role.CASHIER))
+    location = make_location(api_a, make_warehouse(api_a)["id"])
+    terminal = make_terminal(api_a, location["id"])
+    cashier = Api(client, at_terminal(auth_headers(Role.CASHIER), terminal))
     cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
 
     # Creating a sale doesn't look the customer up: only the database stops it

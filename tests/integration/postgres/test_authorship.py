@@ -7,9 +7,11 @@ import pytest
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 
@@ -22,13 +24,17 @@ def admin_api(client, admin) -> Api:
 
 
 @pytest.fixture
-def cashier(client, auth_headers) -> Api:
-    return Api(client, auth_headers(Role.CASHIER, full_name="Caja Uno"))
+def shelf(admin_api) -> dict:
+    return make_location(admin_api, make_warehouse(admin_api)["id"])
 
 
-def test_pos_documents_are_signed_by_the_cashier(admin_api, cashier):
-    warehouse = make_warehouse(admin_api)
-    shelf = make_location(admin_api, warehouse["id"])
+@pytest.fixture
+def cashier(client, auth_headers, admin_api, shelf) -> Api:
+    headers = auth_headers(Role.CASHIER, full_name="Caja Uno")
+    return Api(client, at_terminal(headers, make_terminal(admin_api, shelf["id"])))
+
+
+def test_pos_documents_are_signed_by_the_cashier(admin_api, cashier, shelf):
     product = make_product(admin_api, salePrice="10.00", taxCode="VAT_15")
     make_movement(admin_api, product["id"], 10, shelf["id"])
 
@@ -57,8 +63,13 @@ def test_pos_documents_are_signed_by_the_cashier(admin_api, cashier):
         },
     )
     receipt = cashier.get(f"/api/pos/sales/{sale['id']}/receipt")
+    closed = cashier.post(
+        f"/api/pos/shifts/{shift['id']}/close",
+        {"closingBalance": "56.50", "closedBy": IMPOSTOR},
+    )
 
     assert shift["cashierName"] == "Caja Uno"
+    assert closed["closedBy"] == "Caja Uno"
     assert sale["createdBy"] == "Caja Uno"
     assert movement["performedBy"] == "Caja Uno"
     assert refund["refundedBy"] == "Caja Uno"

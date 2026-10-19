@@ -104,6 +104,24 @@ def _payment(amount: str) -> Body:
     return lambda ids: {"amount": amount, "paymentMethod": "CASH"}
 
 
+def _at_terminal(terminal: str = "terminal") -> Body:
+    """The POS headers of an operation that starts at a terminal"""
+    return lambda ids: {
+        "X-Branch-Id": str(ids["branch"]),
+        "X-Terminal-Id": str(ids[terminal]),
+    }
+
+
+def _in_branch(ids: Ids) -> dict:
+    """The POS header of an operation on a sale, shift or refund of the branch"""
+    return {"X-Branch-Id": str(ids["branch"])}
+
+
+def _placement(ids: Ids) -> dict:
+    """The branch and terminal filters of the POS histories and reports"""
+    return {"branchId": ids["branch"], "terminalId": ids["terminal"]}
+
+
 ADMIN = "/api/admin"
 POS = "/api/pos"
 
@@ -472,7 +490,9 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/dashboard": Route(),
     # POS
     f"POST {POS}/sales": Route(
-        body=lambda ids: {"customerId": ids["customer"]}, refs=("customer",)
+        body=lambda ids: {"customerId": ids["customer"]},
+        headers=_at_terminal(),
+        refs=("customer", "branch", "terminal"),
     ),
     f"POST {POS}/sales/quick": Route(
         body=lambda ids: {
@@ -480,10 +500,15 @@ ROUTES: dict[str, Route] = {
             "items": [{"productId": ids["product"], "quantity": 1}],
             "payments": [{"amount": "11.50", "paymentMethod": "CASH"}],
         },
-        refs=("customer", "product"),
+        headers=_at_terminal(),
+        refs=("customer", "product", "branch", "terminal"),
     ),
-    f"GET {POS}/sales/parked": Route(),
-    f"GET {POS}/sales/{{sale_id}}": Route(path=("pos_draft",)),
+    f"GET {POS}/sales/parked": Route(
+        headers=_at_terminal(), refs=("branch", "terminal")
+    ),
+    f"GET {POS}/sales/{{sale_id}}": Route(
+        path=("pos_draft",), headers=_in_branch, refs=("branch",)
+    ),
     f"POST {POS}/sales/{{sale_id}}/items": Route(
         path=("pos_draft",),
         body=lambda ids: {
@@ -491,49 +516,80 @@ ROUTES: dict[str, Route] = {
             "quantity": 1,
             "unitPrice": "10.00",
         },
+        headers=_in_branch,
         refs=("product",),
     ),
-    f"GET {POS}/sales/{{sale_id}}/items": Route(path=("pos_draft",)),
+    f"GET {POS}/sales/{{sale_id}}/items": Route(
+        path=("pos_draft",), headers=_in_branch, refs=("branch",)
+    ),
     # An item of A's sale vs one of B's
     f"PUT {POS}/sales/{{sale_id}}/items/{{item_id}}": Route(
         path=("pos_draft", "pos_draft_item"),
         body=lambda ids: {"quantity": 2},
+        headers=_in_branch,
         refs=("pos_draft_item",),
     ),
     f"DELETE {POS}/sales/{{sale_id}}/items/{{item_id}}": Route(
-        path=("pos_draft", "pos_draft_item")
+        path=("pos_draft", "pos_draft_item"), headers=_in_branch
     ),
     f"PUT {POS}/sales/{{sale_id}}/items/{{item_id}}/price": Route(
         path=("pos_draft", "pos_draft_item"),
         body=lambda ids: {"newPrice": "9.00", "reason": "Cliente frecuente"},
+        headers=_in_branch,
     ),
-    f"POST {POS}/sales/{{sale_id}}/confirm": Route(path=("pos_draft",)),
-    f"POST {POS}/sales/{{sale_id}}/cancel": Route(path=("pos_draft",)),
-    f"POST {POS}/sales/{{sale_id}}/park": Route(path=("pos_draft",)),
-    f"POST {POS}/sales/{{sale_id}}/resume": Route(path=("pos_draft",)),
+    f"POST {POS}/sales/{{sale_id}}/confirm": Route(
+        path=("pos_draft",), headers=_in_branch
+    ),
+    f"POST {POS}/sales/{{sale_id}}/cancel": Route(
+        path=("pos_draft",), headers=_in_branch
+    ),
+    f"POST {POS}/sales/{{sale_id}}/park": Route(
+        path=("pos_draft",), headers=_in_branch
+    ),
+    f"POST {POS}/sales/{{sale_id}}/resume": Route(
+        path=("pos_draft",), headers=_in_branch
+    ),
     f"POST {POS}/sales/{{sale_id}}/discount": Route(
         path=("pos_draft",),
         body=lambda ids: {"discountType": "AMOUNT", "discountValue": "1.00"},
+        headers=_in_branch,
     ),
     f"POST {POS}/sales/{{sale_id}}/payments": Route(
-        path=("pos_draft",), body=_payment("1.00")
+        path=("pos_draft",), body=_payment("1.00"), headers=_in_branch
     ),
-    f"GET {POS}/sales/{{sale_id}}/payments": Route(path=("sale",)),
-    f"GET {POS}/sales/{{sale_id}}/receipt": Route(path=("sale",)),
+    f"GET {POS}/sales/{{sale_id}}/payments": Route(
+        path=("sale",), headers=_in_branch, refs=("branch",)
+    ),
+    f"GET {POS}/sales/{{sale_id}}/receipt": Route(
+        path=("sale",), headers=_in_branch, refs=("branch",)
+    ),
+    # At the terminal without a shift: B's terminal or branch look missing
     f"POST {POS}/shifts/open": Route(
-        exempt="one open shift per tenant: the dataset opens B's while A's is open"
+        body=lambda ids: {"openingBalance": "0"},
+        headers=_at_terminal("terminal2"),
+        refs=("branch", "terminal2"),
     ),
     f"POST {POS}/shifts/{{shift_id}}/close": Route(
-        path=("shift",), body=lambda ids: {"closingBalance": "100.00"}
+        path=("shift",),
+        body=lambda ids: {"closingBalance": "100.00"},
+        headers=_in_branch,
     ),
-    f"GET {POS}/shifts/active": Route(),
+    f"GET {POS}/shifts/active": Route(
+        headers=_at_terminal(), refs=("branch", "terminal")
+    ),
     f"GET {POS}/shifts/{{shift_id}}": Route(path=("shift",)),
-    f"GET {POS}/shifts": Route(),
+    f"GET {POS}/shifts": Route(query=_placement, refs=("branch", "terminal")),
     f"POST {POS}/shifts/{{shift_id}}/cash-movements": Route(
-        path=("shift",), body=lambda ids: {"type": "OUT", "amount": "1.00"}
+        path=("shift",),
+        body=lambda ids: {"type": "OUT", "amount": "1.00"},
+        headers=_in_branch,
     ),
-    f"GET {POS}/shifts/{{shift_id}}/cash-movements": Route(path=("shift",)),
-    f"GET {POS}/shifts/{{shift_id}}/cash-summary": Route(path=("shift",)),
+    f"GET {POS}/shifts/{{shift_id}}/cash-movements": Route(
+        path=("shift",), headers=_in_branch, refs=("branch",)
+    ),
+    f"GET {POS}/shifts/{{shift_id}}/cash-summary": Route(
+        path=("shift",), headers=_in_branch, refs=("branch",)
+    ),
     f"GET {POS}/products": Route(),
     f"GET {POS}/products/search": Route(
         query=lambda ids: {"term": ids["sku"]}, refs=("sku",), needs_query=True
@@ -557,15 +613,21 @@ ROUTES: dict[str, Route] = {
             "originalSaleId": ids["sale"],
             "items": [{"saleItemId": ids["sale_item"], "quantity": 1}],
         },
-        refs=("sale", "sale_item"),
+        headers=_at_terminal(),
+        refs=("sale", "sale_item", "branch", "terminal"),
     ),
     f"POST {POS}/refunds/{{refund_id}}/process": Route(
-        path=("refund",), body=lambda ids: {"payments": [_payment("11.50")(ids)]}
+        path=("refund",),
+        body=lambda ids: {"payments": [_payment("11.50")(ids)]},
+        headers=_in_branch,
     ),
-    f"POST {POS}/refunds/{{refund_id}}/cancel": Route(path=("refund",)),
+    f"POST {POS}/refunds/{{refund_id}}/cancel": Route(
+        path=("refund",), headers=_in_branch
+    ),
     f"GET {POS}/refunds/{{refund_id}}": Route(path=("refund",)),
     f"GET {POS}/refunds": Route(
-        query=lambda ids: {"saleId": ids["sale"]}, refs=("sale",)
+        query=lambda ids: {"saleId": ids["sale"], **_placement(ids)},
+        refs=("sale", "branch", "terminal"),
     ),
     f"GET {POS}/reports/x-report": Route(
         query=lambda ids: {"shiftId": ids["shift"]}, refs=("shift",), needs_query=True
@@ -573,8 +635,10 @@ ROUTES: dict[str, Route] = {
     f"GET {POS}/reports/z-report": Route(
         query=lambda ids: {"shiftId": ids["shift"]}, refs=("shift",), needs_query=True
     ),
-    f"GET {POS}/reports/daily": Route(),
-    f"GET {POS}/reports/by-payment-method": Route(),
+    f"GET {POS}/reports/daily": Route(query=_placement, refs=("branch", "terminal")),
+    f"GET {POS}/reports/by-payment-method": Route(
+        query=_placement, refs=("branch", "terminal")
+    ),
     # Platform: no tenant data, or covered elsewhere
     "POST /api/auth/login": Route(exempt="before any tenant (test_tenancy.py)"),
     "POST /api/auth/select-tenant": Route(
