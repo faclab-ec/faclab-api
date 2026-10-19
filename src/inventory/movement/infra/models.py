@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKeyConstraint, String
+from sqlalchemy import ForeignKeyConstraint, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.inventory.movement.domain.constants import MovementType
@@ -30,6 +30,8 @@ class MovementModel(TenantScoped, Base):
             ["locations.tenant_id", "locations.id"],
             name="fk_movements_source_location_tenant",
         ),
+        # The movements of a document (a POS sale is reversed where it took from)
+        Index("ix_movements_reference", "reference_type", "reference_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -95,3 +95,27 @@ class PosTerminalModel(TenantScoped, Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.now)
+
+
+class DocumentSequenceModel(TenantScoped, Base):
+    """The last number issued per branch and internal document type (ADR-0012)"""
+
+    __tablename__ = "document_sequences"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "branch_id",
+            "doc_type",
+            name="uq_document_sequences_tenant_branch_doc_type",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "branch_id"],
+            ["branches.tenant_id", "branches.id"],
+            name="fk_document_sequences_branch_tenant",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    branch_id: Mapped[int] = mapped_column(nullable=False)
+    doc_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    last_value: Mapped[int] = mapped_column(nullable=False)

@@ -57,3 +57,17 @@ class RefundItemNotInSaleError(RefundError):
             message=f"Sale item {sale_item_id} does not belong to sale {sale_id}",
             detail=f"sale_item_id={sale_item_id}, sale_id={sale_id}",
         )
+
+
+class RefundOutsideBranchError(RefundError):
+    """A sale is refunded in a terminal of its own branch: its stock, cash and
+    numbering stay there"""
+
+    error_code = "REFUND_OUTSIDE_BRANCH"
+
+    def __init__(self, sale_id: int):
+        self.sale_id = sale_id
+        super().__init__(
+            message=f"Sale {sale_id} was made in another branch",
+            detail=f"sale_id={sale_id}",
+        )

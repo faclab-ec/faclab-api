@@ -26,6 +26,10 @@ def _make_sale_model(**overrides):
     sale.discount_type = overrides.get("discount_type")
     sale.discount_value = overrides.get("discount_value", Decimal("0"))
     sale.total = overrides.get("total", Decimal("112"))
+    sale.number = overrides.get("number")
+    sale.created_by = overrides.get("created_by")
+    sale.branch_id = overrides.get("branch_id")
+    sale.terminal_id = overrides.get("terminal_id")
     return sale
 
 
@@ -119,6 +123,54 @@ class TestGenerateReceiptQueryHandler:
         assert result["payments"][0]["method"] == "CASH"
         assert result["total_paid"] == Decimal("112")
         assert result["change"] == Decimal("0")
+
+    def test_receipt_shows_number_branch_terminal_and_the_authenticated_cashier(self):
+        handler = _build_handler()
+        sale = _make_sale_model(
+            number="V-002-000015",
+            created_by="Ana Cajera",
+            branch_id=2,
+            terminal_id=3,
+            shift_id=1,
+        )
+        branch = MagicMock(establishment_code="002", address="Av. Amazonas")
+        branch.name = "Norte"
+        terminal = MagicMock(code="CAJA-02")
+        terminal.name = "Caja 2"
+
+        def query_side_effect(model, *args):
+            mock = MagicMock()
+            model_name = getattr(model, "__name__", str(model))
+
+            if model_name == "SaleModel":
+                mock.filter.return_value.first.return_value = sale
+            elif model_name == "PaymentModel":
+                mock.filter.return_value.all.return_value = [_make_payment_model()]
+            elif model_name == "BranchModel":
+                mock.filter.return_value.first.return_value = branch
+            elif model_name == "PosTerminalModel":
+                mock.filter.return_value.first.return_value = terminal
+            elif model_name == "ShiftModel":
+                mock.filter.return_value.first.return_value = _make_shift_model()
+            else:
+                mock.join.return_value.filter.return_value.all.return_value = [
+                    (_make_item_model(), "Product A")
+                ]
+            return mock
+
+        handler.session.query.side_effect = query_side_effect
+
+        result = handler._handle(GenerateReceiptQuery(sale_id=1))
+
+        assert result["number"] == "V-002-000015"
+        assert result["branch"] == {
+            "establishment_code": "002",
+            "name": "Norte",
+            "address": "Av. Amazonas",
+        }
+        assert result["terminal"] == {"code": "CAJA-02", "name": "Caja 2"}
+        # Who made the sale, not who opened the shift
+        assert result["cashier"] == "Ana Cajera"
 
     def test_receipt_final_consumer(self):
         handler = _build_handler()

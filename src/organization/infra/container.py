@@ -14,6 +14,7 @@ from src.organization.app.commands.pos_terminal import (
     TerminalPlacement,
     UpdatePosTerminalCommandHandler,
 )
+from src.organization.app.numbering import DocumentNumbering
 from src.organization.app.queries.branch import (
     GetAccessibleBranchesQueryHandler,
     GetAllBranchesQueryHandler,
@@ -35,6 +36,7 @@ from src.organization.infra.mappers import (
 )
 from src.organization.infra.repositories import (
     SqlAlchemyBranchRepository,
+    SqlAlchemyDocumentSequenceRepository,
     SqlAlchemyEmissionPointRepository,
     SqlAlchemyPosTerminalRepository,
 )
@@ -46,6 +48,8 @@ INJECTABLES = [
     SqlAlchemyBranchRepository,
     SqlAlchemyEmissionPointRepository,
     SqlAlchemyPosTerminalRepository,
+    SqlAlchemyDocumentSequenceRepository,
+    DocumentNumbering,
     CreateBranchCommandHandler,
     UpdateBranchCommandHandler,
     DeleteBranchCommandHandler,

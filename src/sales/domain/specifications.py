@@ -18,3 +18,18 @@ class ParkedSalesSpecification(Specification):
             SaleModel.status == "DRAFT",
             SaleModel.parked_at.isnot(None),
         ]
+
+
+class SalesByTerminal(Specification):
+    """Ventas de una terminal del POS"""
+
+    def __init__(self, terminal_id: int):
+        self.terminal_id = terminal_id
+
+    def is_satisfied_by(self, candidate: Any) -> bool:
+        return candidate.terminal_id == self.terminal_id
+
+    def to_query_criteria(self) -> list[Any]:
+        from src.sales.infra.models import SaleModel
+
+        return [SaleModel.terminal_id == self.terminal_id]

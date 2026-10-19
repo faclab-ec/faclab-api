@@ -3,10 +3,9 @@ from decimal import Decimal
 
 from wireup import injectable
 
-from src.inventory.movement.app.repositories import MovementRepository
-from src.inventory.movement.domain.constants import MovementType
-from src.inventory.movement.domain.entities import Movement
-from src.inventory.stock.app.repositories import StockRepository
+from src.organization.app.numbering import DocumentNumbering
+from src.organization.app.repositories import PosTerminalRepository
+from src.organization.domain.numbering import DocumentType
 from src.pos.refund.app.repositories import (
     RefundItemRepository,
     RefundPaymentRepository,
@@ -14,6 +13,7 @@ from src.pos.refund.app.repositories import (
 )
 from src.pos.refund.domain.entities import RefundPayment
 from src.pos.refund.domain.events import RefundCompleted
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import PaymentMethod
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -34,15 +34,17 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         refund_repo: RefundRepository,
         refund_item_repo: RefundItemRepository,
         refund_payment_repo: RefundPaymentRepository,
-        movement_repo: MovementRepository,
-        stock_repo: StockRepository,
+        stock: TerminalStock,
+        terminal_repo: PosTerminalRepository,
+        numbering: DocumentNumbering,
         event_publisher: EventPublisher,
     ):
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
-        self.movement_repo = movement_repo
-        self.stock_repo = stock_repo
+        self.stock = stock
+        self.terminal_repo = terminal_repo
+        self.numbering = numbering
         self.event_publisher = event_publisher
 
     def _handle(self, command: ProcessRefundCommand) -> dict:
@@ -50,7 +52,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         if not refund:
             raise NotFoundError(f"Refund with id {command.refund_id} not found")
 
-        refund.complete()
+        refund.ensure_pending("complete")
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
@@ -82,22 +84,28 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
             payment = self.refund_payment_repo.create(payment)
             created_payments.append(payment)
 
+        # The goods go back to the location of the refund's terminal
+        terminal = (
+            self.terminal_repo.get_by_id(refund.terminal_id)
+            if refund.terminal_id is not None
+            else None
+        )
+        self.stock.put_back(
+            items,
+            location_id=terminal.default_location_id if terminal else None,
+            reason=f"Refund #{refund.id}",
+            reference_type="refund",
+            reference_id=refund.require_id(),
+        )
+
+        # Numbered after the stock, like every POS document
+        number = (
+            self.numbering.next(refund.branch_id, DocumentType.REFUND)
+            if refund.branch_id is not None
+            else None
+        )
+        refund.complete(number)
         self.refund_repo.update(refund)
-
-        # Sorted so concurrent requests lock stock rows in the same order
-        for item in sorted(items, key=lambda i: i.product_id):
-            movement = Movement(
-                product_id=item.product_id,
-                quantity=abs(item.quantity),
-                type=MovementType.IN,
-                reason=f"Refund #{refund.id}",
-            )
-            self.movement_repo.create(movement)
-
-            stock = self.stock_repo.first_for_update(product_id=item.product_id)
-            if stock:
-                stock.update_quantity(abs(item.quantity))
-                self.stock_repo.update(stock)
 
         items_data = [
             {

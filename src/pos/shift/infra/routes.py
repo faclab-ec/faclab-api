@@ -28,6 +28,9 @@ from src.pos.shift.infra.validators import (
     ShiftQueryParams,
     ShiftResponse,
 )
+from src.pos.terminal.app.guard import PosBranchGuard
+from src.pos.terminal.app.resolver import TerminalRequest
+from src.pos.terminal.infra.dependencies import pos_branch, pos_terminal
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
@@ -90,13 +93,18 @@ class POSShiftRouter:
         self,
         handler: Injected[OpenShiftCommandHandler],
         data: OpenShiftRequest,
+        terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse]:
-        """Open a new cashier shift. Only one shift can be active at a time."""
+        """Open a cashier shift in the terminal of `X-Terminal-Id`. A terminal
+        has at most one open shift (`SHIFT_ALREADY_OPEN`); the cashier is the
+        authenticated user."""
         result = handler.handle(
             OpenShiftCommand(
+                terminal=terminal,
                 cashier_name=user.display_name,
+                user_id=user.id,
                 opening_balance=data.opening_balance,
                 notes=data.notes,
             )
@@ -106,19 +114,24 @@ class POSShiftRouter:
     def close_shift(
         self,
         handler: Injected[CloseShiftCommandHandler],
+        guard: Injected[PosBranchGuard],
         shift_id: int,
         data: CloseShiftRequest,
+        branch: TerminalRequest = Depends(pos_branch),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse]:
-        """Close an open shift by recording the actual closing cash balance.
+        """Close an open shift of the branch by recording the actual closing cash balance.
 
         The system calculates the expected balance and the discrepancy automatically.
         """
+        guard.shift(shift_id, branch)
         result = handler.handle(
             CloseShiftCommand(
                 shift_id=shift_id,
                 closing_balance=data.closing_balance,
                 notes=data.notes,
+                closed_by=user.display_name,
             )
         )
         return DataResponse(data=ShiftResponse.model_validate(result), meta=meta)
@@ -126,10 +139,11 @@ class POSShiftRouter:
     def get_active_shift(
         self,
         handler: Injected[GetActiveShiftQueryHandler],
+        terminal: TerminalRequest = Depends(pos_terminal),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse | None]:
-        """Get the currently active (open) shift, or null if no shift is open."""
-        result = handler.handle(GetActiveShiftQuery())
+        """Get the open shift of the terminal, or null if it has none."""
+        result = handler.handle(GetActiveShiftQuery(terminal=terminal))
         data = ShiftResponse.model_validate(result) if result is not None else None
         return DataResponse(data=data, meta=meta)
 
@@ -137,21 +151,29 @@ class POSShiftRouter:
         self,
         handler: Injected[GetShiftByIdQueryHandler],
         shift_id: int,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse]:
-        """Retrieve a shift by its ID."""
-        result = handler.handle(GetShiftByIdQuery(shift_id=shift_id))
+        """Retrieve a shift by its ID, of a branch the user may enter."""
+        result = handler.handle(
+            GetShiftByIdQuery(shift_id=shift_id, branch_ids=user.branch_ids)
+        )
         return DataResponse(data=ShiftResponse.model_validate(result), meta=meta)
 
     def get_all_shifts(
         self,
         handler: Injected[GetAllShiftsQueryHandler],
         query_params: ShiftQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> PaginatedDataResponse[ShiftResponse]:
-        """List all shifts with optional filtering by status. Supports pagination."""
+        """List the shifts of the branches the user may enter, newest first,
+        optionally by status, branch or terminal. Supports pagination."""
         result = handler.handle(
-            GetAllShiftsQuery(**query_params.model_dump(exclude_none=True))
+            GetAllShiftsQuery(
+                **query_params.model_dump(exclude_none=True),
+                branch_ids=user.branch_ids,
+            )
         )
         return PaginatedDataResponse(
             data=[ShiftResponse.model_validate(r) for r in result["items"]],

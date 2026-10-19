@@ -31,6 +31,8 @@ class ShiftInfo(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     id: int = Field(description="Shift ID")
+    terminal_id: int | None = Field(None, description="POS terminal of the shift")
+    branch_id: int | None = Field(None, description="Branch of the terminal")
     cashier_name: str = Field(description="Cashier name")
     opened_at: str | None = Field(
         None, description="Shift opening timestamp (ISO 8601)"
@@ -157,6 +159,11 @@ class DailySummaryQueryParams(BaseModel):
         None, description="Date for the report (defaults to today)"
     )
 
+    branch_id: int | None = Field(
+        None, ge=1, description="Only this branch (one the user may enter)"
+    )
+    terminal_id: int | None = Field(None, ge=1, description="Only this POS terminal")
+
 
 # ---------------------------------------------------------------------------
 # By Payment Method
@@ -180,3 +187,8 @@ class ByPaymentMethodQueryParams(BaseModel):
 
     from_date: dt.date | None = Field(None, description="Start date (inclusive)")
     to_date: dt.date | None = Field(None, description="End date (inclusive)")
+
+    branch_id: int | None = Field(
+        None, ge=1, description="Only this branch (one the user may enter)"
+    )
+    terminal_id: int | None = Field(None, ge=1, description="Only this POS terminal")

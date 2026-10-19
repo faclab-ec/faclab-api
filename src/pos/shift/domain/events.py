@@ -10,12 +10,14 @@ class ShiftOpened(DomainEvent):
     """Evento emitido cuando se abre un turno"""
 
     shift_id: int = 0
+    terminal_id: int | None = None
     cashier_name: str = ""
     opening_balance: Decimal = Decimal("0")
 
     def _payload(self) -> dict[str, Any]:
         return {
             "shift_id": self.shift_id,
+            "terminal_id": self.terminal_id,
             "cashier_name": self.cashier_name,
             "opening_balance": self.opening_balance,
         }

@@ -8,6 +8,7 @@ from wireup import injectable
 
 from src.catalog.product.infra.models import ProductModel
 from src.pos.refund.infra.models import RefundModel
+from src.pos.reports.app.queries.scope import placement_criteria
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
@@ -17,6 +18,10 @@ from src.shared.infra.tenant import tenant_criteria
 @dataclass
 class GetDailySummaryQuery(Query):
     date: date = field(default_factory=date.today)
+    branch_id: int | None = None
+    terminal_id: int | None = None
+    # The user's branches (None: all)
+    branch_ids: frozenset[int] | None = None
 
 
 @injectable(lifetime="scoped")
@@ -27,6 +32,8 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
     def _handle(self, query: GetDailySummaryQuery) -> dict:
         day_start = datetime.combine(query.date, time.min)
         day_end = datetime.combine(query.date, time.max)
+        placement = (query.branch_id, query.terminal_id, query.branch_ids)
+        sales_in = placement_criteria(SaleModel, *placement)
 
         # Sales summary
         sales_agg = (
@@ -36,6 +43,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             )
             .filter(*tenant_criteria(SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
+            .filter(*sales_in)
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .one()
@@ -51,6 +59,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
             .filter(*tenant_criteria(PaymentModel, SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
+            .filter(*sales_in)
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .group_by(PaymentModel.payment_method)
@@ -71,6 +80,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
             .filter(*tenant_criteria(SaleItemModel, SaleModel, ProductModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
+            .filter(*sales_in)
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .group_by(ProductModel.name, ProductModel.sku)
@@ -87,6 +97,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             )
             .filter(*tenant_criteria(RefundModel))
             .filter(RefundModel.status == "COMPLETED")
+            .filter(*placement_criteria(RefundModel, *placement))
             .filter(RefundModel.refund_date >= day_start)
             .filter(RefundModel.refund_date <= day_end)
             .one()

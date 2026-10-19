@@ -2,12 +2,10 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
-from src.inventory.movement.app.repositories import MovementRepository
-from src.inventory.movement.domain.constants import MovementType
-from src.inventory.movement.domain.entities import Movement
-from src.inventory.stock.app.repositories import StockRepository
+from src.organization.app.repositories import PosTerminalRepository
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
-from src.sales.domain.entities import SaleStatus
+from src.sales.domain.entities import Sale, SaleStatus
 from src.sales.domain.events import SaleCancelled
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -26,14 +24,14 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
         self,
         sale_repo: SaleRepository,
         sale_item_repo: SaleItemRepository,
-        movement_repo: MovementRepository,
-        stock_repo: StockRepository,
+        stock: TerminalStock,
+        terminal_repo: PosTerminalRepository,
         event_publisher: EventPublisher,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
-        self.movement_repo = movement_repo
-        self.stock_repo = stock_repo
+        self.stock = stock
+        self.terminal_repo = terminal_repo
         self.event_publisher = event_publisher
 
     def _handle(self, command: POSCancelSaleCommand) -> dict:
@@ -49,20 +47,13 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
             sale.cancel()
             self.sale_repo.update(sale)
 
-            # Sorted so concurrent requests lock stock rows in the same order
-            for item in sorted(items, key=lambda i: i.product_id):
-                movement = Movement(
-                    product_id=item.product_id,
-                    quantity=abs(item.quantity),
-                    type=MovementType.IN,
-                    reason=f"Sale #{command.sale_id} cancelled - reversal",
-                )
-                self.movement_repo.create(movement)
-
-                stock = self.stock_repo.first_for_update(product_id=item.product_id)
-                if stock:
-                    stock.update_quantity(abs(item.quantity))
-                    self.stock_repo.update(stock)
+            self.stock.put_back(
+                items,
+                location_id=self._taken_from(sale),
+                reason=f"Sale #{command.sale_id} cancelled - reversal",
+                reference_type="sale",
+                reference_id=command.sale_id,
+            )
 
             items_data = [
                 {"product_id": item.product_id, "quantity": item.quantity}
@@ -85,3 +76,13 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
         )
 
         return sale.dict()
+
+    def _taken_from(self, sale: Sale) -> int | None:
+        """Where the sale took its stock from: its OUT movements say it, even if
+        the terminal sells from another location now"""
+        location_id = self.stock.taken_from("sale", sale.require_id())
+        if location_id is None and sale.terminal_id is not None:
+            terminal = self.terminal_repo.get_by_id(sale.terminal_id)
+            if terminal is not None:
+                location_id = terminal.default_location_id
+        return location_id

@@ -79,6 +79,13 @@ class Sale(Entity):
     customer_id: int | None = None
     is_final_consumer: bool = False
     shift_id: int | None = None
+    # Where the sale is made, copied from its POS terminal; null in sales
+    # from before S2.6
+    branch_id: int | None = None
+    emission_point_id: int | None = None
+    terminal_id: int | None = None
+    # Correlative per branch (`V-001-000123`), given when it is confirmed
+    number: str | None = None
     status: SaleStatus = SaleStatus.DRAFT
     sale_date: datetime | None = None
     subtotal: Decimal = Decimal("0")
@@ -101,10 +108,12 @@ class Sale(Entity):
         if self.status != SaleStatus.DRAFT:
             raise InvalidSaleStatusError(self.status, operation)
 
-    def confirm(self) -> None:
-        """Confirma la venta (solo si está en DRAFT)"""
+    def confirm(self, number: str | None = None) -> None:
+        """Confirma la venta (solo si está en DRAFT) con su número de documento"""
         self.ensure_draft("confirm")
         self.status = SaleStatus.CONFIRMED
+        if number is not None:
+            self.number = number
         if self.sale_date is None:
             self.sale_date = datetime.now()
 

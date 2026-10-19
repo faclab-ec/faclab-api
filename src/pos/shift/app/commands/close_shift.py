@@ -19,6 +19,7 @@ class CloseShiftCommand(Command):
     shift_id: int
     closing_balance: Decimal
     notes: str | None = None
+    closed_by: str | None = None
 
 
 @injectable(lifetime="scoped")
@@ -52,6 +53,7 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
         discrepancy = shift.close(
             closing_balance=command.closing_balance,
             expected_balance=expected_balance,
+            closed_by=command.closed_by,
         )
 
         if command.notes is not None:

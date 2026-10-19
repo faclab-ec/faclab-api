@@ -14,6 +14,7 @@ from src.pos.shift.app.queries.get_shifts import (
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.shared.domain.exceptions import NotFoundError
+from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
 
 
 def _make_shift(**overrides) -> Shift:
@@ -45,11 +46,11 @@ def test_get_active_shift():
     """Test obtener el turno activo"""
     shift = _make_shift()
     repo = _mock_repo(entity=shift)
-    handler = GetActiveShiftQueryHandler(repo)
+    handler = GetActiveShiftQueryHandler(repo, terminal_resolver())
 
-    result = handler.handle(GetActiveShiftQuery())
+    result = handler.handle(GetActiveShiftQuery(terminal=AT_TERMINAL))
 
-    repo.first.assert_called_once_with(status="OPEN")
+    repo.first.assert_called_once_with(terminal_id=TERMINAL.id, status="OPEN")
     assert result is not None
     assert result["status"] == "OPEN"
     assert result["cashier_name"] == "Juan"
@@ -58,9 +59,9 @@ def test_get_active_shift():
 def test_get_active_shift_none():
     """Test obtener turno activo cuando no hay ninguno"""
     repo = _mock_repo()
-    handler = GetActiveShiftQueryHandler(repo)
+    handler = GetActiveShiftQueryHandler(repo, terminal_resolver())
 
-    result = handler.handle(GetActiveShiftQuery())
+    result = handler.handle(GetActiveShiftQuery(terminal=AT_TERMINAL))
 
     assert result is None
 
@@ -79,6 +80,14 @@ def test_get_shift_by_id():
     repo.get_by_id.assert_called_once_with(1)
     assert result["id"] == 1
     assert result["cashier_name"] == "Juan"
+
+
+def test_get_shift_by_id_of_a_branch_the_user_cant_enter():
+    repo = _mock_repo(entity=_make_shift(branch_id=2))
+    handler = GetShiftByIdQueryHandler(repo)
+
+    with pytest.raises(NotFoundError):
+        handler.handle(GetShiftByIdQuery(shift_id=1, branch_ids=frozenset({1})))
 
 
 def test_get_shift_by_id_not_found():
@@ -173,3 +182,32 @@ def test_get_all_shifts_empty():
 
     assert len(result["items"]) == 0
     assert result["total"] == 0
+
+
+def test_get_all_shifts_of_a_terminal_in_the_users_branches():
+    repo = _mock_repo()
+    repo.paginate_by_spec.return_value = {
+        "total": 0,
+        "limit": None,
+        "offset": None,
+        "items": [],
+    }
+    handler = GetAllShiftsQueryHandler(repo)
+
+    handler.handle(GetAllShiftsQuery(terminal_id=3, branch_ids=frozenset({1, 2})))
+
+    spec = repo.paginate_by_spec.call_args.args[0]
+    assert spec.is_satisfied_by(_make_shift(terminal_id=3, branch_id=2))
+    assert not spec.is_satisfied_by(_make_shift(terminal_id=4, branch_id=2))
+    assert not spec.is_satisfied_by(_make_shift(terminal_id=3, branch_id=5))
+    # Shifts from before S2.6 have no branch: only an unlimited user sees them
+    assert not spec.is_satisfied_by(_make_shift(terminal_id=3, branch_id=None))
+
+
+def test_get_all_shifts_of_a_branch_the_user_cant_enter():
+    from src.auth.domain.exceptions import BranchAccessDeniedError
+
+    handler = GetAllShiftsQueryHandler(_mock_repo())
+
+    with pytest.raises(BranchAccessDeniedError):
+        handler.handle(GetAllShiftsQuery(branch_id=5, branch_ids=frozenset({1})))

@@ -132,6 +132,23 @@ class RefundResponse(BaseModel):
         validation_alias=AliasChoices("shiftId", "shift_id"),
         serialization_alias="shiftId",
     )
+    branch_id: int | None = Field(
+        None,
+        description="Branch of the refund, that of the sale",
+        validation_alias=AliasChoices("branchId", "branch_id"),
+        serialization_alias="branchId",
+    )
+    terminal_id: int | None = Field(
+        None,
+        description="POS terminal where the refund was made",
+        validation_alias=AliasChoices("terminalId", "terminal_id"),
+        serialization_alias="terminalId",
+    )
+    number: str | None = Field(
+        None,
+        description="Document number, correlative per branch (`D-001-000045`), "
+        "given when the refund is processed",
+    )
     refund_date: datetime | None = Field(
         None,
         validation_alias=AliasChoices("refundDate", "refund_date"),
@@ -164,3 +181,7 @@ class RefundDetailResponse(RefundResponse):
 class RefundQueryParams(QueryParams):
     sale_id: int | None = Field(None, ge=1, description="Filter by original sale ID")
     status: RefundStatus | None = Field(None, description="Filter by refund status")
+    branch_id: int | None = Field(
+        None, ge=1, description="Filter by branch (one the user may enter)"
+    )
+    terminal_id: int | None = Field(None, ge=1, description="Filter by POS terminal")

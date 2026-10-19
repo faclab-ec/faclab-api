@@ -24,6 +24,7 @@ _SETTINGS = (
     "JWT_SECRET",
     "DOCS_ENABLED",
     "KAFKA_ENABLED",
+    "POS_TERMINAL_FALLBACK",
 )
 
 _PRINT_CONFIG = """
@@ -34,6 +35,7 @@ print(json.dumps({
     "worker_database_url": config.DB_WORKER_CONNECTION_STRING,
     "cors_origins": config.CORS_ORIGINS,
     "docs_enabled": config.DOCS_ENABLED,
+    "pos_terminal_fallback": config.POS_TERMINAL_FALLBACK,
 }))
 """
 
@@ -90,6 +92,7 @@ def test_deployed_environment_reads_its_settings_with_docs_off(environment):
         "worker_database_url": DEPLOYED["DATABASE_URL"],
         "cors_origins": ["https://app.faclab.ec", "https://admin.faclab.ec"],
         "docs_enabled": False,
+        "pos_terminal_fallback": False,
     }
 
 
@@ -150,6 +153,17 @@ def test_production_rejects_a_short_jwt_secret():
     assert "JWT_SECRET must be unique" in result.stderr
 
 
+def test_production_rejects_the_pos_terminal_fallback():
+    result = _run(
+        _PRINT_CONFIG,
+        ENVIRONMENT="production",
+        **{**DEPLOYED, "POS_TERMINAL_FALLBACK": "true"},
+    )
+
+    assert result.returncode != 0
+    assert "POS_TERMINAL_FALLBACK is for local development" in result.stderr
+
+
 def test_local_keeps_development_defaults():
     settings = _last_json_line(_run(_PRINT_CONFIG, ENVIRONMENT="local"))
 
@@ -158,6 +172,7 @@ def test_local_keeps_development_defaults():
         "worker_database_url": "sqlite:///./warehouse.db",
         "cors_origins": ["http://localhost:3000", "http://localhost:5173"],
         "docs_enabled": True,
+        "pos_terminal_fallback": True,
     }
 
 

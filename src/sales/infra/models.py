@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Integer,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +27,26 @@ class SaleModel(TenantScoped, Base):
             ["customers.tenant_id", "customers.id"],
             name="fk_sales_customer_tenant",
         ),
+        # Composite: where a POS sale is made, in the sale's tenant
+        ForeignKeyConstraint(
+            ["tenant_id", "branch_id"],
+            ["branches.tenant_id", "branches.id"],
+            name="fk_sales_branch_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "emission_point_id"],
+            ["emission_points.tenant_id", "emission_points.id"],
+            name="fk_sales_emission_point_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "terminal_id"],
+            ["pos_terminals.tenant_id", "pos_terminals.id"],
+            name="fk_sales_terminal_tenant",
+        ),
+        # The number is a correlative per branch (document_sequences)
+        UniqueConstraint(
+            "tenant_id", "branch_id", "number", name="uq_sales_tenant_branch_number"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -36,6 +57,10 @@ class SaleModel(TenantScoped, Base):
     shift_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("pos_shifts.id"), nullable=True, index=True
     )
+    branch_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    emission_point_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    terminal_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    number: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
     sale_date: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     subtotal: Mapped[Decimal] = mapped_column(
