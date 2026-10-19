@@ -70,6 +70,39 @@
 - El seed borra los datos de cada empresa dentro de su contexto, en la misma transacción que los siembra.
 - Suite de aislamiento por ruta y pruebas SQL de RLS (§8), obligatorias en el CI.
 
+**Implementado (S2.5, 2026-10-19):**
+
+- Módulo `src/organization/` con `branches` (código de establecimiento de tres dígitos, `001` a `999`,
+  único por empresa; una matriz por empresa, índice único parcial `uq_branches_tenant_main`),
+  `emission_points` (código único por sucursal) y `pos_terminals` (código único por sucursal, punto de
+  emisión y ubicación por defecto). Las tres son de negocio, con RLS forzado (migración
+  `c7f9919e67c0`). Rutas en `/api/admin/branches`, `/emission-points` y `/pos-terminals`, con
+  `organization:read` (todos los roles menos CASHIER) y `organization:write` (solo ADMIN).
+- `warehouses.branch_id` obligatorio, con FK compuesta. La migración pasa las bodegas existentes a una
+  matriz `001` de su empresa. La sucursal de una bodega, un punto de emisión o una terminal se fija al
+  crearlos: un PUT no la cambia.
+- Una terminal emite por un punto de emisión de su sucursal y descuenta de una ubicación de una bodega
+  de esa sucursal (`EMISSION_POINT_OUTSIDE_BRANCH`, `LOCATION_OUTSIDE_BRANCH`). Las FKs compuestas
+  (`fk_pos_terminals_*_tenant`) la mantienen en su empresa; la sucursal de la ubicación la revisa el
+  comando, porque `locations` no tiene sucursal.
+- `user_branch_access(membership_id, branch_id)` en `src/tenancy/`, con `tenant_id` y sin RLS, como
+  `memberships`: auth la lee al emitir tokens. FK compuesta a la membresía (CASCADE) y a la sucursal
+  (sin cascada: borrar una sucursal con accesos responde `RECORD_IN_USE`, y así el usuario no pasa a
+  entrar a todas). Se administra con `GET`/`PUT /api/admin/users/{id}/branches`; sin filas, todas.
+- El access token lleva `bids` solo cuando la membresía está limitada, siempre con la lista completa
+  (sin umbral: una ferretería tiene pocas sucursales). Login, `select-tenant` y refresh lo calculan;
+  un cambio rige desde el próximo refresh, como un cambio de rol.
+- `X-Branch-Id`: `AuthMiddleware` lo lee y, si el usuario puede entrar a esa sucursal, la solicitud
+  corre en ella (`TenantContext.branch_id`, logs y span con `faclab.branch.id`). Toda ruta autenticada
+  rechaza uno ajeno (403 `BRANCH_ACCESS_DENIED`) o mal formado (422 `INVALID_BRANCH_HEADER`). La
+  dependencia `require_branch` lo exige (`BRANCH_REQUIRED`) en las rutas de sucursal: por ahora solo
+  `GET /api/pos/terminals`; turnos, ventas y caja lo exigen en S2.6. Que la sucursal exista y esté
+  activa lo revisa cada operación que la usa. `/api/auth/me` devuelve las sucursales activas a las que
+  el usuario puede entrar.
+- La CLI de alta crea, en un segundo scope dentro de la empresa, la matriz 001, el punto de emisión
+  001, la bodega `BOD-001`, la ubicación `GENERAL` y la terminal `CAJA-01` (idempotente: no toca una
+  empresa que ya tiene sucursales). `make seed` siembra tres sucursales por empresa.
+
 Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
 S8.5.
 
@@ -231,18 +264,19 @@ sequenceDiagram
 - Restricciones únicas compuestas: `(tenant_id, sku)`, `(tenant_id, barcode)`, `(tenant_id, tax_id)`
   en clientes y proveedores, `(tenant_id, code)` en bodegas, `(tenant_id, establishment_code)` en
   sucursales, `(tenant_id, branch_id, code)` en puntos de emisión, `(tenant_id, serial_number)`.
-  Hechas en S2.3 salvo las de sucursales y puntos de emisión (S2.5).
+  Hechas en S2.3; las de sucursales, puntos de emisión y terminales, en S2.5.
 - Claves foráneas compuestas `(tenant_id, x_id)` en relaciones críticas (venta → cliente, ítem →
   producto, stock → ubicación, terminal → ubicación), con `UNIQUE (tenant_id, id)` en la tabla
   referida. Así la base impide mezclar empresas aunque falle la aplicación. Hechas en S2.3 (lista en el
-  bloque de arriba) y, desde S2.4, en toda relación que una ruta puede llenar; la de terminal llega con
-  S2.6.
+  bloque de arriba) y, desde S2.4, en toda relación que una ruta puede llenar; las de bodega,
+  punto de emisión y terminal, en S2.5.
 - Índice único parcial: un turno `OPEN` por terminal.
 - Índices que empiezan por `tenant_id` en todas las consultas de listado.
 
 ## 6. Row-Level Security
 
-Implementado en S2.4 (migración `798891c3feea`), en cada una de las 31 tablas de negocio:
+Implementado en S2.4 (migración `798891c3feea`) en cada una de las 31 tablas de negocio, y en S2.5
+(`c7f9919e67c0`) en `branches`, `emission_points` y `pos_terminals`:
 
 ```sql
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
@@ -317,8 +351,12 @@ CI, obligatorio para `master`:
 - Probado a propósito: sin RLS y con las consultas propias sin filtro fallan 13 casos de reportes y
   recibo; con una FK compuesta vuelta simple fallan sus dos rutas; sin el filtro de la aplicación pero
   con RLS, todo sigue aislado.
+- Sucursales (S2.5): las rutas de sucursales, puntos de emisión, terminales y accesos están en la
+  suite, que ahora también cambia encabezados (`X-Branch-Id` de `/api/pos/terminals`). Un usuario
+  limitado a la sucursal 001 recibe 403 con `X-Branch-Id` de la 002 (`test_organization.py`).
 - Pendiente: mensajes Kafka (un `sales.confirmed` de A nunca usa el perfil fiscal ni el secuencial de
-  B) en S2.8; sucursales (un cajero de la sucursal 1 no abre turno ni vende en la 2) en S2.5 y S2.6.
+  B) en S2.8; turnos y ventas por terminal (un cajero de la sucursal 1 no abre turno ni vende en la 2)
+  en S2.6.
 
 ## 9. Incorporación de empresas y migración de datos
 
@@ -327,7 +365,7 @@ CI, obligatorio para `master`:
      Hecho en S2.1: `ProvisionTenantCommand` y `python -m src.tenancy.provision`, idempotente; un
      usuario existente se une con su contraseña.
    - Crea la sucursal matriz (establecimiento 001), el punto de emisión 001, una bodega con su ubicación
-     por defecto y una terminal (S2.5).
+     por defecto y una terminal. Hecho en S2.5 (`SetUpTenantStructureCommand`).
    - Crea la membresía del primer administrador.
 2. **Perfil fiscal y certificado** en facturación; el emisor queda listo según el readiness existente.
 3. **Datos iniciales**: importación de productos, clientes, proveedores y saldos de inventario (S5.8).

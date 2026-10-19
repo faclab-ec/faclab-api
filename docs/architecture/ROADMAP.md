@@ -68,6 +68,18 @@
 - **Índices que empiezan por `tenant_id`** (detectado en S2.4). Cada tabla de negocio tiene un índice
   simple en `tenant_id` y las únicas por empresa lo incluyen; los listados grandes pueden necesitar
   índices compuestos `(tenant_id, …)`. Medir en S9.2 (carga y línea base).
+- **Bodegas sin sucursal en faclab-web** (detectado en S2.5). `POST /api/admin/warehouses` exige
+  `branchId` (decisión del usuario) y el formulario de bodegas de faclab-web todavía no lo envía: crear
+  una bodega desde la web responde 422 hasta S2.9, que agrega la sucursal al formulario. Editarlas sigue
+  funcionando (la sucursal no cambia por PUT).
+- **Listados por sucursales permitidas** (detectado en S2.5). Un usuario limitado a algunas sucursales
+  no puede usar `X-Branch-Id` de otra, pero los listados de stock, bodegas, ventas y reportes todavía
+  muestran las de toda la empresa. Filtrarlos por las sucursales permitidas (MULTI_TENANCY §7) encaja
+  con S2.6 (turnos y ventas por terminal) y con los reportes por sucursal.
+- **Códigos SRI y dirección de la sucursal en facturación** (detectado en S2.5). Hoy se pueden cambiar
+  el código de establecimiento y el de punto de emisión con un PUT; cuando haya ventas o comprobantes
+  que los usen (S2.6, S2.8) conviene bloquear el cambio. La dirección de la sucursal (`address`) es
+  opcional y es la `dirEstablecimiento` que S2.8 enviará a facturación.
 - **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
   acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
   ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).

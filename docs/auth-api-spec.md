@@ -62,6 +62,7 @@ Purchasing: `purchase:read`, `purchase:write`, `purchase:confirm`, `purchase:rec
 Partners: `customer:read`, `customer:write`, `supplier:read`, `supplier:write`
 POS: `pos:operate`, `refund:approve`
 Reports: `report:inventory:read`, `report:pos:read`
+Organization: `organization:read`, `organization:write`
 Admin: `user:manage`
 
 ### 2.3 Role → Permission matrix (source of truth for UI guards)
@@ -96,6 +97,8 @@ Admin: `user:manage`
 | refund:approve | ✓ | ✓ |   |   |   |
 | report:inventory:read | ✓ | ✓ | ✓ | ✓ |   |
 | report:pos:read | ✓ | ✓ |   |   | ✓ |
+| organization:read | ✓ | ✓ | ✓ | ✓ |   |
+| organization:write | ✓ |   |   |   |   |
 | user:manage | ✓ |   |   |   |   |
 
 > Treat `GET /api/auth/me` as the authoritative list at runtime. The matrix above is for designing static UI route guards.
@@ -135,6 +138,10 @@ Validation: `username` 1..64 chars, `password` 1..128 chars.
     "tenants": [
       { "id": "6f1c…", "ruc": "1799999990001", "legalName": "Ferretería Ejemplo S.A.", "tradeName": null, "role": 1 },
       { "id": "a20e…", "ruc": "0999999999001", "legalName": "Comercial Dos S.A.", "tradeName": "Comercial Dos", "role": 4 }
+    ],
+    "branches": [
+      { "id": 1, "establishmentCode": "001", "name": "Matriz", "isMain": true },
+      { "id": 2, "establishmentCode": "002", "name": "Sucursal Norte", "isMain": false }
     ]
   },
   "meta": { "requestId": "...", "timestamp": "..." }
@@ -227,7 +234,7 @@ No body. Requires `Authorization: Bearer <access>`.
 }
 ```
 
-Use this to build the in-memory session (`tenant`, `role`, `permissions: Set<string>`, `mustChangePassword`). `role` and `permissions` are those of the membership in `tenant`; `tenants` lists where the user can switch to (show a switcher only when there is more than one).
+Use this to build the in-memory session (`tenant`, `role`, `permissions: Set<string>`, `mustChangePassword`). `role` and `permissions` are those of the membership in `tenant`; `tenants` lists where the user can switch to (show a switcher only when there is more than one). `branches` are the active branches of `tenant` the user may enter, the choices of the branch selector and the values of `X-Branch-Id` (§6).
 
 > **`mustChangePassword`**: when `true`, every permission-gated endpoint returns 403 `PASSWORD_CHANGE_REQUIRED`. Only `/api/auth/me` and `/api/auth/change-password` keep working. The frontend MUST redirect the user to a mandatory change-password screen and block the rest of the app until the flag flips back to `false` (which requires a new login or a fresh `/me` after change-password).
 
@@ -238,6 +245,8 @@ Use this to build the in-memory session (`tenant`, `role`, `permissions: Set<str
 | 401 | `INVALID_TOKEN` | Force re-login |
 | 401 | `TENANT_REQUIRED` | Token issued before tenants existed → force re-login |
 | 403 | `PERMISSION_DENIED` | Missing/absent `Authorization` header |
+| 403 | `BRANCH_ACCESS_DENIED` | `X-Branch-Id` of a branch the user can't enter (any authenticated route) |
+| 422 | `INVALID_BRANCH_HEADER` | `X-Branch-Id` is not a branch id |
 
 ### 4.2 `POST /api/auth/change-password`
 
@@ -348,6 +357,12 @@ Changes the role in the caller's tenant only. Returns updated `UserResponse`. 40
 
 Returns updated `UserResponse`. 404 if user missing. Access tokens already issued keep the previous name until their next refresh. The name is the same in every tenant: 409 `USER_IN_OTHER_TENANTS` if the user also belongs to another one.
 
+### 5.4ter `GET` / `PUT /api/admin/users/{userId}/branches`
+
+**Request** (PUT) `{ "branchIds": [1, 3] }` · **Response** `{ "userId": 7, "branchIds": [1, 3] }`
+
+The branches of the caller's tenant the user may enter; an empty list means all of them (the default). The PUT replaces the list. It applies from the user's next login or refresh (claim `bids`, §6), like a role change; sessions are not revoked. 404 if the user isn't in the tenant; 422 `REFERENCE_NOT_FOUND` for a branch that isn't the tenant's.
+
 ### 5.5 `POST /api/admin/users/{userId}/activate`
 
 No body. Gives the user back access to the caller's tenant (activates the membership). Returns updated `UserResponse`; re-activating an active user is safe.
@@ -422,6 +437,7 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 - The refresh token also carries `jti`, the rotation the session currently accepts (`auth_sessions.refresh_jti`). See §3.2 for rotation, the grace for the token just replaced and `TOKEN_REUSED`.
 - Sessions end on `POST /api/auth/logout`, on a password change (every session except the one that made the change), on an admin reset, when the user is removed from the tenant, and when switching tenants (the previous one). Access tokens are not checked against the session and expire on their own.
 - The access token also carries `role` and `perms` (the membership's role and its permission strings) so other services, such as faclab-invoicing, authorize the same way as this API, and `name` (the user's full name) when one is set.
+- When the membership is limited to some branches (§5.4ter), the access token carries their ids in `bids`; without the claim the user may enter every branch of the tenant. A request names its branch in the `X-Branch-Id` header: any authenticated route rejects one the user can't enter (403 `BRANCH_ACCESS_DENIED`) or that is not an id (422 `INVALID_BRANCH_HEADER`), and branch operations need it (400 `BRANCH_REQUIRED`; today `GET /api/pos/terminals`, and shifts, sales and cash from S2.6).
 
 ---
 
@@ -439,6 +455,9 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 | `PASSWORD_CHANGE_REQUIRED` | 403 | User has `mustChangePassword=true` and is calling a permission-gated route | Redirect to change-password screen; only `/me` and `/change-password` are reachable |
 | `NO_ACTIVE_TENANT` | 403 | Login with right credentials but no active membership in an active tenant | Show "sin acceso a ninguna empresa" |
 | `TENANT_ACCESS_DENIED` | 403 | `select-tenant` with a tenant the user can't enter | Refresh the tenant list (`/me` or log in again) |
+| `BRANCH_ACCESS_DENIED` | 403 | `X-Branch-Id` of a branch the user can't enter | Refresh the branch list (`/me`) and pick another |
+| `INVALID_BRANCH_HEADER` | 422 | `X-Branch-Id` is not a branch id | Fix the client |
+| `BRANCH_REQUIRED` | 400 | A branch operation without `X-Branch-Id` | Ask the user to pick a branch |
 | `USERNAME_ALREADY_EXISTS` | 409 | Create user conflict | Mark `username` field error |
 | `EMAIL_ALREADY_EXISTS` | 409 | Create user conflict | Mark `email` field error |
 | `LAST_ADMIN` | 409 | Deactivating or demoting the tenant's only active admin | Explain that another admin is needed first |

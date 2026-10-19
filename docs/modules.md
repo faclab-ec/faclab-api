@@ -1,5 +1,63 @@
 # Modulos de Dominio
 
+## Organizacion
+
+Estructura de la empresa (`src/organization/`, S2.5): sucursales, puntos de emision y
+terminales del POS. Rutas en `/api/admin/branches`, `/api/admin/emission-points` y
+`/api/admin/pos-terminals` (`organization:read`; escribir es `organization:write`, solo
+ADMIN). La CLI de alta (`make provision-tenant`) crea la estructura minima: matriz 001,
+punto de emision 001, bodega `BOD-001` con su ubicacion `GENERAL` y la terminal `CAJA-01`.
+
+### Branch
+
+Una sucursal: un establecimiento del SRI.
+
+**Campos:** `id`, `establishment_code` (tres digitos, `001` a `999`, unico por empresa), `name`,
+`address`, `is_main` (la matriz; una por empresa, la crea el alta y no se borra), `is_active`
+
+**Comandos:** `CreateBranch`, `UpdateBranch`, `DeleteBranch` (no borra la matriz ni una sucursal
+con bodegas, puntos de emision, terminales o accesos: `RECORD_IN_USE`)
+
+**Queries:** `GetAllBranches`, `GetBranchById`, `GetAccessibleBranches` (las activas a las que
+entra el usuario, para `/api/auth/me`)
+
+### EmissionPoint
+
+Un punto de emision del SRI de una sucursal.
+
+**Campos:** `id`, `branch_id` (fijo desde que se crea), `code` (tres digitos, unico por
+sucursal), `name`, `is_active`
+
+**Comandos:** `CreateEmissionPoint`, `UpdateEmissionPoint`, `DeleteEmissionPoint`
+
+**Queries:** `GetAllEmissionPoints` (por sucursal), `GetEmissionPointById`
+
+### PosTerminal
+
+Una caja del POS. Emite por un punto de emision de su sucursal y descuenta stock de una
+ubicacion de una bodega de esa sucursal (`EMISSION_POINT_OUTSIDE_BRANCH`,
+`LOCATION_OUTSIDE_BRANCH`). Los turnos por terminal llegan en S2.6.
+
+**Campos:** `id`, `branch_id` (fijo desde que se crea), `emission_point_id`,
+`default_location_id`, `code` (unico por sucursal), `name`, `is_active`
+
+**Comandos:** `CreatePosTerminal`, `UpdatePosTerminal`, `DeletePosTerminal`
+
+**Queries:** `GetAllPosTerminals` (por sucursal), `GetPosTerminalById`, `GetBranchTerminals`
+(`GET /api/pos/terminals`: las activas de la sucursal de `X-Branch-Id`)
+
+### Acceso por sucursal
+
+`user_branch_access` (en `src/tenancy/`, sin RLS, como `memberships`) limita una membresia a
+algunas sucursales; sin filas entra a todas. Se administra con
+`GET`/`PUT /api/admin/users/{id}/branches` y viaja en el claim `bids` del access token. Toda
+ruta autenticada que reciba `X-Branch-Id` lo valida (422 `INVALID_BRANCH_HEADER`, 403
+`BRANCH_ACCESS_DENIED`) y la solicitud corre en esa sucursal (`TenantContext.branch_id`, logs y
+span con `faclab.branch.id`). Las rutas de sucursal lo exigen con `require_branch`
+(`BRANCH_REQUIRED`); hoy solo `GET /api/pos/terminals`, y desde S2.6 turnos, ventas y caja.
+
+---
+
 ## Catalogo
 
 ### Product
@@ -44,7 +102,8 @@ Instalaciones fisicas de almacenamiento.
 
 **Entidades:** `Warehouse`
 
-**Campos:** `id`, `name`, `address`, `is_active`
+**Campos:** `id`, `branch_id` (obligatorio y fijo desde que se crea), `name`, `code`, `address`,
+`is_active`, `is_default`
 
 **Comandos:** `CreateWarehouse`, `UpdateWarehouse`, `DeleteWarehouse`
 
