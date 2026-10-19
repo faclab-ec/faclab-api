@@ -49,11 +49,28 @@
   (`_tenant_of_sale` en `src/invoicing/infra/invoice_messages.py`, búsqueda por el id global de la
   venta), así que ya no se reintenta sin fin. Falta que faclab-invoicing copie a sus mensajes el header
   del `sales.confirmed` que factura (S2.8, que cambia el contrato completo); entonces se quita el
-  respaldo. Con RLS (S2.4), esa búsqueda corre fuera de toda empresa y necesita el rol `faclab_worker`.
-- **Tablas leídas entre empresas y RLS** (detectado en S2.3). `memberships`, `auth_sessions` y
-  `outbox_messages` tienen `tenant_id`, pero el login, el refresh, la provisión y el relay las leen sin
-  contexto de empresa. S2.4 debe decidir su política (rol `faclab_worker`, funciones de plataforma o
-  sin RLS) en lugar de aplicarles la misma que a las tablas de negocio.
+  respaldo. Desde S2.4 esa búsqueda corre fuera de toda empresa con el rol `faclab_worker`.
+- ~~**Tablas leídas entre empresas y RLS**~~ (detectado en S2.3; resuelto en S2.4). `memberships` y
+  `auth_sessions` quedan sin RLS, como las demás tablas de plataforma, y las protege el filtro explícito
+  de auth (decisión del usuario). En `outbox_messages`, `faclab_app` solo inserta y el relay usa
+  `faclab_worker`.
+- **Invitar a un usuario que ya existe a otra empresa** (detectado en S2.4). `POST /api/admin/users`
+  siempre crea una identidad nueva: si el usuario o el email ya existen en otra empresa responde 409, y
+  el admin tendría que crearle otra cuenta. Hoy solo la provisión (`make provision-tenant`) agrega un
+  usuario existente, y solo como administrador. Falta un flujo de invitación (el admin invita por email,
+  el usuario acepta con su sesión y se crea la membresía), a decidir junto con el login por email; encaja
+  en S8.5 o antes de S2.9.
+- **Roles de base en despliegue y respaldos** (detectado en S2.4). Antes del primer despliegue hay que
+  crear los roles con `python -m src.shared.infra.db_roles` y un superusuario (S8.1); otorgar `BYPASSRLS`
+  exige superusuario, así que en un PostgreSQL administrado el worker necesitaría una política permisiva
+  propia. Con `FORCE`, `pg_dump` como dueño falla: los respaldos usan un superusuario o un rol con
+  `BYPASSRLS` (S8.3).
+- **Índices que empiezan por `tenant_id`** (detectado en S2.4). Cada tabla de negocio tiene un índice
+  simple en `tenant_id` y las únicas por empresa lo incluyen; los listados grandes pueden necesitar
+  índices compuestos `(tenant_id, …)`. Medir en S9.2 (carga y línea base).
+- **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
+  acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
+  ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).
 
 ## 2. Dependencias
 

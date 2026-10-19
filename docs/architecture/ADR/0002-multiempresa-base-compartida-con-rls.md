@@ -1,7 +1,7 @@
 # ADR-0002: Multiempresa en base compartida con `tenant_id` y Row-Level Security
 
-- **Estado:** aceptado (2026-10-16; filtro en la aplicación, restricciones compuestas y nueva línea
-  base implementados en S2.2–S2.3; RLS y roles pendientes en S2.4)
+- **Estado:** aceptado (2026-10-18; filtro en la aplicación, restricciones compuestas y nueva línea
+  base implementados en S2.2–S2.3; RLS, roles y pruebas negativas por ruta en S2.4)
 - **Relacionado:** [MULTI_TENANCY.md](../MULTI_TENANCY.md), [ADR-0003](0003-identidad-global-y-contexto-de-sucursal.md)
 
 ## Contexto
@@ -35,6 +35,10 @@ pequeñas y medianas, desplegado en un VPS (decisión del usuario). Hoy no hay d
    - `faclab_app` no es dueño y no puede saltarse RLS.
    - `faclab_worker` tiene `BYPASSRLS` y se usa solo para el relay del outbox y las tareas de
      plataforma que recorren todas las empresas.
+
+   Las tablas de plataforma (`tenants`, `users`, `login_failures`, `memberships`, `auth_sessions`,
+   `outbox_messages`) quedan sin RLS: auth las lee entre empresas y las protege el filtro explícito de
+   la aplicación; en el outbox, `faclab_app` solo inserta (decisión de S2.4).
 4. **Restricciones compuestas**: `UNIQUE (tenant_id, sku)`, `UNIQUE (tenant_id, tax_id)`, etc., y
    claves foráneas compuestas `(tenant_id, x_id)` en las relaciones principales para que la base
    impida mezclar empresas.
@@ -53,3 +57,7 @@ demás tablas conservan sus ids enteros: RLS impide usarlos para cruzar empresas
   (alternativa C para casos puntuales); el diseño no lo impide.
 - Riesgo: olvidar `SET LOCAL` en un camino nuevo (por ejemplo, un script). Mitigación: sin `app.tenant_id`
   definido, la política no devuelve filas (falla cerrada) y hay una prueba que lo verifica.
+- PostgreSQL revisa las claves foráneas sin aplicar RLS: una FK simple acepta el id de otra empresa. Por
+  eso toda relación que una ruta puede llenar usa una FK compuesta (S2.4).
+- `FORCE` también obliga al dueño: las migraciones de datos trabajan dentro de una empresa o desactivan
+  y reactivan `FORCE` en la misma migración, y los respaldos necesitan un rol con `BYPASSRLS` (S8.3).

@@ -229,7 +229,10 @@ Variables principales (la lista completa esta en `config/base.py`):
 | Variable | `local` | `staging` / `production` |
 |---|---|---|
 | `ENVIRONMENT` | `local` (por defecto) | `staging` o `production` |
-| `DATABASE_URL` | Por defecto `sqlite:///./warehouse.db` | **Obligatoria**, por ejemplo `postgresql://user:password@db:5432/faclab` |
+| `DATABASE_URL` | Por defecto `sqlite:///./warehouse.db` | **Obligatoria**: el rol `faclab_app`, por ejemplo `postgresql://faclab_app:password@db:5432/faclab` |
+| `DATABASE_URL_WORKER` | Por defecto la de `DATABASE_URL` | **Obligatoria con `KAFKA_ENABLED`**: el rol `faclab_worker` (relay del outbox) |
+| `DATABASE_URL_MIGRATIONS` | Por defecto la de `DATABASE_URL` | El rol `faclab_owner`; solo la usa Alembic |
+| `DATABASE_URL_ADMIN` | Superusuario para `make db-roles` y `make test-integration` | Solo para crear los roles (`python -m src.shared.infra.db_roles`) |
 | `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
 | `JWT_SECRET` | Por defecto un valor de desarrollo | **Obligatoria**, unica y de 32 caracteres o mas |
 | `DOCS_ENABLED` | Por defecto `true` | Por defecto `false` |
@@ -238,6 +241,8 @@ Variables principales (la lista completa esta en `config/base.py`):
 | `SERVICE_VERSION` | Por defecto `dev` | La imagen lo fija en el build: `--build-arg SERVICE_VERSION=<tag o SHA>` |
 
 Si falta alguna variable obligatoria, el arranque falla con un mensaje que las nombra.
+
+Cada proceso entra a PostgreSQL con su rol (Row-Level Security, S2.4): el API como `faclab_app`, que no puede saltarse las politicas por empresa; el relay del outbox como `faclab_worker`, que si puede porque publica los mensajes de todas; y las migraciones como `faclab_owner`, dueno de las tablas. `make db-roles` crea los tres roles (con las contrasenas de sus URLs) y la base, y se corre antes de `make upgrade`. Detalle en [docs/architecture/MULTI_TENANCY.md](docs/architecture/MULTI_TENANCY.md) §6.
 
 La imagen de produccion lee ademas `WEB_CONCURRENCY` (workers de uvicorn, por defecto 2) y `FORWARDED_ALLOW_IPS` (de quien confiar los encabezados `X-Forwarded-*`, por defecto `*` porque el API solo se expone detras del proxy).
 
@@ -268,10 +273,11 @@ make dev                        # Desarrollo con hot-reload
 make down                       # Detener contenedores
 
 # Base de datos
+make db-roles                   # Roles faclab_owner/app/worker y la base (idempotente; antes de upgrade)
 make migrations m="descripcion" # Crear migracion
-make upgrade                    # Aplicar migraciones
+make upgrade                    # Aplicar migraciones (como faclab_owner)
 make downgrade d=revision_id    # Revertir migracion
-make seed                       # Datos de ejemplo; borra los existentes y solo corre con ENVIRONMENT=local
+make seed                       # Datos de ejemplo en dos empresas; reemplaza los suyos y solo corre con ENVIRONMENT=local
 make seed-admin                 # Primer usuario admin desde AUTH_SEED_* (idempotente)
 
 # Testing y calidad
@@ -292,7 +298,8 @@ make lint                       # Formatear y validar codigo (ruff)
 La suite incluye:
 - **Tests unitarios**: Entidades, value objects, specifications, commands, queries, event handlers
 - **Tests de integracion**: Flujos cross-module (Movement → Stock, Sale → Movement → Stock, PO → Movement → Stock) y guards de autorizacion sobre las rutas reales de `main.app`
-- **Tests contra PostgreSQL** (`tests/integration/postgres/`): recorren la API con `TestClient` sobre una base real migrada con Alembic (rutas, specifications, reportes y flujos de inventario, POS y compras). Solo corren con `TEST_DATABASE_URL`; sin ella se saltan. `make test-integration` la arma a partir de `DATABASE_URL` y recrea la base `<db>_test` en cada corrida.
+- **Tests contra PostgreSQL** (`tests/integration/postgres/`): recorren la API con `TestClient` sobre una base real migrada con Alembic (rutas, specifications, reportes y flujos de inventario, POS y compras). Solo corren con `TEST_DATABASE_URL` (un superusuario, para las fixtures); sin ella se saltan. Con ella exigen tambien `TEST_DATABASE_URL_APP`, `_WORKER` y `_MIGRATIONS`, para que la app corra como `faclab_app` bajo Row-Level Security. `make test-integration` arma las cuatro a partir de las `DATABASE_URL*` de `.env` y recrea la base `<db>_test` en cada corrida.
+- **Aislamiento entre empresas** (`tests/integration/postgres/isolation/` y `test_rls.py`): arma dos empresas con los mismos datos y llama cada ruta de `main.app` como una con los ids de la otra; falla si alguna ruta queda sin cubrir. `test_rls.py` revisa roles, politicas y permisos directamente en la base.
 
 ## Integracion continua
 
@@ -331,7 +338,9 @@ docker build --target production -t faclab-core .
 docker run --rm -p 8080:8080 \
   -e ENVIRONMENT=production -e DATABASE_URL=... -e CORS_ORIGINS=... -e JWT_SECRET=... \
   faclab-core                                  # API en :8080
-docker run --rm -e ... faclab-core alembic upgrade head   # migraciones como tarea aparte
+docker run --rm -e DATABASE_URL_ADMIN=... -e DATABASE_URL=... -e DATABASE_URL_WORKER=... \
+  -e DATABASE_URL_MIGRATIONS=... faclab-core python -m src.shared.infra.db_roles   # roles, una vez
+docker run --rm -e DATABASE_URL_MIGRATIONS=... faclab-core alembic upgrade head    # migraciones como tarea aparte
 ```
 
 El contenedor valida la configuracion antes de levantar los workers: si falta una variable obligatoria, sale con codigo 1 y el mensaje en vez de reiniciar los workers en bucle. Su `HEALTHCHECK` llama a `/health/live`.

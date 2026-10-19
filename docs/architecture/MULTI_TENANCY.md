@@ -50,8 +50,28 @@
 - `make seed` crea dos empresas con el mismo catálogo y el administrador del seed en ambas.
 - Temporal hasta S2.8: un mensaje de `invoices` sin empresa corre en la de su venta (búsqueda por id).
 
-El filtro está en la aplicación; la segunda barrera en la base (RLS) es S2.4. El rol de plataforma queda
-para S8.5.
+**Implementado (S2.4, 2026-10-18):**
+
+- Roles de base: `faclab_owner` (dueño de las tablas; migraciones con `DATABASE_URL_MIGRATIONS`),
+  `faclab_app` (el API, `DATABASE_URL`, sin `BYPASSRLS`) y `faclab_worker` (`DATABASE_URL_WORKER`, con
+  `BYPASSRLS`: el relay del outbox y `_tenant_of_sale`). Ninguno es superusuario. Los crea
+  `python -m src.shared.infra.db_roles` (`make db-roles`), idempotente, con el superusuario de
+  `DATABASE_URL_ADMIN`; también crea la base con dueño `faclab_owner`.
+- Permisos por migración (`80bfd3a8c63b`): app y worker leen y escriben todas las tablas y secuencias,
+  también las de migraciones futuras; nadie más que el dueño puede `TRUNCATE` ni tocar
+  `alembic_version`; en `outbox_messages`, `faclab_app` solo inserta (y lee el `id` que devuelve).
+- RLS activo y forzado en las 31 tablas de negocio (`798891c3feea`) con una política por tabla (§6).
+- Las tablas de plataforma no tienen RLS: `tenants`, `users`, `login_failures`, `memberships`,
+  `auth_sessions` y `outbox_messages`. Decisión del usuario: auth las lee entre empresas (login, refresh,
+  `/me`, cambio de empresa y de contraseña) y las protege el filtro explícito de la aplicación.
+- FKs compuestas también en las 19 relaciones que una ruta podía llenar con un id de otra empresa
+  (`3df55a3cc8fb`; decisión del usuario): PostgreSQL revisa las FKs sin aplicar RLS. Quedan simples solo
+  20 FKs hijo → padre internas, listadas con su motivo en `tests/unit/shared/test_tenant_schema.py`.
+- El seed borra los datos de cada empresa dentro de su contexto, en la misma transacción que los siembra.
+- Suite de aislamiento por ruta y pruebas SQL de RLS (§8), obligatorias en el CI.
+
+Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
+S8.5.
 
 ## 1. Niveles
 
@@ -141,8 +161,8 @@ Del lado de facturación (base `faclab_invoicing`, ver [ADR-0004](ADR/0004-persi
 |---|---|---|---|
 | `tenants`, `plans`, `subscriptions` | Plataforma | — | Nuevas |
 | `users` | Plataforma (identidad global) | — | Usuario y email únicos globalmente |
-| `memberships`, `user_branch_access` | Empresa | — | Nuevas; rol por empresa |
-| `auth_sessions` | Empresa | — | Se agrega `tenant_id` |
+| `memberships`, `user_branch_access` | Empresa | — | Nuevas; rol por empresa. Sin RLS: auth las lee entre empresas (S2.4) |
+| `auth_sessions` | Empresa | — | Se agrega `tenant_id`. Sin RLS, como `memberships` |
 | `products`, `categories`, `units_of_measure` | Empresa | Sí | SKU y código de barras únicos por empresa |
 | Presentaciones y conversiones (Etapa 5) | Empresa | Sí | |
 | `price_lists` (Etapa 5) | Empresa | Sí, con lista opcional por sucursal | |
@@ -158,7 +178,7 @@ Del lado de facturación (base `faclab_invoicing`, ver [ADR-0004](ADR/0004-persi
 | `pos_shifts`, `pos_cash_movements` | Sucursal (terminal) | No | Un turno abierto por terminal |
 | `pos_refunds` | Sucursal | No | |
 | `document_sequences` | Empresa y sucursal | — | Ver ADR-0012 |
-| `outbox_messages`, `dead_letters` | Infraestructura con `tenant_id` | — | Sin RLS; solo los usa el rol `faclab_worker` |
+| `outbox_messages`, `dead_letters` | Infraestructura con `tenant_id` | — | Sin RLS; `faclab_app` solo inserta y el relay (`faclab_worker`) lee y publica. `dead_letters` llega en S3.4 |
 | `audit_log`, `idempotency_keys` | Empresa | — | Nuevas (Etapa 3) |
 | `integration_clients`, `webhook_endpoints`, `webhook_deliveries` | Empresa | — | Nuevas (Etapa 6) |
 | Perfil fiscal, certificados, secuenciales SRI, comprobantes | Empresa (en invoicing) | — | Secuencial por establecimiento y punto de emisión |
@@ -215,14 +235,16 @@ sequenceDiagram
 - Claves foráneas compuestas `(tenant_id, x_id)` en relaciones críticas (venta → cliente, ítem →
   producto, stock → ubicación, terminal → ubicación), con `UNIQUE (tenant_id, id)` en la tabla
   referida. Así la base impide mezclar empresas aunque falle la aplicación. Hechas en S2.3 (lista en el
-  bloque de arriba); la de terminal llega con S2.6.
+  bloque de arriba) y, desde S2.4, en toda relación que una ruta puede llenar; la de terminal llega con
+  S2.6.
 - Índice único parcial: un turno `OPEN` por terminal.
 - Índices que empiezan por `tenant_id` en todas las consultas de listado.
 
 ## 6. Row-Level Security
 
+Implementado en S2.4 (migración `798891c3feea`), en cada una de las 31 tablas de negocio:
+
 ```sql
--- Ilustrativo; se define en S2.4
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON products
@@ -234,12 +256,26 @@ CREATE POLICY tenant_isolation ON products
   cerrada**. El `nullif` hace falta porque una conexión en la que alguna vez se fijó el valor (aunque
   fuera con `SET LOCAL`) devuelve `''`, no null, en las transacciones siguientes, y `''::uuid` falla
   (comprobado en S2.2).
-- Roles:
-  - `faclab_owner` es dueño de las tablas y ejecuta migraciones.
-  - `faclab_app` es el que usa el API, sin `BYPASSRLS`.
-  - `faclab_worker` tiene `BYPASSRLS` y lo usan el relay, las tareas de plataforma y el onboarding.
+- Roles (los crea `python -m src.shared.infra.db_roles`, con el superusuario de `DATABASE_URL_ADMIN`):
+  - `faclab_owner` es dueño de las tablas y ejecuta migraciones (`DATABASE_URL_MIGRATIONS`).
+  - `faclab_app` es el que usa el API (`DATABASE_URL`), sin `BYPASSRLS`.
+  - `faclab_worker` tiene `BYPASSRLS` (`DATABASE_URL_WORKER`). Hoy lo usan el relay del outbox y
+    `_tenant_of_sale`, que corren en el proceso del API hasta que S3.4 los mueva al worker y S2.8 quite
+    `_tenant_of_sale`. Las tareas de plataforma que recorran empresas abren un contexto por empresa o
+    usan este rol.
 - `SET LOCAL` (no `SET`) para que el valor muera con la transacción y no se filtre a otra solicitud que
   reutilice la conexión del pool.
+- Permisos (`80bfd3a8c63b`): app y worker tienen `SELECT, INSERT, UPDATE, DELETE` en todas las tablas
+  y uso de las secuencias, también en las tablas de migraciones futuras (privilegios por defecto de
+  `faclab_owner`). Nunca `TRUNCATE`, que ignora RLS. En `outbox_messages`, `faclab_app` solo tiene
+  `INSERT` y `SELECT (id)`: no lee los mensajes de otras empresas.
+- PostgreSQL revisa las claves foráneas sin aplicar RLS: una FK simple acepta el id de una fila de otra
+  empresa. Por eso toda relación que una ruta puede llenar usa una FK compuesta (§5).
+- `FORCE` también obliga a `faclab_owner`: una migración de datos fija `app.tenant_id` por empresa o
+  usa `NO FORCE` … `FORCE` dentro de la misma migración. Un `pg_dump` necesita un superusuario o un rol
+  con `BYPASSRLS` (S8.3).
+- Una tabla de negocio nueva lleva en su migración las tres sentencias de arriba; `test_rls.py` falla
+  si un modelo `TenantScoped` no tiene su política forzada.
 
 ## 7. Autorización
 
@@ -260,17 +296,29 @@ Casos:
 
 ## 8. Pruebas negativas de aislamiento (S2.4)
 
-- Fixture con dos empresas, cada una con datos completos (productos, clientes, ventas, stock, turnos,
-  facturas).
-- **Por cada ruta** de `main.app`, igual que las pruebas actuales de guardas de permisos:
-  - GET de un recurso de la otra empresa devuelve 404.
-  - PUT, DELETE y POST que referencian ids ajenos devuelven 404 o 422.
-  - Los listados nunca devuelven filas ajenas.
-- A nivel de base, con el rol `faclab_app` y otra empresa en `app.tenant_id`: un `SELECT` directo no
-  devuelve filas ajenas y un `INSERT` con `tenant_id` ajeno falla.
-- Sin contexto, una consulta no devuelve filas.
-- Mensajes Kafka: un `sales.confirmed` de la empresa A nunca usa el perfil fiscal ni el secuencial de B.
-- Sucursal: un cajero con acceso solo a la sucursal 1 no puede abrir turno ni vender en la 2.
+Implementadas en `tests/integration/postgres/isolation/` y `test_rls.py`; corren en el job `test` del
+CI, obligatorio para `master`:
+
+- Dos empresas con el mismo grafo de datos, armado por la API (`isolation/dataset.py`): catálogo,
+  stock, lotes, series, contactos, órdenes en borrador y parcialmente recibidas, ajuste y transferencia
+  en borrador, turno abierto con una venta en borrador y otra confirmada, devolución pendiente y
+  movimientos de caja.
+- **Por cada ruta** de `main.app` (registro en `isolation/routes.py`; una ruta sin entrada hace fallar
+  la suite):
+  - Con un id de la otra empresa en el path, la respuesta es idéntica a la de un id inexistente, y la
+    otra empresa sí lo lee.
+  - Con un id ajeno en el body, la query o una parte del path, lo mismo, mientras que con el id propio
+    la llamada funciona.
+  - Los listados y reportes responden igual que antes de que existiera la otra empresa.
+  - Lo que una empresa crea, la otra no lo lee.
+  - Ninguna respuesta muestra marcas, RUC ni el id de la otra empresa, y sus filas no cambian.
+- A nivel de base, con el rol `faclab_app`: sin contexto no hay filas; con A no se ven filas de B; un
+  `INSERT` o `UPDATE` hacia B falla; un `UPDATE` o `DELETE` sobre filas de B no afecta nada.
+- Probado a propósito: sin RLS y con las consultas propias sin filtro fallan 13 casos de reportes y
+  recibo; con una FK compuesta vuelta simple fallan sus dos rutas; sin el filtro de la aplicación pero
+  con RLS, todo sigue aislado.
+- Pendiente: mensajes Kafka (un `sales.confirmed` de A nunca usa el perfil fiscal ni el secuencial de
+  B) en S2.8; sucursales (un cajero de la sucursal 1 no abre turno ni vende en la 2) en S2.5 y S2.6.
 
 ## 9. Incorporación de empresas y migración de datos
 
