@@ -12,6 +12,7 @@ from src.pos.sales.app.commands.quick_sale import (
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import (
     InsufficientStockError,
@@ -19,6 +20,7 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 
 
 def _make_shift(**overrides) -> Shift:
@@ -116,16 +118,18 @@ def _build_handler(
         sale_repo=sale_repo or _mock_repo(),
         sale_item_repo=sale_item_repo or _mock_repo(),
         product_repo=product_repo or _mock_repo(),
-        movement_repo=movement_repo or _mock_repo(),
-        stock_repo=stock_repo or _mock_repo(),
+        stock=TerminalStock(stock_repo or _mock_repo(), movement_repo or _mock_repo()),
         payment_repo=payment_repo or _mock_repo(),
         shift_repo=shift_repo or _mock_repo(),
+        terminals=terminal_resolver(),
+        numbering=numbering(),
         event_publisher=event_publisher or MagicMock(),
     )
 
 
 def _quick_sale_command(**overrides):
     defaults: dict[str, Any] = {
+        "terminal": AT_TERMINAL,
         "items": [{"product_id": 1, "quantity": 2, "unit_price": 50.00}],
         "payments": [{"amount": 112.00, "payment_method": "CASH"}],
         "customer_id": None,
@@ -177,6 +181,39 @@ class TestQuickSaleHappyPath:
         assert stock_repo.update.call_args[0][0].quantity == 98
         payment_repo.create.assert_called_once()
         event_publisher.publish.assert_called_once()
+
+    def test_quick_sale_runs_at_the_terminal(self):
+        """La venta queda en la sucursal, el punto de emisión y la terminal, toma el
+        turno de la terminal, descuenta de su ubicación y recibe su número"""
+        sale_repo = _mock_repo()
+        sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
+        sale_repo.update.side_effect = lambda sale: sale
+        shift_repo = _mock_repo(entity=_make_shift())
+        stock_repo = _mock_repo(entity=_make_stock(quantity=100))
+        movement_repo = _mock_repo()
+
+        handler = _build_handler(
+            sale_repo=sale_repo,
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            movement_repo=movement_repo,
+            stock_repo=stock_repo,
+            payment_repo=_mock_repo(entity=_make_payment()),
+            shift_repo=shift_repo,
+        )
+
+        result = handler.handle(_quick_sale_command())
+
+        shift_repo.first.assert_called_once_with(terminal_id=3, status="OPEN")
+        created = sale_repo.create.call_args.args[0]
+        assert (created.branch_id, created.emission_point_id, created.terminal_id) == (
+            1,
+            2,
+            3,
+        )
+        stock_repo.first_for_update.assert_called_once_with(product_id=1, location_id=7)
+        assert movement_repo.create.call_args.args[0].location_id == 7
+        assert result["number"] == "V-001-000001"
 
     def test_quick_sale_with_customer(self):
         """Venta rapida con cliente registrado"""

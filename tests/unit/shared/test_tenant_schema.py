@@ -58,16 +58,24 @@ COMPOSITE_FOREIGN_KEYS = {
     ("pos_terminals", "branch_id"),
     ("pos_terminals", "emission_point_id"),
     ("pos_terminals", "default_location_id"),
+    ("pos_shifts", "terminal_id"),
+    ("pos_shifts", "branch_id"),
+    ("sales", "branch_id"),
+    ("sales", "emission_point_id"),
+    ("sales", "terminal_id"),
+    ("pos_refunds", "branch_id"),
+    ("pos_refunds", "terminal_id"),
+    ("document_sequences", "branch_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
 INTERNAL_FOREIGN_KEYS = {
-    ("sales", "shift_id"): "the tenant's open shift",
+    ("sales", "shift_id"): "the terminal's open shift",
     ("sale_items", "sale_id"): "the sale loaded by id",
     ("payments", "sale_id"): "the sale loaded by id",
     ("pos_cash_movements", "shift_id"): "the shift loaded by id",
     ("pos_refunds", "original_sale_id"): "the sale loaded by id",
-    ("pos_refunds", "shift_id"): "the tenant's open shift",
+    ("pos_refunds", "shift_id"): "the terminal's open shift",
     ("pos_refund_items", "refund_id"): "the refund being created",
     ("pos_refund_items", "original_sale_item_id"): "an item of the loaded sale",
     ("pos_refund_items", "product_id"): "copied from the sale item",
@@ -103,7 +111,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 34
+    assert len(BUSINESS_TABLES) == 35
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

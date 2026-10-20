@@ -8,7 +8,7 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from src.shared.app.repositories import Repository
 from src.shared.domain.entities import Entity
-from src.shared.domain.exceptions import AlreadyExistsError, NotFoundError
+from src.shared.domain.exceptions import BaseError, NotFoundError
 from src.shared.domain.specifications import Specification
 from src.shared.domain.tenant import TenantMismatchError, require_tenant
 from src.shared.infra.mappers import Mapper
@@ -32,8 +32,9 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
     """
 
     __model__: ClassVar[type[Any]]
-    # Unique constraint (or unique index) name -> error raised when it is violated
-    __unique_errors__: ClassVar[dict[str, Callable[[], AlreadyExistsError]]] = {}
+    # Unique constraint (or unique index) name -> error raised when it is
+    # violated, usually an `AlreadyExistsError`
+    __unique_errors__: ClassVar[dict[str, Callable[[], BaseError]]] = {}
 
     def __init__(self, session: Session, mapper: Mapper[E, Any]):
         self.session = session

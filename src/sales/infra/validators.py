@@ -201,6 +201,29 @@ class SaleResponse(BaseModel):
         validation_alias=AliasChoices("shiftId", "shift_id"),
         serialization_alias="shiftId",
     )
+    branch_id: int | None = Field(
+        None,
+        description="Branch of the sale (null in sales from before S2.6)",
+        validation_alias=AliasChoices("branchId", "branch_id"),
+        serialization_alias="branchId",
+    )
+    emission_point_id: int | None = Field(
+        None,
+        description="Emission point of the POS terminal",
+        validation_alias=AliasChoices("emissionPointId", "emission_point_id"),
+        serialization_alias="emissionPointId",
+    )
+    terminal_id: int | None = Field(
+        None,
+        description="POS terminal of the sale",
+        validation_alias=AliasChoices("terminalId", "terminal_id"),
+        serialization_alias="terminalId",
+    )
+    number: str | None = Field(
+        None,
+        description="Document number, correlative per branch (`V-001-000123`), "
+        "given when the sale is confirmed",
+    )
     status: SaleStatus = Field(description="Current sale status")
     sale_date: datetime | None = Field(
         None,

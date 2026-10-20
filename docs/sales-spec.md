@@ -54,6 +54,11 @@ GET /api/admin/sales?customerId=1&status=DRAFT&limit=20&offset=0
     {
       "id": 1,
       "customerId": 1,
+      "shiftId": 4,
+      "branchId": 1,
+      "emissionPointId": 1,
+      "terminalId": 3,
+      "number": "V-001-000123",
       "status": "CONFIRMED",
       "saleDate": "2026-03-08T10:00:00",
       "subtotal": 269.91,
@@ -90,6 +95,11 @@ GET /api/admin/sales/{sale_id}
   "data": {
     "id": 1,
     "customerId": 1,
+    "shiftId": 4,
+    "branchId": 1,
+    "emissionPointId": 1,
+    "terminalId": 3,
+    "number": "V-001-000123",
     "status": "CONFIRMED",
     "saleDate": "2026-03-08T10:00:00",
     "subtotal": 269.91,
@@ -108,6 +118,11 @@ GET /api/admin/sales/{sale_id}
   }
 }
 ```
+
+Las ventas las crea el POS en una terminal (S2.6): `branchId`, `emissionPointId` y `terminalId` son los
+de la terminal, y `number` es el correlativo de la sucursal (`V-` + código de establecimiento + seis
+dígitos), asignado al confirmar y que se conserva aunque la venta se cancele. Son `null` en los
+borradores (`number`) y en las ventas anteriores a S2.6 o del seed.
 
 **Error** `404`:
 
@@ -266,6 +281,11 @@ type PaymentMethod = "CASH" | "CREDIT_CARD" | "DEBIT_CARD" | "TRANSFER" | "OTHER
 interface Sale {
   id: number;
   customerId: number;
+  shiftId: number | null;
+  branchId: number | null;
+  emissionPointId: number | null;
+  terminalId: number | null;
+  number: string | null;
   status: SaleStatus;
   saleDate: string | null;
   subtotal: number;

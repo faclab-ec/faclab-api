@@ -23,13 +23,22 @@ from src.pos.refund.domain.exceptions import (
     ExceedsOriginalQuantityError,
     InvalidRefundStatusError,
     RefundItemNotInSaleError,
+    RefundOutsideBranchError,
     SaleNotConfirmedError,
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.unit.pos.terminals import (
+    AT_TERMINAL,
+    LOCATION_ID,
+    TERMINAL,
+    numbering,
+    terminal_resolver,
+)
 
 
 def _make_sale(**overrides) -> Sale:
@@ -141,7 +150,12 @@ class TestCreateRefund:
         shift_repo.first.return_value = shift
 
         handler = CreateRefundCommandHandler(
-            sale_repo, sale_item_repo, refund_repo, refund_item_repo, shift_repo
+            sale_repo,
+            sale_item_repo,
+            refund_repo,
+            refund_item_repo,
+            shift_repo,
+            terminal_resolver(),
         )
         return handler, refund_repo, refund_item_repo
 
@@ -155,6 +169,7 @@ class TestCreateRefund:
         )
 
         command = CreateRefundCommand(
+            terminal=AT_TERMINAL,
             original_sale_id=1,
             items=[{"sale_item_id": 10, "quantity": 2}],
             reason="Defectuoso",
@@ -174,7 +189,9 @@ class TestCreateRefund:
 
         result = handler.handle(
             CreateRefundCommand(
-                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 2}]
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 2}],
             )
         )
 
@@ -201,7 +218,9 @@ class TestCreateRefund:
 
         result = handler.handle(
             CreateRefundCommand(
-                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 5}]
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 5}],
             )
         )
 
@@ -216,7 +235,9 @@ class TestCreateRefund:
         handler, _, _ = self._make_handler()
 
         command = CreateRefundCommand(
-            original_sale_id=999, items=[{"sale_item_id": 10, "quantity": 1}]
+            terminal=AT_TERMINAL,
+            original_sale_id=999,
+            items=[{"sale_item_id": 10, "quantity": 1}],
         )
         with pytest.raises(NotFoundError):
             handler.handle(command)
@@ -226,7 +247,9 @@ class TestCreateRefund:
         handler, _, _ = self._make_handler(sale=sale)
 
         command = CreateRefundCommand(
-            original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 1}]
+            terminal=AT_TERMINAL,
+            original_sale_id=1,
+            items=[{"sale_item_id": 10, "quantity": 1}],
         )
         with pytest.raises(SaleNotConfirmedError):
             handler.handle(command)
@@ -240,18 +263,60 @@ class TestCreateRefund:
 
         handler.handle(
             CreateRefundCommand(
-                original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 1}]
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 1}],
             )
         )
 
         refund_repo.create.assert_called_once()
+
+    def test_refund_is_made_at_the_terminal_of_the_sales_branch(self):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(branch_id=1),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        handler.handle(
+            CreateRefundCommand(
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 1}],
+            )
+        )
+
+        handler.shift_repo.first.assert_called_once_with(
+            terminal_id=TERMINAL.id, status="OPEN"
+        )
+        created = refund_repo.create.call_args.args[0]
+        assert (created.branch_id, created.terminal_id) == (1, TERMINAL.id)
+
+    def test_refund_in_another_branch(self):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(branch_id=2),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        with pytest.raises(RefundOutsideBranchError):
+            handler.handle(
+                CreateRefundCommand(
+                    terminal=AT_TERMINAL,
+                    original_sale_id=1,
+                    items=[{"sale_item_id": 10, "quantity": 1}],
+                )
+            )
+        refund_repo.create.assert_not_called()
 
     def test_no_open_shift(self):
         sale = _make_sale()
         handler, _, _ = self._make_handler(sale=sale, shift=None)
 
         command = CreateRefundCommand(
-            original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 1}]
+            terminal=AT_TERMINAL,
+            original_sale_id=1,
+            items=[{"sale_item_id": 10, "quantity": 1}],
         )
         with pytest.raises(NoOpenShiftError):
             handler.handle(command)
@@ -266,7 +331,9 @@ class TestCreateRefund:
         )
 
         command = CreateRefundCommand(
-            original_sale_id=1, items=[{"sale_item_id": 999, "quantity": 1}]
+            terminal=AT_TERMINAL,
+            original_sale_id=1,
+            items=[{"sale_item_id": 999, "quantity": 1}],
         )
         with pytest.raises(RefundItemNotInSaleError):
             handler.handle(command)
@@ -281,7 +348,9 @@ class TestCreateRefund:
         )
 
         command = CreateRefundCommand(
-            original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 5}]
+            terminal=AT_TERMINAL,
+            original_sale_id=1,
+            items=[{"sale_item_id": 10, "quantity": 5}],
         )
         with pytest.raises(ExceedsOriginalQuantityError):
             handler.handle(command)
@@ -305,7 +374,9 @@ class TestCreateRefund:
         )
 
         command = CreateRefundCommand(
-            original_sale_id=1, items=[{"sale_item_id": 10, "quantity": 3}]
+            terminal=AT_TERMINAL,
+            original_sale_id=1,
+            items=[{"sale_item_id": 10, "quantity": 3}],
         )
         with pytest.raises(ExceedsOriginalQuantityError):
             handler.handle(command)
@@ -328,12 +399,16 @@ class TestProcessRefund:
         )
         event_publisher = MagicMock()
 
+        terminal_repo = MagicMock()
+        terminal_repo.get_by_id.return_value = TERMINAL
+
         handler = ProcessRefundCommandHandler(
             refund_repo,
             refund_item_repo,
             refund_payment_repo,
-            movement_repo,
-            stock_repo,
+            TerminalStock(stock_repo, movement_repo),
+            terminal_repo,
+            numbering("D-001-000001"),
             event_publisher,
         )
         return handler, movement_repo, stock_repo, event_publisher
@@ -360,6 +435,26 @@ class TestProcessRefund:
         stock_repo.update.assert_called_once()
         assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()
+
+    def test_puts_back_in_the_terminal_location_and_numbers_the_refund(self):
+        refund = _make_refund(branch_id=1, terminal_id=TERMINAL.id)
+        handler, movement_repo, stock_repo, _ = self._make_handler(
+            refund=refund, refund_items=[_make_refund_item()]
+        )
+
+        result = handler.handle(
+            ProcessRefundCommand(
+                refund_id=1, payments=[{"amount": "46.00", "payment_method": "CASH"}]
+            )
+        )
+
+        stock_repo.first_for_update.assert_called_once_with(
+            product_id=100, location_id=LOCATION_ID
+        )
+        movement = movement_repo.create.call_args.args[0]
+        assert (movement.reference_type, movement.reference_id) == ("refund", 1)
+        handler.numbering.next.assert_called_once_with(1, "REFUND")
+        assert result["number"] == "D-001-000001"
 
     def test_refund_not_found(self):
         handler, _, _, _ = self._make_handler()

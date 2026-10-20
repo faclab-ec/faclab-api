@@ -4,12 +4,12 @@ from decimal import Decimal
 from wireup import injectable
 
 from src.catalog.product.app.repositories import ProductRepository
-from src.inventory.movement.app.repositories import MovementRepository
-from src.inventory.movement.domain.constants import MovementType
-from src.inventory.movement.domain.entities import Movement
-from src.inventory.stock.app.repositories import StockRepository
+from src.organization.app.numbering import DocumentNumbering
+from src.organization.domain.numbering import DocumentType
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
+from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.app.repositories import (
     PaymentRepository,
     SaleItemRepository,
@@ -17,10 +17,7 @@ from src.sales.app.repositories import (
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
 from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
-from src.sales.domain.exceptions import (
-    InsufficientStockError,
-    OverrideReasonRequiredError,
-)
+from src.sales.domain.exceptions import OverrideReasonRequiredError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -30,6 +27,7 @@ from src.shared.domain.exceptions import NotFoundError, ValidationError
 class QuickSaleCommand(Command):
     """Comando para venta rapida (checkout completo en un request)"""
 
+    terminal: TerminalRequest
     items: list[dict]
     payments: list[dict]
     customer_id: int | None = None
@@ -48,24 +46,27 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         sale_repo: SaleRepository,
         sale_item_repo: SaleItemRepository,
         product_repo: ProductRepository,
-        movement_repo: MovementRepository,
-        stock_repo: StockRepository,
+        stock: TerminalStock,
         payment_repo: PaymentRepository,
         shift_repo: ShiftRepository,
+        terminals: TerminalResolver,
+        numbering: DocumentNumbering,
         event_publisher: EventPublisher,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
-        self.movement_repo = movement_repo
-        self.stock_repo = stock_repo
+        self.stock = stock
         self.payment_repo = payment_repo
         self.shift_repo = shift_repo
+        self.terminals = terminals
+        self.numbering = numbering
         self.event_publisher = event_publisher
 
     def _handle(self, command: QuickSaleCommand) -> dict:
-        # 1. Obtener turno activo
-        shift = self.shift_repo.first(status="OPEN")
+        # 1. Obtener el turno abierto de la terminal
+        terminal = self.terminals.terminal(command.terminal)
+        shift = self.shift_repo.first(terminal_id=terminal.id, status="OPEN")
         if shift is None:
             raise NoOpenShiftError()
 
@@ -78,6 +79,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             customer_id=customer_id,
             is_final_consumer=is_final_consumer,
             shift_id=shift.id,
+            branch_id=terminal.branch_id,
+            emission_point_id=terminal.emission_point_id,
+            terminal_id=terminal.id,
             notes=command.notes,
             created_by=command.created_by,
         )
@@ -122,13 +126,16 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         sale.recalculate_totals(created_items)
         self.sale_repo.update(sale)
 
-        # 6. Validar stock (bloquea las filas por product_id, en orden, para que
-        #    dos ventas concurrentes no se pisen ni se bloqueen mutuamente)
-        for item in sorted(created_items, key=lambda i: i.product_id):
-            stock = self.stock_repo.first_for_update(product_id=item.product_id)
-            available = stock.quantity if stock else 0
-            if available < item.quantity:
-                raise InsufficientStockError(item.product_id, item.quantity, available)
+        # 6. Descontar el stock de la ubicación de la terminal (bloquea las filas
+        #    por product_id, en orden, para que dos ventas concurrentes no se
+        #    pisen ni se bloqueen mutuamente)
+        self.stock.take(
+            created_items,
+            location_id=terminal.default_location_id,
+            reason=f"Sale #{sale.id} confirmed",
+            reference_type="sale",
+            reference_id=sale.require_id(),
+        )
 
         # 7. Validar pagos cubren el total
         total_payment = sum(
@@ -140,27 +147,12 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 detail=f"Total: {sale.total}, paid: {total_payment}",
             )
 
-        # 8. Confirmar venta
-        sale.confirm()
+        # 8. Confirmar la venta con su número de la sucursal (después del stock,
+        #    como en todo documento del POS)
+        sale.confirm(self.numbering.next(terminal.branch_id, DocumentType.SALE))
         self.sale_repo.update(sale)
 
-        # 9. Crear movimientos de inventario
-        for item in created_items:
-            movement = Movement(
-                product_id=item.product_id,
-                quantity=-abs(item.quantity),
-                type=MovementType.OUT,
-                reason=f"Sale #{sale.id} confirmed",
-            )
-            self.movement_repo.create(movement)
-
-            stock = self.stock_repo.first_for_update(product_id=item.product_id)
-            if stock is None:
-                raise InsufficientStockError(item.product_id, item.quantity, 0)
-            stock.update_quantity(-abs(item.quantity))
-            self.stock_repo.update(stock)
-
-        # 10. Registrar pagos
+        # 9. Registrar pagos
         created_payments = []
         for payment_data in command.payments:
             try:
@@ -180,11 +172,11 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             payment = self.payment_repo.create(payment)
             created_payments.append(payment)
 
-        # 11. Actualizar estado de pago
+        # 10. Actualizar estado de pago
         sale.update_payment_status(total_payment)
         self.sale_repo.update(sale)
 
-        # 12. Publicar evento
+        # 11. Publicar evento
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
@@ -199,7 +191,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             )
         )
 
-        # 13. Retornar venta completa
+        # 12. Retornar venta completa
         result = sale.dict()
         result["items"] = [
             {**item.dict(), "subtotal": item.subtotal} for item in created_items

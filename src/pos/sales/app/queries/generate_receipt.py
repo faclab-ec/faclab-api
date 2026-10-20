@@ -6,6 +6,7 @@ from wireup import injectable
 
 from src.catalog.product.infra.models import ProductModel
 from src.customers.infra.models import CustomerModel
+from src.organization.infra.models import BranchModel, PosTerminalModel
 from src.pos.shift.infra.models import ShiftModel
 from src.sales.domain.services import discount_factor, tax_breakdown
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
@@ -127,9 +128,10 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
                     "address": cust.address,
                 }
 
-        # Fetch cashier name from shift
-        cashier = None
-        if sale.shift_id:
+        # The cashier is who made the sale (the token's user); sales from
+        # before it was recorded show the shift's cashier
+        cashier = sale.created_by
+        if cashier is None and sale.shift_id:
             shift = (
                 self.session.query(ShiftModel)
                 .filter(ShiftModel.id == sale.shift_id, *tenant_criteria(ShiftModel))
@@ -140,6 +142,9 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
 
         return {
             "sale_id": sale.id,
+            "number": sale.number,
+            "branch": self._branch(sale.branch_id),
+            "terminal": self._terminal(sale.terminal_id),
             "sale_date": sale.sale_date,
             "status": sale.status,
             "cashier": cashier,
@@ -157,3 +162,33 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
             "total_paid": total_paid,
             "change": change,
         }
+
+    def _branch(self, branch_id: int | None) -> dict | None:
+        if branch_id is None:
+            return None
+        branch = (
+            self.session.query(BranchModel)
+            .filter(BranchModel.id == branch_id, *tenant_criteria(BranchModel))
+            .first()
+        )
+        if branch is None:
+            return None
+        return {
+            "establishment_code": branch.establishment_code,
+            "name": branch.name,
+            "address": branch.address,
+        }
+
+    def _terminal(self, terminal_id: int | None) -> dict | None:
+        if terminal_id is None:
+            return None
+        terminal = (
+            self.session.query(PosTerminalModel)
+            .filter(
+                PosTerminalModel.id == terminal_id, *tenant_criteria(PosTerminalModel)
+            )
+            .first()
+        )
+        if terminal is None:
+            return None
+        return {"code": terminal.code, "name": terminal.name}

@@ -240,6 +240,29 @@ class CustomerReceiptResponse(BaseModel):
     address: str | None = None
 
 
+class BranchReceiptResponse(BaseModel):
+    """Branch (SRI establishment) that issued a receipt."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    establishment_code: str = Field(
+        ...,
+        validation_alias=AliasChoices("establishmentCode", "establishment_code"),
+        serialization_alias="establishmentCode",
+    )
+    name: str
+    address: str | None = None
+
+
+class TerminalReceiptResponse(BaseModel):
+    """POS terminal of a receipt."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    code: str
+    name: str
+
+
 class ReceiptResponse(BaseModel):
     """Full receipt for a confirmed sale, including items, tax breakdown, and payments."""
 
@@ -250,13 +273,23 @@ class ReceiptResponse(BaseModel):
         validation_alias=AliasChoices("saleId", "sale_id"),
         serialization_alias="saleId",
     )
+    number: str | None = Field(
+        None,
+        description="Document number, correlative per branch (null in a draft)",
+    )
+    branch: BranchReceiptResponse | None = Field(
+        None, description="Branch of the sale (null for sales before S2.6)"
+    )
+    terminal: TerminalReceiptResponse | None = None
     sale_date: datetime | None = Field(
         None,
         validation_alias=AliasChoices("saleDate", "sale_date"),
         serialization_alias="saleDate",
     )
     status: SaleStatus = Field(description="Current sale status")
-    cashier: str | None = None
+    cashier: str | None = Field(
+        None, description="Authenticated user who made the sale"
+    )
     customer: CustomerReceiptResponse | None = None
     is_final_consumer: bool = Field(
         ...,

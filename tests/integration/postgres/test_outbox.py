@@ -13,9 +13,11 @@ from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.relay import OutboxRelay
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 
@@ -39,7 +41,8 @@ def pos(client, admin, auth_headers) -> tuple[Api, dict]:
     product = make_product(admin_api, salePrice="10.00")
     location = make_location(admin_api, make_warehouse(admin_api)["id"])
     make_movement(admin_api, product["id"], 5, location["id"])
-    cashier = Api(client, auth_headers(Role.CASHIER))
+    terminal = make_terminal(admin_api, location["id"])
+    cashier = Api(client, at_terminal(auth_headers(Role.CASHIER), terminal))
     cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
     return cashier, product
 

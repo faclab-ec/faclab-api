@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -18,6 +19,7 @@ from src.pos.shift.domain.exceptions import (
     ShiftAlreadyOpenError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
 
 _ZERO_SUMMARY = {
     "cash_sales": Decimal("0"),
@@ -56,20 +58,25 @@ def _mock_repo(entity=None):
 
 def test_open_shift_command_handler():
     """Test abrir un turno exitosamente"""
-    shift = _make_shift()
     repo = _mock_repo()
-    repo.create.return_value = shift
+    repo.create.side_effect = lambda shift: replace(shift, id=1)
     event_publisher = MagicMock()
-    handler = OpenShiftCommandHandler(repo, event_publisher)
+    resolver = terminal_resolver()
+    handler = OpenShiftCommandHandler(repo, resolver, event_publisher)
 
     command = OpenShiftCommand(
+        terminal=AT_TERMINAL,
         cashier_name="Juan",
+        user_id=9,
         opening_balance=Decimal("500.00"),
     )
     result = handler.handle(command)
 
-    repo.first.assert_called_once_with(status="OPEN")
-    repo.create.assert_called_once()
+    resolver.terminal.assert_called_once_with(AT_TERMINAL)
+    repo.first.assert_called_once_with(terminal_id=TERMINAL.id, status="OPEN")
+    created = repo.create.call_args.args[0]
+    assert (created.terminal_id, created.branch_id) == (TERMINAL.id, 1)
+    assert created.opened_by_user_id == 9
     assert result["cashier_name"] == "Juan"
     assert result["status"] == "OPEN"
 
@@ -78,30 +85,34 @@ def test_open_shift_publishes_event():
     """Test que abrir un turno publica evento"""
     from src.pos.shift.domain.events import ShiftOpened
 
-    shift = _make_shift()
+    shift = _make_shift(terminal_id=TERMINAL.id)
     repo = _mock_repo()
     repo.create.return_value = shift
     event_publisher = MagicMock()
-    handler = OpenShiftCommandHandler(repo, event_publisher)
+    handler = OpenShiftCommandHandler(repo, terminal_resolver(), event_publisher)
 
     handler.handle(
-        OpenShiftCommand(cashier_name="Juan", opening_balance=Decimal("500.00"))
+        OpenShiftCommand(
+            terminal=AT_TERMINAL, cashier_name="Juan", opening_balance=Decimal("500.00")
+        )
     )
 
     event_publisher.publish.assert_called_once()
     published_event = event_publisher.publish.call_args[0][0]
     assert isinstance(published_event, ShiftOpened)
     assert published_event.shift_id == 1
+    assert published_event.terminal_id == TERMINAL.id
     assert published_event.cashier_name == "Juan"
 
 
 def test_open_shift_fails_if_already_open():
-    """Test que falla si ya hay un turno abierto"""
+    """Test que falla si la terminal ya tiene un turno abierto"""
     existing_shift = _make_shift()
     repo = _mock_repo(entity=existing_shift)
-    handler = OpenShiftCommandHandler(repo, MagicMock())
+    handler = OpenShiftCommandHandler(repo, terminal_resolver(), MagicMock())
 
     command = OpenShiftCommand(
+        terminal=AT_TERMINAL,
         cashier_name="Maria",
         opening_balance=Decimal("300.00"),
     )
@@ -126,6 +137,7 @@ def test_close_shift_command_handler(mock_summary):
     command = CloseShiftCommand(
         shift_id=1,
         closing_balance=Decimal("600.00"),
+        closed_by="Maria",
     )
     result = handler.handle(command)
 
@@ -133,6 +145,7 @@ def test_close_shift_command_handler(mock_summary):
     repo.update.assert_called_once()
     assert result["status"] == "CLOSED"
     assert result["closing_balance"] == Decimal("600.00")
+    assert result["closed_by"] == "Maria"
 
 
 @patch("src.pos.shift.app.commands.close_shift.compute_cash_summary")

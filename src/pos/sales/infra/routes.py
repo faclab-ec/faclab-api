@@ -54,6 +54,9 @@ from src.pos.sales.infra.validators import (
     QuickSaleRequest,
     ReceiptResponse,
 )
+from src.pos.terminal.app.guard import PosBranchGuard
+from src.pos.terminal.app.resolver import TerminalRequest
+from src.pos.terminal.infra.dependencies import pos_branch, pos_terminal
 from src.sales.app.commands.add_sale_item import (
     AddSaleItemCommand,
     AddSaleItemCommandHandler,
@@ -236,17 +239,20 @@ class POSSaleRouter:
         self,
         handler: Injected[POSCreateSaleCommandHandler],
         sale: POSSaleRequest,
+        terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
-        """Create a new POS sale in DRAFT status.
+        """Create a new POS sale in DRAFT status, in the open shift of the terminal.
 
         The sale must have items added and payments registered before it can be confirmed.
         Optionally associate a customer or mark it as a final-consumer sale.
         """
         result = handler.handle(
             POSCreateSaleCommand(
-                **sale.model_dump(exclude_none=True), created_by=user.display_name
+                terminal=terminal,
+                **sale.model_dump(exclude_none=True),
+                created_by=user.display_name,
             )
         )
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
@@ -255,18 +261,21 @@ class POSSaleRouter:
         self,
         handler: Injected[QuickSaleCommandHandler],
         sale: QuickSaleRequest,
+        terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleDetailResponse]:
         """Complete a sale in a single request — creates the sale, adds items, registers payments, and confirms.
 
         This is the fastest checkout flow: supply line items and payments, and the sale
-        is created and confirmed atomically. Inventory movements are generated immediately.
+        is created and confirmed atomically in the open shift of the terminal. Stock
+        leaves the terminal's location and the sale gets its number of the branch.
         An optional sale-level discount (`discountType`/`discountValue`) follows the same
         rules as `POST /sales/{sale_id}/discount`; VAT is computed after the discount.
         """
         result = handler.handle(
             QuickSaleCommand(
+                terminal=terminal,
                 items=[item.model_dump() for item in sale.items],
                 payments=[p.model_dump() for p in sale.payments],
                 customer_id=sale.customer_id,
@@ -281,21 +290,27 @@ class POSSaleRouter:
     def get_sale(
         self,
         handler: Injected[GetSaleByIdQueryHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Retrieve a sale by its ID, including current status and totals."""
+        guard.sale(sale_id, branch)
         result = handler.handle(GetSaleByIdQuery(sale_id=sale_id))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
 
     def add_sale_item(
         self,
         handler: Injected[AddSaleItemCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         item: SaleItemRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleItemResponse]:
         """Add a line item to a DRAFT sale. The sale totals are recalculated automatically."""
+        guard.sale(sale_id, branch)
         result = handler.handle(
             AddSaleItemCommand(sale_id=sale_id, **item.model_dump(exclude_none=True))
         )
@@ -304,10 +319,13 @@ class POSSaleRouter:
     def get_sale_items(
         self,
         handler: Injected[GetSaleItemsQueryHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> ListResponse[SaleItemResponse]:
         """List all line items for a sale."""
+        guard.sale(sale_id, branch)
         result = handler.handle(GetSaleItemsQuery(sale_id=sale_id))
         return ListResponse(
             data=[SaleItemResponse.model_validate(r) for r in result], meta=meta
@@ -316,12 +334,15 @@ class POSSaleRouter:
     def update_sale_item(
         self,
         handler: Injected[UpdateSaleItemCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         item_id: int,
         item: SaleItemUpdateRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleItemResponse]:
         """Update quantity or discount of a line item in a DRAFT sale."""
+        guard.sale(sale_id, branch)
         result = handler.handle(
             UpdateSaleItemCommand(
                 sale_id=sale_id,
@@ -334,10 +355,13 @@ class POSSaleRouter:
     def remove_sale_item(
         self,
         handler: Injected[RemoveSaleItemCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         item_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
     ) -> dict:
         """Remove a line item from a DRAFT sale."""
+        guard.sale(sale_id, branch)
         return handler.handle(
             RemoveSaleItemCommand(sale_id=sale_id, sale_item_id=item_id)
         )
@@ -345,7 +369,9 @@ class POSSaleRouter:
     def confirm_sale(
         self,
         handler: Injected[POSConfirmSaleCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Confirm a sale and trigger inventory movements.
@@ -353,17 +379,21 @@ class POSSaleRouter:
         The sale must have at least one item and payments covering the total amount.
         Once confirmed, inventory OUT movements are created for each line item.
         """
+        guard.sale(sale_id, branch)
         result = handler.handle(POSConfirmSaleCommand(sale_id=sale_id))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
 
     def cancel_sale(
         self,
         handler: Injected[POSCancelSaleCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         cancel_input: CancelSaleRequest | None = None,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Cancel a sale. If the sale was confirmed, inventory movements are reversed."""
+        guard.sale(sale_id, branch)
         reason = cancel_input.reason if cancel_input else None
         result = handler.handle(POSCancelSaleCommand(sale_id=sale_id, reason=reason))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
@@ -371,14 +401,17 @@ class POSSaleRouter:
     def apply_discount(
         self,
         handler: Injected[ApplySaleDiscountCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         discount_input: ApplyDiscountRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Apply a percentage or fixed-amount discount to a DRAFT sale.
 
         The discount is applied to the sale subtotal before tax calculation.
         """
+        guard.sale(sale_id, branch)
         result = handler.handle(
             ApplySaleDiscountCommand(sale_id=sale_id, **discount_input.model_dump())
         )
@@ -387,11 +420,14 @@ class POSSaleRouter:
     def register_payment(
         self,
         handler: Injected[RegisterPaymentCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         payment: PaymentRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[PaymentResponse]:
         """Register a payment against a sale. Multiple payments with different methods are supported."""
+        guard.sale(sale_id, branch)
         result = handler.handle(
             RegisterPaymentCommand(
                 sale_id=sale_id, **payment.model_dump(exclude_none=True)
@@ -402,10 +438,13 @@ class POSSaleRouter:
     def get_sale_payments(
         self,
         handler: Injected[GetSalePaymentsQueryHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> ListResponse[PaymentResponse]:
         """List all payments registered for a sale."""
+        guard.sale(sale_id, branch)
         result = handler.handle(GetSalePaymentsQuery(sale_id=sale_id))
         return ListResponse(
             data=[PaymentResponse.model_validate(r) for r in result], meta=meta
@@ -414,11 +453,14 @@ class POSSaleRouter:
     def park_sale(
         self,
         handler: Injected[POSParkSaleCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         park_input: ParkSaleRequest | None = None,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Park (hold) a DRAFT sale for later. Parked sales appear in the parked-sales list."""
+        guard.sale(sale_id, branch)
         reason = park_input.reason if park_input else None
         result = handler.handle(ParkSaleCommand(sale_id=sale_id, reason=reason))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
@@ -426,20 +468,24 @@ class POSSaleRouter:
     def resume_sale(
         self,
         handler: Injected[POSResumeSaleCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleResponse]:
         """Resume a previously parked sale, returning it to DRAFT status."""
+        guard.sale(sale_id, branch)
         result = handler.handle(ResumeSaleCommand(sale_id=sale_id))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
 
     def get_parked_sales(
         self,
         handler: Injected[GetParkedSalesQueryHandler],
+        terminal: TerminalRequest = Depends(pos_terminal),
         meta: Meta = Depends(get_meta),
     ) -> ListResponse[SaleResponse]:
-        """List all currently parked sales awaiting resumption."""
-        result = handler.handle(GetParkedSalesQuery())
+        """List the terminal's parked sales awaiting resumption."""
+        result = handler.handle(GetParkedSalesQuery(terminal=terminal))
         return ListResponse(
             data=[SaleResponse.model_validate(r) for r in result], meta=meta
         )
@@ -447,12 +493,15 @@ class POSSaleRouter:
     def override_item_price(
         self,
         handler: Injected[OverrideItemPriceCommandHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
         item_id: int,
         body: OverridePriceRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[SaleItemResponse]:
         """Override the unit price of a sale item. A reason is required for audit purposes."""
+        guard.sale(sale_id, branch)
         result = handler.handle(
             OverrideItemPriceCommand(
                 sale_id=sale_id,
@@ -466,9 +515,12 @@ class POSSaleRouter:
     def generate_receipt(
         self,
         handler: Injected[GenerateReceiptQueryHandler],
+        guard: Injected[PosBranchGuard],
         sale_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ReceiptResponse]:
         """Generate a printable receipt for a confirmed sale, including items, tax breakdown, and payments."""
+        guard.sale(sale_id, branch)
         result = handler.handle(GenerateReceiptQuery(sale_id=sale_id))
         return DataResponse(data=ReceiptResponse.model_validate(result), meta=meta)

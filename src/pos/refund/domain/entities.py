@@ -22,6 +22,11 @@ class RefundStatus(StrEnum):
 class Refund(Entity):
     original_sale_id: int
     shift_id: int | None = None
+    # The terminal where it is made, of the sale's branch; null before S2.6
+    branch_id: int | None = None
+    terminal_id: int | None = None
+    # Correlative per branch (`D-001-000045`), given when it is completed
+    number: str | None = None
     refund_date: datetime | None = None
     subtotal: Decimal = Decimal("0")
     tax: Decimal = Decimal("0")
@@ -32,15 +37,19 @@ class Refund(Entity):
     id: int | None = None
     created_at: datetime | None = None
 
-    def complete(self) -> None:
+    def ensure_pending(self, operation: str) -> None:
         if self.status != RefundStatus.PENDING:
-            raise InvalidRefundStatusError(self.status, "complete")
+            raise InvalidRefundStatusError(self.status, operation)
+
+    def complete(self, number: str | None = None) -> None:
+        self.ensure_pending("complete")
         self.status = RefundStatus.COMPLETED
         self.refund_date = datetime.now()
+        if number is not None:
+            self.number = number
 
     def cancel(self) -> None:
-        if self.status != RefundStatus.PENDING:
-            raise InvalidRefundStatusError(self.status, "cancel")
+        self.ensure_pending("cancel")
         self.status = RefundStatus.CANCELLED
 
     def recalculate_totals(

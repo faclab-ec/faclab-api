@@ -96,12 +96,43 @@
   corre en ella (`TenantContext.branch_id`, logs y span con `faclab.branch.id`). Toda ruta autenticada
   rechaza uno ajeno (403 `BRANCH_ACCESS_DENIED`) o mal formado (422 `INVALID_BRANCH_HEADER`). La
   dependencia `require_branch` lo exige (`BRANCH_REQUIRED`) en las rutas de sucursal: por ahora solo
-  `GET /api/pos/terminals`; turnos, ventas y caja lo exigen en S2.6. Que la sucursal exista y esté
+  `GET /api/pos/terminals`; turnos, ventas y caja lo exigen desde S2.6. Que la sucursal exista y esté
   activa lo revisa cada operación que la usa. `/api/auth/me` devuelve las sucursales activas a las que
   el usuario puede entrar.
 - La CLI de alta crea, en un segundo scope dentro de la empresa, la matriz 001, el punto de emisión
   001, la bodega `BOD-001`, la ubicación `GENERAL` y la terminal `CAJA-01` (idempotente: no toca una
   empresa que ya tiene sucursales). `make seed` siembra tres sucursales por empresa.
+
+**Implementado (S2.6, 2026-10-19):**
+
+- El POS opera en una terminal. Abrir turno, el turno activo, crear venta, venta rápida, ventas
+  aparcadas y crear devolución llevan `X-Branch-Id` y `X-Terminal-Id` (dependencia `pos_terminal`,
+  `src/pos/terminal/`). La terminal debe ser de esa sucursal (`POS_TERMINAL_OUTSIDE_BRANCH`) y estar
+  activa (`POS_TERMINAL_INACTIVE`), como su sucursal (`BRANCH_INACTIVE`). Sin el encabezado responde
+  `TERMINAL_REQUIRED` (400), y mal formado, `INVALID_TERMINAL_HEADER` (422). Se eligió el encabezado,
+  no una asociación del usuario a la terminal: no guarda estado y un supervisor puede atender en otra
+  caja.
+- Las operaciones sobre una venta, un turno o una devolución existentes (ítems, pagos, confirmar,
+  cancelar, recibo, cerrar turno, caja, procesar o cancelar devolución) llevan `X-Branch-Id`
+  (`pos_branch`). `PosBranchGuard` responde `NOT_FOUND` si el recurso es de otra sucursal, igual que
+  para uno inexistente. Las filas anteriores a S2.6 no tienen sucursal y pasan.
+- Los historiales y reportes del POS (turnos, devoluciones, X, Z, diario y por medio de pago) aceptan
+  `branchId` y `terminalId` y se limitan a las sucursales del usuario (`bids`): un `branchId` ajeno
+  responde `BRANCH_ACCESS_DENIED` y un turno o una devolución de otra sucursal, `NOT_FOUND`.
+- Respaldo local hasta S2.9: con `POS_TERMINAL_FALLBACK` (verdadero solo en `local`; staging y
+  producción se niegan a arrancar con él) y sin encabezados, la solicitud usa la sucursal del
+  encabezado o la matriz, y su primera terminal activa por código, siempre que el usuario pueda entrar
+  a esa sucursal.
+- `pos_shifts` gana `terminal_id`, `branch_id`, `opened_by_user_id` y `closed_by`; `sales`,
+  `branch_id`, `emission_point_id`, `terminal_id` y `number`; `pos_refunds`, `branch_id`,
+  `terminal_id` y `number` (migración `654849d8d497`). Son nulos solo en las filas anteriores y en las
+  ventas del seed.
+- Ventas, cancelaciones y devoluciones del POS mueven el stock de la ubicación por defecto de la
+  terminal (`TerminalStock`), con movimientos que llevan `location_id` y `reference_type`/`reference_id`
+  (`sale`, `refund`). Una cancelación devuelve donde salió la venta, aunque la terminal ya venda desde
+  otra ubicación.
+- Numeración por sucursal en `document_sequences` (ADR-0012): `V-001-000123` para ventas (al
+  confirmar) y `D-001-000045` para devoluciones (al procesar).
 
 Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
 S8.5.
@@ -264,19 +295,25 @@ sequenceDiagram
 - Restricciones únicas compuestas: `(tenant_id, sku)`, `(tenant_id, barcode)`, `(tenant_id, tax_id)`
   en clientes y proveedores, `(tenant_id, code)` en bodegas, `(tenant_id, establishment_code)` en
   sucursales, `(tenant_id, branch_id, code)` en puntos de emisión, `(tenant_id, serial_number)`.
-  Hechas en S2.3; las de sucursales, puntos de emisión y terminales, en S2.5.
+  Hechas en S2.3; las de sucursales, puntos de emisión y terminales, en S2.5; los números de venta y
+  devolución `(tenant_id, branch_id, number)` y los contadores `(tenant_id, branch_id, doc_type)`, en
+  S2.6.
 - Claves foráneas compuestas `(tenant_id, x_id)` en relaciones críticas (venta → cliente, ítem →
   producto, stock → ubicación, terminal → ubicación), con `UNIQUE (tenant_id, id)` en la tabla
   referida. Así la base impide mezclar empresas aunque falle la aplicación. Hechas en S2.3 (lista en el
   bloque de arriba) y, desde S2.4, en toda relación que una ruta puede llenar; las de bodega,
-  punto de emisión y terminal, en S2.5.
-- Índice único parcial: un turno `OPEN` por terminal.
+  punto de emisión y terminal, en S2.5; las de turno, venta y devolución hacia sucursal, punto de
+  emisión y terminal, y la del contador hacia la sucursal, en S2.6 (42 en total).
+- Índice único parcial: un turno `OPEN` por terminal (`uq_pos_shifts_tenant_terminal_open`, S2.6). Dos
+  aperturas concurrentes en la misma terminal: la segunda espera a la primera y recibe
+  `SHIFT_ALREADY_OPEN`.
 - Índices que empiezan por `tenant_id` en todas las consultas de listado.
 
 ## 6. Row-Level Security
 
-Implementado en S2.4 (migración `798891c3feea`) en cada una de las 31 tablas de negocio, y en S2.5
-(`c7f9919e67c0`) en `branches`, `emission_points` y `pos_terminals`:
+Implementado en S2.4 (migración `798891c3feea`) en cada una de las 31 tablas de negocio, en S2.5
+(`c7f9919e67c0`) en `branches`, `emission_points` y `pos_terminals`, y en S2.6 (`654849d8d497`) en
+`document_sequences`:
 
 ```sql
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
@@ -354,9 +391,13 @@ CI, obligatorio para `master`:
 - Sucursales (S2.5): las rutas de sucursales, puntos de emisión, terminales y accesos están en la
   suite, que ahora también cambia encabezados (`X-Branch-Id` de `/api/pos/terminals`). Un usuario
   limitado a la sucursal 001 recibe 403 con `X-Branch-Id` de la 002 (`test_organization.py`).
+- POS por terminal (S2.6): las rutas del POS están en la suite con sus encabezados, y una terminal o
+  sucursal de la otra empresa responde como una inexistente. Un cajero limitado a la sucursal 001 no
+  abre turno con la 002 (403), no usa una terminal de la 002 con la 001
+  (`POS_TERMINAL_OUTSIDE_BRANCH`) y no ve ni confirma por id una venta de la 002 (404); su historial de
+  turnos solo muestra los de su sucursal (`test_pos.py`).
 - Pendiente: mensajes Kafka (un `sales.confirmed` de A nunca usa el perfil fiscal ni el secuencial de
-  B) en S2.8; turnos y ventas por terminal (un cajero de la sucursal 1 no abre turno ni vende en la 2)
-  en S2.6.
+  B) en S2.8.
 
 ## 9. Incorporación de empresas y migración de datos
 

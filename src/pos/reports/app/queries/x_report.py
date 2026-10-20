@@ -7,6 +7,7 @@ from wireup import injectable
 
 from src.catalog.product.infra.models import ProductModel
 from src.pos.shift.infra.models import ShiftModel
+from src.pos.terminal.app.scope import in_scope
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
@@ -14,14 +15,17 @@ from src.shared.domain.exceptions import NotFoundError
 from src.shared.infra.tenant import tenant_criteria
 
 
-def get_shift(session: Session, shift_id: int) -> ShiftModel:
-    """The context tenant's shift; another tenant's id is not found"""
+def get_shift(
+    session: Session, shift_id: int, branch_ids: frozenset[int] | None = None
+) -> ShiftModel:
+    """The context tenant's shift; another tenant's id, or a shift of a branch
+    the user can't enter (`branch_ids`), is not found"""
     shift = (
         session.query(ShiftModel)
         .filter(ShiftModel.id == shift_id, *tenant_criteria(ShiftModel))
         .first()
     )
-    if shift is None:
+    if shift is None or not in_scope(shift.branch_id, branch_ids):
         raise NotFoundError(f"Shift with id {shift_id} not found")
     return shift
 
@@ -29,6 +33,8 @@ def get_shift(session: Session, shift_id: int) -> ShiftModel:
 @dataclass
 class GetXReportQuery(Query):
     shift_id: int
+    # The user's branches (None: all)
+    branch_ids: frozenset[int] | None = None
 
 
 @injectable(lifetime="scoped")
@@ -37,7 +43,7 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
         self.session = session
 
     def _handle(self, query: GetXReportQuery) -> dict:
-        shift = get_shift(self.session, query.shift_id)
+        shift = get_shift(self.session, query.shift_id, query.branch_ids)
 
         # Sales summary
         sales_agg = (
@@ -98,6 +104,8 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
         return {
             "shift": {
                 "id": shift.id,
+                "terminal_id": shift.terminal_id,
+                "branch_id": shift.branch_id,
                 "cashier_name": shift.cashier_name,
                 "opened_at": shift.opened_at.isoformat() if shift.opened_at else None,
                 "status": shift.status,

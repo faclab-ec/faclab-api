@@ -53,8 +53,11 @@ Lectura con `organization:read`; crear, editar y borrar con `organization:write`
 
 La sucursal de la operacion. Toda ruta autenticada que lo recibe lo valida: 422
 `INVALID_BRANCH_HEADER` si no es un id, 403 `BRANCH_ACCESS_DENIED` si el usuario esta limitado a
-otras sucursales (claim `bids`). Las rutas de sucursal lo exigen (`BRANCH_REQUIRED`, 400): hoy
-`GET /api/pos/terminals`; turnos, ventas y caja desde S2.6.
+otras sucursales (claim `bids`). Las rutas de sucursal lo exigen (`BRANCH_REQUIRED`, 400):
+`GET /api/pos/terminals` y, desde S2.6, las operaciones del POS. Las que empiezan en una terminal
+(abrir turno, turno activo, crear venta, venta rápida, aparcadas, crear devolución) piden además
+`X-Terminal-Id` (`TERMINAL_REQUIRED`, 400; `INVALID_TERMINAL_HEADER`, 422), y una venta, un turno o
+una devolución de otra sucursal responde 404. Detalle en `pos-api-spec.md` §0.
 
 ### Categorias — `/api/admin/categories`
 

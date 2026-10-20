@@ -6,6 +6,34 @@ Todos los endpoints usan JSON. Las respuestas siguen el formato `DataResponse`, 
 
 ---
 
+## 0. SUCURSAL Y TERMINAL (S2.6)
+
+El POS opera en una terminal (`GET /terminals` lista las de la sucursal). Cada solicitud de operación
+indica dónde corre con encabezados:
+
+| Encabezado | Rutas | Si falta |
+|------------|-------|----------|
+| `X-Branch-Id` + `X-Terminal-Id` | Abrir turno, turno activo, crear venta, venta rápida, ventas aparcadas, crear devolución | `TERMINAL_REQUIRED` (400) o `BRANCH_REQUIRED` (400) |
+| `X-Branch-Id` | Operaciones sobre una venta, un turno o una devolución existentes: ítems, pagos, descuento, precio, aparcar, reanudar, confirmar, cancelar, recibo, cerrar turno, movimientos y resumen de caja, procesar y cancelar devolución | `BRANCH_REQUIRED` (400) |
+
+- La sucursal debe ser una a la que el usuario puede entrar (`BRANCH_ACCESS_DENIED`, 403).
+- La terminal debe ser de esa sucursal (`POS_TERMINAL_OUTSIDE_BRANCH`, 400) y estar activa
+  (`POS_TERMINAL_INACTIVE`, 409), igual que la sucursal (`BRANCH_INACTIVE`, 409). Un id mal formado
+  responde `INVALID_TERMINAL_HEADER` (422).
+- Una venta, un turno o una devolución de otra sucursal responde `NOT_FOUND` (404), igual que uno que
+  no existe. Los anteriores a S2.6 no tienen sucursal y se pueden operar desde cualquiera.
+- El historial y los reportes (`report:pos:read`) no piden encabezado: muestran las sucursales a las
+  que el usuario puede entrar y aceptan los filtros `branchId` y `terminalId`. Un `branchId` ajeno
+  responde `BRANCH_ACCESS_DENIED`.
+- **Solo en desarrollo, hasta S2.9:** con `POS_TERMINAL_FALLBACK` (verdadero en `local`), una solicitud
+  sin encabezados usa la sucursal de `X-Branch-Id` o la matriz, y su primera terminal activa por código.
+  Staging y producción no arrancan con ese ajuste.
+
+La terminal decide la ubicación del stock (su ubicación por defecto), el punto de emisión de la venta y
+la caja (el turno abierto de la terminal).
+
+---
+
 ## 1. TURNOS (Shifts)
 
 ### Entidad: Shift
@@ -14,6 +42,9 @@ Todos los endpoints usan JSON. Las respuestas siguen el formato `DataResponse`, 
 |-------|------|-------------|
 | id | int | ID auto-generado |
 | cashierName | string | Cajero: el usuario autenticado que abre el turno (nombre completo o username). No se envía en el cuerpo |
+| terminalId | int? | Terminal del turno (null solo en turnos anteriores a S2.6) |
+| branchId | int? | Sucursal de la terminal |
+| openedByUserId | int? | Usuario que abrió el turno |
 | openedAt | datetime | Fecha/hora de apertura |
 | closedAt | datetime? | Fecha/hora de cierre |
 | openingBalance | decimal | Saldo inicial (≥0) |
@@ -22,14 +53,18 @@ Todos los endpoints usan JSON. Las respuestas siguen el formato `DataResponse`, 
 | discrepancy | decimal? | closingBalance - expectedBalance |
 | status | enum | `OPEN` \| `CLOSED` |
 | notes | string? | Notas opcionales |
+| closedBy | string? | Usuario autenticado que cerró el turno (no se envía en el cuerpo) |
 
 ### Regla clave
 
-Solo puede existir **un turno OPEN** a la vez. Todas las operaciones POS (ventas, devoluciones, movimientos de caja) requieren un turno activo.
+Cada terminal tiene como máximo **un turno OPEN** (lo garantiza un índice único parcial de la base:
+una segunda apertura, incluso concurrente, responde `SHIFT_ALREADY_OPEN`). Dos terminales de la misma
+sucursal pueden tener turnos abiertos a la vez. Las ventas y devoluciones van al turno abierto de su
+terminal.
 
 ### Endpoints
 
-**POST `/shifts/open`** — Abrir turno
+**POST `/shifts/open`** — Abrir turno en la terminal de `X-Terminal-Id`
 
 ```json
 // Request
@@ -51,13 +86,13 @@ Solo puede existir **un turno OPEN** a la vez. Todas las operaciones POS (ventas
 
 Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn - cashOut`
 
-**GET `/shifts/active`** — Turno activo (retorna `null` en `data` si no hay)
+**GET `/shifts/active`** — Turno abierto de la terminal (retorna `null` en `data` si no hay)
 
 **GET `/shifts/{shiftId}`** — Turno por ID
 
-**GET `/shifts?status=OPEN&limit=20&offset=0`** — Listar turnos (paginado, del más reciente al más antiguo)
+**GET `/shifts?status=OPEN&branchId=1&terminalId=3&limit=20&offset=0`** — Listar turnos (paginado, del más reciente al más antiguo)
 
-`GET /shifts` y `GET /shifts/{shiftId}` piden `report:pos:read` (no `pos:operate`): el historial de turnos también se consulta desde la administración.
+`GET /shifts` y `GET /shifts/{shiftId}` piden `report:pos:read` (no `pos:operate`): el historial de turnos también se consulta desde la administración. Solo muestran turnos de las sucursales a las que el usuario puede entrar.
 
 ```json
 { "data": { "items": [...], "total": 50, "limit": 20, "offset": 0 } }
@@ -75,6 +110,10 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | customerId | int? | Cliente (null si consumidor final) |
 | isFinalConsumer | bool | Sin factura (true = sin cliente) |
 | shiftId | int | Turno asociado |
+| branchId | int? | Sucursal (de la terminal) |
+| emissionPointId | int? | Punto de emisión de la terminal al crear la venta |
+| terminalId | int? | Terminal |
+| number | string? | Número correlativo por sucursal (`V-001-000123`), asignado al confirmar; null en borrador |
 | status | enum | `DRAFT` → `CONFIRMED` → `INVOICED` / `CANCELLED` |
 | saleDate | datetime? | Fecha de confirmación |
 | subtotal | decimal | Suma de subtotales de items |
@@ -143,7 +182,8 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
 { "customerId": 5, "isFinalConsumer": false, "notes": "..." }
 // Si isFinalConsumer=true, customerId se ignora
 
-// Response 201 — Sale en DRAFT vinculada al turno activo
+// Response 201 — Sale en DRAFT vinculada al turno abierto de la terminal, con su sucursal,
+// punto de emisión y terminal
 ```
 
 **POST `/sales/quick`** — Venta rápida (atómica)
@@ -169,15 +209,15 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
 
 Validaciones:
 
-- Turno activo requerido
+- Turno abierto en la terminal requerido
 - Productos deben existir
-- Stock suficiente para cada item
+- Stock suficiente para cada item en la ubicación de la terminal (lo de otras ubicaciones no cuenta)
 - Descuento global válido (PERCENTAGE: 0-100; AMOUNT: ≥0)
 - Total de pagos ≥ total de venta, comparados al centavo
 - `customerId=null` → `isFinalConsumer=true` automáticamente
 - Un `unitPrice` distinto del precio del producto es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
 
-Response 201 — Sale CONFIRMED con items y pagos incluidos.
+Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
 **GET `/sales/{saleId}`** — Obtener venta
 
@@ -207,19 +247,21 @@ Validaciones:
 
 - Venta debe tener items
 - Turno asociado debe estar OPEN
-- Stock suficiente para cada item
+- Stock suficiente para cada item en la ubicación de la terminal
 
 Efectos:
 
-- Status → CONFIRMED
-- Crea Movement(OUT) por cada item → Stock decrementado
+- Status → CONFIRMED, con el siguiente número de la sucursal (`number`)
+- Crea Movement(OUT) por cada item en la ubicación de la terminal (`referenceType: "sale"`) → Stock decrementado
+- Si algo falla no se consume número: el contador está en la misma transacción
 
 **POST `/sales/{saleId}/cancel`** — Cancelar venta
 
 ```json
 // Request (body opcional)
 { "reason": "Cliente desistió" }
-// Si la venta estaba CONFIRMED: restaura inventario (Movement IN)
+// Si la venta estaba CONFIRMED: restaura inventario (Movement IN) en la ubicación de donde salió,
+// aunque la terminal venda ahora desde otra. Conserva su número
 ```
 
 **POST `/sales/{saleId}/park`** — Estacionar venta (pausar)
@@ -232,7 +274,7 @@ Efectos:
 
 **POST `/sales/{saleId}/resume`** — Reanudar venta estacionada
 
-**GET `/sales/parked`** — Listar ventas estacionadas
+**GET `/sales/parked`** — Listar las ventas estacionadas de la terminal
 
 **POST `/sales/{saleId}/discount`** — Aplicar descuento a nivel de venta
 
@@ -266,6 +308,9 @@ Efectos:
 {
   "data": {
     "saleId": 1,
+    "number": "V-001-000123",
+    "branch": { "establishmentCode": "001", "name": "Matriz", "address": "Av. Amazonas" },
+    "terminal": { "code": "CAJA-01", "name": "Caja 1" },
     "saleDate": "2026-03-14T10:30:00",
     "status": "CONFIRMED",
     "cashier": "Juan",
@@ -303,6 +348,9 @@ Efectos:
 }
 ```
 
+`cashier` es el usuario autenticado que hizo la venta (`createdBy`); en ventas anteriores, el cajero del
+turno.
+
 ---
 
 ## 3. DEVOLUCIONES (Refunds)
@@ -314,6 +362,9 @@ Efectos:
 | id | int | ID |
 | originalSaleId | int | Venta original |
 | shiftId | int | Turno donde se procesa |
+| branchId | int? | Sucursal (la de la venta) |
+| terminalId | int? | Terminal donde se creó |
+| number | string? | Número correlativo por sucursal (`D-001-000045`), asignado al procesar |
 | refundDate | datetime? | Fecha de completado |
 | subtotal | decimal | Base devuelta, neta del descuento global de la venta |
 | tax | decimal | IVA devuelto |
@@ -354,7 +405,7 @@ La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA
 ```
 1. Crear devolución → POST /refunds  (seleccionar items y cantidades)
 2. Procesar (pagar al cliente) → POST /refunds/{id}/process  (registrar pagos)
-   → Inventario restaurado automáticamente (Movement IN)
+   → Inventario restaurado en la ubicación de la terminal (Movement IN) y número asignado
 ```
 
 ### Endpoints
@@ -376,7 +427,8 @@ La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA
 Validaciones:
 
 - Venta original debe estar CONFIRMED
-- Turno activo requerido
+- La terminal debe ser de la sucursal de la venta (`REFUND_OUTSIDE_BRANCH`)
+- Turno abierto en la terminal requerido
 - Cada item debe pertenecer a la venta
 - Cantidad no puede exceder la disponible (original - ya devuelto)
 
@@ -397,17 +449,17 @@ Validaciones: total pagos ≥ total devolución.
 
 Efectos:
 
-- Status → COMPLETED
-- Crea Movement(IN) por cada item → Stock incrementado
+- Status → COMPLETED, con el siguiente número de devolución de la sucursal
+- Crea Movement(IN) por cada item en la ubicación de la terminal de la devolución (`referenceType: "refund"`) → Stock incrementado
 - Registra pagos de devolución
 
 **POST `/refunds/{refundId}/cancel`** — Cancelar devolución (solo PENDING)
 
 **GET `/refunds/{refundId}`** — Obtener devolución con items y pagos
 
-**GET `/refunds?saleId=1&status=COMPLETED&limit=20&offset=0`** — Listar (paginado, de la más reciente a la más antigua)
+**GET `/refunds?saleId=1&status=COMPLETED&branchId=1&terminalId=3&limit=20&offset=0`** — Listar (paginado, de la más reciente a la más antigua)
 
-`GET /refunds` y `GET /refunds/{refundId}` piden `report:pos:read`, como el historial de turnos.
+`GET /refunds` y `GET /refunds/{refundId}` piden `report:pos:read`, como el historial de turnos, y solo muestran devoluciones de las sucursales a las que el usuario puede entrar.
 
 ---
 
@@ -462,12 +514,15 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 
 ## 5. REPORTES
 
+X y Z son de un turno (de una sucursal a la que el usuario puede entrar; si no, `NOT_FOUND`). El diario
+y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y `terminalId`.
+
 **GET `/reports/x-report?shiftId=1`** — Reporte X (turno en curso)
 
 ```json
 {
   "data": {
-    "shift": { "id": 1, "cashierName": "Juan", "openedAt": "...", "status": "OPEN" },
+    "shift": { "id": 1, "terminalId": 3, "branchId": 1, "cashierName": "Juan", "openedAt": "...", "status": "OPEN" },
     "salesSummary": { "count": 15, "subtotal": 1200, "tax": 180, "discount": 50, "total": 1330 },
     "paymentsByMethod": [
       { "paymentMethod": "CASH", "count": 10, "total": 800 },
@@ -499,7 +554,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 }
 ```
 
-**GET `/reports/daily?date=2026-03-14`** — Resumen diario
+**GET `/reports/daily?date=2026-03-14&branchId=1&terminalId=3`** — Resumen diario
 
 ```json
 {
@@ -518,7 +573,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 }
 ```
 
-**GET `/reports/by-payment-method?fromDate=2026-03-01&toDate=2026-03-14`** — Por método de pago
+**GET `/reports/by-payment-method?fromDate=2026-03-01&toDate=2026-03-14&branchId=1`** — Por método de pago
 
 ```json
 { "data": [{ "paymentMethod": "CASH", "salesCount": 100, "totalAmount": 5000 }] }
@@ -557,7 +612,15 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 
 | Código | HTTP | Descripción |
 |--------|------|-------------|
-| `SHIFT_ALREADY_OPEN` | 400 | Ya existe un turno abierto |
+| `TERMINAL_REQUIRED` | 400 | Falta `X-Terminal-Id` (o, con el respaldo local, la sucursal no tiene terminal activa) |
+| `BRANCH_REQUIRED` | 400 | Falta `X-Branch-Id` |
+| `INVALID_TERMINAL_HEADER` | 422 | `X-Terminal-Id` no es un id |
+| `BRANCH_ACCESS_DENIED` | 403 | El usuario no puede entrar a esa sucursal |
+| `POS_TERMINAL_OUTSIDE_BRANCH` | 400 | La terminal es de otra sucursal |
+| `POS_TERMINAL_INACTIVE` | 409 | La terminal está desactivada |
+| `BRANCH_INACTIVE` | 409 | La sucursal está desactivada |
+| `REFUND_OUTSIDE_BRANCH` | 400 | La venta se hizo en otra sucursal |
+| `SHIFT_ALREADY_OPEN` | 400 | La terminal ya tiene un turno abierto |
 | `SHIFT_ALREADY_CLOSED` | 400 | El turno ya está cerrado |
 | `NO_OPEN_SHIFT` | 400 | No hay turno activo |
 | `SALE_HAS_NO_ITEMS` | 400 | Venta sin items al confirmar |
@@ -585,7 +648,9 @@ Formato de error estándar:
 
 ## 8. REGLAS DE NEGOCIO CLAVE PARA FRONTEND
 
-1. **Turno obligatorio**: Antes de cualquier operación POS, verificar turno activo (`GET /shifts/active`). Si `data` es `null`, abrir uno.
+0. **Terminal**: El POS se vincula a una terminal de la sucursal (`GET /terminals` con `X-Branch-Id`) y envía `X-Branch-Id` y `X-Terminal-Id` en cada operación (§0).
+
+1. **Turno obligatorio**: Antes de cualquier operación POS, verificar el turno de la terminal (`GET /shifts/active`). Si `data` es `null`, abrir uno.
 
 2. **Consumidor final**: Si `isFinalConsumer=true`, no se necesita `customerId`. Si es `false`, el cliente es obligatorio.
 
@@ -599,13 +664,13 @@ Formato de error estándar:
 
 7. **Devoluciones parciales**: Se pueden devolver cantidades parciales de cada item. El sistema rastrea cuánto se ha devuelto previamente.
 
-8. **Recibo**: Disponible después de confirmar. Incluye desglose de impuestos, cambio calculado, y toda la información para impresión.
+8. **Recibo**: Disponible después de confirmar. Incluye número, sucursal, terminal, cajero, desglose de impuestos, cambio calculado, y toda la información para impresión.
 
 9. **Cierre de caja**: El Z-Report da la reconciliación completa. La discrepancia (diferencia entre esperado y declarado) se registra automáticamente.
 
 10. **Campos camelCase**: La API usa camelCase en JSON (ej: `cashierName`, `paymentMethod`, `taxCode`).
 
-11. **Autoría desde el token**: `cashierName`, `createdBy`, `refundedBy` y `performedBy` los pone el backend con el usuario autenticado (su nombre completo o, si no tiene, su username). No se envían en el cuerpo; si llegan, se ignoran.
+11. **Autoría desde el token**: `cashierName`, `closedBy`, `createdBy`, `refundedBy` y `performedBy` los pone el backend con el usuario autenticado (su nombre completo o, si no tiene, su username). No se envían en el cuerpo; si llegan, se ignoran.
 
 ---
 
@@ -669,6 +734,12 @@ Formato de error estándar:
 | GET | `/z-report` | Reporte Z |
 | GET | `/daily` | Resumen diario |
 | GET | `/by-payment-method` | Por método de pago |
+
+### Terminals (`/terminals`)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/` | Terminales activas de la sucursal de `X-Branch-Id` |
 
 ### Products (`/products`)
 

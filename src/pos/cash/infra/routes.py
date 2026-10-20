@@ -22,6 +22,9 @@ from src.pos.cash.infra.validators import (
     CashSummaryResponse,
     RegisterCashMovementRequest,
 )
+from src.pos.terminal.app.guard import PosBranchGuard
+from src.pos.terminal.app.resolver import TerminalRequest
+from src.pos.terminal.infra.dependencies import pos_branch
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
@@ -67,12 +70,15 @@ class POSCashRouter:
     def register_cash_movement(
         self,
         handler: Injected[RegisterCashMovementCommandHandler],
+        guard: Injected[PosBranchGuard],
         shift_id: int,
         data: RegisterCashMovementRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[CashMovementResponse]:
-        """Register a cash-in or cash-out movement for a shift (e.g. petty cash withdrawal, float top-up)."""
+        """Register a cash-in or cash-out movement for a shift of the branch (e.g. petty cash withdrawal, float top-up)."""
+        guard.shift(shift_id, branch)
         result = handler.handle(
             RegisterCashMovementCommand(
                 shift_id=shift_id,
@@ -87,11 +93,14 @@ class POSCashRouter:
     def get_cash_movements(
         self,
         handler: Injected[GetCashMovementsQueryHandler],
+        guard: Injected[PosBranchGuard],
         shift_id: int,
         query_params: CashMovementQueryParams = Depends(),
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> PaginatedDataResponse[CashMovementResponse]:
-        """List all cash movements recorded during a shift. Supports pagination."""
+        """List all cash movements recorded during a shift of the branch. Supports pagination."""
+        guard.shift(shift_id, branch)
         result = handler.handle(
             GetCashMovementsQuery(
                 shift_id=shift_id,
@@ -111,9 +120,12 @@ class POSCashRouter:
     def get_cash_summary(
         self,
         handler: Injected[GetCashSummaryQueryHandler],
+        guard: Injected[PosBranchGuard],
         shift_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[CashSummaryResponse]:
-        """Get a summary of cash activity for a shift, including totals by payment method and net cash."""
+        """Get a summary of cash activity for a shift of the branch, including totals by payment method and net cash."""
+        guard.shift(shift_id, branch)
         result = handler.handle(GetCashSummaryQuery(shift_id=shift_id))
         return DataResponse(data=CashSummaryResponse.model_validate(result), meta=meta)

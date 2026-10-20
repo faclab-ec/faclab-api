@@ -51,9 +51,11 @@ def issue_headers(
     full_name: str | None = None,
     tenant_id: UUID | None = None,
     username: str | None = None,
+    branch_ids: list[int] | None = None,
 ) -> dict[str, str]:
     """Bearer headers for a new persisted user with the given role in a tenant
-    (the default one unless `tenant_id` is given). Usernames are global."""
+    (the default one unless `tenant_id` is given), limited to `branch_ids` if
+    given (claim `bids`). Usernames are global."""
     tenant_id = tenant_id or ensure_tenant(engine)
     username = username or f"{role.name.lower()}-test"
     with Session(bind=engine) as session:
@@ -91,7 +93,7 @@ def issue_headers(
     membership = Membership(tenant_id=tenant_id, user_id=model.id, role=role)
     token = (
         JwtTokenService()
-        .issue_pair(user, membership, session_id, "test-jti")
+        .issue_pair(user, membership, session_id, "test-jti", branch_ids=branch_ids)
         .access_token
     )
     return {"Authorization": f"Bearer {token}"}

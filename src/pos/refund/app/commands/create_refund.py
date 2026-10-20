@@ -7,10 +7,12 @@ from src.pos.refund.domain.entities import Refund, RefundItem, RefundStatus
 from src.pos.refund.domain.exceptions import (
     ExceedsOriginalQuantityError,
     RefundItemNotInSaleError,
+    RefundOutsideBranchError,
     SaleNotConfirmedError,
 )
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
+from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.services import discount_factor
 from src.shared.app.commands import Command, CommandHandler
@@ -19,6 +21,7 @@ from src.shared.domain.exceptions import NotFoundError
 
 @dataclass
 class CreateRefundCommand(Command):
+    terminal: TerminalRequest
     original_sale_id: int
     items: list[dict]
     reason: str | None = None
@@ -34,12 +37,14 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         refund_repo: RefundRepository,
         refund_item_repo: RefundItemRepository,
         shift_repo: ShiftRepository,
+        terminals: TerminalResolver,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.shift_repo = shift_repo
+        self.terminals = terminals
 
     def _handle(self, command: CreateRefundCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.original_sale_id)
@@ -49,7 +54,12 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         if not sale.is_completed:
             raise SaleNotConfirmedError(command.original_sale_id)
 
-        shift = self.shift_repo.first(status="OPEN")
+        terminal = self.terminals.terminal(command.terminal)
+        # Sales from before S2.6 have no branch and are refunded anywhere
+        if sale.branch_id is not None and sale.branch_id != terminal.branch_id:
+            raise RefundOutsideBranchError(command.original_sale_id)
+
+        shift = self.shift_repo.first(terminal_id=terminal.id, status="OPEN")
         if shift is None:
             raise NoOpenShiftError()
 
@@ -88,6 +98,8 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         refund = Refund(
             original_sale_id=command.original_sale_id,
             shift_id=shift.id,
+            branch_id=terminal.branch_id,
+            terminal_id=terminal.id,
             reason=command.reason,
             refunded_by=command.refunded_by,
         )

@@ -1,8 +1,10 @@
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.organization.app.repositories import (
     BranchRepository,
+    DocumentSequenceRepository,
     EmissionPointRepository,
     PosTerminalRepository,
 )
@@ -13,6 +15,7 @@ from src.organization.domain.exceptions import (
     MainBranchAlreadyExistsError,
     PosTerminalCodeAlreadyExistsError,
 )
+from src.organization.domain.numbering import DocumentType
 from src.organization.infra.mappers import (
     BranchMapper,
     EmissionPointMapper,
@@ -20,9 +23,11 @@ from src.organization.infra.mappers import (
 )
 from src.organization.infra.models import (
     BranchModel,
+    DocumentSequenceModel,
     EmissionPointModel,
     PosTerminalModel,
 )
+from src.shared.domain.tenant import require_tenant
 from src.shared.infra.repositories import SqlAlchemyRepository
 
 
@@ -64,3 +69,39 @@ class SqlAlchemyPosTerminalRepository(
 
     def __init__(self, session: Session, mapper: PosTerminalMapper):
         super().__init__(session, mapper)
+
+
+@injectable(lifetime="scoped", as_type=DocumentSequenceRepository)
+class SqlAlchemyDocumentSequenceRepository(DocumentSequenceRepository):
+    """One upsert per number: the first document of a type creates the counter
+    at 1 and the next ones add 1 to it. The row stays locked until the
+    transaction ends, so concurrent documents of the branch wait their turn.
+    A Core statement: the tenant is set here, `assign_tenant` doesn't see it."""
+
+    _KEY = ("tenant_id", "branch_id", "doc_type")
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def next_value(self, branch_id: int, doc_type: DocumentType) -> int:
+        values = {
+            "tenant_id": require_tenant("numbering a document").tenant_id,
+            "branch_id": branch_id,
+            "doc_type": doc_type.value,
+            "last_value": 1,
+        }
+        bump = {"last_value": DocumentSequenceModel.last_value + 1}
+        if self.session.get_bind().dialect.name == "postgresql":
+            statement = (
+                postgresql.insert(DocumentSequenceModel)
+                .values(**values)
+                .on_conflict_do_update(index_elements=self._KEY, set_=bump)
+            )
+        else:
+            statement = (
+                sqlite.insert(DocumentSequenceModel)
+                .values(**values)
+                .on_conflict_do_update(index_elements=self._KEY, set_=bump)
+            )
+        returning = statement.returning(DocumentSequenceModel.last_value)
+        return self.session.execute(returning).scalar_one()

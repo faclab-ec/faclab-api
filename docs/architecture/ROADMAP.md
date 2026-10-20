@@ -72,14 +72,41 @@
   `branchId` (decisión del usuario) y el formulario de bodegas de faclab-web todavía no lo envía: crear
   una bodega desde la web responde 422 hasta S2.9, que agrega la sucursal al formulario. Editarlas sigue
   funcionando (la sucursal no cambia por PUT).
-- **Listados por sucursales permitidas** (detectado en S2.5). Un usuario limitado a algunas sucursales
-  no puede usar `X-Branch-Id` de otra, pero los listados de stock, bodegas, ventas y reportes todavía
-  muestran las de toda la empresa. Filtrarlos por las sucursales permitidas (MULTI_TENANCY §7) encaja
-  con S2.6 (turnos y ventas por terminal) y con los reportes por sucursal.
+- **Listados por sucursales permitidas** (detectado en S2.5; resuelto en el POS en S2.6). Un usuario
+  limitado a algunas sucursales no puede usar `X-Branch-Id` de otra. Desde S2.6 los historiales y
+  reportes del POS (turnos, devoluciones, X, Z, diario y por medio de pago) se limitan a sus sucursales.
+  Falta en la administración: stock, bodegas, ventas (`/api/admin/sales`) y los reportes de
+  inventario todavía muestran toda la empresa (MULTI_TENANCY §7), a hacer con los reportes por
+  sucursal o en S2.9.
 - **Códigos SRI y dirección de la sucursal en facturación** (detectado en S2.5). Hoy se pueden cambiar
-  el código de establecimiento y el de punto de emisión con un PUT; cuando haya ventas o comprobantes
-  que los usen (S2.6, S2.8) conviene bloquear el cambio. La dirección de la sucursal (`address`) es
+  el código de establecimiento y el de punto de emisión con un PUT. Desde S2.6 las ventas guardan su
+  punto de emisión y un número con el código del establecimiento ya formateado (no cambia si después
+  cambia el código), pero cuando haya comprobantes (S2.8) conviene bloquear el cambio. La dirección de la sucursal (`address`) es
   opcional y es la `dirEstablecimiento` que S2.8 enviará a facturación.
+- **POS de faclab-web sin encabezados de sucursal y terminal** (detectado en S2.6). Las rutas del POS
+  exigen `X-Branch-Id` y `X-Terminal-Id`, y la web no los envía todavía. Hasta S2.9 corre con
+  `POS_TERMINAL_FALLBACK` (verdadero solo en `local`): sin encabezados usa la primera terminal activa
+  de la matriz. En staging y producción el POS de la web no funciona hasta S2.9, que vincula la
+  terminal con `GET /api/pos/terminals`, envía los encabezados y quita el respaldo (el ajuste y su
+  rechazo en `config/deployed.py`).
+- **Número, establecimiento y punto de emisión en `sales.confirmed`** (detectado en S2.6). La venta
+  del POS ya guarda `branch_id`, `emission_point_id`, `terminal_id` y `number`, pero el mensaje a
+  faclab-invoicing no los lleva: lo cambia S2.8 junto con el contrato (ADR-0006, ADR-0012).
+- **Ventas del seed sin sucursal ni número** (detectado en S2.6). La API de administración solo lee
+  ventas (las crea el POS), pero `make seed` siembra ventas confirmadas sin sucursal, terminal ni
+  número, como las anteriores a S2.6: un usuario limitado a algunas sucursales no las ve en los
+  historiales del POS y S2.8 no podría facturarlas. Conviene que el seed las cree en una terminal
+  (S2.8 o S2.9).
+- **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
+  del POS con formato fijo (`V-001-000123`). Faltan el formato configurable por empresa (ADR-0012) y
+  pasar a la misma tabla las órdenes de compra (G-33, S3.3), los ajustes, las transferencias, las
+  cotizaciones (S5.4) y el cierre de caja (S5.9).
+- **Turno en una terminal desactivada** (detectado en S2.6). Desactivar una terminal con un turno
+  abierto hace que `GET /api/pos/shifts/active` responda `POS_TERMINAL_INACTIVE`; el turno se sigue
+  cerrando por id (`POST /api/pos/shifts/{id}/close`). Conviene impedir desactivar una terminal con
+  turno abierto, junto con el cierre de caja (S5.9).
+- **Disponibilidad en el POS** (ya en S3.2). El POS valida contra `quantity` de la ubicación, no
+  contra `available_quantity`: puede vender stock reservado por una transferencia.
 - **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
   acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
   ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).

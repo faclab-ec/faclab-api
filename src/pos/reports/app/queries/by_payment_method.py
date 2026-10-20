@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.pos.reports.app.queries.scope import placement_criteria
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
@@ -15,6 +16,10 @@ from src.shared.infra.tenant import tenant_criteria
 class GetSalesByPaymentMethodQuery(Query):
     from_date: date | None = None
     to_date: date | None = None
+    branch_id: int | None = None
+    terminal_id: int | None = None
+    # The user's branches (None: all)
+    branch_ids: frozenset[int] | None = None
 
 
 @injectable(lifetime="scoped")
@@ -34,6 +39,11 @@ class GetSalesByPaymentMethodQueryHandler(
             .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
             .filter(*tenant_criteria(PaymentModel, SaleModel))
             .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
+            .filter(
+                *placement_criteria(
+                    SaleModel, query.branch_id, query.terminal_id, query.branch_ids
+                )
+            )
         )
 
         if query.from_date is not None:

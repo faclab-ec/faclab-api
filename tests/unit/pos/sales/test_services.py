@@ -4,10 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.inventory.movement.domain.constants import MovementType
+from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InsufficientStockError, SaleHasNoItemsError
 from src.shared.domain.exceptions import NotFoundError
+from tests.unit.pos.terminals import LOCATION_ID, TERMINAL, numbering
 
 
 def _make_sale(**overrides) -> Sale:
@@ -45,14 +49,28 @@ def _make_stock(**overrides) -> Stock:
     return Stock(**defaults)
 
 
+class _Repos:
+    """The repositories under the handler's TerminalStock, for the asserts"""
+
+    movement_repo: MagicMock
+    stock_repo: MagicMock
+
+
 def _build_confirm_handler(sale=None, items=None, stock=None):
     from src.pos.sales.app.commands import POSConfirmSaleCommandHandler
 
-    handler = POSConfirmSaleCommandHandler.__new__(POSConfirmSaleCommandHandler)
+    class Handler(_Repos, POSConfirmSaleCommandHandler):
+        pass
+
+    handler = Handler.__new__(Handler)
     handler.sale_repo = MagicMock()
     handler.sale_item_repo = MagicMock()
     handler.movement_repo = MagicMock()
     handler.stock_repo = MagicMock()
+    handler.stock = TerminalStock(handler.stock_repo, handler.movement_repo)
+    handler.terminal_repo = MagicMock()
+    handler.terminal_repo.get_by_id.return_value = TERMINAL
+    handler.numbering = numbering()
     handler.payment_repo = MagicMock()
     handler.payment_repo.filter_by.return_value = []
     handler.event_publisher = MagicMock()
@@ -71,11 +89,18 @@ def _build_confirm_handler(sale=None, items=None, stock=None):
 def _build_cancel_handler(sale=None, items=None, stock=None):
     from src.pos.sales.app.commands import POSCancelSaleCommandHandler
 
-    handler = POSCancelSaleCommandHandler.__new__(POSCancelSaleCommandHandler)
+    class Handler(_Repos, POSCancelSaleCommandHandler):
+        pass
+
+    handler = Handler.__new__(Handler)
     handler.sale_repo = MagicMock()
     handler.sale_item_repo = MagicMock()
     handler.movement_repo = MagicMock()
+    handler.movement_repo.filter_by.return_value = []
     handler.stock_repo = MagicMock()
+    handler.stock = TerminalStock(handler.stock_repo, handler.movement_repo)
+    handler.terminal_repo = MagicMock()
+    handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.event_publisher = MagicMock()
 
     if sale is not None:
@@ -108,6 +133,25 @@ class TestPOSConfirmSaleCommandHandler:
         handler.movement_repo.create.assert_called_once()
         handler.stock_repo.update.assert_called_once()
         assert handler.stock_repo.update.call_args[0][0].quantity == 45
+
+    def test_confirm_takes_from_the_terminal_location_and_numbers_the_sale(self):
+        from src.pos.sales.app.commands import POSConfirmSaleCommand
+
+        sale = _make_sale(branch_id=1, terminal_id=TERMINAL.id)
+        handler = _build_confirm_handler(
+            sale=sale, items=[_make_sale_item()], stock=_make_stock()
+        )
+
+        result = handler._handle(POSConfirmSaleCommand(sale_id=1))
+
+        handler.stock_repo.first_for_update.assert_called_once_with(
+            product_id=100, location_id=LOCATION_ID
+        )
+        movement = handler.movement_repo.create.call_args.args[0]
+        assert movement.location_id == LOCATION_ID
+        assert (movement.reference_type, movement.reference_id) == ("sale", 1)
+        handler.numbering.next.assert_called_once_with(1, "SALE")
+        assert result["number"] == "V-001-000001"
 
     def test_confirm_insufficient_stock_raises_error(self):
         from src.pos.sales.app.commands import POSConfirmSaleCommand
@@ -232,6 +276,47 @@ class TestPOSCancelSaleCommandHandler:
         handler.movement_repo.create.assert_called_once()
         handler.stock_repo.update.assert_called_once()
         assert handler.stock_repo.update.call_args[0][0].quantity == 50
+
+    def test_cancel_puts_back_where_the_sale_took_from(self):
+        from src.pos.sales.app.commands import POSCancelSaleCommand
+
+        sale = _make_sale(status=SaleStatus.CONFIRMED, terminal_id=TERMINAL.id)
+        handler = _build_cancel_handler(
+            sale=sale, items=[_make_sale_item()], stock=_make_stock(quantity=45)
+        )
+        # The terminal sells from another location since the sale
+        handler.movement_repo.filter_by.return_value = [
+            Movement(
+                product_id=100,
+                quantity=-5,
+                type=MovementType.OUT,
+                location_id=4,
+                reference_type="sale",
+                reference_id=1,
+            )
+        ]
+
+        handler._handle(POSCancelSaleCommand(sale_id=1))
+
+        handler.movement_repo.filter_by.assert_called_once_with(
+            reference_type="sale", reference_id=1
+        )
+        handler.stock_repo.first_for_update.assert_called_once_with(
+            product_id=100, location_id=4
+        )
+
+    def test_cancel_creates_the_stock_row_if_the_location_has_none(self):
+        from src.pos.sales.app.commands import POSCancelSaleCommand
+
+        sale = _make_sale(status=SaleStatus.CONFIRMED, terminal_id=TERMINAL.id)
+        handler = _build_cancel_handler(sale=sale, items=[_make_sale_item()])
+        handler.stock_repo.first_for_update.return_value = None
+
+        handler._handle(POSCancelSaleCommand(sale_id=1))
+
+        created = handler.stock_repo.create.call_args.args[0]
+        assert (created.product_id, created.quantity) == (100, 5)
+        assert created.location_id == LOCATION_ID
 
     def test_cancel_sale_not_found(self):
         from src.pos.sales.app.commands import POSCancelSaleCommand

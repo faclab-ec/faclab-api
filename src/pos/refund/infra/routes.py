@@ -29,6 +29,9 @@ from src.pos.refund.infra.validators import (
     RefundQueryParams,
     RefundResponse,
 )
+from src.pos.terminal.app.guard import PosBranchGuard
+from src.pos.terminal.app.resolver import TerminalRequest
+from src.pos.terminal.infra.dependencies import pos_branch, pos_terminal
 from src.shared.infra.dependencies import get_meta
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
@@ -92,16 +95,19 @@ class POSRefundRouter:
         self,
         handler: Injected[CreateRefundCommandHandler],
         refund_input: CreateRefundRequest,
+        terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[RefundDetailResponse]:
-        """Create a refund for a confirmed sale.
+        """Create a refund for a confirmed sale, in the open shift of the terminal.
 
+        The terminal must be of the sale's branch (`REFUND_OUTSIDE_BRANCH`).
         Specify the items to refund (partial or total). The refund is created in PENDING
         status and must be processed to register payments and restore inventory.
         """
         result = handler.handle(
             CreateRefundCommand(
+                terminal=terminal,
                 original_sale_id=refund_input.original_sale_id,
                 items=[item.model_dump() for item in refund_input.items],
                 reason=refund_input.reason,
@@ -113,15 +119,19 @@ class POSRefundRouter:
     def process_refund(
         self,
         handler: Injected[ProcessRefundCommandHandler],
+        guard: Injected[PosBranchGuard],
         refund_id: int,
         process_input: ProcessRefundRequest,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[RefundDetailResponse]:
-        """Process a pending refund by registering refund payments.
+        """Process a pending refund of the branch by registering refund payments.
 
         The total of all payments must cover the refund amount. Once processed,
-        inventory IN movements are created to restore stock.
+        the stock goes back to the location of the refund's terminal and the refund
+        gets its number of the branch.
         """
+        guard.refund(refund_id, branch)
         result = handler.handle(
             ProcessRefundCommand(
                 refund_id=refund_id,
@@ -133,10 +143,13 @@ class POSRefundRouter:
     def cancel_refund(
         self,
         handler: Injected[CancelRefundCommandHandler],
+        guard: Injected[PosBranchGuard],
         refund_id: int,
+        branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[RefundResponse]:
-        """Cancel a pending refund. Only refunds that have not been processed can be cancelled."""
+        """Cancel a pending refund of the branch. Only refunds that have not been processed can be cancelled."""
+        guard.refund(refund_id, branch)
         result = handler.handle(CancelRefundCommand(refund_id=refund_id))
         return DataResponse(data=RefundResponse.model_validate(result), meta=meta)
 
@@ -144,10 +157,13 @@ class POSRefundRouter:
         self,
         handler: Injected[GetRefundByIdQueryHandler],
         refund_id: int,
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[RefundDetailResponse]:
-        """Retrieve a refund by ID, including its items and payments."""
-        result = handler.handle(GetRefundByIdQuery(refund_id=refund_id))
+        """Retrieve a refund by ID, of a branch the user may enter, including its items and payments."""
+        result = handler.handle(
+            GetRefundByIdQuery(refund_id=refund_id, branch_ids=user.branch_ids)
+        )
         return DataResponse(data=RefundDetailResponse.model_validate(result), meta=meta)
 
     def list_refunds(
@@ -155,12 +171,17 @@ class POSRefundRouter:
         handler: Injected[GetRefundsQueryHandler],
         meta: Meta = Depends(get_meta),
         params: RefundQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
     ) -> PaginatedDataResponse[RefundResponse]:
-        """List refunds with optional filtering by sale ID or status. Supports pagination."""
+        """List the refunds of the branches the user may enter, optionally by
+        sale, status, branch or terminal. Supports pagination."""
         result = handler.handle(
             GetRefundsQuery(
                 sale_id=params.sale_id,
                 status=params.status,
+                branch_id=params.branch_id,
+                terminal_id=params.terminal_id,
+                branch_ids=user.branch_ids,
                 limit=params.limit,
                 offset=params.offset,
             )

@@ -7,7 +7,13 @@ from src.pos.refund.app.repositories import (
     RefundPaymentRepository,
     RefundRepository,
 )
-from src.pos.refund.domain.specifications import RefundsByStatus, RefundsOfSale
+from src.pos.refund.domain.specifications import (
+    RefundsByStatus,
+    RefundsByTerminal,
+    RefundsInBranches,
+    RefundsOfSale,
+)
+from src.pos.terminal.app.scope import branch_scope, in_scope
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.specifications import Specification, all_of
@@ -16,6 +22,8 @@ from src.shared.domain.specifications import Specification, all_of
 @dataclass
 class GetRefundByIdQuery(Query):
     refund_id: int
+    # The user's branches (None: all); another branch's refund is not found
+    branch_ids: frozenset[int] | None = None
 
 
 @injectable(lifetime="scoped")
@@ -32,7 +40,7 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
 
     def _handle(self, query: GetRefundByIdQuery) -> dict:
         refund = self.refund_repo.get_by_id(query.refund_id)
-        if not refund:
+        if not refund or not in_scope(refund.branch_id, query.branch_ids):
             raise NotFoundError(f"Refund with id {query.refund_id} not found")
 
         items = self.refund_item_repo.filter_by(refund_id=query.refund_id)
@@ -48,6 +56,10 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
 class GetRefundsQuery(Query):
     sale_id: int | None = None
     status: str | None = None
+    branch_id: int | None = None
+    terminal_id: int | None = None
+    # The user's branches (None: all)
+    branch_ids: frozenset[int] | None = None
     limit: int | None = 100
     offset: int | None = 0
 
@@ -63,6 +75,11 @@ class GetRefundsQueryHandler(QueryHandler[GetRefundsQuery, dict]):
             specs.append(RefundsOfSale(query.sale_id))
         if query.status is not None:
             specs.append(RefundsByStatus(query.status))
+        if query.terminal_id is not None:
+            specs.append(RefundsByTerminal(query.terminal_id))
+        scope = branch_scope(query.branch_id, query.branch_ids)
+        if scope is not None:
+            specs.append(RefundsInBranches(scope))
         # Newest first: this is the refund history
         return self.refund_repo.paginate_by_spec(
             all_of(specs),

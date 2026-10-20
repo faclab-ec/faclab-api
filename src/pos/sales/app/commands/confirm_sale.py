@@ -2,20 +2,20 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
-from src.inventory.movement.app.repositories import MovementRepository
-from src.inventory.movement.domain.constants import MovementType
-from src.inventory.movement.domain.entities import Movement
-from src.inventory.stock.app.repositories import StockRepository
+from src.organization.app.numbering import DocumentNumbering
+from src.organization.app.repositories import PosTerminalRepository
+from src.organization.domain.numbering import DocumentType
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.entities import ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
+from src.pos.terminal.app.stock import TerminalStock
 from src.sales.app.repositories import (
     PaymentRepository,
     SaleItemRepository,
     SaleRepository,
 )
 from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
-from src.sales.domain.exceptions import InsufficientStockError, SaleHasNoItemsError
+from src.sales.domain.exceptions import SaleHasNoItemsError
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -32,18 +32,20 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         self,
         sale_repo: SaleRepository,
         sale_item_repo: SaleItemRepository,
-        movement_repo: MovementRepository,
-        stock_repo: StockRepository,
+        stock: TerminalStock,
         shift_repo: ShiftRepository,
+        terminal_repo: PosTerminalRepository,
         payment_repo: PaymentRepository,
+        numbering: DocumentNumbering,
         event_publisher: EventPublisher,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
-        self.movement_repo = movement_repo
-        self.stock_repo = stock_repo
+        self.stock = stock
         self.shift_repo = shift_repo
+        self.terminal_repo = terminal_repo
         self.payment_repo = payment_repo
+        self.numbering = numbering
         self.event_publisher = event_publisher
 
     def _handle(self, command: POSConfirmSaleCommand) -> dict:
@@ -61,30 +63,29 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         if not items:
             raise SaleHasNoItemsError(command.sale_id)
 
-        # Lock stock rows by product id so concurrent sales can't deadlock
-        for item in sorted(items, key=lambda i: i.product_id):
-            stock = self.stock_repo.first_for_update(product_id=item.product_id)
-            available = stock.quantity if stock else 0
-            if available < item.quantity:
-                raise InsufficientStockError(item.product_id, item.quantity, available)
+        sale.ensure_draft("confirm")
+        # The stock of the terminal's location, not of any other. Stock rows
+        # are locked before the number's counter, in every POS document
+        terminal = (
+            self.terminal_repo.get_by_id(sale.terminal_id)
+            if sale.terminal_id is not None
+            else None
+        )
+        self.stock.take(
+            items,
+            location_id=terminal.default_location_id if terminal else None,
+            reason=f"Sale #{command.sale_id} confirmed",
+            reference_type="sale",
+            reference_id=command.sale_id,
+        )
 
-        sale.confirm()
+        number = (
+            self.numbering.next(sale.branch_id, DocumentType.SALE)
+            if sale.branch_id is not None
+            else None
+        )
+        sale.confirm(number)
         self.sale_repo.update(sale)
-
-        for item in items:
-            movement = Movement(
-                product_id=item.product_id,
-                quantity=-abs(item.quantity),
-                type=MovementType.OUT,
-                reason=f"Sale #{command.sale_id} confirmed",
-            )
-            self.movement_repo.create(movement)
-
-            stock = self.stock_repo.first_for_update(product_id=item.product_id)
-            if stock is None:
-                raise InsufficientStockError(item.product_id, item.quantity, 0)
-            stock.update_quantity(-abs(item.quantity))
-            self.stock_repo.update(stock)
 
         payments = self.payment_repo.filter_by(sale_id=sale.id)
 

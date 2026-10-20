@@ -18,10 +18,12 @@ from src.shared.infra.tenant import tenant_scope
 from tests.contract.contracts import errors, validator
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
     make_customer,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
@@ -41,7 +43,8 @@ def pos(client, admin, auth_headers) -> tuple[Api, list[tuple[int, str]]]:
         product = make_product(admin_api, sku, salePrice=price, taxCode=tax_code)
         make_movement(admin_api, product["id"], 10, location["id"])
         products.append((product["id"], price))
-    cashier = Api(client, auth_headers(Role.CASHIER))
+    terminal = make_terminal(admin_api, location["id"])
+    cashier = Api(client, at_terminal(auth_headers(Role.CASHIER), terminal))
     cashier.post("/api/pos/shifts/open", {"openingBalance": "0"})
     return cashier, products
 

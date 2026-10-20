@@ -87,6 +87,41 @@ def make_location(api: Api, warehouse_id: int, code: str = "A1") -> dict:
     )
 
 
+def make_terminal(
+    api: Api, location_id: int, branch_id: int | None = None, code: str = "CAJA-01"
+) -> dict:
+    """A POS terminal of the branch (001 by default) that sells from the
+    location, with the branch's first emission point (created if missing)"""
+    branch_id = branch_id or main_branch_id(api)
+    points = api.get("/api/admin/emission-points", params={"branchId": branch_id})
+    point = (
+        points[0]
+        if points
+        else api.post(
+            "/api/admin/emission-points", {"branchId": branch_id, "code": "001"}
+        )
+    )
+    return api.post(
+        "/api/admin/pos-terminals",
+        {
+            "branchId": branch_id,
+            "emissionPointId": point["id"],
+            "defaultLocationId": location_id,
+            "code": code,
+            "name": f"Caja {code}",
+        },
+    )
+
+
+def at_terminal(headers: dict[str, str], terminal: dict) -> dict[str, str]:
+    """`headers` plus the POS headers of the terminal: its branch and its id"""
+    return {
+        **headers,
+        "X-Branch-Id": str(terminal["branchId"]),
+        "X-Terminal-Id": str(terminal["id"]),
+    }
+
+
 def make_product(api: Api, sku: str = "SKU-1", **overrides) -> dict:
     payload = {
         "name": f"Product {sku}",

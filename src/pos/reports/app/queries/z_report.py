@@ -19,6 +19,8 @@ from src.shared.infra.tenant import tenant_criteria
 @dataclass
 class GetZReportQuery(Query):
     shift_id: int
+    # The user's branches (None: all)
+    branch_ids: frozenset[int] | None = None
 
 
 @injectable(lifetime="scoped")
@@ -28,10 +30,12 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
         self.x_report_handler = x_report_handler
 
     def _handle(self, query: GetZReportQuery) -> dict:
-        shift = get_shift(self.session, query.shift_id)
+        shift = get_shift(self.session, query.shift_id, query.branch_ids)
 
         # Get X-Report data
-        x_data = self.x_report_handler._handle(GetXReportQuery(shift_id=query.shift_id))
+        x_data = self.x_report_handler._handle(
+            GetXReportQuery(shift_id=query.shift_id, branch_ids=query.branch_ids)
+        )
 
         # Refund summary
         refund_agg = (

@@ -16,8 +16,8 @@ class ShiftAlreadyOpenError(ShiftError):
 
     def __init__(self):
         super().__init__(
-            message="There is already an open shift",
-            detail="Only one shift can be open at a time",
+            message="The terminal already has an open shift",
+            detail="Only one shift can be open at a time in a terminal",
         )
 
 

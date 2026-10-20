@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from wireup import Injected
 
+from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
-from src.auth.infra.dependencies import require_permission
+from src.auth.infra.dependencies import get_current_user, require_permission
 from src.pos.reports.app.queries.by_payment_method import (
     GetSalesByPaymentMethodQuery,
     GetSalesByPaymentMethodQueryHandler,
@@ -74,31 +75,46 @@ class POSReportRouter:
         self,
         handler: Injected[GetXReportQueryHandler],
         query_params: XReportQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[XReportResponse]:
-        """Generate an X-Report — a mid-shift read-only sales summary. Does not close the shift."""
-        result = handler.handle(GetXReportQuery(shift_id=query_params.shift_id))
+        """Generate an X-Report — a mid-shift read-only sales summary of a shift of a
+        branch the user may enter. Does not close the shift."""
+        result = handler.handle(
+            GetXReportQuery(shift_id=query_params.shift_id, branch_ids=user.branch_ids)
+        )
         return DataResponse(data=XReportResponse.model_validate(result), meta=meta)
 
     def z_report(
         self,
         handler: Injected[GetZReportQueryHandler],
         query_params: ZReportQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ZReportResponse]:
-        """Generate a Z-Report — an end-of-shift closing report with sales totals, payments, and cash balance."""
-        result = handler.handle(GetZReportQuery(shift_id=query_params.shift_id))
+        """Generate a Z-Report — an end-of-shift closing report with sales totals, payments,
+        and cash balance, of a shift of a branch the user may enter."""
+        result = handler.handle(
+            GetZReportQuery(shift_id=query_params.shift_id, branch_ids=user.branch_ids)
+        )
         return DataResponse(data=ZReportResponse.model_validate(result), meta=meta)
 
     def daily_summary(
         self,
         handler: Injected[GetDailySummaryQueryHandler],
         query_params: DailySummaryQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[DailySummaryResponse]:
-        """Get an aggregated daily sales summary including totals, sale count, and average ticket."""
+        """Get an aggregated daily sales summary including totals, sale count, and average ticket.
+
+        It covers the branches the user may enter, or only `branchId` / `terminalId`.
+        """
         result = handler.handle(
-            GetDailySummaryQuery(**query_params.model_dump(exclude_none=True))
+            GetDailySummaryQuery(
+                **query_params.model_dump(exclude_none=True),
+                branch_ids=user.branch_ids,
+            )
         )
         return DataResponse(data=DailySummaryResponse.model_validate(result), meta=meta)
 
@@ -106,13 +122,18 @@ class POSReportRouter:
         self,
         handler: Injected[GetSalesByPaymentMethodQueryHandler],
         query_params: ByPaymentMethodQueryParams = Depends(),
+        user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> ListResponse[PaymentMethodSummaryResponse]:
-        """Get sales totals grouped by payment method for a date range."""
+        """Get sales totals grouped by payment method for a date range, in the branches
+        the user may enter or only `branchId` / `terminalId`."""
         result = handler.handle(
             GetSalesByPaymentMethodQuery(
                 from_date=query_params.from_date,
                 to_date=query_params.to_date,
+                branch_id=query_params.branch_id,
+                terminal_id=query_params.terminal_id,
+                branch_ids=user.branch_ids,
             )
         )
         return ListResponse(

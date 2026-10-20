@@ -1,19 +1,28 @@
-"""POS flows against PostgreSQL: shift, checkout, stock effects, refunds and
-the shift reports."""
+"""POS flows against PostgreSQL, at a terminal (S2.6): shift, checkout, stock of
+the terminal's location, numbering per branch, refunds, the shift reports and
+the branch rules, some of them with concurrent requests."""
 
 import threading
+from collections.abc import Callable
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from config import config
 from main import app
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
+    at_terminal,
+    make_branch,
     make_customer,
     make_location,
     make_movement,
     make_product,
+    make_terminal,
     make_warehouse,
 )
 
@@ -24,15 +33,30 @@ def admin_api(client, admin) -> Api:
 
 
 @pytest.fixture
-def api(client, auth_headers) -> Api:
-    return Api(client, auth_headers(Role.CASHIER))
+def shelf(admin_api) -> dict:
+    """A location of a warehouse of the main branch (001)"""
+    return make_location(admin_api, make_warehouse(admin_api)["id"])
 
 
 @pytest.fixture
-def product(admin_api) -> dict:
-    """A VAT 15% product priced at 10.00 with 10 units on a shelf."""
-    warehouse = make_warehouse(admin_api)
-    shelf = make_location(admin_api, warehouse["id"])
+def terminal(admin_api, shelf) -> dict:
+    """Terminal CAJA-01 of branch 001, which sells from the shelf"""
+    return make_terminal(admin_api, shelf["id"])
+
+
+@pytest.fixture
+def cashier(auth_headers) -> dict[str, str]:
+    return auth_headers(Role.CASHIER, full_name="Ana Cajera")
+
+
+@pytest.fixture
+def api(client, cashier, terminal) -> Api:
+    return Api(client, at_terminal(cashier, terminal))
+
+
+@pytest.fixture
+def product(admin_api, shelf) -> dict:
+    """A VAT 15% product priced at 10.00 with 10 units on the terminal's shelf."""
     product = make_product(admin_api, salePrice="10.00", taxCode="VAT_15")
     make_movement(admin_api, product["id"], 10, shelf["id"])
     return product
@@ -43,8 +67,21 @@ def shift(api) -> dict:
     return api.post("/api/pos/shifts/open", {"openingBalance": "100.00"})
 
 
-def _stock_quantity(admin_api: Api, product_id: int) -> int:
-    rows = admin_api.get("/api/admin/stock", params={"productId": product_id})
+@pytest.fixture
+def north(admin_api) -> dict:
+    """Branch 002 with its own warehouse, location and terminal CAJA-01"""
+    branch = make_branch(admin_api, "002", "Norte")
+    warehouse = make_warehouse(admin_api, "WH-N", branch_id=branch["id"])
+    location = make_location(admin_api, warehouse["id"], "N1")
+    terminal = make_terminal(admin_api, location["id"], branch_id=branch["id"])
+    return {"branch": branch, "location": location, "terminal": terminal}
+
+
+def _stock_quantity(admin_api: Api, product_id: int, location_id: int | None = None):
+    params = {"productId": product_id}
+    if location_id is not None:
+        params["locationId"] = location_id
+    rows = admin_api.get("/api/admin/stock", params=params)
     return sum(row["quantity"] for row in rows)
 
 
@@ -61,6 +98,43 @@ def _quick_sale(api: Api, product_id: int, quantity: int, amount: str, **extra):
     )
 
 
+def _concurrently(*calls: Callable[[TestClient], Response]) -> list[Response]:
+    """Starts the calls at once, each with its own client"""
+    barrier = threading.Barrier(len(calls))
+    responses: list[Response] = []
+
+    def run(call: Callable[[TestClient], Response]) -> None:
+        client = TestClient(app)
+        barrier.wait()
+        responses.append(call(client))
+
+    threads = [threading.Thread(target=run, args=(call,)) for call in calls]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return responses
+
+
+def _open(headers: dict[str, str]) -> Callable[[TestClient], Response]:
+    return lambda client: client.post(
+        "/api/pos/shifts/open", json={"openingBalance": "0"}, headers=headers
+    )
+
+
+def _checkout(
+    headers: dict[str, str], product_id: int, amount: str = "11.50"
+) -> Callable[[TestClient], Response]:
+    return lambda client: client.post(
+        "/api/pos/sales/quick",
+        json={
+            "items": [{"productId": product_id, "quantity": 1}],
+            "payments": [{"amount": amount, "paymentMethod": "CASH"}],
+        },
+        headers=headers,
+    )
+
+
 def test_pos_lists_the_customers(api, admin_api):
     customer = make_customer(admin_api, seed=5, name="Cliente POS")
 
@@ -69,7 +143,9 @@ def test_pos_lists_the_customers(api, admin_api):
     assert [c["id"] for c in customers] == [customer["id"]]
 
 
-def test_quick_sale_with_card_and_global_discount(api, admin_api, product, shift):
+def test_quick_sale_with_card_and_global_discount(
+    api, admin_api, terminal, product, shift
+):
     sale = _quick_sale(
         api,
         product["id"],
@@ -90,11 +166,21 @@ def test_quick_sale_with_card_and_global_discount(api, admin_api, product, shift
     assert sale["status"] == "CONFIRMED"
     assert sale["paymentStatus"] == "PAID"
     assert sale["shiftId"] == shift["id"]
+    assert (sale["branchId"], sale["emissionPointId"], sale["terminalId"]) == (
+        terminal["branchId"],
+        terminal["emissionPointId"],
+        terminal["id"],
+    )
+    assert sale["number"] == "V-001-000001"
     assert _stock_quantity(admin_api, product["id"]) == 8
 
     receipt = api.get(f"/api/pos/sales/{sale['id']}/receipt")
     assert receipt["total"] == 20.7
     assert receipt["change"] == 0
+    assert receipt["number"] == "V-001-000001"
+    assert receipt["branch"]["establishmentCode"] == "001"
+    assert receipt["terminal"]["code"] == "CAJA-01"
+    assert receipt["cashier"] == "Ana Cajera"
 
 
 def test_failed_checkout_rolls_back_the_whole_sale(api, admin_api, product, shift):
@@ -111,10 +197,13 @@ def test_failed_checkout_rolls_back_the_whole_sale(api, admin_api, product, shif
     assert error["code"] == "INSUFFICIENT_STOCK"
     assert admin_api.get("/api/admin/sales") == []
     assert _stock_quantity(admin_api, product["id"]) == 10
+    # It used no number either
+    assert _quick_sale(api, product["id"], 1, "11.50")["number"] == "V-001-000001"
 
 
 def test_step_by_step_sale_then_cancel_restores_stock(api, admin_api, product, shift):
     sale = api.post("/api/pos/sales", {"isFinalConsumer": True})
+    assert sale["number"] is None
     api.post(
         f"/api/pos/sales/{sale['id']}/items",
         {"productId": product["id"], "quantity": 3, "unitPrice": "10.00"},
@@ -126,17 +215,20 @@ def test_step_by_step_sale_then_cancel_restores_stock(api, admin_api, product, s
 
     confirmed = api.post(f"/api/pos/sales/{sale['id']}/confirm")
     assert confirmed["total"] == 34.5
+    assert confirmed["number"] == "V-001-000001"
     assert _stock_quantity(admin_api, product["id"]) == 7
 
     cancelled = api.post(f"/api/pos/sales/{sale['id']}/cancel")
     assert cancelled["status"] == "CANCELLED"
+    # A cancelled sale keeps its number
+    assert cancelled["number"] == "V-001-000001"
     assert _stock_quantity(admin_api, product["id"]) == 10
 
 
 def test_refund_returns_stock_and_cash(
-    api, admin_api, client, auth_headers, product, shift
+    api, admin_api, client, auth_headers, terminal, shelf, product, shift
 ):
-    manager = Api(client, auth_headers(Role.MANAGER))
+    manager = Api(client, at_terminal(auth_headers(Role.MANAGER), terminal))
     sale = _quick_sale(api, product["id"], 2, "23.00")
     [item] = api.get(f"/api/pos/sales/{sale['id']}/items")
 
@@ -148,13 +240,19 @@ def test_refund_returns_stock_and_cash(
         },
     )
     assert refund["total"] == 11.5
+    assert (refund["branchId"], refund["terminalId"]) == (
+        terminal["branchId"],
+        terminal["id"],
+    )
+    assert refund["number"] is None
 
     processed = manager.post(
         f"/api/pos/refunds/{refund['id']}/process",
         {"payments": [{"amount": "11.50", "paymentMethod": "CASH"}]},
     )
     assert processed["status"] == "COMPLETED"
-    assert _stock_quantity(admin_api, product["id"]) == 9
+    assert processed["number"] == "D-001-000001"
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 9
 
     api.error(
         "POST",
@@ -172,13 +270,14 @@ def test_refund_returns_stock_and_cash(
     assert summary["expectedBalance"] == 111.5
 
 
-def test_shift_reports_and_close(api, product, shift):
+def test_shift_reports_and_close(api, terminal, product, shift):
     _quick_sale(api, product["id"], 1, "11.50")
     _quick_sale(api, product["id"], 1, "11.50", method="TRANSFER")
 
     x_report = api.get("/api/pos/reports/x-report", params={"shiftId": shift["id"]})
     assert x_report["salesSummary"]["count"] == 2
     assert x_report["salesSummary"]["total"] == 23.0
+    assert x_report["shift"]["terminalId"] == terminal["id"]
 
     daily = api.get("/api/pos/reports/daily")
     assert daily["totalSales"] == 2
@@ -189,12 +288,13 @@ def test_shift_reports_and_close(api, product, shift):
     assert closed["status"] == "CLOSED"
     assert closed["expectedBalance"] == 111.5
     assert closed["discrepancy"] == 0
+    assert closed["closedBy"] == "Ana Cajera"
 
 
 def test_refund_returns_what_was_charged_after_a_sale_discount(
-    api, client, auth_headers, product, shift
+    api, client, auth_headers, terminal, product, shift
 ):
-    manager = Api(client, auth_headers(Role.MANAGER))
+    manager = Api(client, at_terminal(auth_headers(Role.MANAGER), terminal))
     sale = _quick_sale(
         api,
         product["id"],
@@ -221,9 +321,7 @@ def test_refund_returns_what_was_charged_after_a_sale_discount(
     )
 
 
-def test_sale_totals_are_charged_in_whole_cents(api, admin_api, shift):
-    warehouse = make_warehouse(admin_api, "W2")
-    shelf = make_location(admin_api, warehouse["id"])
+def test_sale_totals_are_charged_in_whole_cents(api, admin_api, shelf, shift):
     candy = make_product(admin_api, "CANDY", salePrice="0.15", taxCode="VAT_15")
     make_movement(admin_api, candy["id"], 10, shelf["id"])
 
@@ -234,30 +332,282 @@ def test_sale_totals_are_charged_in_whole_cents(api, admin_api, shift):
     assert sale["paymentStatus"] == "PAID"
 
 
-def test_concurrent_checkouts_cannot_oversell(api, admin_api, product, shift):
-    """Both requests read the same stock; the row lock makes the second wait
-    and see what the first one left."""
-    barrier = threading.Barrier(2)
-    statuses: list[int] = []
+def test_the_pos_needs_its_terminal(client, cashier, terminal):
+    api = Api(client, cashier)
 
-    def checkout() -> None:
-        client = TestClient(app)
-        barrier.wait()
-        response = client.post(
+    error = api.error("POST", "/api/pos/shifts/open", 400, json={"openingBalance": 0})
+
+    assert error["code"] == "TERMINAL_REQUIRED"
+
+
+# Shifts per terminal
+
+
+def test_two_terminals_open_at_once_but_one_terminal_only_once(
+    client, admin_api, cashier, shelf, terminal, pg_engine
+):
+    second = make_terminal(admin_api, shelf["id"], code="CAJA-02")
+    third = make_terminal(admin_api, shelf["id"], code="CAJA-03")
+
+    both = _concurrently(
+        _open(at_terminal(cashier, terminal)), _open(at_terminal(cashier, second))
+    )
+    same = _concurrently(
+        _open(at_terminal(cashier, third)), _open(at_terminal(cashier, third))
+    )
+
+    assert sorted(r.status_code for r in both) == [201, 201]
+    assert sorted(r.status_code for r in same) == [201, 400]
+    [rejected] = [r for r in same if r.status_code == 400]
+    assert rejected.json()["errors"][0]["code"] == "SHIFT_ALREADY_OPEN"
+
+    # The database itself refuses a second open shift in the terminal
+    with pytest.raises(IntegrityError) as error, pg_engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO pos_shifts (tenant_id, cashier_name, opened_at,"
+                " opening_balance, status, terminal_id, branch_id)"
+                " SELECT tenant_id, 'Otra', now(), 0, 'OPEN', terminal_id, branch_id"
+                " FROM pos_shifts WHERE terminal_id = :terminal"
+            ),
+            {"terminal": third["id"]},
+        )
+    diag = getattr(error.value.orig, "diag", None)
+    assert diag is not None
+    assert diag.constraint_name == "uq_pos_shifts_tenant_terminal_open"
+
+
+def test_two_terminals_work_with_their_own_shift_and_cash(
+    client, admin_api, auth_headers, cashier, shelf, terminal, product
+):
+    second = make_terminal(admin_api, shelf["id"], code="CAJA-02")
+    first_api = Api(client, at_terminal(cashier, terminal))
+    second_api = Api(
+        client, at_terminal(auth_headers(Role.CASHIER, username="caja-2"), second)
+    )
+    first_shift = first_api.post("/api/pos/shifts/open", {"openingBalance": "50.00"})
+    second_shift = second_api.post("/api/pos/shifts/open", {"openingBalance": "80.00"})
+
+    _quick_sale(first_api, product["id"], 1, "11.50")
+    _quick_sale(second_api, product["id"], 2, "23.00")
+
+    assert first_api.get("/api/pos/shifts/active")["id"] == first_shift["id"]
+    assert second_api.get("/api/pos/shifts/active")["id"] == second_shift["id"]
+    first_cash = first_api.get(f"/api/pos/shifts/{first_shift['id']}/cash-summary")
+    second_cash = second_api.get(f"/api/pos/shifts/{second_shift['id']}/cash-summary")
+    assert (first_cash["cashSales"], first_cash["expectedBalance"]) == (11.5, 61.5)
+    assert (second_cash["cashSales"], second_cash["expectedBalance"]) == (23.0, 103.0)
+    daily = first_api.get("/api/pos/reports/daily", params={"terminalId": second["id"]})
+    assert (daily["totalSales"], daily["totalAmount"]) == (1, 23.0)
+    shifts = admin_api.get("/api/pos/shifts", params={"terminalId": terminal["id"]})
+    assert [s["id"] for s in shifts] == [first_shift["id"]]
+
+
+# Stock of the terminal's location
+
+
+def test_a_sale_takes_stock_only_from_its_terminals_location(
+    api, admin_api, shelf, product, shift
+):
+    backroom = make_location(admin_api, shelf["warehouseId"], "B1")
+    make_movement(admin_api, product["id"], 10, backroom["id"])
+
+    # 20 units in the warehouse, but only 10 where the terminal sells from
+    error = api.error(
+        "POST",
+        "/api/pos/sales/quick",
+        400,
+        json={
+            "items": [{"productId": product["id"], "quantity": 11}],
+            "payments": [{"amount": "126.50", "paymentMethod": "CASH"}],
+        },
+    )
+    _quick_sale(api, product["id"], 5, "57.50")
+
+    assert error["code"] == "INSUFFICIENT_STOCK"
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 5
+    assert _stock_quantity(admin_api, product["id"], backroom["id"]) == 10
+
+
+def test_concurrent_checkouts_cannot_oversell_the_location(
+    api, admin_api, shelf, product, shift
+):
+    """Both requests read the same stock row; the row lock makes the second
+    wait and see what the first one left."""
+    responses = _concurrently(
+        _checkout(api.headers, product["id"], "69.00"),
+        _checkout(api.headers, product["id"], "69.00"),
+    )
+
+    # Each takes 1: both fit. Then two of 6 each, where only one fits
+    assert sorted(r.status_code for r in responses) == [201, 201]
+    oversold = _concurrently(
+        lambda client: client.post(
             "/api/pos/sales/quick",
             json={
                 "items": [{"productId": product["id"], "quantity": 6}],
                 "payments": [{"amount": "69.00", "paymentMethod": "CASH"}],
             },
             headers=api.headers,
+        ),
+        lambda client: client.post(
+            "/api/pos/sales/quick",
+            json={
+                "items": [{"productId": product["id"], "quantity": 6}],
+                "payments": [{"amount": "69.00", "paymentMethod": "CASH"}],
+            },
+            headers=api.headers,
+        ),
+    )
+    assert sorted(r.status_code for r in oversold) == [201, 400]
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 2
+
+
+def test_cancelling_puts_the_stock_back_where_the_sale_took_it(
+    api, admin_api, shelf, terminal, product, shift
+):
+    sale = _quick_sale(api, product["id"], 4, "46.00")
+    # The terminal sells from another location since then
+    backroom = make_location(admin_api, shelf["warehouseId"], "B1")
+    admin_api.put(
+        f"/api/admin/pos-terminals/{terminal['id']}",
+        {
+            "emissionPointId": terminal["emissionPointId"],
+            "defaultLocationId": backroom["id"],
+            "code": terminal["code"],
+            "name": terminal["name"],
+        },
+    )
+
+    api.post(f"/api/pos/sales/{sale['id']}/cancel")
+
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 10
+    assert _stock_quantity(admin_api, product["id"], backroom["id"]) == 0
+
+
+# Numbering per branch
+
+
+def test_concurrent_sales_of_a_branch_get_consecutive_numbers(
+    client, admin_api, cashier, shelf, terminal, north
+):
+    second = make_terminal(admin_api, shelf["id"], code="CAJA-02")
+    terminals = [at_terminal(cashier, terminal), at_terminal(cashier, second)]
+    for headers in terminals:
+        client.post(
+            "/api/pos/shifts/open", json={"openingBalance": "0"}, headers=headers
         )
-        statuses.append(response.status_code)
+    # One product per sale: they don't wait on each other's stock, only on the
+    # branch's counter
+    products = []
+    for n in range(6):
+        product = make_product(admin_api, f"SKU-{n}", salePrice="10.00")
+        make_movement(admin_api, product["id"], 5, shelf["id"])
+        products.append(product["id"])
 
-    threads = [threading.Thread(target=checkout) for _ in range(2)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    responses = _concurrently(
+        *(_checkout(terminals[n % 2], product) for n, product in enumerate(products))
+    )
 
-    assert sorted(statuses) == [201, 400]
-    assert _stock_quantity(admin_api, product["id"]) == 4
+    assert [r.status_code for r in responses] == [201] * 6
+    numbers = sorted(r.json()["data"]["number"] for r in responses)
+    assert numbers == [f"V-001-{n:06d}" for n in range(1, 7)]
+
+    # Another branch has its own correlative
+    product = make_product(admin_api, "SKU-N", salePrice="10.00")
+    make_movement(admin_api, product["id"], 5, north["location"]["id"])
+    north_api = Api(client, at_terminal(cashier, north["terminal"]))
+    north_api.post("/api/pos/shifts/open", {"openingBalance": "0"})
+    assert _quick_sale(north_api, product["id"], 1, "11.50")["number"] == "V-002-000001"
+
+
+# Branches
+
+
+def test_a_cashier_limited_to_a_branch_cant_operate_another(
+    client, auth_headers, cashier, terminal, product, north
+):
+    limited = auth_headers(
+        Role.CASHIER, username="caja-matriz", branch_ids=[terminal["branchId"]]
+    )
+    north_sale_api = Api(client, at_terminal(cashier, north["terminal"]))
+    north_sale_api.post("/api/pos/shifts/open", {"openingBalance": "0"})
+    north_draft = north_sale_api.post("/api/pos/sales", {"isFinalConsumer": True})
+    at_home = Api(client, at_terminal(limited, terminal))
+    at_home.post("/api/pos/shifts/open", {"openingBalance": "0"})
+
+    # North's terminal with North's branch: the branch is not theirs
+    denied = Api(client, at_terminal(limited, north["terminal"])).error(
+        "POST", "/api/pos/shifts/open", 403, json={"openingBalance": "0"}
+    )
+    # North's terminal with their own branch
+    outside = Api(
+        client,
+        {
+            **at_terminal(limited, north["terminal"]),
+            "X-Branch-Id": str(terminal["branchId"]),
+        },
+    ).error("POST", "/api/pos/sales", 400, json={"isFinalConsumer": True})
+    # North's sale, by id, from their branch
+    unseen = at_home.error("GET", f"/api/pos/sales/{north_draft['id']}", 404)
+    not_confirmed = at_home.error(
+        "POST", f"/api/pos/sales/{north_draft['id']}/confirm", 404
+    )
+
+    assert denied["code"] == "BRANCH_ACCESS_DENIED"
+    assert outside["code"] == "POS_TERMINAL_OUTSIDE_BRANCH"
+    assert unseen["code"] == not_confirmed["code"] == "NOT_FOUND"
+    # Their history only has their branch's shifts
+    history = Api(client, limited)
+    shifts = history.get("/api/pos/shifts")
+    assert {s["branchId"] for s in shifts} == {terminal["branchId"]}
+    north_shift = north_sale_api.get("/api/pos/shifts/active")
+    history.error("GET", f"/api/pos/shifts/{north_shift['id']}", 404)
+    error = history.error(
+        "GET", "/api/pos/shifts", 403, params={"branchId": north["branch"]["id"]}
+    )
+    assert error["code"] == "BRANCH_ACCESS_DENIED"
+
+
+def test_a_sale_is_refunded_in_its_own_branch(
+    api, client, cashier, product, shift, north
+):
+    sale = _quick_sale(api, product["id"], 1, "11.50")
+    [item] = api.get(f"/api/pos/sales/{sale['id']}/items")
+    north_api = Api(client, at_terminal(cashier, north["terminal"]))
+    north_api.post("/api/pos/shifts/open", {"openingBalance": "0"})
+
+    error = north_api.error(
+        "POST",
+        "/api/pos/refunds",
+        400,
+        json={
+            "originalSaleId": sale["id"],
+            "items": [{"saleItemId": item["id"], "quantity": 1}],
+        },
+    )
+
+    assert error["code"] == "REFUND_OUTSIDE_BRANCH"
+
+
+def test_the_local_fallback_uses_the_main_branchs_first_terminal(
+    client, admin_api, cashier, shelf, terminal, product, monkeypatch, pg_engine
+):
+    make_terminal(admin_api, shelf["id"], code="CAJA-09")
+    # The API never makes a main branch: provisioning does
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE branches SET is_main = true WHERE id = :id"),
+            {"id": terminal["branchId"]},
+        )
+    monkeypatch.setattr(config, "POS_TERMINAL_FALLBACK", True)
+    # The web until S2.9: no X-Branch-Id nor X-Terminal-Id
+    web = Api(client, cashier)
+
+    shift = web.post("/api/pos/shifts/open", {"openingBalance": "0"})
+    sale = _quick_sale(web, product["id"], 1, "11.50")
+    receipt = web.get(f"/api/pos/sales/{sale['id']}/receipt")
+
+    assert shift["terminalId"] == terminal["id"]
+    assert sale["terminalId"] == terminal["id"]
+    assert receipt["number"] == "V-001-000001"
