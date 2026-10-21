@@ -199,6 +199,7 @@ Puntos fuertes verificados:
   fallo definitivo y nunca borra mensajes publicados (`relay.py:86-102`) [V].
 - Relay, productor y consumidor corren como hilos dentro de cada proceso del API (`main.py:80-110`) [V].
 - Los mensajes se publican sin clave de partición (`src/shared/infra/kafka/producer.py:100`) [V].
+  *S2.8:* el relay usa el `tenant_id` del mensaje como clave.
 - Si Kafka no está disponible al arrancar, el hilo del productor termina; los mensajes quedan pendientes
   hasta reiniciar [P, registrado en la revisión de octubre].
 
@@ -333,6 +334,29 @@ Puntos fuertes verificados:
 - **Pruebas**: `test/postgres` cubre los repositorios, la concurrencia (reenvíos, secuencial) y el
   flujo hasta `authorized` con el SRI simulado. En CI corre contra un servicio `postgres:17`.
 
+*Actualización S2.8 (2026-10-21):*
+
+- **Multiempresa**: perfil fiscal (`issuers`, clave `tenant_id`), certificados, secuenciales y
+  facturas por empresa. El aislamiento es un filtro obligatorio de la aplicación (sin RLS todavía).
+  La migración `1792581513940_multi-company` vuelve a crear las tablas vacías.
+- **Mensaje**: acepta `sales.confirmed` v2 (empresa, RUC, establecimiento, dirección y punto de
+  emisión de la venta) y v1 solo con `SALES_V1_TENANT_ID` (local). El XML usa el `estab`, el
+  `ptoEmi` y la `dirEstablecimiento` del mensaje; una venta con otro RUC espera
+  (`ISSUER_RUC_MISMATCH`).
+- **Secuencial**: por empresa, establecimiento, punto de emisión y tipo; se toma en la misma
+  transacción que lo guarda en la factura; `uq_invoices_tenant_number`; valor inicial con
+  `PUT /api/sequences/{establishment}/{emissionPoint}`, que no retrocede. El perfil ya no tiene
+  `invoiceSequence` ni los campos de sucursal (los ignora si llegan).
+- **Certificados**: subirlos exige el perfil y que nombren su RUC (o la cédula de una persona
+  natural); seleccionarlos, que sean de la empresa y de su RUC.
+- **API**: lee el `tid` del token (`TENANT_REQUIRED` sin él) y cada ruta trabaja sobre esa empresa.
+- **Ambiente SRI por emisor**: se retira `SRI_ENVIRONMENT`; el ambiente del perfil elige los
+  servicios del SRI y el envío y la autorización usan el de la clave de acceso. En local solo se
+  llega a pruebas (`ENVIRONMENT_NOT_ALLOWED`). Resuelve el pendiente de arriba.
+- **Readiness y recuperación por empresa**: una empresa sin certificado no detiene a otra.
+- **`invoices`**: lleva la empresa como clave y en el header `faclab-tenant-id`; el core ya no la busca
+  por la venta.
+
 ### 4.3 Contrato `sales.confirmed`
 
 | Campo | Core envía | Invoicing exige | Estado |
@@ -359,6 +383,12 @@ Puntos fuertes verificados:
   un commit del core y su CI la compara con el core en ese commit.
 - **Sigue igual**: `payments[].amount` es lo entregado y puede superar el total (riesgo de rechazo
   [PV]); `FOREIGN_ID` se mapea a `07` (consumidor final) en vez de `08` [V].
+
+*Actualización S2.8 (2026-10-21):* `sales.confirmed` pasa a v2: `tenant_id` en el sobre y
+`issuer_ruc`, `establishment_code`, `establishment_address` (nulable), `emission_point_code` y
+`sale_number` en el payload. Los ejemplos van por versión (`examples/v1/`, `examples/v2/`) y
+`contracts/CHANGELOG.md` registra cada cambio con su orden de despliegue. Una venta sin punto de
+emisión no se publica (`SALE_WITHOUT_EMISSION_POINT`).
 
 ## 5. faclab-web
 

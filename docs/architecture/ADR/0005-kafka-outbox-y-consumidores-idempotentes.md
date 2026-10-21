@@ -60,3 +60,13 @@ Se conserva Kafka (KRaft, un nodo en el VPS) con estas reglas:
 - Con un solo nodo, perder el volumen de Kafka no pierde ventas (están en PostgreSQL), pero sí mensajes
   en tránsito. Se recuperan reenviando desde el outbox o con la conciliación.
 - Hay que crear los tópicos explícitamente en `faclab-infra` y en producción.
+
+## Implementación parcial (S2.8, 2026-10-21)
+
+- **Clave de partición**: el relay del outbox del core publica cada mensaje con su `tenant_id` como
+  clave (`OutboxRelay.publish_pending` → `KafkaEventProducer.publish(key=...)`), y faclab-invoicing
+  hace lo mismo en `invoices` con la empresa de la factura. Los tópicos siguen con una partición en
+  local; crearlos con varias particiones por script queda para S3.4.
+- **Idempotencia**: la factura activa única de facturación ya es por empresa y venta,
+  `uq_invoices_active_sale (tenant_id, sale_id) WHERE status <> 'rejected'`.
+- El resto (límite de intentos del outbox, `dead_letters`, purga, reproceso) sigue en S3.4.

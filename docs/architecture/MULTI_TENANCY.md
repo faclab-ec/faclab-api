@@ -49,12 +49,13 @@
 - Nueva línea base de migraciones (`80ccdab134c7`) en lugar de la cadena anterior.
 - `make seed` crea dos empresas con el mismo catálogo y el administrador del seed en ambas.
 - Temporal hasta S2.8: un mensaje de `invoices` sin empresa corre en la de su venta (búsqueda por id).
+  Retirado en S2.8.
 
 **Implementado (S2.4, 2026-10-18):**
 
 - Roles de base: `faclab_owner` (dueño de las tablas; migraciones con `DATABASE_URL_MIGRATIONS`),
   `faclab_app` (el API, `DATABASE_URL`, sin `BYPASSRLS`) y `faclab_worker` (`DATABASE_URL_WORKER`, con
-  `BYPASSRLS`: el relay del outbox y `_tenant_of_sale`). Ninguno es superusuario. Los crea
+  `BYPASSRLS`: el relay del outbox y, hasta S2.8, `_tenant_of_sale`). Ninguno es superusuario. Los crea
   `python -m src.shared.infra.db_roles` (`make db-roles`), idempotente, con el superusuario de
   `DATABASE_URL_ADMIN`; también crea la base con dueño `faclab_owner`.
 - Permisos por migración (`80bfd3a8c63b`): app y worker leen y escriben todas las tablas y secuencias,
@@ -133,6 +134,34 @@
   otra ubicación.
 - Numeración por sucursal en `document_sequences` (ADR-0012): `V-001-000123` para ventas (al
   confirmar) y `D-001-000045` para devoluciones (al procesar).
+
+**Implementado (S2.8, 2026-10-21):**
+
+- `sales.confirmed` v2 (contrato en `contracts/events/sales.confirmed/v2.schema.json`): el sobre lleva
+  `tenant_id` y el payload, `issuer_ruc` (el RUC de la empresa), `establishment_code`,
+  `establishment_address` (nulable), `emission_point_code` y `sale_number`. Los arma
+  `issuing_point()` en `src/invoicing/infra/event_handlers.py` con el punto de emisión de la venta y
+  su sucursal. Una venta sin punto de emisión (anterior a S2.6) no se factura:
+  `SALE_WITHOUT_EMISSION_POINT` (decisión del usuario). El seed crea sus ventas en la terminal de la
+  matriz.
+- El relay del outbox usa el `tenant_id` del mensaje como clave en Kafka: los mensajes de una empresa
+  van por la misma partición, en orden (ADR-0005).
+- faclab-invoicing es multiempresa:
+  - perfil fiscal (`issuers`), certificados, secuenciales y facturas por `tenant_id`;
+  - secuencial por empresa, establecimiento, punto de emisión y tipo de documento, tomado en la
+    misma transacción que lo guarda en la factura, con valor inicial que no retrocede y
+    `uq_invoices_tenant_number`;
+  - certificados validados contra el RUC del emisor;
+  - ambiente SRI por emisor;
+  - readiness y recuperación por empresa;
+  - API filtrada por el `tid` del token.
+- El aislamiento en la base de facturación es un filtro obligatorio de la aplicación: todo método de
+  repositorio que usa la API recibe la empresa y la pone en el `WHERE`; FK compuesta del emisor a sus
+  certificados. RLS y roles separados quedan pendientes (decisión del usuario, anotado en
+  ROADMAP.md).
+- faclab-invoicing envía `faclab-tenant-id` (y la empresa como clave) en `invoices`; el core ya no
+  busca la empresa por el id de la venta (`_tenant_of_sale` retirado) y descarta un mensaje sin
+  empresa.
 
 Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
 S8.5.
@@ -282,8 +311,8 @@ sequenceDiagram
 | API | `TenantContext` (S2.2; `AuthMiddleware` lo fija desde el `tid`) y `BranchContext` (S2.5) en el scope de wireup; el repositorio base asigna y filtra en los modelos con `__tenant_scoped__` |
 | Base de datos | `set_config('app.tenant_id', tid, true)` (= `SET LOCAL`) en `after_begin` de la sesión (S2.2); RLS como segunda barrera (S2.4) |
 | Eventos de dominio | Cada `DomainEvent` lleva `tenant_id` del contexto (S2.2) |
-| Outbox y Kafka | Columna `tenant_id` y header `faclab-tenant-id` (S2.2); clave de partición y envelope con `tenant_id` (ADR-0006, S2.8) |
-| Consumidores | Abren el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre antes de llamar al handler (S2.2). Sin empresa, el mensaje se procesa sin contexto: hoy `invoices` no la trae y su handler la toma de la venta (S2.3, temporal hasta S2.8) |
+| Outbox y Kafka | Columna `tenant_id` y header `faclab-tenant-id` (S2.2); `tenant_id` como clave de partición y en el sobre de `sales.confirmed` v2 (ADR-0006, S2.8) |
+| Consumidores | Abren el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre antes de llamar al handler (S2.2). Sin empresa, el mensaje se procesa sin contexto: el handler de `invoices` lo descarta (desde S2.8 faclab-invoicing envía el header) |
 | Tareas periódicas | Recorren empresas explícitamente y abren un contexto por empresa (`create_sync_scope(tenant=...)`) |
 | Archivos | Claves `tenants/{tenant_id}/...` en el almacenamiento de objetos; nunca rutas que el cliente arme |
 | Reportes | Corren dentro del contexto (RLS). Los consolidados de la empresa agregan todas las sucursales permitidas; los de plataforma usan el rol `faclab_worker` |
@@ -330,9 +359,9 @@ CREATE POLICY tenant_isolation ON products
 - Roles (los crea `python -m src.shared.infra.db_roles`, con el superusuario de `DATABASE_URL_ADMIN`):
   - `faclab_owner` es dueño de las tablas y ejecuta migraciones (`DATABASE_URL_MIGRATIONS`).
   - `faclab_app` es el que usa el API (`DATABASE_URL`), sin `BYPASSRLS`.
-  - `faclab_worker` tiene `BYPASSRLS` (`DATABASE_URL_WORKER`). Hoy lo usan el relay del outbox y
-    `_tenant_of_sale`, que corren en el proceso del API hasta que S3.4 los mueva al worker y S2.8 quite
-    `_tenant_of_sale`. Las tareas de plataforma que recorran empresas abren un contexto por empresa o
+  - `faclab_worker` tiene `BYPASSRLS` (`DATABASE_URL_WORKER`). Hoy solo lo usa el relay del outbox,
+    que corre en el proceso del API hasta que S3.4 lo mueva al worker (`_tenant_of_sale` se retiró en
+    S2.8). Las tareas de plataforma que recorran empresas abren un contexto por empresa o
     usan este rol.
 - `SET LOCAL` (no `SET`) para que el valor muera con la transacción y no se filtre a otra solicitud que
   reutilice la conexión del pool.
@@ -396,8 +425,11 @@ CI, obligatorio para `master`:
   abre turno con la 002 (403), no usa una terminal de la 002 con la 001
   (`POS_TERMINAL_OUTSIDE_BRANCH`) y no ve ni confirma por id una venta de la 002 (404); su historial de
   turnos solo muestra los de su sucursal (`test_pos.py`).
-- Pendiente: mensajes Kafka (un `sales.confirmed` de A nunca usa el perfil fiscal ni el secuencial de
-  B) en S2.8.
+- Mensajes Kafka (S2.8): un `sales.confirmed` de A nunca usa el perfil fiscal, el certificado ni el
+  secuencial de B, y la API de facturación no muestra a A facturas, configuración, certificados ni
+  secuenciales de B. Lo prueban faclab-invoicing (`test/http/tenant-isolation.test.ts`,
+  `test/postgres/`) y el core (`tests/integration/postgres/test_invoicing.py`: un resultado de
+  facturación con la empresa de otra o sin empresa no toca la venta).
 
 ## 9. Incorporación de empresas y migración de datos
 
@@ -408,11 +440,13 @@ CI, obligatorio para `master`:
    - Crea la sucursal matriz (establecimiento 001), el punto de emisión 001, una bodega con su ubicación
      por defecto y una terminal. Hecho en S2.5 (`SetUpTenantStructureCommand`).
    - Crea la membresía del primer administrador.
-2. **Perfil fiscal y certificado** en facturación; el emisor queda listo según el readiness existente.
+2. **Perfil fiscal y certificado** en facturación, con un token de la empresa: primero el perfil (el RUC),
+   después el certificado de ese RUC y su selección; el emisor queda listo según el readiness (S2.8).
 3. **Datos iniciales**: importación de productos, clientes, proveedores y saldos de inventario (S5.8).
    Los saldos entran como movimientos de ajuste auditados, no como escritura directa de stock.
 4. **Secuencial inicial** por establecimiento y punto de emisión, para continuar la numeración de un
-   sistema anterior.
+   sistema anterior: `PUT /api/sequences/{establishment}/{emissionPoint}` en facturación (S2.8), que
+   nunca retrocede.
 5. **Datos existentes de desarrollo**: no hay datos productivos (decisión del 2026-10-14); la nueva
    línea base de migraciones parte de cero y el seed crea dos empresas de ejemplo.
 
