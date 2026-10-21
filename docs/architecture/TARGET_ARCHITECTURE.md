@@ -122,7 +122,8 @@ desventajas, impacto, complejidad, y prioridad con dependencias.
 
 ### R-4 Facturación en PostgreSQL y multiempresa
 
-- **Estado actual:** DynamoDB y S3, un emisor, secuencial global con carrera (G-05, G-09).
+- **Estado actual:** PostgreSQL propio desde S2.7, con factura activa única por venta. Todavía un
+  emisor y un secuencial global, que puede retroceder si se fija a mano (G-05, G-09; S2.8).
 - **Problema:** no corre en el VPS y no soporta varios emisores ni secuenciales correctos.
 - **Recomendación:** PostgreSQL propio, perfil fiscal y certificados por empresa, secuencial por
   establecimiento, punto de emisión y tipo, y restricción única de factura activa por venta.
@@ -284,7 +285,8 @@ Todo se ejecuta en CI. Un PR no se integra si falla lint, tipos, pruebas o contr
   - Después, migraciones compatibles hacia adelante: agregar columnas nulas, rellenar los datos y
     recién entonces volverlas obligatorias.
   - Nunca se renombra ni elimina en el mismo despliegue que deja de usar el campo.
-- **Invoicing:** herramienta de migraciones SQL en Node (S2.7).
+- **Invoicing:** migraciones SQL con node-pg-migrate (`migrations/`, `npm run migrate up`), como paso
+  aparte antes de arrancar (S2.7).
 - **Prueba de migraciones en CI:** `upgrade` sobre una base vacía y `upgrade` desde la versión anterior.
 
 ## 9. Costos y complejidad

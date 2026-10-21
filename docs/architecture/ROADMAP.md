@@ -29,7 +29,9 @@
   ocurrió (G-08).
 - **La persistencia de facturación en PostgreSQL (S2.7) va en la Etapa 2.** Es requisito para
   secuenciales por establecimiento y para correr en el VPS. Por eso **no** se corrige la carrera del
-  secuencial en DynamoDB (G-09): esa persistencia se reemplaza.
+  secuencial en DynamoDB (G-09): esa persistencia se reemplaza. *S2.7 (terminada):* el contador es una
+  fila de PostgreSQL, arranca en 1 y guardar la configuración ya no lo reescribe. Que no pueda
+  retroceder y el `UNIQUE` sobre el número emitido quedan en S2.8.
 - **La Etapa 8 puede empezar en paralelo** desde la Etapa 3 (S8.1 a S8.3) para tener staging pronto.
   El orden de la tabla es el lógico, no el único posible.
 - **Ferretería (Etapa 5) va después de multiempresa e integridad** para no construir módulos nuevos
@@ -110,6 +112,17 @@
 - **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
   acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
   ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).
+- **El secuencial de facturación puede retroceder** (detectado en S2.7). Guardar la configuración sin
+  `invoiceSequence` ya no toca el contador. Pero con el campo lo fija tal cual, aunque sea menor que el
+  último emitido, y el formulario de faclab-web siempre lo reenvía con el valor que leyó. Si se emiten
+  facturas mientras el formulario está abierto, guardarlo retrocede el contador. S2.8 lo cierra:
+  valor inicial que no retrocede y `UNIQUE` sobre el número emitido. Conviene que la web solo envíe el
+  campo si el usuario lo cambió.
+- **Roles y RLS en la base de facturación** (detectado en S2.7). `faclab_invoicing` es dueño de la
+  base y la usa la aplicación. Con varias empresas (S2.8) conviene separar dueño y aplicación, como en
+  el core (S2.4), y filtrar o aplicar RLS por `tenant_id`.
+- **Filtro por fecha en la lista de facturas de faclab-web** (detectado en S2.7). `GET /api/invoices`
+  acepta `fromDate` y `toDate`, pero la pantalla solo filtra por estado y por "requieren atención".
 
 ## 2. Dependencias
 

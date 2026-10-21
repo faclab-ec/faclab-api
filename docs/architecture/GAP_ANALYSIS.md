@@ -43,7 +43,7 @@
 |---|---|---|---|---|---|---|
 | G-07 | Producción usa las URLs del SRI de pruebas (`celcer`) y el broker `localhost:29092` | V | `faclab-invoicing/src/config/production.ts:27-34` | Facturas "autorizadas" sin validez tributaria | P0 | S1.3 (resuelta: `SRI_ENVIRONMENT` elige `celcer` o `cel` y, como `KAFKA_BROKERS`, la región, las tablas y el bucket, es obligatoria en producción) |
 | G-08 | El core envía `email`, `phone`, `address`, `sku` o `product_name` nulos y facturación los exige | V | `src/invoicing/infra/event_handlers.py:42-50`, `faclab-invoicing/.../schemas.ts:18-30` | La venta va a la cola de mensajes fallidos (DLQ, *dead letter queue*) y nunca se factura | P0 | S1.6 (resuelta: contrato v1 con esos campos nulables; invoicing los acepta y el XML los omite) |
-| G-09 | Guardar la configuración del emisor lee y reescribe el contador: puede retroceder y repetir secuenciales; la primera factura sale con 000000002 | V | `company-config.commands.ts:40-46`, `dynamo-company-config.repository.ts:22-53` | Rechazo por secuencial duplicado; huecos | P0 | S2.7, S2.8 |
+| G-09 | Guardar la configuración del emisor lee y reescribe el contador: puede retroceder y repetir secuenciales; la primera factura sale con 000000002 | V | `company-config.commands.ts:40-46`, `dynamo-company-config.repository.ts:22-53` | Rechazo por secuencial duplicado; huecos | P0 | S2.7, S2.8 (parcial en S2.7: fila de `sequences` con `UPDATE ... RETURNING`, la primera factura es 000000001 y guardar la configuración sin `invoiceSequence` no toca el contador; falta que no pueda retroceder y el `UNIQUE` del número emitido, S2.8) |
 | G-10 | No se guarda número ni fecha de autorización ni el XML autorizado | V | `invoice.mapper.ts:29-55` | No se puede entregar ni conservar el comprobante autorizado | P0 | S4.1 |
 | G-11 | No existe nota de crédito; `RefundCompleted` no tiene suscriptores | V | `src/pos/refund/app/commands/process_refund.py:112`, búsqueda de suscriptores sin resultados | Devoluciones sin respaldo tributario | P1 | S4.5 |
 | G-12 | No hay RIDE (Representación Impresa del Documento Electrónico) ni envío por correo | V | Búsqueda sin resultados | El cliente final no recibe su comprobante | P1 | S4.4 |
@@ -52,7 +52,7 @@
 | G-15 | La clave de acceso usa el `saleId` como código numérico de 8 dígitos | V | `access-code-generator.ts:16` | Falla con id > 99.999.999; código predecible | P2 | S4.1 |
 | G-16 | `pagos` puede sumar más que `importeTotal` porque el core envía lo entregado, no lo aplicado | P | `quick_sale.py:137-180`, `generate_receipt.py:98` | Posible rechazo del SRI | P1 | S3.3, S4.1 |
 | G-17 | No se escriben `contribuyenteEspecial`, `agenteRetencion` ni `contribuyenteRimpe` | V | `invoice-xml-builder.ts` (solo los mappers los leen) | XML incompleto para ciertos emisores | P1 | S4.1 |
-| G-18 | Dos reenvíos simultáneos de la misma venta pueden crear dos facturas activas (consulta eventual al índice + condición solo sobre `id`) | P | `receive-sale.ts:36-44`, `dynamo-invoice.repository.ts:35` | Doble facturación | P2 | S2.7 |
+| G-18 | Dos reenvíos simultáneos de la misma venta pueden crear dos facturas activas (consulta eventual al índice + condición solo sobre `id`) | P | `receive-sale.ts:36-44`, `dynamo-invoice.repository.ts:35` | Doble facturación | P2 | S2.7 (resuelta: índice único parcial `uq_invoices_active_sale`; `createInvoice` devuelve `false` y el reenvío se descarta; prueba con reenvíos en paralelo) |
 | G-19 | No hay validación local contra el XSD | V | No hay XSD en el repo | Rechazos que se descubren recién en el SRI | P2 | S4.1 |
 | G-20 | Se puede cancelar una venta CONFIRMED mientras su factura está en curso; la autorización posterior solo se registra | P | `src/sales/domain/entities.py:111-115`, `invoice_messages.py:36-66` | Factura autorizada de una venta anulada | P1 | S3.3, S4.5 |
 | G-21 | `InvoiceRejected` solo se registra; la venta no refleja el estado de facturación | V | `src/invoicing/infra/invoice_messages.py:36-42` | Operadores no ven qué ventas necesitan acción | P1 | S3.4, S4.3 |
@@ -133,7 +133,7 @@
 |---|---|---|---|---|---|---|
 | G-72 | No hay API versionada, credenciales de integración, scopes ni webhooks | V | `main.py:237-344` | Integraciones acopladas al contrato interno del frontend | P1 | S6.1–S6.5 |
 | G-73 | Listados sin orden estable ni parámetros de ordenamiento | V | `src/shared/infra/repositories.py:138-177` | Paginación inconsistente | P2 | S6.3 |
-| G-74 | `GET /api/invoices` de invoicing recorre toda la tabla | V | `dynamo-invoice.repository.ts:84-95` | Degradación con volumen | P2 | S2.7 |
+| G-74 | `GET /api/invoices` de invoicing recorre toda la tabla | V | `dynamo-invoice.repository.ts:84-95` | Degradación con volumen | P2 | S2.7 (resuelta: `GET /api/invoices` paginado con `limit`/`offset`, filtros e índices; `meta.pagination` con el total; faclab-web pagina en el servidor) |
 
 ### 2.8 Pruebas
 

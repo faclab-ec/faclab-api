@@ -36,8 +36,7 @@ flowchart LR
         ICONS[Consumidor + máquina de estados]
         IREC[Recuperación cada 60 s]
     end
-    DDB[(DynamoDB<br/>LocalStack)]
-    S3[(S3 certificados<br/>LocalStack)]
+    IPG[(PostgreSQL faclab_invoicing<br/>desde S2.7; antes DynamoDB y S3)]
     SRI[[SRI web services<br/>celcer = pruebas]]
     SIG[SigNoz<br/>no desplegado]
 
@@ -51,9 +50,8 @@ flowchart LR
     T2 --> ICONS
     T2 --> CONS --> PG
     ICONS --> T3
-    ICONS --> DDB
-    IAPI --> DDB
-    IAPI --> S3
+    ICONS --> IPG
+    IAPI --> IPG
     ICONS -->|SOAP| SRI
     IREC --> SRI
     API -. OTLP .-> SIG
@@ -65,9 +63,9 @@ flowchart LR
 | Componente | Tecnología | Responsabilidad | Evidencia |
 |---|---|---|---|
 | faclab-core (remoto `faclab-ec/faclab-api`) | Python 3.12 (Docker) / 3.11 (`.venv`), FastAPI 0.135, SQLAlchemy 2.0, Alembic, wireup 2.9, aiokafka 0.12, structlog, OTel SDK 1.32 | Catálogo, inventario, clientes, proveedores, compras, ventas, POS, reportes, auth, integración con facturación | `requirements.txt`, `main.py` [V] |
-| faclab-invoicing | Node/TS, Fastify 5, `@confluentinc/kafka-javascript` (API compatible con KafkaJS), AWS SDK v3 (DynamoDB, S3), zod, pino, xmlbuilder2, xml-crypto, node-forge, strong-soap, OTel sdk-node | Factura electrónica SRI: XML, firma XAdES-BES, recepción y autorización, reintentos, configuración del emisor y certificados | `package.json`, `src/container.ts` [V] |
+| faclab-invoicing | Node/TS, Fastify 5, `@confluentinc/kafka-javascript` (API compatible con KafkaJS), `pg` y node-pg-migrate (PostgreSQL desde S2.7; antes AWS SDK v3 para DynamoDB y S3), zod, pino, xmlbuilder2, xml-crypto, node-forge, strong-soap, OTel sdk-node | Factura electrónica SRI: XML, firma XAdES-BES, recepción y autorización, reintentos, configuración del emisor y certificados | `package.json`, `src/container.ts` [V] |
 | faclab-web | React 19.2, Vite 7.3, react-router 6.30, TanStack Query 5, Zustand 5, axios, zod 4, Tailwind 3, Vitest 4, Playwright 1.64 | Panel de administración, POS, facturación | `package.json`, `src/features/*` [V] |
-| faclab-infra | docker-compose | Kafka 7.9 (KRaft, un nodo), kafka-ui, LocalStack 4.3 (DynamoDB, S3), dynamodb-admin. Solo local | `docker-compose.yml` [V] |
+| faclab-infra | docker-compose | Kafka 7.9 (KRaft, un nodo), kafka-ui y, desde S2.7, `invoicing-db` (PostgreSQL 17 de facturación) en lugar de LocalStack y dynamodb-admin. Solo local | `docker-compose.yml` [V] |
 | Telemetry | Clon limpio de `SigNoz/signoz` (HEAD 2026-04-10) | Referencia para desplegar SigNoz (compose: signoz v0.118.0, collector v0.144.2, ClickHouse 25.5.6). No está levantado ni conectado a `faclab_network` | `deploy/docker/docker-compose.yaml` [V] |
 
 ## 3. faclab-core
@@ -305,6 +303,35 @@ Puntos fuertes verificados:
     contra faclab-infra].
 - **Pendiente**: nada cruza todavía `CompanyConfig.environment` (el `ambiente` del comprobante) con
   `SRI_ENVIRONMENT` (S2.8).
+
+*Actualización S2.7 (2026-10-20):*
+
+- **Persistencia**: PostgreSQL en una base propia (`faclab_invoicing`), con `pg` y SQL escrito a mano
+  en `src/modules/*/infra/persistence/pg-*.repository.ts`. No queda código de DynamoDB ni de S3.
+  - Tablas: `invoices`, `invoice_events` (historial de estados), `issuers` (todavía una fila),
+    `sequences` y `certificates`.
+  - Migraciones SQL en `migrations/` con node-pg-migrate (`npm run migrate up`), como paso aparte
+    antes de arrancar. La imagen las incluye.
+  - En local, faclab-infra tiene `invoicing-db` (PostgreSQL 17, `localhost:5434`) con las bases
+    `faclab_invoicing` y `faclab_invoicing_test`. LocalStack y dynamodb-admin se retiraron.
+- **Factura activa única** (G-18): el índice parcial `uq_invoices_active_sale` admite una sola
+  factura no rechazada por venta. Dos reenvíos simultáneos dejan una sola y el segundo sigue el
+  camino de deduplicación existente. Las actualizaciones siguen con bloqueo optimista por `version`.
+- **Secuencial**: es una fila de `sequences` que se toma con `UPDATE ... RETURNING`, todavía global.
+  - La primera factura de un emisor nuevo es `000000001`.
+  - `invoiceSequence` es el número que tomará la próxima factura.
+  - Guardar la configuración sin `invoiceSequence` ya no lee ni reescribe el contador.
+  - Con el campo, lo fija aunque sea menor (puede retroceder); faclab-web siempre lo reenvía. Eso
+    queda para S2.8.
+- **Certificados**: el `.p12` y su contraseña se guardan cifrados con AES-256-GCM en `certificates`,
+  en una sola escritura. La respuesta de certificados ya no trae `s3Url`.
+- **`GET /api/invoices`** devuelve una página con `meta.pagination` (`limit` 1-1000, 100 por defecto;
+  `offset`, `status`, `fromDate`/`toDate` en hora de Ecuador y `attention`). faclab-web pagina en el
+  servidor (G-74).
+- **Configuración**: `DATABASE_URL` reemplaza a `AWS_*`, `DYNAMODB_*` y `S3_CERTIFICATES_BUCKET`, y es
+  obligatoria en producción.
+- **Pruebas**: `test/postgres` cubre los repositorios, la concurrencia (reenvíos, secuencial) y el
+  flujo hasta `authorized` con el SRI simulado. En CI corre contra un servicio `postgres:17`.
 
 ### 4.3 Contrato `sales.confirmed`
 
