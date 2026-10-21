@@ -188,6 +188,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 total=sale.total,
                 payments=sale_payments_data(created_payments),
                 source="pos",
+                branch_id=sale.branch_id,
+                emission_point_id=sale.emission_point_id,
+                number=sale.number,
             )
         )
 

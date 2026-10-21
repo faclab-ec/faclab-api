@@ -4,7 +4,8 @@ Corre en un hilo del proceso de la API (lo arranca el lifespan cuando
 KAFKA_ENABLED). Toma los pendientes con FOR UPDATE SKIP LOCKED, así varias
 réplicas no publican el mismo mensaje, y los marca como publicados en la misma
 transacción. Si Kafka falla, se detiene en ese mensaje para no alterar el orden
-y lo reintenta en la siguiente vuelta.
+y lo reintenta en la siguiente vuelta. La clave de cada mensaje es su empresa:
+los de una empresa van por la misma partición, en orden.
 """
 
 import threading
@@ -22,7 +23,11 @@ logger = structlog.get_logger(__name__)
 
 class MessagePublisher(Protocol):
     def publish(
-        self, topic: str, value: dict[str, Any], headers: list[tuple[str, bytes]]
+        self,
+        topic: str,
+        value: dict[str, Any],
+        headers: list[tuple[str, bytes]],
+        key: str | None = None,
     ) -> None:
         """Send the message and wait for the broker; raise if it fails."""
         ...
@@ -88,6 +93,7 @@ class OutboxRelay:
                         message.topic,
                         message.payload,
                         [(k, v.encode("utf-8")) for k, v in message.headers.items()],
+                        key=str(message.tenant_id),
                     )
                 except Exception as exc:
                     message.attempts += 1

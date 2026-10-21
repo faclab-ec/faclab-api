@@ -1,6 +1,6 @@
 # ADR-0004: Persistencia de faclab-invoicing en PostgreSQL
 
-- **Estado:** aceptado (2026-10-20, implementado en S2.7; la parte multiempresa queda para S2.8)
+- **Estado:** aceptado (2026-10-20, implementado en S2.7; la parte multiempresa, en S2.8 el 2026-10-21)
 - **Relacionado:** [ADR-0011](0011-despliegue-en-vps-con-docker-compose.md), [ADR-0012](0012-numeracion-de-documentos.md)
 
 ## Contexto
@@ -84,3 +84,24 @@ mismo comportamiento (S2.7); después se vuelve multiempresa (S2.8).
   aplicación) y RLS o filtro obligatorio por empresa llegan con S2.8.
 - **Pruebas**: `test/postgres` corre contra una base `*_test`, con un esquema por archivo; en CI, con
   un servicio `postgres:17`.
+
+## Implementación multiempresa (S2.8, 2026-10-21)
+
+- **Migración** `1792581513940_multi-company.sql`: vuelve a crear las tablas vacías (no hay datos
+  productivos y la fila `default` no tenía empresa).
+  - `issuers` con clave `tenant_id` y sin los campos de sucursal: el establecimiento, su dirección y
+    el punto de emisión llegan con cada venta.
+  - `certificates` con `tenant_id` y los RUC y cédulas que nombra el certificado (`tax_ids`).
+  - `sequences (tenant_id, establishment, emission_point, doc_type, last_value)`.
+  - `invoices` con `tenant_id`, `issuer_ruc`, `establishment`, `emission_point` y
+    `establishment_address`; `uq_invoices_active_sale (tenant_id, sale_id)` y
+    `uq_invoices_tenant_number UNIQUE (tenant_id, establishment, emission_point, sequence)`. Solo hay
+    facturas (código 01), así que `doc_type` no está en la tabla.
+- **Aislamiento**: filtro obligatorio de la aplicación (decisión del usuario). Los métodos de
+  repositorio que usa la API reciben la empresa; el flujo (Kafka, recuperación) mueve facturas por id
+  y usa la empresa de cada una. FK compuesta `(tenant_id, signing_cert_id)` hacia los certificados de
+  la misma empresa. Sigue un solo rol (`faclab_invoicing`): roles separados y RLS quedan pendientes
+  (ROADMAP.md).
+- **Secuencial**: `INSERT ... ON CONFLICT DO UPDATE SET last_value = last_value + 1 RETURNING`, en la
+  misma transacción que lo guarda en la factura; el valor inicial se fija con
+  `PUT /api/sequences/{establishment}/{emissionPoint}` y no retrocede.

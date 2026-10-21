@@ -1,6 +1,6 @@
 # ADR-0012: Numeración de documentos internos y tributarios
 
-- **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes en S2.8)
+- **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes desde S2.8)
 - **Relacionado:** [ADR-0004](0004-persistencia-de-facturacion-en-postgresql.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -48,6 +48,22 @@
 - El formato es fijo por ahora; el formato configurable por empresa y la numeración de cotizaciones,
   órdenes de compra, ajustes, transferencias y cierres quedan para sus sesiones (anotado en
   ROADMAP.md).
+
+### Precisiones de la implementación (S2.8, comprobantes)
+
+- `sequences (tenant_id, establishment, emission_point, doc_type, last_value)` en faclab-invoicing,
+  con la misma técnica: `INSERT … ON CONFLICT DO UPDATE SET last_value = last_value + 1 RETURNING`,
+  dentro de la transacción que guarda el número en la factura (`PgInvoiceRepository.assignSequence`).
+  Si la factura cambió mientras tanto, el rollback devuelve el número.
+- `uq_invoices_tenant_number UNIQUE (tenant_id, establishment, emission_point, sequence)`.
+- El valor inicial se fija por establecimiento y punto de emisión con
+  `PUT /api/sequences/{establishment}/{emissionPoint}`; un valor menor que el último emitido responde
+  `SEQUENCE_CANNOT_GO_BACK` (409). Guardar el perfil fiscal nunca lo mueve.
+- El establecimiento y el punto de emisión llegan en `sales.confirmed` v2 (los de la terminal de la
+  venta); facturación no los decide. Una venta sin punto de emisión no se publica
+  (`SALE_WITHOUT_EMISSION_POINT`).
+- Bloquear el cambio del código de establecimiento o de punto de emisión cuando ya hay comprobantes
+  sigue pendiente (ROADMAP.md).
 
 ## Consecuencias
 

@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
 
@@ -10,13 +11,18 @@ from src.catalog.product.domain.entities import Product
 from src.customers.domain.entities import Customer
 from src.invoicing.domain.exceptions import InvoicingDisabledError
 from src.invoicing.infra.event_handlers import (
+    IssuingPoint,
     build_sale_confirmed_message,
     enqueue_invoicing_request,
     enqueue_sale_confirmed,
+    issuing_point,
 )
+from src.organization.domain.entities import Branch, EmissionPoint
 from src.sales.domain.events import SaleConfirmed, SaleInvoicingRequested
+from src.sales.domain.exceptions import SaleWithoutEmissionPointError
 from src.shared.domain.tax import TaxCode, TaxType
 from src.shared.infra.kafka.producer import json_default
+from src.tenancy.domain.entities import Tenant
 
 
 def _make_event(**overrides) -> SaleConfirmed:
@@ -38,9 +44,21 @@ def _make_event(**overrides) -> SaleConfirmed:
         "subtotal": Decimal("20.00"),
         "total": Decimal("23.00"),
         "source": "pos",
+        "branch_id": 2,
+        "emission_point_id": 5,
+        "number": "V-001-000009",
     }
     defaults.update(overrides)
     return SaleConfirmed(**defaults)
+
+
+POINT = IssuingPoint(
+    tenant_id=UUID("00000000-0000-4000-8000-00000000000a"),
+    issuer_ruc="1799999990001",
+    establishment_code="001",
+    establishment_address="Av. Amazonas N34-120, Quito",
+    emission_point_code="002",
+)
 
 
 def _build(
@@ -52,7 +70,63 @@ def _build(
     product_repo.get_by_ids.return_value = [
         Product(id=10, sku="SKU-10", name="Producto 10")
     ]
-    return build_sale_confirmed_message(event, customer_repo, product_repo)
+    return build_sale_confirmed_message(event, POINT, customer_repo, product_repo)
+
+
+def _repos(
+    tenant: Tenant | None, branch: Branch | None, point: EmissionPoint | None
+) -> tuple[MagicMock, MagicMock, MagicMock]:
+    tenant_repo, branch_repo, point_repo = MagicMock(), MagicMock(), MagicMock()
+    tenant_repo.get.return_value = tenant
+    branch_repo.get_by_id.return_value = branch
+    point_repo.get_by_id.return_value = point
+    return tenant_repo, branch_repo, point_repo
+
+
+def test_the_issuing_point_is_the_tenant_and_the_sale_emission_point(in_tenant):
+    repos = _repos(
+        Tenant(ruc="1799999990001", legal_name="Ferretería", id=in_tenant.tenant_id),
+        Branch(id=2, establishment_code="003", name="Norte", address="Av. Norte"),
+        EmissionPoint(id=5, branch_id=2, code="004"),
+    )
+
+    point = issuing_point(_make_event(), *repos)
+
+    assert point == IssuingPoint(
+        tenant_id=in_tenant.tenant_id,
+        issuer_ruc="1799999990001",
+        establishment_code="003",
+        establishment_address="Av. Norte",
+        emission_point_code="004",
+    )
+    # The branch is the emission point's
+    repos[1].get_by_id.assert_called_once_with(2)
+
+
+def test_a_sale_without_emission_point_cannot_be_invoiced(in_tenant):
+    repos = _repos(
+        Tenant(ruc="1799999990001", legal_name="Ferretería", id=in_tenant.tenant_id),
+        None,
+        None,
+    )
+
+    with pytest.raises(SaleWithoutEmissionPointError):
+        issuing_point(_make_event(branch_id=None, emission_point_id=None), *repos)
+
+
+def test_the_message_carries_the_tenant_issuer_and_emission_point():
+    message = _build(_make_event())
+
+    assert message["schema_version"] == 2
+    assert message["tenant_id"] == str(POINT.tenant_id)
+    payload = message["payload"]
+    assert payload["sale_number"] == "V-001-000009"
+    assert payload["issuer_ruc"] == "1799999990001"
+    assert (payload["establishment_code"], payload["emission_point_code"]) == (
+        "001",
+        "002",
+    )
+    assert payload["establishment_address"] == "Av. Amazonas N34-120, Quito"
 
 
 def test_item_carries_tax_code_and_product_data():
@@ -153,6 +227,9 @@ def test_a_resend_is_the_same_message_with_its_own_event_id():
         total=original.total,
         payments=original.payments,
         source=original.source,
+        branch_id=original.branch_id,
+        emission_point_id=original.emission_point_id,
+        number=original.number,
     )
 
     sent, resent = _build(original), _build(resend)

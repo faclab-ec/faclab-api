@@ -30,8 +30,9 @@
 - **La persistencia de facturación en PostgreSQL (S2.7) va en la Etapa 2.** Es requisito para
   secuenciales por establecimiento y para correr en el VPS. Por eso **no** se corrige la carrera del
   secuencial en DynamoDB (G-09): esa persistencia se reemplaza. *S2.7 (terminada):* el contador es una
-  fila de PostgreSQL, arranca en 1 y guardar la configuración ya no lo reescribe. Que no pueda
-  retroceder y el `UNIQUE` sobre el número emitido quedan en S2.8.
+  fila de PostgreSQL, arranca en 1 y guardar la configuración ya no lo reescribe. *S2.8 (terminada):*
+  un contador por empresa, establecimiento y punto de emisión, que no retrocede, y `UNIQUE` sobre el
+  número emitido.
 - **La Etapa 8 puede empezar en paralelo** desde la Etapa 3 (S8.1 a S8.3) para tener staging pronto.
   El orden de la tabla es el lógico, no el único posible.
 - **Ferretería (Etapa 5) va después de multiempresa e integridad** para no construir módulos nuevos
@@ -45,7 +46,9 @@
   el 409 revela que el nombre ya existe en otra. Pasar al login con email y descartar `username`
   mitiga esos choques. Conviene decidirlo antes de S2.9 (pantalla de login) o, a más tardar, en S8.5
   (onboarding).
-- **Empresa en los mensajes de `invoices`** (detectado en S2.2; mitigado en S2.3). El consumidor del
+- ~~**Empresa en los mensajes de `invoices`**~~ (detectado en S2.2; mitigado en S2.3; resuelto en S2.8:
+  faclab-invoicing envía `faclab-tenant-id` y la empresa como clave, y el core ya no busca la empresa
+  por la venta: descarta un mensaje sin ella). El consumidor del
   core abre el contexto con el header `faclab-tenant-id` o el `tenant_id` del sobre, pero
   faclab-invoicing todavía no envía ninguno. Desde S2.3, un mensaje sin empresa corre en la de su venta
   (`_tenant_of_sale` en `src/invoicing/infra/invoice_messages.py`, búsqueda por el id global de la
@@ -80,21 +83,26 @@
   Falta en la administración: stock, bodegas, ventas (`/api/admin/sales`) y los reportes de
   inventario todavía muestran toda la empresa (MULTI_TENANCY §7), a hacer con los reportes por
   sucursal o en S2.9.
-- **Códigos SRI y dirección de la sucursal en facturación** (detectado en S2.5). Hoy se pueden cambiar
-  el código de establecimiento y el de punto de emisión con un PUT. Desde S2.6 las ventas guardan su
-  punto de emisión y un número con el código del establecimiento ya formateado (no cambia si después
-  cambia el código), pero cuando haya comprobantes (S2.8) conviene bloquear el cambio. La dirección de la sucursal (`address`) es
-  opcional y es la `dirEstablecimiento` que S2.8 enviará a facturación.
+- **Códigos SRI de la sucursal con comprobantes emitidos** (detectado en S2.5; la dirección se resolvió
+  en S2.8). Hoy se pueden cambiar el código de establecimiento y el de punto de emisión con un PUT.
+  Desde S2.8 facturación numera por esos códigos, que llegan en cada `sales.confirmed`: cambiar uno
+  con facturas emitidas abre otra numeración en el SRI. Conviene bloquear el cambio cuando el
+  establecimiento o el punto ya emitieron (por ejemplo, en S3.x o con el onboarding, S8.5). La
+  dirección de la sucursal (`address`) es la `dirEstablecimiento` del comprobante; sin ella, la
+  factura sale sin ese campo.
 - **POS de faclab-web sin encabezados de sucursal y terminal** (detectado en S2.6). Las rutas del POS
   exigen `X-Branch-Id` y `X-Terminal-Id`, y la web no los envía todavía. Hasta S2.9 corre con
   `POS_TERMINAL_FALLBACK` (verdadero solo en `local`): sin encabezados usa la primera terminal activa
   de la matriz. En staging y producción el POS de la web no funciona hasta S2.9, que vincula la
   terminal con `GET /api/pos/terminals`, envía los encabezados y quita el respaldo (el ajuste y su
   rechazo en `config/deployed.py`).
-- **Número, establecimiento y punto de emisión en `sales.confirmed`** (detectado en S2.6). La venta
+- ~~**Número, establecimiento y punto de emisión en `sales.confirmed`**~~ (detectado en S2.6; resuelto
+  en S2.8 con `sales.confirmed` v2). La venta
   del POS ya guarda `branch_id`, `emission_point_id`, `terminal_id` y `number`, pero el mensaje a
   faclab-invoicing no los lleva: lo cambia S2.8 junto con el contrato (ADR-0006, ADR-0012).
-- **Ventas del seed sin sucursal ni número** (detectado en S2.6). La API de administración solo lee
+- ~~**Ventas del seed sin sucursal ni número**~~ (detectado en S2.6; resuelto en S2.8: el seed las crea
+  en la terminal de la matriz y una venta sin punto de emisión responde
+  `SALE_WITHOUT_EMISSION_POINT`). La API de administración solo lee
   ventas (las crea el POS), pero `make seed` siembra ventas confirmadas sin sucursal, terminal ni
   número, como las anteriores a S2.6: un usuario limitado a algunas sucursales no las ve en los
   historiales del POS y S2.8 no podría facturarlas. Conviene que el seed las cree en una terminal
@@ -112,17 +120,41 @@
 - **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
   acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
   ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).
-- **El secuencial de facturación puede retroceder** (detectado en S2.7). Guardar la configuración sin
+- ~~**El secuencial de facturación puede retroceder**~~ (detectado en S2.7; resuelto en S2.8: el
+  secuencial ya no es parte de la configuración, que ignora `invoiceSequence`, y su valor inicial se
+  fija aparte sin poder retroceder). Guardar la configuración sin
   `invoiceSequence` ya no toca el contador. Pero con el campo lo fija tal cual, aunque sea menor que el
   último emitido, y el formulario de faclab-web siempre lo reenvía con el valor que leyó. Si se emiten
   facturas mientras el formulario está abierto, guardarlo retrocede el contador. S2.8 lo cierra:
   valor inicial que no retrocede y `UNIQUE` sobre el número emitido. Conviene que la web solo envíe el
   campo si el usuario lo cambió.
-- **Roles y RLS en la base de facturación** (detectado en S2.7). `faclab_invoicing` es dueño de la
-  base y la usa la aplicación. Con varias empresas (S2.8) conviene separar dueño y aplicación, como en
-  el core (S2.4), y filtrar o aplicar RLS por `tenant_id`.
+- **Roles y RLS en la base de facturación** (detectado en S2.7; decidido en S2.8). `faclab_invoicing`
+  es dueño de la base y la usa la aplicación. En S2.8 el aislamiento entre empresas es un filtro
+  obligatorio de la aplicación (decisión del usuario), probado por repositorio y por API. Falta
+  separar dueño, aplicación y un rol con `BYPASSRLS` para el consumidor y la recuperación, y activar
+  RLS por `tenant_id` como en el core (S2.4); toca faclab-infra (script de roles). Encaja antes de
+  producción (S8.1) o con S3.4.
 - **Filtro por fecha en la lista de facturas de faclab-web** (detectado en S2.7). `GET /api/invoices`
   acepta `fromDate` y `toDate`, pero la pantalla solo filtra por estado y por "requieren atención".
+- **Configuración de facturación de faclab-web** (detectado en S2.8; para S2.9). La API ya no tiene
+  `branchCode`, `salePointCode`, `branchAddress` ni `invoiceSequence` en el perfil: los ignora si
+  llegan y el `GET` no los devuelve, así que hasta S2.9 el formulario los muestra vacíos y pide
+  llenarlos para guardar (decisión del usuario). S2.9 los quita, agrega el régimen RIMPE, una pantalla
+  de secuenciales por establecimiento y punto de emisión (`GET`/`PUT /api/sequences`) y el orden del
+  primer arranque: perfil, certificado, selección (subir un certificado sin perfil responde
+  `ISSUER_NOT_CONFIGURED`).
+- **RUC del certificado según la entidad certificadora** (detectado en S2.8). facturación busca el RUC
+  o la cédula en el sujeto (`serialNumber`, `UID`, `organizationIdentifier`) y en las extensiones
+  privadas de la entidad (`1.3.6.1.4.1.*`), sin una lista fija de OIDs, y rechaza un certificado sin
+  ninguno (`CERTIFICATE_RUC_UNKNOWN`, decisión del usuario). Falta probarlo con certificados reales
+  de las entidades del país (BCE, Security Data, ANF, Uanataca, etc.), por ejemplo en la puesta en
+  marcha del piloto (S9.x) o con S4.1.
+- **Base local de facturación** (detectado en S2.8). La migración `1792581513940_multi-company` vuelve
+  a crear las tablas vacías: tras `npm run migrate up` hay que volver a guardar el perfil fiscal de
+  cada empresa y subir su certificado. Los mensajes `sales.confirmed` v1 que queden en el topic local
+  solo se facturan con `SALES_V1_TENANT_ID`.
+- **Clave de partición en Kafka** (hecho en S2.8 para S3.4). El relay del core y faclab-invoicing ya
+  usan el `tenant_id` como clave; falta crear los tópicos con varias particiones por script (S3.4).
 
 ## 2. Dependencias
 

@@ -103,3 +103,17 @@ class OverrideReasonRequiredError(SalesError):
             message="A reason is required to sell below or above the list price",
             detail=f"product_id={product_id}",
         )
+
+
+class SaleWithoutEmissionPointError(SalesError):
+    """La venta no tiene punto de emisión (anterior a S2.6): faclab-invoicing no
+    sabe con qué establecimiento ni con qué secuencial facturarla"""
+
+    error_code = "SALE_WITHOUT_EMISSION_POINT"
+
+    def __init__(self, sale_id: int):
+        self.sale_id = sale_id
+        super().__init__(
+            message=f"Sale {sale_id} has no emission point and cannot be invoiced",
+            detail=f"sale_id={sale_id}",
+        )

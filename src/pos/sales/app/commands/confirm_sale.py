@@ -100,6 +100,9 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
                 total=sale.total,
                 payments=sale_payments_data(payments),
                 source="pos",
+                branch_id=sale.branch_id,
+                emission_point_id=sale.emission_point_id,
+                number=sale.number,
             )
         )
 

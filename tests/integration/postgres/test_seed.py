@@ -38,6 +38,18 @@ def test_the_seed_gives_two_tenants_the_same_catalog(pg_engine, monkeypatch):
         first, second = _by_tenant(pg_engine, table, column)
         assert first == second, table
         assert first
+    # Its sales were made at the main branch's terminal, so they can be
+    # invoiced; the confirmed ones have the branch's numbers
+    with pg_engine.connect() as conn:
+        unplaced = conn.execute(
+            text("SELECT count(*) FROM sales WHERE emission_point_id IS NULL")
+        ).scalar()
+    assert unplaced == 0
+    numbers = _by_tenant(pg_engine, "sales", "number")
+    assert (
+        numbers
+        == [["V-001-000001", "V-001-000002", "V-001-000003", None, None, None]] * 2
+    )
     with pg_engine.connect() as conn:
         memberships = conn.execute(
             text(

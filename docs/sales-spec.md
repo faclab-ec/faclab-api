@@ -122,7 +122,8 @@ GET /api/admin/sales/{sale_id}
 Las ventas las crea el POS en una terminal (S2.6): `branchId`, `emissionPointId` y `terminalId` son los
 de la terminal, y `number` es el correlativo de la sucursal (`V-` + código de establecimiento + seis
 dígitos), asignado al confirmar y que se conserva aunque la venta se cancele. Son `null` en los
-borradores (`number`) y en las ventas anteriores a S2.6 o del seed.
+borradores (`number`) y en las ventas anteriores a S2.6. Desde S2.8 el seed crea sus ventas en la
+terminal de la matriz, con sucursal, punto de emisión y número.
 
 **Error** `404`:
 
@@ -219,7 +220,9 @@ Permiso: `sale:write`. Vuelve a publicar la venta en `sales.confirmed` (mismo me
 
 faclab-invoicing ignora el reenvío si la venta ya tiene una factura que no está rechazada (pendiente, en proceso o autorizada), así que reenviar de más no duplica facturas. Las facturas que esperan la configuración fiscal o un reintento del SRI no necesitan reenvío: se reanudan solas en faclab-invoicing.
 
-Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`.
+El mensaje dice quién emite y desde dónde (`sales.confirmed` v2): la empresa, su RUC, el establecimiento y la dirección de la sucursal de la venta y su punto de emisión. faclab-invoicing factura con el perfil fiscal, el certificado y el secuencial de esa empresa, establecimiento y punto de emisión.
+
+Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Una venta sin punto de emisión (anterior a S2.6) no se puede facturar: `400 SALE_WITHOUT_EMISSION_POINT`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`.
 
 **Response** `202`: la venta (mismo formato que 2.2).
 
@@ -341,6 +344,7 @@ interface SaleQueryParams {
 | `VALIDATION_ERROR`| 422  | Query params inválidos             |
 | `INVALID_SALE_STATUS` | 400 | Reenvío a facturación de una venta que no está `CONFIRMED` |
 | `INVOICING_DISABLED`  | 400 | Reenvío a facturación con `KAFKA_ENABLED` apagado |
+| `SALE_WITHOUT_EMISSION_POINT` | 400 | Reenvío (o confirmación con Kafka activo) de una venta sin punto de emisión, anterior a S2.6 |
 
 ### Estructura de error
 

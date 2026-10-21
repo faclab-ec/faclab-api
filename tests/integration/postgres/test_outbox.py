@@ -26,7 +26,7 @@ class FakePublisher:
     def __init__(self):
         self.sent: list[tuple[str, dict, list]] = []
 
-    def publish(self, topic, value, headers):
+    def publish(self, topic, value, headers, key=None):
         self.sent.append((topic, value, headers))
 
 

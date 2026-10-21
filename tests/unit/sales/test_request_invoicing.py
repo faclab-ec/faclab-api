@@ -9,7 +9,10 @@ from src.sales.app.commands import (
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
 from src.sales.domain.events import SaleInvoicingRequested
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import (
+    InvalidSaleStatusError,
+    SaleWithoutEmissionPointError,
+)
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import TaxCode
 
@@ -47,6 +50,9 @@ def test_confirmed_sale_is_sent_again_without_touching_it():
         id=1,
         customer_id=5,
         shift_id=2,
+        branch_id=4,
+        emission_point_id=6,
+        number="V-001-000031",
         status=SaleStatus.CONFIRMED,
         subtotal=Decimal("20"),
         total=Decimal("23"),
@@ -59,6 +65,11 @@ def test_confirmed_sale_is_sent_again_without_touching_it():
     [event] = publisher.publish.call_args.args
     assert isinstance(event, SaleInvoicingRequested)
     assert (event.sale_id, event.customer_id, event.source) == (1, 5, "pos")
+    assert (event.branch_id, event.emission_point_id, event.number) == (
+        4,
+        6,
+        "V-001-000031",
+    )
     assert event.items == [
         {
             "product_id": 10,
@@ -89,3 +100,13 @@ def test_missing_sale():
 
     with pytest.raises(NotFoundError):
         handler.handle(RequestSaleInvoicingCommand(sale_id=1))
+
+
+def test_a_sale_without_emission_point_is_not_sent():
+    """Sales from before S2.6 (and the old seed) have no emission point: the
+    invoice would have no establishment nor sequential"""
+    handler, publisher = _handler(Sale(id=1, status=SaleStatus.CONFIRMED))
+
+    with pytest.raises(SaleWithoutEmissionPointError):
+        handler.handle(RequestSaleInvoicingCommand(sale_id=1))
+    publisher.publish.assert_not_called()

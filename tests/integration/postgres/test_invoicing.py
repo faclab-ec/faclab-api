@@ -1,5 +1,6 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
-message follows its v1 contract and carries the invoice amounts, an authorized
+message follows its v2 contract (tenant, RUC, establishment and emission point
+of the sale) and carries the invoice amounts, an authorized
 invoice from the `invoices` topic marks the sale as invoiced, and a confirmed
 sale can be sent again."""
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from config import config
 from src.auth.domain.entities import Role
 from src.invoicing.infra.invoice_messages import handle_invoice_message
+from src.sales.infra.models import SaleModel
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.tenant import tenant_scope
@@ -26,7 +28,11 @@ from tests.integration.postgres.api import (
     make_terminal,
     make_warehouse,
 )
-from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
+from tests.integration.postgres.tenants import (
+    DEFAULT_TENANT_RUC,
+    OTHER_TENANT_RUC,
+    ensure_tenant,
+)
 
 
 @pytest.fixture
@@ -73,6 +79,12 @@ def _checkout(
     return cashier.post(f"/api/pos/sales/{sale['id']}/confirm")
 
 
+def _handle(message: dict, tenant_id) -> None:
+    """As the consumer does: in the tenant of its `faclab-tenant-id` header"""
+    with tenant_scope(TenantContext(tenant_id, TenantSource.MESSAGE)):
+        handle_invoice_message(message)
+
+
 def _authorized(sale_id: int) -> dict:
     return {
         "type": "InvoiceAuthorized",
@@ -100,8 +112,8 @@ def test_sales_confirmed_lines_add_up_to_the_charged_total(
     assert discounts == Decimal("1.00")
 
 
-def test_sales_confirmed_follows_the_v1_contract(
-    pos, client, admin, db_session: Session, monkeypatch
+def test_sales_confirmed_follows_the_v2_contract(
+    pos, client, admin, db_session: Session, monkeypatch, tenant
 ):
     monkeypatch.setattr(config, "KAFKA_ENABLED", True)
     # Only name and tax id: no email, phone or address
@@ -113,21 +125,32 @@ def test_sales_confirmed_follows_the_v1_contract(
     final_consumer, without_contact = db_session.scalars(
         select(OutboxMessageModel).order_by(OutboxMessageModel.id)
     )
-    schema = validator("sales.confirmed")
+    schema = validator("sales.confirmed", 2)
     assert errors(schema, final_consumer.payload) == []
     assert errors(schema, without_contact.payload) == []
     assert final_consumer.payload["payload"]["customer"] is None
     assert without_contact.payload["payload"]["customer"]["email"] is None
+    # Who issues and from where: the tenant, its RUC and the terminal's branch
+    # 001 (created without an address) and emission point 001
+    assert final_consumer.payload["tenant_id"] == str(tenant)
+    assert final_consumer.tenant_id == tenant
+    payload = without_contact.payload["payload"]
+    assert (
+        payload["issuer_ruc"],
+        payload["establishment_code"],
+        payload["establishment_address"],
+        payload["emission_point_code"],
+        payload["sale_number"],
+    ) == (DEFAULT_TENANT_RUC, "001", None, "001", "V-001-000002")
 
 
-def test_authorized_invoice_marks_the_sale_invoiced(pos):
+def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant):
     cashier, _ = pos
     sale = _checkout(pos, [1, 0, 0])
 
-    # faclab-invoicing doesn't send the tenant yet: it runs in the sale's
-    handle_invoice_message(_authorized(sale["id"]))
+    _handle(_authorized(sale["id"]), tenant)
     # Kafka can deliver the same message again
-    handle_invoice_message(_authorized(sale["id"]))
+    _handle(_authorized(sale["id"]), tenant)
 
     assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "INVOICED"
     shift = cashier.get("/api/pos/shifts/active")
@@ -147,17 +170,17 @@ def test_authorized_invoice_marks_the_sale_invoiced(pos):
     assert refund["total"] == sale["total"]
 
 
-def test_other_invoice_results_leave_the_sale_alone(pos):
+def test_other_invoice_results_leave_the_sale_alone(pos, tenant):
     cashier, _ = pos
     sale = _checkout(pos, [1, 0, 0])
     cancelled = _checkout(pos, [1, 0, 0])
     cashier.post(f"/api/pos/sales/{cancelled['id']}/cancel")
 
-    handle_invoice_message({**_authorized(sale["id"]), "type": "InvoiceSent"})
-    handle_invoice_message({**_authorized(sale["id"]), "type": "InvoiceRejected"})
+    _handle({**_authorized(sale["id"]), "type": "InvoiceSent"}, tenant)
+    _handle({**_authorized(sale["id"]), "type": "InvoiceRejected"}, tenant)
     # A sale cancelled before the SRI answered needs a credit note, not a retry
-    handle_invoice_message(_authorized(cancelled["id"]))
-    handle_invoice_message(_authorized(999_999))
+    _handle(_authorized(cancelled["id"]), tenant)
+    _handle(_authorized(999_999), tenant)
 
     assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
     assert cashier.get(f"/api/pos/sales/{cancelled['id']}")["status"] == "CANCELLED"
@@ -168,8 +191,17 @@ def test_an_invoice_result_of_another_tenant_leaves_the_sale_alone(pos, pg_engin
     sale = _checkout(pos, [1, 0, 0])
     other = ensure_tenant(pg_engine, OTHER_TENANT_RUC)
 
-    with tenant_scope(TenantContext(other, TenantSource.MESSAGE)):
-        handle_invoice_message(_authorized(sale["id"]))
+    _handle(_authorized(sale["id"]), other)
+
+    assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
+
+
+def test_an_invoice_result_without_a_tenant_leaves_the_sale_alone(pos):
+    """Since S2.8 the sale is never looked up outside the message's tenant"""
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+
+    handle_invoice_message(_authorized(sale["id"]))
 
     assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "CONFIRMED"
 
@@ -197,14 +229,33 @@ def test_a_confirmed_sale_can_be_sent_to_invoicing_again(
     assert admin_api.get("/api/admin/movements") == movements
 
 
+def test_a_sale_without_emission_point_is_not_sent_to_invoicing(
+    client, admin, pg_engine, tenant, db_session: Session, monkeypatch
+):
+    """Like the sales from before S2.6: no establishment nor emission point"""
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    with Session(bind=pg_engine) as session:
+        sale = SaleModel(tenant_id=tenant, status="CONFIRMED")
+        session.add(sale)
+        session.commit()
+        sale_id = sale.id
+
+    error = Api(client, admin).error(
+        "POST", f"/api/admin/sales/{sale_id}/request-invoice", 400
+    )
+
+    assert error["code"] == "SALE_WITHOUT_EMISSION_POINT"
+    assert db_session.scalars(select(OutboxMessageModel)).all() == []
+
+
 def test_only_confirmed_sales_can_be_sent_again(
-    pos, client, admin, db_session: Session, monkeypatch
+    pos, client, admin, db_session: Session, monkeypatch, tenant
 ):
     monkeypatch.setattr(config, "KAFKA_ENABLED", True)
     cashier, _ = pos
     admin_api = Api(client, admin)
     invoiced = _checkout(pos, [1, 0, 0])
-    handle_invoice_message(_authorized(invoiced["id"]))
+    _handle(_authorized(invoiced["id"]), tenant)
     cancelled = _checkout(pos, [1, 0, 0])
     cashier.post(f"/api/pos/sales/{cancelled['id']}/cancel")
 

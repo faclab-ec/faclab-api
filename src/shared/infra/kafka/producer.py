@@ -92,10 +92,17 @@ class KafkaEventProducer:
         return self._producer is not None
 
     def publish(
-        self, topic: str, value: dict[str, Any], headers: list[tuple[str, bytes]]
+        self,
+        topic: str,
+        value: dict[str, Any],
+        headers: list[tuple[str, bytes]],
+        key: str | None = None,
     ) -> None:
         """Send a message and wait for the broker's ack; raise if it fails, so
         the outbox relay keeps the message and retries it.
+
+        `key` picks the partition: the outbox uses the message's tenant, so
+        the messages of a tenant keep their order.
 
         `headers` carry the trace context of the operation that created the
         message (the request that wrote it to the outbox). The `send` span is
@@ -125,7 +132,12 @@ class KafkaEventProducer:
             inject(carrier)
             outgoing = [(key, val.encode("utf-8")) for key, val in carrier.items()]
             future = asyncio.run_coroutine_threadsafe(
-                self._producer.send_and_wait(topic, value, headers=outgoing),
+                self._producer.send_and_wait(
+                    topic,
+                    value,
+                    key=key.encode("utf-8") if key is not None else None,
+                    headers=outgoing,
+                ),
                 self._loop,
             )
             try:

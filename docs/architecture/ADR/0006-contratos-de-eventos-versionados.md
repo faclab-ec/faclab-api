@@ -1,6 +1,6 @@
 # ADR-0006: Contratos de eventos versionados y pruebas de contrato
 
-- **Estado:** aceptado (2026-10-15, implementado en S1.6)
+- **Estado:** aceptado (2026-10-15, implementado en S1.6; `sales.confirmed` v2 con empresa en S2.8)
 - **Relacionado:** [ADR-0005](0005-kafka-outbox-y-consumidores-idempotentes.md), [ADR-0009](0009-webhooks-firmados.md)
 
 ## Contexto
@@ -55,3 +55,17 @@ establecimiento y punto de emisión en la Etapa 2.
   `schema_version`; adoptar el envelope completo será su v2.
 - Los payloads de webhooks públicos (ADR-0009) reutilizan el mismo esquema de versionado, pero son
   contratos distintos (no se expone el evento interno tal cual).
+
+## Implementación de la v2 de `sales.confirmed` (S2.8, 2026-10-21)
+
+- `tenant_id` va en el sobre, como dice el punto 1, y el payload agrega `issuer_ruc`,
+  `establishment_code`, `establishment_address` (nulable), `emission_point_code` y `sale_number`
+  (nulable). Los campos nuevos son obligatorios, así que es una versión nueva:
+  `contracts/events/sales.confirmed/v2.schema.json`.
+- Los ejemplos pasan a `examples/v<n>/` y los cambios de cada versión, con su orden de despliegue, a
+  `contracts/CHANGELOG.md`.
+- Facturación acepta v1 y v2. v1 solo se factura en desarrollo, con la empresa de
+  `SALES_V1_TENANT_ID`; en producción va a la DLQ. Por eso volver el core a v1 solo sirve en
+  desarrollo: en producción hay que revertir el par.
+- La clave de los mensajes es el `tenant_id` (ADR-0005). `invoices` sigue en v1: la empresa viaja en
+  el header `faclab-tenant-id` y en la clave, no en el cuerpo cerrado.

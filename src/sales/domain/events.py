@@ -61,6 +61,10 @@ class SaleConfirmed(DomainEvent):
     total: Decimal = Decimal("0")
     payments: list[dict[str, Any]] = field(default_factory=list)  # [{method, amount}]
     source: str = "admin"
+    # Where the sale was made; null in sales from before S2.6
+    branch_id: int | None = None
+    emission_point_id: int | None = None
+    number: str | None = None
 
     def _payload(self) -> dict[str, Any]:
         return {
@@ -72,6 +76,9 @@ class SaleConfirmed(DomainEvent):
             "total": self.total,
             "payments": self.payments,
             "source": self.source,
+            "branch_id": self.branch_id,
+            "emission_point_id": self.emission_point_id,
+            "number": self.number,
         }
 
 
@@ -91,6 +98,9 @@ class SaleInvoicingRequested(DomainEvent):
     total: Decimal = Decimal("0")
     payments: list[dict[str, Any]] = field(default_factory=list)
     source: str = "admin"
+    branch_id: int | None = None
+    emission_point_id: int | None = None
+    number: str | None = None
 
     def _payload(self) -> dict[str, Any]:
         return {
@@ -102,6 +112,9 @@ class SaleInvoicingRequested(DomainEvent):
             "total": self.total,
             "payments": self.payments,
             "source": self.source,
+            "branch_id": self.branch_id,
+            "emission_point_id": self.emission_point_id,
+            "number": self.number,
         }
 
 

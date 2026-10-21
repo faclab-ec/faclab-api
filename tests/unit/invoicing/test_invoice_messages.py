@@ -1,6 +1,5 @@
 from contextlib import contextmanager
 from unittest.mock import MagicMock
-from uuid import UUID
 
 import pytest
 
@@ -10,9 +9,6 @@ from src.sales.app.commands.invoice_sale import InvoiceSaleCommand
 from src.sales.domain.entities import SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError
-from src.shared.domain.tenant import TenantContext, TenantSource
-
-SALE_TENANT = UUID("00000000-0000-4000-8000-0000000000b2")
 
 
 @pytest.fixture
@@ -65,32 +61,12 @@ def test_authorized_invoice_invoices_the_sale(
     assert scope_tenants == [None]
 
 
-def test_a_message_without_a_tenant_runs_in_its_sales(
-    command_handler, scope_tenants, monkeypatch
-):
-    looked_up = []
-    monkeypatch.setattr(
-        invoice_messages,
-        "_tenant_of_sale",
-        lambda sale_id: looked_up.append(sale_id) or SALE_TENANT,
-    )
-
+def test_a_message_without_a_tenant_is_dropped(command_handler, scope_tenants):
+    """faclab-invoicing sends the faclab-tenant-id header since S2.8: without it
+    the sale can't be looked up, and a retry wouldn't bring it"""
     handle_invoice_message(_message())
 
-    assert looked_up == [42]
-    assert scope_tenants == [TenantContext(SALE_TENANT, TenantSource.MESSAGE)]
-    command_handler.handle.assert_called_once_with(
-        InvoiceSaleCommand(sale_id=42, invoice_id="inv-1")
-    )
-
-
-def test_a_message_without_a_tenant_for_an_unknown_sale_is_skipped(
-    command_handler, monkeypatch
-):
-    monkeypatch.setattr(invoice_messages, "_tenant_of_sale", lambda sale_id: None)
-
-    handle_invoice_message(_message())
-
+    assert scope_tenants == []
     command_handler.handle.assert_not_called()
 
 
