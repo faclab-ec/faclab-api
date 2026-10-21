@@ -20,11 +20,11 @@ def validator(topic: str, version: int = 1) -> Validator:
     return Draft202012Validator(schema)
 
 
-def examples(topic: str) -> dict[str, dict[str, Any]]:
-    """Example messages of a topic, by file name without extension."""
+def examples(topic: str, version: int = 1) -> dict[str, dict[str, Any]]:
+    """Example messages of a topic version, by file name without extension."""
     return {
         path.stem: _load(path)
-        for path in sorted((EVENTS / topic / "examples").glob("*.json"))
+        for path in sorted((EVENTS / topic / "examples" / f"v{version}").glob("*.json"))
     }
 
 

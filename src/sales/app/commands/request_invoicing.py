@@ -13,7 +13,10 @@ from src.sales.domain.events import (
     sale_items_data,
     sale_payments_data,
 )
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import (
+    InvalidSaleStatusError,
+    SaleWithoutEmissionPointError,
+)
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -57,6 +60,9 @@ class RequestSaleInvoicingCommandHandler(
             raise InvalidSaleStatusError(sale.status, "request invoicing for")
 
         sale_id = sale.require_id()
+        # The invoice needs the sale's establishment and emission point
+        if sale.emission_point_id is None:
+            raise SaleWithoutEmissionPointError(sale_id)
         self.event_publisher.publish(
             SaleInvoicingRequested(
                 aggregate_id=sale_id,
@@ -70,6 +76,9 @@ class RequestSaleInvoicingCommandHandler(
                     self.payment_repo.filter_by(sale_id=sale_id)
                 ),
                 source="pos" if sale.shift_id is not None else "admin",
+                branch_id=sale.branch_id,
+                emission_point_id=sale.emission_point_id,
+                number=sale.number,
             )
         )
         return sale.dict()

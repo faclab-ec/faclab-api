@@ -1,5 +1,6 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
-message follows its v1 contract and carries the invoice amounts, an authorized
+message follows its v2 contract (tenant, RUC, establishment and emission point
+of the sale) and carries the invoice amounts, an authorized
 invoice from the `invoices` topic marks the sale as invoiced, and a confirmed
 sale can be sent again."""
 
@@ -26,7 +27,11 @@ from tests.integration.postgres.api import (
     make_terminal,
     make_warehouse,
 )
-from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
+from tests.integration.postgres.tenants import (
+    DEFAULT_TENANT_RUC,
+    OTHER_TENANT_RUC,
+    ensure_tenant,
+)
 
 
 @pytest.fixture
@@ -100,8 +105,8 @@ def test_sales_confirmed_lines_add_up_to_the_charged_total(
     assert discounts == Decimal("1.00")
 
 
-def test_sales_confirmed_follows_the_v1_contract(
-    pos, client, admin, db_session: Session, monkeypatch
+def test_sales_confirmed_follows_the_v2_contract(
+    pos, client, admin, db_session: Session, monkeypatch, tenant
 ):
     monkeypatch.setattr(config, "KAFKA_ENABLED", True)
     # Only name and tax id: no email, phone or address
@@ -113,11 +118,23 @@ def test_sales_confirmed_follows_the_v1_contract(
     final_consumer, without_contact = db_session.scalars(
         select(OutboxMessageModel).order_by(OutboxMessageModel.id)
     )
-    schema = validator("sales.confirmed")
+    schema = validator("sales.confirmed", 2)
     assert errors(schema, final_consumer.payload) == []
     assert errors(schema, without_contact.payload) == []
     assert final_consumer.payload["payload"]["customer"] is None
     assert without_contact.payload["payload"]["customer"]["email"] is None
+    # Who issues and from where: the tenant, its RUC and the terminal's branch
+    # 001 (created without an address) and emission point 001
+    assert final_consumer.payload["tenant_id"] == str(tenant)
+    assert final_consumer.tenant_id == tenant
+    payload = without_contact.payload["payload"]
+    assert (
+        payload["issuer_ruc"],
+        payload["establishment_code"],
+        payload["establishment_address"],
+        payload["emission_point_code"],
+        payload["sale_number"],
+    ) == (DEFAULT_TENANT_RUC, "001", None, "001", "V-001-000002")
 
 
 def test_authorized_invoice_marks_the_sale_invoiced(pos):

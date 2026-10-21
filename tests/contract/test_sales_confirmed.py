@@ -1,12 +1,14 @@
-"""sales.confirmed v1: what core really writes to the outbox matches
-contracts/events/sales.confirmed/v1.schema.json, and so do the examples that
-faclab-invoicing tests its consumer with."""
+"""sales.confirmed v2: what core really writes to the outbox matches
+contracts/events/sales.confirmed/v2.schema.json, and so do the examples that
+faclab-invoicing tests its consumer with. The v1 examples still match v1: the
+consumer keeps accepting them during the transition."""
 
 import copy
 from collections.abc import Callable, Iterator
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -16,6 +18,7 @@ from src.catalog.product.domain.entities import Product
 from src.customers.domain.entities import Customer
 from src.invoicing.infra.event_handlers import (
     SALES_CONFIRMED_TOPIC,
+    IssuingPoint,
     build_sale_confirmed_message,
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
@@ -34,8 +37,18 @@ from tests.contract.contracts import errors, examples, validator
 # The outbox only writes inside a tenant context
 pytestmark = pytest.mark.usefixtures("in_tenant")
 
-SCHEMA = validator("sales.confirmed")
-EXAMPLES = examples("sales.confirmed")
+SCHEMA = validator("sales.confirmed", 2)
+EXAMPLES = examples("sales.confirmed", 2)
+V1_SCHEMA = validator("sales.confirmed", 1)
+V1_EXAMPLES = examples("sales.confirmed", 1)
+
+POINT = IssuingPoint(
+    tenant_id=UUID("00000000-0000-4000-8000-00000000000a"),
+    issuer_ruc="1799999990001",
+    establishment_code="002",
+    establishment_address="Av. de la Prensa N58-12, Quito",
+    emission_point_code="003",
+)
 
 CUSTOMER = Customer(
     id=7,
@@ -83,6 +96,7 @@ def _event(
     customer_id: int | None,
     event_type: type[SaleConfirmed | SaleInvoicingRequested] = SaleConfirmed,
     source: str = "pos",
+    number: str | None = "V-002-000017",
 ) -> SaleConfirmed | SaleInvoicingRequested:
     """A sale with a line discount, a sale discount and two VAT rates."""
     items = [
@@ -110,6 +124,9 @@ def _event(
         total=sale.total,
         payments=sale_payments_data(payments),
         source=source,
+        branch_id=2,
+        emission_point_id=3,
+        number=number,
     )
 
 
@@ -118,6 +135,7 @@ def _written(
     event: SaleConfirmed | SaleInvoicingRequested,
     customer: Customer | None,
     products: list[Product],
+    point: IssuingPoint = POINT,
 ) -> dict[str, Any]:
     """The message as the handler builds it and the outbox stores it."""
     customer_repo = MagicMock()
@@ -126,7 +144,7 @@ def _written(
     product_repo.get_by_ids.return_value = products
     OutboxWriter(session).add(
         SALES_CONFIRMED_TOPIC,
-        build_sale_confirmed_message(event, customer_repo, product_repo),
+        build_sale_confirmed_message(event, point, customer_repo, product_repo),
         event_type="SaleConfirmed",
         event_id=event.event_id,
     )
@@ -143,6 +161,8 @@ def _written(
         (_event(9), None, PRODUCTS),
         (_event(7), CUSTOMER, []),
         (_event(7, SaleInvoicingRequested, source="admin"), CUSTOMER, PRODUCTS),
+        # A sale confirmed before S2.6 has no number
+        (_event(7, number=None), CUSTOMER, PRODUCTS),
     ],
     ids=[
         "full-customer",
@@ -151,13 +171,52 @@ def _written(
         "customer-gone",
         "products-gone",
         "resend",
+        "sale-without-number",
     ],
 )
 def test_written_messages_match_the_contract(session, event, customer, products):
     message = _written(session, event, customer, products)
 
     assert errors(SCHEMA, message) == []
-    assert message["schema_version"] == 1
+    assert message["schema_version"] == 2
+
+
+def test_the_message_says_who_issues_and_from_where(session):
+    message = _written(session, _event(7), CUSTOMER, PRODUCTS)
+
+    assert message["tenant_id"] == str(POINT.tenant_id)
+    payload = message["payload"]
+    assert {
+        key: payload[key]
+        for key in (
+            "sale_number",
+            "issuer_ruc",
+            "establishment_code",
+            "establishment_address",
+            "emission_point_code",
+        )
+    } == {
+        "sale_number": "V-002-000017",
+        "issuer_ruc": "1799999990001",
+        "establishment_code": "002",
+        "establishment_address": "Av. de la Prensa N58-12, Quito",
+        "emission_point_code": "003",
+    }
+
+
+def test_a_branch_without_address_travels_as_null(session):
+    point = IssuingPoint(
+        tenant_id=POINT.tenant_id,
+        issuer_ruc=POINT.issuer_ruc,
+        establishment_code="001",
+        establishment_address=None,
+        emission_point_code="001",
+    )
+
+    message = _written(session, _event(None), None, PRODUCTS, point)
+
+    assert errors(SCHEMA, message) == []
+    assert message["payload"]["establishment_address"] is None
 
 
 def test_missing_contact_data_and_products_travel_as_null(session):
@@ -179,12 +238,18 @@ def test_the_edge_cases_have_examples():
         "customer-without-contact",
         "final-consumer",
         "product-without-sku",
+        "branch-without-address",
     }
 
 
 @pytest.mark.parametrize("name", sorted(EXAMPLES))
 def test_examples_match_the_contract(name):
     assert errors(SCHEMA, EXAMPLES[name]) == []
+
+
+@pytest.mark.parametrize("name", sorted(V1_EXAMPLES))
+def test_v1_examples_still_match_v1(name):
+    assert errors(V1_SCHEMA, V1_EXAMPLES[name]) == []
 
 
 def _set(path: str, value: Any) -> Callable[[dict], None]:
@@ -217,7 +282,13 @@ def _rename_customer(message: dict) -> None:
     "change",
     [
         _drop("schema_version"),
-        _set("schema_version", 2),
+        _set("schema_version", 1),
+        _drop("tenant_id"),
+        _set("tenant_id", "default"),
+        _drop("payload.issuer_ruc"),
+        _set("payload.establishment_code", "1"),
+        _set("payload.emission_point_code", "000"),
+        _drop("payload.establishment_address"),
         _rename_customer,
         _drop("payload.payments"),
         _set("payload.total", 26.79),
@@ -229,6 +300,12 @@ def _rename_customer(message: dict) -> None:
     ids=[
         "no-version",
         "other-version",
+        "no-tenant",
+        "tenant-not-a-uuid",
+        "no-issuer-ruc",
+        "establishment-not-three-digits",
+        "emission-point-000",
+        "address-omitted",
         "renamed-field",
         "missing-field",
         "amount-as-number",
