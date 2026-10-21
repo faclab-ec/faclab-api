@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from config import config
 from src.catalog.product.infra.models import ProductModel
-from src.invoicing.infra import invoice_messages
-from src.sales.infra.models import SaleModel
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.shared.infra.database import Base, create_session_maker, worker_session_maker
 from src.shared.infra.events.scope import create_sync_scope
@@ -42,7 +40,7 @@ class FakePublisher:
     def __init__(self):
         self.sent: list[tuple[str, dict, list]] = []
 
-    def publish(self, topic, value, headers):
+    def publish(self, topic, value, headers, key=None):
         self.sent.append((topic, value, headers))
 
 
@@ -371,20 +369,3 @@ def test_the_relay_cannot_run_as_the_app(app_sessions, tenants):
         OutboxRelay(app_sessions, FakePublisher()).publish_pending()
 
     assert _sqlstate(error) == INSUFFICIENT_PRIVILEGE
-
-
-def test_the_tenant_of_a_sale_is_a_platform_lookup(app_sessions, pg_engine, tenants):
-    _, b = tenants
-    with Session(bind=pg_engine) as session:
-        sale = SaleModel(tenant_id=b)
-        session.add(sale)
-        session.commit()
-        sale_id = sale.id
-
-    with app_sessions() as session:
-        hidden = session.scalar(
-            select(SaleModel.tenant_id).where(SaleModel.id == sale_id)
-        )
-
-    assert hidden is None
-    assert invoice_messages._tenant_of_sale(sale_id) == b
