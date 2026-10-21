@@ -32,7 +32,7 @@ class FakePublisher:
         self.sent: list[tuple[str, dict]] = []
         self.fail_on = fail_on or set()
 
-    def publish(self, topic, value, headers):
+    def publish(self, topic, value, headers, key=None):
         if value["id"] in self.fail_on:
             raise ConnectionError("broker unavailable")
         self.sent.append((topic, value))
@@ -132,6 +132,16 @@ def test_the_relay_sends_the_tenant_header(session_factory):
     assert ("faclab-tenant-id", str(TEST_TENANT_ID).encode()) in headers
 
 
+def test_the_relay_keys_each_message_by_its_tenant(session_factory):
+    """A tenant's messages go through the same partition, in order"""
+    _write(session_factory, "a", "b")
+    publisher = HeaderRecorder()
+
+    OutboxRelay(session_factory, publisher).publish_pending()
+
+    assert publisher.keys == [str(TEST_TENANT_ID), str(TEST_TENANT_ID)]
+
+
 def test_writing_without_a_tenant_fails(session_factory):
     def write() -> None:
         with session_factory() as session:
@@ -145,6 +155,8 @@ def test_writing_without_a_tenant_fails(session_factory):
 class HeaderRecorder:
     def __init__(self):
         self.headers: list[list[tuple[str, bytes]]] = []
+        self.keys: list[str | None] = []
 
-    def publish(self, topic, value, headers):
+    def publish(self, topic, value, headers, key=None):
         self.headers.append(headers)
+        self.keys.append(key)

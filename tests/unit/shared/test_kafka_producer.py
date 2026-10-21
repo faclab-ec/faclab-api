@@ -12,9 +12,11 @@ from src.shared.infra.kafka.producer import KafkaEventProducer
 class FakeBroker:
     def __init__(self):
         self.sent: list[tuple[str, dict, list[tuple[str, bytes]]]] = []
+        self.keys: list[bytes | None] = []
 
-    async def send_and_wait(self, topic, value, headers):
-        self.sent.append((topic, value, headers))
+    async def send_and_wait(self, topic, value, key=None, headers=None):
+        self.sent.append((topic, value, headers or []))
+        self.keys.append(key)
 
 
 @pytest.fixture
@@ -74,3 +76,10 @@ def test_the_consumer_receives_the_send_span_as_parent(producer, span_exporter):
     traceparent = dict(sent_headers)["traceparent"].decode()
     assert traceparent.split("-")[1] == format(send.context.trace_id, "032x")
     assert traceparent.split("-")[2] == format(send.context.span_id, "016x")
+
+
+def test_the_key_goes_to_the_broker_as_bytes(producer):
+    producer.publish("sales.confirmed", {"event_id": "e-1"}, [], key="tenant-1")
+    producer.publish("sales.confirmed", {"event_id": "e-2"}, [])
+
+    assert producer._producer.keys == [b"tenant-1", None]
