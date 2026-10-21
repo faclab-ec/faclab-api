@@ -42,11 +42,14 @@ from src.inventory.transfer.infra.models import (
     StockTransferModel,
 )
 from src.inventory.warehouse.infra.models import WarehouseModel
+from src.organization.domain.numbering import DocumentType, document_number
 from src.organization.infra.models import (
     BranchModel,
+    DocumentSequenceModel,
     EmissionPointModel,
     PosTerminalModel,
 )
+from src.organization.infra.repositories import SqlAlchemyDocumentSequenceRepository
 from src.pos.shift.infra.models import ShiftModel  # noqa: F401  # sales.shift_id FK
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
@@ -73,7 +76,6 @@ SECOND_TENANT_NAME = "Ferretería Demo Dos"
 
 TRUNCATE_ORDER = [
     UserBranchAccessModel,
-    PosTerminalModel,
     StockTransferItemModel,
     StockTransferModel,
     AdjustmentItemModel,
@@ -81,6 +83,8 @@ TRUNCATE_ORDER = [
     PaymentModel,
     SaleItemModel,
     SaleModel,
+    # After the sales made at them
+    PosTerminalModel,
     PurchaseReceiptItemModel,
     PurchaseReceiptModel,
     PurchaseOrderItemModel,
@@ -100,6 +104,8 @@ TRUNCATE_ORDER = [
     CategoryModel,
     UnitOfMeasureModel,
     WarehouseModel,
+    # The seed's sales take their numbers from it
+    DocumentSequenceModel,
     EmissionPointModel,
     BranchModel,
 ]
@@ -1382,7 +1388,12 @@ def seed_sales(
     session: Session,
     customers: list[CustomerModel],
     products: list[ProductModel],
+    terminal: PosTerminalModel,
+    branch: BranchModel,
 ) -> tuple[list, list, list]:
+    """Sales made at `terminal`, like the POS makes them: with its branch and
+    emission point (so faclab-invoicing can invoice them) and, once confirmed,
+    a number of the branch from document_sequences"""
     sku_map = {p.sku: p for p in products}
     sales = []
     items = []
@@ -1648,6 +1659,18 @@ def seed_sales(
     session.add_all(items[-2:])
     session.flush()
 
+    sequences = SqlAlchemyDocumentSequenceRepository(session)
+    for sale in sales:
+        sale.branch_id = terminal.branch_id
+        sale.emission_point_id = terminal.emission_point_id
+        sale.terminal_id = terminal.id
+        if sale.status == "CONFIRMED":
+            value = sequences.next_value(branch.id, DocumentType.SALE)
+            sale.number = document_number(
+                DocumentType.SALE, branch.establishment_code, value
+            )
+    session.flush()
+
     return sales, items, payments
 
 
@@ -1881,7 +1904,8 @@ def seed_tenant(session: Session) -> None:
     seed_serial_numbers(session, products, lots, locations)
 
     print("Sembrando ventas...")
-    seed_sales(session, customers, products)
+    # At the main branch's terminal (the first one)
+    seed_sales(session, customers, products, terminals[0], branches[0])
 
     print("Sembrando ajustes de inventario...")
     seed_adjustments(session, warehouses, products, locations)
