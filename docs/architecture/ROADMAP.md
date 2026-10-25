@@ -41,11 +41,12 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
-- **Login con email y descartar el nombre de usuario** (detectado en S2.1). Con identidad global, el
+- **Login con email y descartar el nombre de usuario** (detectado en S2.1; diferido a S8.5 por
+  decisión del usuario en S2.9). Con identidad global, el
   `username` es único en toda la plataforma. Dos empresas no pueden usar el mismo nombre (`caja1`) y
   el 409 revela que el nombre ya existe en otra. Pasar al login con email y descartar `username`
-  mitiga esos choques. Conviene decidirlo antes de S2.9 (pantalla de login) o, a más tardar, en S8.5
-  (onboarding).
+  mitiga esos choques. S2.9 mantuvo el login por nombre de usuario; se decide con el onboarding
+  (S8.5).
 - ~~**Empresa en los mensajes de `invoices`**~~ (detectado en S2.2; mitigado en S2.3; resuelto en S2.8:
   faclab-invoicing envía `faclab-tenant-id` y la empresa como clave, y el core ya no busca la empresa
   por la venta: descarta un mensaje sin ella). El consumidor del
@@ -63,8 +64,8 @@
   siempre crea una identidad nueva: si el usuario o el email ya existen en otra empresa responde 409, y
   el admin tendría que crearle otra cuenta. Hoy solo la provisión (`make provision-tenant`) agrega un
   usuario existente, y solo como administrador. Falta un flujo de invitación (el admin invita por email,
-  el usuario acepta con su sesión y se crea la membresía), a decidir junto con el login por email; encaja
-  en S8.5 o antes de S2.9.
+  el usuario acepta con su sesión y se crea la membresía), a decidir junto con el login por email; quedó
+  para S8.5 (decisión del usuario en S2.9).
 - **Roles de base en despliegue y respaldos** (detectado en S2.4). Antes del primer despliegue hay que
   crear los roles con `python -m src.shared.infra.db_roles` y un superusuario (S8.1); otorgar `BYPASSRLS`
   exige superusuario, así que en un PostgreSQL administrado el worker necesitaría una política permisiva
@@ -73,7 +74,8 @@
 - **Índices que empiezan por `tenant_id`** (detectado en S2.4). Cada tabla de negocio tiene un índice
   simple en `tenant_id` y las únicas por empresa lo incluyen; los listados grandes pueden necesitar
   índices compuestos `(tenant_id, …)`. Medir en S9.2 (carga y línea base).
-- **Bodegas sin sucursal en faclab-web** (detectado en S2.5). `POST /api/admin/warehouses` exige
+- ~~**Bodegas sin sucursal en faclab-web**~~ (detectado en S2.5; resuelto en S2.9: el formulario elige
+  la sucursal al crear, entre las de la sesión). `POST /api/admin/warehouses` exige
   `branchId` (decisión del usuario) y el formulario de bodegas de faclab-web todavía no lo envía: crear
   una bodega desde la web responde 422 hasta S2.9, que agrega la sucursal al formulario. Editarlas sigue
   funcionando (la sucursal no cambia por PUT).
@@ -81,8 +83,9 @@
   limitado a algunas sucursales no puede usar `X-Branch-Id` de otra. Desde S2.6 los historiales y
   reportes del POS (turnos, devoluciones, X, Z, diario y por medio de pago) se limitan a sus sucursales.
   Falta en la administración: stock, bodegas, ventas (`/api/admin/sales`) y los reportes de
-  inventario todavía muestran toda la empresa (MULTI_TENANCY §7), a hacer con los reportes por
-  sucursal o en S2.9.
+  inventario todavía muestran toda la empresa (MULTI_TENANCY §7). Desde S2.9 la web envía `X-Branch-Id`
+  en todas las llamadas de administración, pero el backend todavía no filtra esos listados: queda para
+  los reportes por sucursal.
 - **Códigos SRI de la sucursal con comprobantes emitidos** (detectado en S2.5; la dirección se resolvió
   en S2.8). Hoy se pueden cambiar el código de establecimiento y el de punto de emisión con un PUT.
   Desde S2.8 facturación numera por esos códigos, que llegan en cada `sales.confirmed`: cambiar uno
@@ -90,7 +93,9 @@
   establecimiento o el punto ya emitieron (por ejemplo, en S3.x o con el onboarding, S8.5). La
   dirección de la sucursal (`address`) es la `dirEstablecimiento` del comprobante; sin ella, la
   factura sale sin ese campo.
-- **POS de faclab-web sin encabezados de sucursal y terminal** (detectado en S2.6). Las rutas del POS
+- ~~**POS de faclab-web sin encabezados de sucursal y terminal**~~ (detectado en S2.6; resuelto en
+  S2.9: la web vincula cada navegador a una caja, envía `X-Branch-Id` y `X-Terminal-Id`, y se retiró
+  `POS_TERMINAL_FALLBACK` con su rechazo en `config/deployed.py`). Las rutas del POS
   exigen `X-Branch-Id` y `X-Terminal-Id`, y la web no los envía todavía. Hasta S2.9 corre con
   `POS_TERMINAL_FALLBACK` (verdadero solo en `local`): sin encabezados usa la primera terminal activa
   de la matriz. En staging y producción el POS de la web no funciona hasta S2.9, que vincula la
@@ -134,9 +139,21 @@
   separar dueño, aplicación y un rol con `BYPASSRLS` para el consumidor y la recuperación, y activar
   RLS por `tenant_id` como en el core (S2.4); toca faclab-infra (script de roles). Encaja antes de
   producción (S8.1) o con S3.4.
+- **Historiales y reportes del POS por sucursal y caja en faclab-web** (detectado en S2.9). El backend
+  acepta `branchId` y `terminalId` en turnos, devoluciones y reportes (S2.6), pero las pantallas de
+  administración del POS todavía no ofrecen esos filtros ni muestran la caja de cada turno.
+- **Devolución por número de venta** (detectado en S2.9). El recibo y las listas muestran el número de
+  la sucursal (`V-001-000123`), pero el diálogo de devolución del POS busca la venta por su id interno:
+  falta buscarla por número en el core y en la web (encaja con S3.3 o S4.5).
+- **Sesión con sucursales viejas** (detectado en S2.9). Un cambio de accesos rige desde el próximo
+  refresh y `/me` se relee cada 5 minutos: entre tanto la web puede ofrecer una sucursal que el token
+  ya no acepta (`BRANCH_ACCESS_DENIED`, que reintenta una vez con un token nuevo). Conviene releer `/me`
+  tras cada refresh o devolver las sucursales en el par de tokens (S8.5).
 - **Filtro por fecha en la lista de facturas de faclab-web** (detectado en S2.7). `GET /api/invoices`
   acepta `fromDate` y `toDate`, pero la pantalla solo filtra por estado y por "requieren atención".
-- **Configuración de facturación de faclab-web** (detectado en S2.8; para S2.9). La API ya no tiene
+- ~~**Configuración de facturación de faclab-web**~~ (detectado en S2.8; resuelto en S2.9: perfil fiscal
+  sin campos de sucursal ni `invoiceSequence`, con RIMPE y el RUC de la empresa; pantalla de
+  secuenciales; orden perfil, certificado, selección). La API ya no tiene
   `branchCode`, `salePointCode`, `branchAddress` ni `invoiceSequence` en el perfil: los ignora si
   llegan y el `GET` no los devuelve, así que hasta S2.9 el formulario los muestra vacíos y pide
   llenarlos para guardar (decisión del usuario). S2.9 los quita, agrega el régimen RIMPE, una pantalla
@@ -233,7 +250,7 @@ flowchart LR
 | [S2.6](sessions/S2.6-pos-por-terminal.md) | POS por terminal | Turno por terminal, cajero del token, stock por ubicación, numeración de ventas | S2.5 | core | G-03, G-04 | L |
 | [S2.7](sessions/S2.7-invoicing-en-postgresql.md) | Invoicing en PostgreSQL | Reemplazar DynamoDB con el mismo comportamiento | S1.3, S1.6 | invoicing, infra | G-18, G-74 | L |
 | [S2.8](sessions/S2.8-facturacion-multiempresa.md) | Facturación multiempresa | Perfil fiscal, certificados y secuenciales por empresa y punto de emisión | S2.6, S2.7 | invoicing, core | G-05, G-09, G-23 | L |
-| [S2.9](sessions/S2.9-frontend-multiempresa.md) | Frontend multiempresa | Selección de empresa y sucursal, terminal POS, administración de sucursales | S2.5, S2.6, S2.8 | web | G-02, G-03 | L |
+| [S2.9](sessions/S2.9-frontend-multiempresa.md) | Frontend multiempresa | Selección de empresa y sucursal, terminal POS, administración de sucursales | S2.5, S2.6, S2.8 | web, core | G-02, G-03 | L |
 | [S3.1](sessions/S3.1-idempotencia.md) | Idempotencia | `Idempotency-Key` en POS y pagos | S2.6 | core, web | G-26 | M |
 | [S3.2](sessions/S3.2-reglas-de-inventario.md) | Reglas de inventario | Sin stock negativo, disponibilidad real, ajustes correctos | S2.6 | core | G-27, G-28, G-29, G-32, G-36 | M |
 | [S3.3](sessions/S3.3-ventas-pagos-y-precision.md) | Ventas, pagos y precisión | Pagos válidos, vuelto, anulación con factura en curso, dinero sin tope bajo | S2.6 | core, web | G-16, G-20, G-30, G-31, G-33 | M |

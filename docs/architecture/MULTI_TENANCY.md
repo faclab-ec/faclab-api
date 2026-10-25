@@ -2,8 +2,8 @@
 
 > Decisiones: 1 empresa (tenant) = 1 RUC; base compartida con `tenant_id` y Row-Level Security
 > ([ADR-0002](ADR/0002-multiempresa-base-compartida-con-rls.md)); identidad global con membresías
-> ([ADR-0003](ADR/0003-identidad-global-y-contexto-de-sucursal.md)). Hoy no existe nada de esto
-> (G-01 a G-06). Este documento es conceptual: el esquema se implementa en las sesiones S2.1 a S2.9.
+> ([ADR-0003](ADR/0003-identidad-global-y-contexto-de-sucursal.md)). Al empezar no existía nada de
+> esto (G-01 a G-06); se implementó en las sesiones S2.1 a S2.9 (bloques de abajo).
 
 **Implementado (S2.1, 2026-10-15):**
 
@@ -120,10 +120,9 @@
 - Los historiales y reportes del POS (turnos, devoluciones, X, Z, diario y por medio de pago) aceptan
   `branchId` y `terminalId` y se limitan a las sucursales del usuario (`bids`): un `branchId` ajeno
   responde `BRANCH_ACCESS_DENIED` y un turno o una devolución de otra sucursal, `NOT_FOUND`.
-- Respaldo local hasta S2.9: con `POS_TERMINAL_FALLBACK` (verdadero solo en `local`; staging y
-  producción se niegan a arrancar con él) y sin encabezados, la solicitud usa la sucursal del
-  encabezado o la matriz, y su primera terminal activa por código, siempre que el usuario pueda entrar
-  a esa sucursal.
+- ~~Respaldo local hasta S2.9~~ (retirado en S2.9): con `POS_TERMINAL_FALLBACK` y sin encabezados, la
+  solicitud usaba la matriz y su primera terminal activa. Desde S2.9 una solicitud del POS sin sus
+  encabezados se rechaza en todos los entornos.
 - `pos_shifts` gana `terminal_id`, `branch_id`, `opened_by_user_id` y `closed_by`; `sales`,
   `branch_id`, `emission_point_id`, `terminal_id` y `number`; `pos_refunds`, `branch_id`,
   `terminal_id` y `number` (migración `654849d8d497`). Son nulos solo en las filas anteriores y en las
@@ -162,6 +161,23 @@
 - faclab-invoicing envía `faclab-tenant-id` (y la empresa como clave) en `invoices`; el core ya no
   busca la empresa por el id de la venta (`_tenant_of_sale` retirado) y descarta un mensaje sin
   empresa.
+
+**Implementado (S2.9, 2026-10-25):**
+
+- faclab-web elige la empresa tras el login cuando el usuario tiene varias (token de selección solo en
+  memoria) y la cambia desde el menú de usuario sin cerrar sesión: descarta la caché y avisa a las otras
+  pestañas. La empresa nunca viaja como encabezado: es el `tid` del token.
+- Selector de sucursal con las sucursales activas a las que el usuario puede entrar (`/me`); con una
+  sola, la muestra sin opciones. La sucursal elegida y la caja vinculada se recuerdan por navegador
+  (`fc.workplace`) y se validan contra la sesión y contra `GET /api/pos/terminals` al abrir el POS.
+- La web envía `X-Branch-Id` a `/api/admin` y `/api/pos`, y `X-Terminal-Id` a `/api/pos`; nunca a
+  `/api/auth` ni a facturación. Ante `BRANCH_ACCESS_DENIED` renueva el token (accesos nuevos) y
+  reintenta una vez. Se retiró `POS_TERMINAL_FALLBACK` del core.
+- Pantallas de sucursales, puntos de emisión y cajas (`organization:read`/`write`), accesos por
+  sucursal de cada usuario, sucursal en el alta de bodegas, perfil fiscal por empresa (RUC de la
+  empresa, ambiente SRI, RIMPE) y secuenciales por establecimiento y punto de emisión.
+- Verificado contra el backend local: dos navegadores vinculados a cajas distintas de la misma
+  sucursal abren turno a la vez.
 
 Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
 S8.5.
