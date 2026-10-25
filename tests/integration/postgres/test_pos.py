@@ -11,7 +11,6 @@ from httpx import Response
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from config import config
 from main import app
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
@@ -590,24 +589,18 @@ def test_a_sale_is_refunded_in_its_own_branch(
     assert error["code"] == "REFUND_OUTSIDE_BRANCH"
 
 
-def test_the_local_fallback_uses_the_main_branchs_first_terminal(
-    client, admin_api, cashier, shelf, terminal, product, monkeypatch, pg_engine
-):
-    make_terminal(admin_api, shelf["id"], code="CAJA-09")
-    # The API never makes a main branch: provisioning does
-    with pg_engine.begin() as conn:
-        conn.execute(
-            text("UPDATE branches SET is_main = true WHERE id = :id"),
-            {"id": terminal["branchId"]},
-        )
-    monkeypatch.setattr(config, "POS_TERMINAL_FALLBACK", True)
-    # The web until S2.9: no X-Branch-Id nor X-Terminal-Id
-    web = Api(client, cashier)
+def test_a_pos_request_without_its_headers_is_rejected(client, cashier, shift):
+    # Since S2.9 the web always names its branch and terminal: no fallback
+    bare = Api(client, cashier)
 
-    shift = web.post("/api/pos/shifts/open", {"openingBalance": "0"})
-    sale = _quick_sale(web, product["id"], 1, "11.50")
-    receipt = web.get(f"/api/pos/sales/{sale['id']}/receipt")
-
-    assert shift["terminalId"] == terminal["id"]
-    assert sale["terminalId"] == terminal["id"]
-    assert receipt["number"] == "V-001-000001"
+    error = bare.error(
+        "POST", "/api/pos/shifts/open", 400, json={"openingBalance": "0"}
+    )
+    assert error["code"] == "TERMINAL_REQUIRED"
+    error = bare.error(
+        "POST",
+        f"/api/pos/shifts/{shift['id']}/close",
+        400,
+        json={"closingBalance": "0"},
+    )
+    assert error["code"] == "BRANCH_REQUIRED"

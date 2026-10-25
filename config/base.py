@@ -106,12 +106,6 @@ class BaseConfig:
     LOGIN_LOCKOUT_SECONDS = env.int("LOGIN_LOCKOUT_SECONDS", 900)
 
     #
-    # POS without X-Branch-Id / X-Terminal-Id: run in the main branch's first
-    # active terminal. Local only, for the web until it sends them (S2.9)
-    #
-    POS_TERMINAL_FALLBACK = env.bool("POS_TERMINAL_FALLBACK", False)
-
-    #
     # Largest request body accepted (413 above it)
     #
     MAX_REQUEST_BODY_BYTES = env.int("MAX_REQUEST_BODY_BYTES", 1_048_576)
