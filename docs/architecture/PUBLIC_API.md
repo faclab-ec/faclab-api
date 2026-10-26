@@ -3,7 +3,9 @@
 > Decisiones: [ADR-0008](ADR/0008-api-publica-versionada-y-credenciales-de-integracion.md) (fachada
 > `/api/v1`, OAuth 2.0 *client credentials*, tokens asimétricos) y
 > [ADR-0009](ADR/0009-webhooks-firmados.md) (webhooks). Hoy solo existen las rutas internas del
-> frontend (G-72). Se implementa en la Etapa 6, después de multiempresa (Etapa 2) e idempotencia (S3.1).
+> frontend (G-72). Se implementa en la Etapa 6, después de multiempresa (Etapa 2) e idempotencia (S3.1,
+> terminada: el POS ya exige `Idempotency-Key` con el mecanismo que reutilizará `/api/v1`, ver
+> `docs/pos-api-spec.md` §0.1).
 
 ## 1. Principios
 
@@ -111,7 +113,7 @@ nunca puede tener más permisos que el plan de la empresa permite.
 | Orden | `sort=campo` o `sort=-campo` sobre una lista blanca por recurso |
 | Envelope | `{data, meta}` y `{errors:[{code, message, field?}], meta}`, el mismo que la API interna (`src/shared/infra/validators.py`) |
 | Códigos de error | Catálogo público estable (`NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED`…); nunca textos internos |
-| Idempotencia | `Idempotency-Key` (UUID) en POST de creación; misma clave y mismo cuerpo devuelven la misma respuesta durante 24 h; misma clave con otro cuerpo devuelve 422 `IDEMPOTENCY_KEY_REUSED` |
+| Idempotencia | `Idempotency-Key` (UUID) en POST de creación; misma clave y mismo cuerpo devuelven la misma respuesta durante 24 h (con `Idempotent-Replayed: true`); misma clave con otro cuerpo devuelve 422 `IDEMPOTENCY_KEY_REUSED`; una solicitud con la clave en curso espera su respuesta o, tras 10 s, 409 `IDEMPOTENCY_IN_PROGRESS`; los errores no se guardan. Implementado en el POS en S3.1 (`src/shared/infra/idempotency/`): la v1 aplica la misma dependencia a sus rutas |
 | Correlación | `X-Request-Id` en la respuesta, que aparece en el soporte y en los logs |
 | Límites | 429 con `Retry-After`; encabezados `RateLimit-Limit`, `RateLimit-Remaining` y `RateLimit-Reset` |
 

@@ -65,7 +65,7 @@
 |---|---|---|---|---|---|---|
 | G-24 | El relay del outbox se detiene en el primer fallo, sin máximo de intentos ni estado final | V | `src/shared/infra/outbox/relay.py:86-102` | Un mensaje dañado bloquea toda la facturación | P0 | S3.4 |
 | G-25 | El consumidor del core reintenta cada 5 s para siempre | V | `src/shared/infra/kafka/consumer.py:102-106` | Partición bloqueada | P1 | S3.4 |
-| G-26 | Ningún POST acepta `Idempotency-Key` | V | Búsqueda sin resultados | Un reintento del POS duplica la venta y el descuento de stock | P1 | S3.1 |
+| G-26 | Ningún POST acepta `Idempotency-Key` | V | Búsqueda sin resultados | Un reintento del POS duplica la venta y el descuento de stock | P1 | S3.1 (resuelta: los POST del POS que crean documentos o mueven dinero exigen la clave; se reserva y se guarda la respuesta en la transacción de la operación, una repetición devuelve la misma respuesta y una simultánea la espera; la web genera una clave por operación y reintenta con ella) |
 | G-27 | Un movimiento OUT sin fila de stock crea stock negativo | V | `src/inventory/stock/infra/event_handlers.py:50-61` | Stock negativo silencioso | P1 | S3.2 |
 | G-28 | La disponibilidad del POS usa `quantity` en vez de `available_quantity` | V | `confirm_sale.py:67`, `src/inventory/stock/domain/entities.py:15-17` | Se vende stock reservado para transferencias | P2 | S3.2 |
 | G-29 | Los ajustes aplican la diferencia calculada al agregar el ítem, no al confirmar | V | `src/inventory/adjustment/app/commands/adjustment.py:161-175,222-226` | Deriva de stock | P2 | S3.2 |
