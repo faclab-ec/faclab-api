@@ -9,7 +9,7 @@ from httpx import Response
 from sqlalchemy import Engine, text
 
 from src.shared.infra.database import Base
-from tests.integration.postgres.api import Api
+from tests.integration.postgres.api import Api, with_key
 from tests.integration.postgres.isolation.dataset import (
     MISSING,
     MISSING_TEXT,
@@ -94,6 +94,8 @@ class Tenant:
         if route.query and query:
             kwargs["params"] = route.query(ids)
         headers = {**self.api.headers, **(route.headers(ids) if route.headers else {})}
+        if method == "POST":
+            headers = with_key(headers)
         response = self.api.client.request(method, path, headers=headers, **kwargs)
         return Outcome.of(response)
 

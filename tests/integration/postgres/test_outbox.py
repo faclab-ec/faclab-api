@@ -19,6 +19,7 @@ from tests.integration.postgres.api import (
     make_product,
     make_terminal,
     make_warehouse,
+    with_key,
 )
 
 
@@ -54,7 +55,7 @@ def _checkout(cashier: Api, product_id: int, quantity: int, amount: str):
             "items": [{"productId": product_id, "quantity": quantity}],
             "payments": [{"amount": amount, "paymentMethod": "CASH"}],
         },
-        headers=cashier.headers,
+        headers=with_key(cashier.headers),
     )
 
 

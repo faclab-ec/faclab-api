@@ -2,7 +2,6 @@
 the terminal's location, numbering per branch, refunds, the shift reports and
 the branch rules, some of them with concurrent requests."""
 
-import threading
 from collections.abc import Callable
 
 import pytest
@@ -11,11 +10,11 @@ from httpx import Response
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from main import app
 from src.auth.domain.entities import Role
 from tests.integration.postgres.api import (
     Api,
     at_terminal,
+    concurrently,
     make_branch,
     make_customer,
     make_location,
@@ -23,6 +22,7 @@ from tests.integration.postgres.api import (
     make_product,
     make_terminal,
     make_warehouse,
+    with_key,
 )
 
 
@@ -97,24 +97,6 @@ def _quick_sale(api: Api, product_id: int, quantity: int, amount: str, **extra):
     )
 
 
-def _concurrently(*calls: Callable[[TestClient], Response]) -> list[Response]:
-    """Starts the calls at once, each with its own client"""
-    barrier = threading.Barrier(len(calls))
-    responses: list[Response] = []
-
-    def run(call: Callable[[TestClient], Response]) -> None:
-        client = TestClient(app)
-        barrier.wait()
-        responses.append(call(client))
-
-    threads = [threading.Thread(target=run, args=(call,)) for call in calls]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    return responses
-
-
 def _open(headers: dict[str, str]) -> Callable[[TestClient], Response]:
     return lambda client: client.post(
         "/api/pos/shifts/open", json={"openingBalance": "0"}, headers=headers
@@ -130,7 +112,7 @@ def _checkout(
             "items": [{"productId": product_id, "quantity": 1}],
             "payments": [{"amount": amount, "paymentMethod": "CASH"}],
         },
-        headers=headers,
+        headers=with_key(headers),
     )
 
 
@@ -348,10 +330,10 @@ def test_two_terminals_open_at_once_but_one_terminal_only_once(
     second = make_terminal(admin_api, shelf["id"], code="CAJA-02")
     third = make_terminal(admin_api, shelf["id"], code="CAJA-03")
 
-    both = _concurrently(
+    both = concurrently(
         _open(at_terminal(cashier, terminal)), _open(at_terminal(cashier, second))
     )
-    same = _concurrently(
+    same = concurrently(
         _open(at_terminal(cashier, third)), _open(at_terminal(cashier, third))
     )
 
@@ -433,21 +415,21 @@ def test_concurrent_checkouts_cannot_oversell_the_location(
 ):
     """Both requests read the same stock row; the row lock makes the second
     wait and see what the first one left."""
-    responses = _concurrently(
+    responses = concurrently(
         _checkout(api.headers, product["id"], "69.00"),
         _checkout(api.headers, product["id"], "69.00"),
     )
 
     # Each takes 1: both fit. Then two of 6 each, where only one fits
     assert sorted(r.status_code for r in responses) == [201, 201]
-    oversold = _concurrently(
+    oversold = concurrently(
         lambda client: client.post(
             "/api/pos/sales/quick",
             json={
                 "items": [{"productId": product["id"], "quantity": 6}],
                 "payments": [{"amount": "69.00", "paymentMethod": "CASH"}],
             },
-            headers=api.headers,
+            headers=with_key(api.headers),
         ),
         lambda client: client.post(
             "/api/pos/sales/quick",
@@ -455,7 +437,7 @@ def test_concurrent_checkouts_cannot_oversell_the_location(
                 "items": [{"productId": product["id"], "quantity": 6}],
                 "payments": [{"amount": "69.00", "paymentMethod": "CASH"}],
             },
-            headers=api.headers,
+            headers=with_key(api.headers),
         ),
     )
     assert sorted(r.status_code for r in oversold) == [201, 400]
@@ -504,7 +486,7 @@ def test_concurrent_sales_of_a_branch_get_consecutive_numbers(
         make_movement(admin_api, product["id"], 5, shelf["id"])
         products.append(product["id"])
 
-    responses = _concurrently(
+    responses = concurrently(
         *(_checkout(terminals[n % 2], product) for n, product in enumerate(products))
     )
 

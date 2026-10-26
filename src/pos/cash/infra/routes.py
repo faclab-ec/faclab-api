@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from wireup import Injected
 
 from src.auth.domain.entities import AuthenticatedUser
@@ -26,6 +27,11 @@ from src.pos.terminal.app.guard import PosBranchGuard
 from src.pos.terminal.app.resolver import TerminalRequest
 from src.pos.terminal.infra.dependencies import pos_branch
 from src.shared.infra.dependencies import get_meta
+from src.shared.infra.idempotency.requests import (
+    Idempotency,
+    IdempotentRequest,
+    idempotent_request,
+)
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
     RESPONSES_LIST,
@@ -71,24 +77,35 @@ class POSCashRouter:
         self,
         handler: Injected[RegisterCashMovementCommandHandler],
         guard: Injected[PosBranchGuard],
+        idempotency: Injected[Idempotency],
         shift_id: int,
         data: RegisterCashMovementRequest,
         branch: TerminalRequest = Depends(pos_branch),
         user: AuthenticatedUser = Depends(get_current_user),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[CashMovementResponse]:
-        """Register a cash-in or cash-out movement for a shift of the branch (e.g. petty cash withdrawal, float top-up)."""
+    ) -> DataResponse[CashMovementResponse] | JSONResponse:
+        """Register a cash-in or cash-out movement for a shift of the branch (e.g. petty cash withdrawal, float top-up).
+
+        Requires `Idempotency-Key`: a retry with it gets the same movement, registered once.
+        """
         guard.shift(shift_id, branch)
-        result = handler.handle(
-            RegisterCashMovementCommand(
-                shift_id=shift_id,
-                type=data.type,
-                amount=data.amount,
-                reason=data.reason,
-                performed_by=user.display_name,
+
+        def respond() -> DataResponse[CashMovementResponse]:
+            result = handler.handle(
+                RegisterCashMovementCommand(
+                    shift_id=shift_id,
+                    type=data.type,
+                    amount=data.amount,
+                    reason=data.reason,
+                    performed_by=user.display_name,
+                )
             )
-        )
-        return DataResponse(data=CashMovementResponse.model_validate(result), meta=meta)
+            return DataResponse(
+                data=CashMovementResponse.model_validate(result), meta=meta
+            )
+
+        return idempotency.run(idempotent, respond)
 
     def get_cash_movements(
         self,
