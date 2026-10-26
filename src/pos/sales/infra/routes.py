@@ -1,6 +1,7 @@
 """POS sale routes"""
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from wireup import Injected
 
 from src.auth.domain.entities import AuthenticatedUser
@@ -93,6 +94,11 @@ from src.sales.infra.validators import (
     SaleResponse,
 )
 from src.shared.infra.dependencies import get_meta
+from src.shared.infra.idempotency.requests import (
+    Idempotency,
+    IdempotentRequest,
+    idempotent_request,
+)
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
     RESPONSES_DELETE,
@@ -238,33 +244,42 @@ class POSSaleRouter:
     def create_sale(
         self,
         handler: Injected[POSCreateSaleCommandHandler],
+        idempotency: Injected[Idempotency],
         sale: POSSaleRequest,
         terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[SaleResponse]:
+    ) -> DataResponse[SaleResponse] | JSONResponse:
         """Create a new POS sale in DRAFT status, in the open shift of the terminal.
 
         The sale must have items added and payments registered before it can be confirmed.
         Optionally associate a customer or mark it as a final-consumer sale.
+        Requires `Idempotency-Key`: a retry with it gets the sale created the first time.
         """
-        result = handler.handle(
-            POSCreateSaleCommand(
-                terminal=terminal,
-                **sale.model_dump(exclude_none=True),
-                created_by=user.display_name,
+
+        def respond() -> DataResponse[SaleResponse]:
+            result = handler.handle(
+                POSCreateSaleCommand(
+                    terminal=terminal,
+                    **sale.model_dump(exclude_none=True),
+                    created_by=user.display_name,
+                )
             )
-        )
-        return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
+            return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
+
+        return idempotency.run(idempotent, respond)
 
     def quick_sale(
         self,
         handler: Injected[QuickSaleCommandHandler],
+        idempotency: Injected[Idempotency],
         sale: QuickSaleRequest,
         terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[SaleDetailResponse]:
+    ) -> DataResponse[SaleDetailResponse] | JSONResponse:
         """Complete a sale in a single request — creates the sale, adds items, registers payments, and confirms.
 
         This is the fastest checkout flow: supply line items and payments, and the sale
@@ -272,20 +287,27 @@ class POSSaleRouter:
         leaves the terminal's location and the sale gets its number of the branch.
         An optional sale-level discount (`discountType`/`discountValue`) follows the same
         rules as `POST /sales/{sale_id}/discount`; VAT is computed after the discount.
+        Requires `Idempotency-Key`: a retry with it gets the same sale, charged once.
         """
-        result = handler.handle(
-            QuickSaleCommand(
-                terminal=terminal,
-                items=[item.model_dump() for item in sale.items],
-                payments=[p.model_dump() for p in sale.payments],
-                customer_id=sale.customer_id,
-                discount_type=sale.discount_type,
-                discount_value=sale.discount_value,
-                notes=sale.notes,
-                created_by=user.display_name,
+
+        def respond() -> DataResponse[SaleDetailResponse]:
+            result = handler.handle(
+                QuickSaleCommand(
+                    terminal=terminal,
+                    items=[item.model_dump() for item in sale.items],
+                    payments=[p.model_dump() for p in sale.payments],
+                    customer_id=sale.customer_id,
+                    discount_type=sale.discount_type,
+                    discount_value=sale.discount_value,
+                    notes=sale.notes,
+                    created_by=user.display_name,
+                )
             )
-        )
-        return DataResponse(data=SaleDetailResponse.model_validate(result), meta=meta)
+            return DataResponse(
+                data=SaleDetailResponse.model_validate(result), meta=meta
+            )
+
+        return idempotency.run(idempotent, respond)
 
     def get_sale(
         self,
@@ -370,18 +392,25 @@ class POSSaleRouter:
         self,
         handler: Injected[POSConfirmSaleCommandHandler],
         guard: Injected[PosBranchGuard],
+        idempotency: Injected[Idempotency],
         sale_id: int,
         branch: TerminalRequest = Depends(pos_branch),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[SaleResponse]:
+    ) -> DataResponse[SaleResponse] | JSONResponse:
         """Confirm a sale and trigger inventory movements.
 
         The sale must have at least one item and payments covering the total amount.
         Once confirmed, inventory OUT movements are created for each line item.
+        Requires `Idempotency-Key`: a retry with it gets the first confirmation.
         """
         guard.sale(sale_id, branch)
-        result = handler.handle(POSConfirmSaleCommand(sale_id=sale_id))
-        return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
+
+        def respond() -> DataResponse[SaleResponse]:
+            result = handler.handle(POSConfirmSaleCommand(sale_id=sale_id))
+            return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
+
+        return idempotency.run(idempotent, respond)
 
     def cancel_sale(
         self,
@@ -421,19 +450,28 @@ class POSSaleRouter:
         self,
         handler: Injected[RegisterPaymentCommandHandler],
         guard: Injected[PosBranchGuard],
+        idempotency: Injected[Idempotency],
         sale_id: int,
         payment: PaymentRequest,
         branch: TerminalRequest = Depends(pos_branch),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[PaymentResponse]:
-        """Register a payment against a sale. Multiple payments with different methods are supported."""
+    ) -> DataResponse[PaymentResponse] | JSONResponse:
+        """Register a payment against a sale. Multiple payments with different methods are supported.
+
+        Requires `Idempotency-Key`: a retry with it gets the same payment, registered once.
+        """
         guard.sale(sale_id, branch)
-        result = handler.handle(
-            RegisterPaymentCommand(
-                sale_id=sale_id, **payment.model_dump(exclude_none=True)
+
+        def respond() -> DataResponse[PaymentResponse]:
+            result = handler.handle(
+                RegisterPaymentCommand(
+                    sale_id=sale_id, **payment.model_dump(exclude_none=True)
+                )
             )
-        )
-        return DataResponse(data=PaymentResponse.model_validate(result), meta=meta)
+            return DataResponse(data=PaymentResponse.model_validate(result), meta=meta)
+
+        return idempotency.run(idempotent, respond)
 
     def get_sale_payments(
         self,

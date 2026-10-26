@@ -111,6 +111,14 @@ class BaseConfig:
     MAX_REQUEST_BODY_BYTES = env.int("MAX_REQUEST_BODY_BYTES", 1_048_576)
 
     #
+    # Idempotency-Key (S3.1): the POS routes that create documents or move money
+    # require it; false lets a request without it run as is (rollback switch).
+    # The purge deletes the keys older than the retention
+    #
+    IDEMPOTENCY_KEY_REQUIRED = env.bool("IDEMPOTENCY_KEY_REQUIRED", True)
+    IDEMPOTENCY_KEY_RETENTION_HOURS = env.int("IDEMPOTENCY_KEY_RETENTION_HOURS", 24)
+
+    #
     # Docs config: /docs and the OpenAPI schemas, off unless enabled
     #
     DOCS_ENABLED = env.bool("DOCS_ENABLED", False)

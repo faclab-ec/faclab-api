@@ -112,6 +112,14 @@
   número, como las anteriores a S2.6: un usuario limitado a algunas sucursales no las ve en los
   historiales del POS y S2.8 no podría facturarlas. Conviene que el seed las cree en una terminal
   (S2.8 o S2.9).
+- **Idempotencia fuera de las operaciones que mueven dinero** (detectado en S3.1). El POS exige
+  `Idempotency-Key` en crear venta, venta rápida, confirmar, pagos, crear y procesar devoluciones y
+  movimientos de caja. No la piden la edición del borrador (ítems, descuento, precio, aparcar y
+  reanudar), abrir y cerrar turno ni las anulaciones: las protege el estado o un índice único, pero un
+  reintento de "agregar ítem" al retener una venta desde la web puede duplicar una línea del borrador.
+  Tampoco la piden las rutas de administración; la API v1 (S6.3) la exige en todos sus POST de
+  creación. La purga de claves vencidas es un CLI (`make purge-idempotency-keys`) hasta el worker de
+  S3.4.
 - **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
   del POS con formato fijo (`V-001-000123`). Faltan el formato configurable por empresa (ADR-0012) y
   pasar a la misma tabla las órdenes de compra (G-33, S3.3), los ajustes, las transferencias, las

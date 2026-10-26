@@ -33,6 +33,43 @@ indica dónde corre con encabezados:
 La terminal decide la ubicación del stock (su ubicación por defecto), el punto de emisión de la venta y
 la caja (el turno abierto de la terminal).
 
+## 0.1 IDEMPOTENCIA (S3.1)
+
+Las operaciones que crean documentos o mueven dinero exigen el encabezado `Idempotency-Key`: un UUID
+que el cliente genera **una vez por operación del usuario** (no por intento) y reenvía en cada reintento
+de esa operación. Así, si la red falla después de que el core confirmó una venta, el reintento no la
+duplica.
+
+| Ruta | Efecto que protege |
+|------|--------------------|
+| `POST /sales` | Crea la venta (borrador) |
+| `POST /sales/quick` | Venta completa: stock, número y pagos |
+| `POST /sales/{id}/confirm` | Descuenta stock y numera |
+| `POST /sales/{id}/payments` | Registra el pago |
+| `POST /refunds` | Crea la devolución |
+| `POST /refunds/{id}/process` | Devuelve dinero y stock |
+| `POST /shifts/{id}/cash-movements` | Registra el movimiento de caja |
+
+- **Primera solicitud**: reserva la clave y guarda la respuesta en la misma transacción que la operación.
+- **Repetición con la misma clave y la misma solicitud** (método, ruta con sus ids y cuerpo JSON; el
+  orden de los campos y los espacios no cuentan): devuelve la respuesta guardada, con el mismo status y
+  el mismo cuerpo, y el encabezado `Idempotent-Replayed: true`. No se repite ningún efecto.
+- **Simultáneas**: una solicitud cuya clave está reservada por otra que todavía corre espera a que
+  termine (hasta 10 s) y devuelve su respuesta. Si la espera se vence: `IDEMPOTENCY_IN_PROGRESS` (409);
+  reintentar más tarde con la misma clave.
+- **Misma clave con otra solicitud**: `IDEMPOTENCY_KEY_REUSED` (422).
+- **Errores**: no se guardan. Una operación que falla (4xx o 5xx) se revierte con su reserva, así que un
+  reintento con la misma clave se ejecuta de nuevo (el intento fallido no dejó efectos).
+- **Sin clave**: `IDEMPOTENCY_KEY_REQUIRED` (422); un valor que no es UUID: `INVALID_IDEMPOTENCY_KEY`
+  (422). La bandera `IDEMPOTENCY_KEY_REQUIRED=false` (solo para revertir un despliegue) deja pasar las
+  solicitudes sin clave.
+- **Vigencia**: la clave es de la empresa y se purga a las 24 h (`IDEMPOTENCY_KEY_RETENTION_HOURS`,
+  `make purge-idempotency-keys`).
+
+faclab-web genera la clave por operación (`useIdempotencyKey`), la conserva hasta que la operación sale
+bien y reintenta solo (hasta dos veces) tras un timeout, una caída de red, `IDEMPOTENCY_IN_PROGRESS` o
+un 502/503/504.
+
 ---
 
 ## 1. TURNOS (Shifts)
@@ -632,6 +669,10 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 | `REFUND_ITEM_NOT_IN_SALE` | 400 | Item no pertenece a la venta |
 | `INVALID_CASH_MOVEMENT_AMOUNT` | 400 | Monto debe ser > 0 |
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |
+| `IDEMPOTENCY_KEY_REQUIRED` | 422 | Falta `Idempotency-Key` en una operación que lo exige (§0.1) |
+| `INVALID_IDEMPOTENCY_KEY` | 422 | `Idempotency-Key` no es un UUID |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | La clave ya se usó con otra solicitud |
+| `IDEMPOTENCY_IN_PROGRESS` | 409 | Otra solicitud con la clave sigue en curso |
 
 Formato de error estándar:
 
@@ -673,6 +714,8 @@ Formato de error estándar:
 
 11. **Autoría desde el token**: `cashierName`, `closedBy`, `createdBy`, `refundedBy` y `performedBy` los pone el backend con el usuario autenticado (su nombre completo o, si no tiene, su username). No se envían en el cuerpo; si llegan, se ignoran.
 
+12. **Idempotencia**: Las operaciones de §0.1 llevan `Idempotency-Key`, una por operación del usuario y la misma en cada reintento, hasta recibir una respuesta definitiva.
+
 ---
 
 ## 9. RESUMEN DE ENDPOINTS
@@ -691,7 +734,7 @@ Formato de error estándar:
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | `/cash-movements` | Registrar movimiento |
+| POST | `/cash-movements` | Registrar movimiento (`Idempotency-Key`) |
 | GET | `/cash-movements` | Listar movimientos |
 | GET | `/cash-summary` | Resumen de caja |
 
@@ -699,19 +742,19 @@ Formato de error estándar:
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | `/` | Crear venta |
-| POST | `/quick` | Venta rápida |
+| POST | `/` | Crear venta (`Idempotency-Key`) |
+| POST | `/quick` | Venta rápida (`Idempotency-Key`) |
 | GET | `/{id}` | Obtener venta |
 | POST | `/{id}/items` | Agregar item |
 | GET | `/{id}/items` | Listar items |
 | PUT | `/{id}/items/{itemId}` | Actualizar item |
 | DELETE | `/{id}/items/{itemId}` | Eliminar item |
-| POST | `/{id}/confirm` | Confirmar |
+| POST | `/{id}/confirm` | Confirmar (`Idempotency-Key`) |
 | POST | `/{id}/cancel` | Cancelar |
 | POST | `/{id}/park` | Estacionar |
 | POST | `/{id}/resume` | Reanudar |
 | POST | `/{id}/discount` | Aplicar descuento |
-| POST | `/{id}/payments` | Registrar pago |
+| POST | `/{id}/payments` | Registrar pago (`Idempotency-Key`) |
 | GET | `/{id}/payments` | Listar pagos |
 | PUT | `/{id}/items/{itemId}/price` | Sobrescribir precio |
 | GET | `/{id}/receipt` | Generar recibo |
@@ -721,8 +764,8 @@ Formato de error estándar:
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | `/` | Crear devolución |
-| POST | `/{id}/process` | Procesar devolución |
+| POST | `/` | Crear devolución (`Idempotency-Key`) |
+| POST | `/{id}/process` | Procesar devolución (`Idempotency-Key`) |
 | POST | `/{id}/cancel` | Cancelar devolución |
 | GET | `/{id}` | Obtener devolución |
 | GET | `/` | Listar devoluciones |

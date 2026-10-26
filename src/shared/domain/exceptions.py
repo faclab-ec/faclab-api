@@ -46,3 +46,44 @@ class AlreadyExistsError(ConflictError):
     """A unique value is already taken. Subclasses use `<THING>_ALREADY_EXISTS`."""
 
     error_code = "ALREADY_EXISTS"
+
+
+class IdempotencyKeyRequiredError(ValidationError):
+    """A POST that creates a document or moves money came without its key"""
+
+    error_code = "IDEMPOTENCY_KEY_REQUIRED"
+
+    def __init__(self):
+        super().__init__(
+            "Send an Idempotency-Key header: a UUID generated once per operation "
+            "and resent on every retry of it"
+        )
+
+
+class InvalidIdempotencyKeyError(ValidationError):
+    error_code = "INVALID_IDEMPOTENCY_KEY"
+
+    def __init__(self):
+        super().__init__("The Idempotency-Key header must be a UUID")
+
+
+class IdempotencyKeyReusedError(ValidationError):
+    """The key already belongs to another request (another body or route)"""
+
+    error_code = "IDEMPOTENCY_KEY_REUSED"
+
+    def __init__(self):
+        super().__init__(
+            "This Idempotency-Key was already used for a different request"
+        )
+
+
+class IdempotencyInProgressError(ConflictError):
+    """Another request with the key is still running"""
+
+    error_code = "IDEMPOTENCY_IN_PROGRESS"
+
+    def __init__(self):
+        super().__init__(
+            "A request with this Idempotency-Key is still in progress: retry later"
+        )

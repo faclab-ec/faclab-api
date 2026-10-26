@@ -36,6 +36,7 @@ def create_wireup_container():
     from src.sales.infra.container import INJECTABLES as SALES_INJECTABLES
     from src.shared.infra.database import create_session_factory
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
+    from src.shared.infra.idempotency.requests import Idempotency
     from src.shared.infra.outbox.writer import OutboxWriter
     from src.shared.infra.tenant import tenant_context
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
@@ -53,6 +54,7 @@ def create_wireup_container():
             tenant_context,
             EventBusPublisher,
             OutboxWriter,
+            Idempotency,
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
             *ORGANIZATION_INJECTABLES,

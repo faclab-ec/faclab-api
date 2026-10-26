@@ -1,8 +1,21 @@
 """Thin HTTP helpers and factories for the Postgres integration tests."""
 
+import threading
+from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from httpx import Response
+
+from main import app
+
+IDEMPOTENCY_KEY = "Idempotency-Key"
+
+
+def with_key(headers: dict[str, str]) -> dict[str, str]:
+    """`headers` plus a new Idempotency-Key: one operation (S3.1)"""
+    return {**headers, IDEMPOTENCY_KEY: str(uuid4())}
 
 
 class Api:
@@ -13,7 +26,9 @@ class Api:
         self.headers = headers
 
     def request(self, method: str, path: str, **kwargs) -> Any:
-        response = self.client.request(method, path, headers=self.headers, **kwargs)
+        response = self.client.request(
+            method, path, headers=self._headers(method, kwargs), **kwargs
+        )
         assert response.is_success, (
             f"{method} {path} -> {response.status_code}: {response.text}"
         )
@@ -21,6 +36,15 @@ class Api:
             return None
         body = response.json()
         return body.get("data", body) if isinstance(body, dict) else body
+
+    def _headers(self, method: str, kwargs: dict[str, Any]) -> dict[str, str]:
+        """The caller's headers plus the call's own. Each POST is one operation
+        with its own Idempotency-Key, as the web sends them, unless the call
+        brings one"""
+        headers = {**self.headers, **kwargs.pop("headers", {})}
+        if method == "POST" and IDEMPOTENCY_KEY not in headers:
+            headers[IDEMPOTENCY_KEY] = str(uuid4())
+        return headers
 
     def get(self, path: str, **kwargs) -> Any:
         return self.request("GET", path, **kwargs)
@@ -36,11 +60,31 @@ class Api:
 
     def error(self, method: str, path: str, expected: int, **kwargs) -> dict:
         """Call an endpoint that must fail and return its first error entry."""
-        response = self.client.request(method, path, headers=self.headers, **kwargs)
+        response = self.client.request(
+            method, path, headers=self._headers(method, kwargs), **kwargs
+        )
         assert response.status_code == expected, (
             f"{method} {path} -> {response.status_code}: {response.text}"
         )
         return response.json()["errors"][0]
+
+
+def concurrently(*calls: Callable[[TestClient], Response]) -> list[Response]:
+    """Starts the calls at once, each with its own client"""
+    barrier = threading.Barrier(len(calls))
+    responses: list[Response] = []
+
+    def run(call: Callable[[TestClient], Response]) -> None:
+        client = TestClient(app)
+        barrier.wait()
+        responses.append(call(client))
+
+    threads = [threading.Thread(target=run, args=(call,)) for call in calls]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return responses
 
 
 def national_id(seed: int) -> str:

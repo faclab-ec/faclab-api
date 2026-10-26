@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import JSONResponse
 from wireup import Injected
 
 from src.auth.domain.entities import AuthenticatedUser
@@ -33,6 +34,11 @@ from src.pos.terminal.app.guard import PosBranchGuard
 from src.pos.terminal.app.resolver import TerminalRequest
 from src.pos.terminal.infra.dependencies import pos_branch, pos_terminal
 from src.shared.infra.dependencies import get_meta
+from src.shared.infra.idempotency.requests import (
+    Idempotency,
+    IdempotentRequest,
+    idempotent_request,
+)
 from src.shared.infra.validators import (
     RESPONSES_COMMAND,
     RESPONSES_LIST,
@@ -94,51 +100,69 @@ class POSRefundRouter:
     def create_refund(
         self,
         handler: Injected[CreateRefundCommandHandler],
+        idempotency: Injected[Idempotency],
         refund_input: CreateRefundRequest,
         terminal: TerminalRequest = Depends(pos_terminal),
         user: AuthenticatedUser = Depends(get_current_user),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[RefundDetailResponse]:
+    ) -> DataResponse[RefundDetailResponse] | JSONResponse:
         """Create a refund for a confirmed sale, in the open shift of the terminal.
 
         The terminal must be of the sale's branch (`REFUND_OUTSIDE_BRANCH`).
         Specify the items to refund (partial or total). The refund is created in PENDING
         status and must be processed to register payments and restore inventory.
+        Requires `Idempotency-Key`: a retry with it gets the refund created the first time.
         """
-        result = handler.handle(
-            CreateRefundCommand(
-                terminal=terminal,
-                original_sale_id=refund_input.original_sale_id,
-                items=[item.model_dump() for item in refund_input.items],
-                reason=refund_input.reason,
-                refunded_by=user.display_name,
+
+        def respond() -> DataResponse[RefundDetailResponse]:
+            result = handler.handle(
+                CreateRefundCommand(
+                    terminal=terminal,
+                    original_sale_id=refund_input.original_sale_id,
+                    items=[item.model_dump() for item in refund_input.items],
+                    reason=refund_input.reason,
+                    refunded_by=user.display_name,
+                )
             )
-        )
-        return DataResponse(data=RefundDetailResponse.model_validate(result), meta=meta)
+            return DataResponse(
+                data=RefundDetailResponse.model_validate(result), meta=meta
+            )
+
+        return idempotency.run(idempotent, respond)
 
     def process_refund(
         self,
         handler: Injected[ProcessRefundCommandHandler],
         guard: Injected[PosBranchGuard],
+        idempotency: Injected[Idempotency],
         refund_id: int,
         process_input: ProcessRefundRequest,
         branch: TerminalRequest = Depends(pos_branch),
+        idempotent: IdempotentRequest | None = Depends(idempotent_request),
         meta: Meta = Depends(get_meta),
-    ) -> DataResponse[RefundDetailResponse]:
+    ) -> DataResponse[RefundDetailResponse] | JSONResponse:
         """Process a pending refund of the branch by registering refund payments.
 
         The total of all payments must cover the refund amount. Once processed,
         the stock goes back to the location of the refund's terminal and the refund
         gets its number of the branch.
+        Requires `Idempotency-Key`: a retry with it gets the first processing.
         """
         guard.refund(refund_id, branch)
-        result = handler.handle(
-            ProcessRefundCommand(
-                refund_id=refund_id,
-                payments=[p.model_dump() for p in process_input.payments],
+
+        def respond() -> DataResponse[RefundDetailResponse]:
+            result = handler.handle(
+                ProcessRefundCommand(
+                    refund_id=refund_id,
+                    payments=[p.model_dump() for p in process_input.payments],
+                )
             )
-        )
-        return DataResponse(data=RefundDetailResponse.model_validate(result), meta=meta)
+            return DataResponse(
+                data=RefundDetailResponse.model_validate(result), meta=meta
+            )
+
+        return idempotency.run(idempotent, respond)
 
     def cancel_refund(
         self,
