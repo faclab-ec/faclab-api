@@ -68,6 +68,16 @@ La empresa activa no puede depender de un `tenant_id` enviado libremente por el 
 - Administración: `GET`/`PUT /api/admin/users/{id}/branches` (`user:manage`); `/api/auth/me` devuelve
   las sucursales a las que el usuario puede entrar, para el selector.
 
+### Precisiones de la implementación (S2.9)
+
+- La web pide la empresa en un segundo paso del login solo cuando hay varias; el token de selección
+  no sale de la memoria. Cambiar de empresa descarta todo lo cargado en el navegador y avisa a las
+  otras pestañas.
+- La web recuerda por navegador la sucursal elegida en cada empresa y la caja vinculada en cada
+  sucursal, siempre validadas contra `/me` y contra las cajas activas. Envía `X-Branch-Id` en toda
+  llamada de administración y del POS, y `X-Terminal-Id` en las del POS.
+- Ante `BRANCH_ACCESS_DENIED` renueva el token, que trae los `bids` vigentes, y reintenta una vez.
+
 ## Consecuencias
 
 - `require_permission` pasa a evaluar los permisos de la membresía activa.

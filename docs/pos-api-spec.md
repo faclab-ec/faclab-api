@@ -25,9 +25,10 @@ indica dónde corre con encabezados:
 - El historial y los reportes (`report:pos:read`) no piden encabezado: muestran las sucursales a las
   que el usuario puede entrar y aceptan los filtros `branchId` y `terminalId`. Un `branchId` ajeno
   responde `BRANCH_ACCESS_DENIED`.
-- **Solo en desarrollo, hasta S2.9:** con `POS_TERMINAL_FALLBACK` (verdadero en `local`), una solicitud
-  sin encabezados usa la sucursal de `X-Branch-Id` o la matriz, y su primera terminal activa por código.
-  Staging y producción no arrancan con ese ajuste.
+- Sin los encabezados la solicitud se rechaza en todos los entornos (`TERMINAL_REQUIRED` o
+  `BRANCH_REQUIRED`). faclab-web los envía desde S2.9: cada navegador queda vinculado a una caja de la
+  sucursal (`GET /api/pos/terminals`). El respaldo local que elegía la primera terminal de la matriz
+  (`POS_TERMINAL_FALLBACK`) se retiró en S2.9.
 
 La terminal decide la ubicación del stock (su ubicación por defecto), el punto de emisión de la venta y
 la caja (el turno abierto de la terminal).
@@ -612,7 +613,7 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 
 | Código | HTTP | Descripción |
 |--------|------|-------------|
-| `TERMINAL_REQUIRED` | 400 | Falta `X-Terminal-Id` (o, con el respaldo local, la sucursal no tiene terminal activa) |
+| `TERMINAL_REQUIRED` | 400 | Falta `X-Terminal-Id` |
 | `BRANCH_REQUIRED` | 400 | Falta `X-Branch-Id` |
 | `INVALID_TERMINAL_HEADER` | 422 | `X-Terminal-Id` no es un id |
 | `BRANCH_ACCESS_DENIED` | 403 | El usuario no puede entrar a esa sucursal |

@@ -2,7 +2,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.auth.domain.exceptions import BranchAccessDeniedError
 from src.organization.domain.entities import Branch, PosTerminal
 from src.organization.domain.exceptions import BranchInactiveError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
@@ -34,15 +33,9 @@ def _resolver(terminals=(), branches=(MAIN, NORTH)) -> TerminalResolver:
     terminal_repo.get_by_id.side_effect = lambda id: next(
         (t for t in terminals if t.id == id), None
     )
-    terminal_repo.filter_by.side_effect = lambda branch_id, is_active: [
-        t for t in terminals if t.branch_id == branch_id and t.is_active == is_active
-    ]
     branch_repo = MagicMock()
     branch_repo.get_by_id.side_effect = lambda id: next(
         (b for b in branches if b.id == id), None
-    )
-    branch_repo.first.side_effect = lambda is_main: next(
-        (b for b in branches if b.is_main == is_main), None
     )
     return TerminalResolver(terminal_repo, branch_repo)
 
@@ -82,37 +75,6 @@ def test_an_inactive_terminal_or_branch():
         closed_branch.terminal(TerminalRequest(1, 3))
 
 
-def test_the_fallback_takes_the_first_active_terminal_of_the_main_branch():
-    resolver = _resolver(
-        [
-            _terminal(4, code="CAJA-02"),
-            _terminal(5, code="CAJA-00", is_active=False),
-            _terminal(3, code="CAJA-01"),
-            _terminal(6, branch_id=2, code="CAJA-00"),
-        ]
-    )
-
-    assert resolver.terminal(TerminalRequest()).id == 3
-    assert resolver.branch_id(TerminalRequest()) == 1
-
-
-def test_the_fallback_uses_the_branch_of_the_header():
-    resolver = _resolver([_terminal(3), _terminal(6, branch_id=2, code="CAJA-09")])
-
-    assert resolver.terminal(TerminalRequest(branch_id=2)).id == 6
-    assert resolver.branch_id(TerminalRequest(branch_id=2)) == 2
-
-
-def test_the_fallback_respects_the_users_branches():
-    resolver = _resolver([_terminal(3)])
-    limited = TerminalRequest(allowed_branches=frozenset({2}))
-
-    with pytest.raises(BranchAccessDeniedError):
-        resolver.terminal(limited)
-    with pytest.raises(BranchAccessDeniedError):
-        resolver.branch_id(limited)
-
-
-def test_the_fallback_needs_an_active_terminal():
+def test_an_operation_at_a_terminal_needs_one():
     with pytest.raises(TerminalRequiredError):
-        _resolver([_terminal(3, is_active=False)]).terminal(TerminalRequest())
+        _resolver([_terminal(3)]).terminal(TerminalRequest(branch_id=1))

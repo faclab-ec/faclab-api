@@ -1,16 +1,14 @@
 """The POS headers over HTTP, with the API's real middleware order:
 `X-Terminal-Id` names the terminal of an operation that starts there and
 `X-Branch-Id` the branch of one on an existing sale, shift or refund. Without
-them only the local fallback (`POS_TERMINAL_FALLBACK`) answers."""
+them the request is rejected."""
 
 from uuid import UUID
 
-import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 import main
-from config import config
 from src.auth.domain.entities import Role, User
 from src.auth.infra.token_service import JwtTokenService
 from src.pos.terminal.app.resolver import TerminalRequest
@@ -25,11 +23,7 @@ def _app() -> FastAPI:
 
     @app.get("/at-terminal")
     def at_terminal(terminal: TerminalRequest = Depends(pos_terminal)) -> dict:
-        return {
-            "branch": terminal.branch_id,
-            "terminal": terminal.terminal_id,
-            "allowed": sorted(terminal.allowed_branches or []),
-        }
+        return {"branch": terminal.branch_id, "terminal": terminal.terminal_id}
 
     @app.get("/in-branch")
     def in_branch(branch: TerminalRequest = Depends(pos_branch)) -> dict:
@@ -59,15 +53,10 @@ def _error(response) -> tuple[int, str]:
     return response.status_code, response.json()["errors"][0]["code"]
 
 
-@pytest.fixture
-def fallback(monkeypatch):
-    monkeypatch.setattr(config, "POS_TERMINAL_FALLBACK", True)
-
-
 def test_an_operation_at_a_terminal_reads_both_headers():
     response = TestClient(_app()).get("/at-terminal", headers=_headers("2", "9"))
 
-    assert response.json() == {"branch": 2, "terminal": 9, "allowed": [1, 2]}
+    assert response.json() == {"branch": 2, "terminal": 9}
 
 
 def test_an_operation_at_a_terminal_needs_it():
@@ -105,16 +94,6 @@ def test_an_operation_in_a_branch_needs_it():
         "BRANCH_REQUIRED",
     )
     assert client.get("/in-branch", headers=_headers("1")).json() == {"branch": 1}
-
-
-def test_the_fallback_lets_the_resolver_pick(fallback):
-    client = TestClient(_app())
-
-    at_terminal = client.get("/at-terminal", headers=_headers()).json()
-    in_branch = client.get("/in-branch", headers=_headers()).json()
-
-    assert at_terminal == {"branch": None, "terminal": None, "allowed": [1, 2]}
-    assert in_branch == {"branch": None}
 
 
 def test_the_operations_document_the_headers():

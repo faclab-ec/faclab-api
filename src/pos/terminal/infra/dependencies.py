@@ -1,13 +1,11 @@
 """The POS headers: `X-Branch-Id` (checked against the user's branches by
-`AuthMiddleware`) and `X-Terminal-Id`. Without them, and only with
-`POS_TERMINAL_FALLBACK` (local, until the web sends them in S2.9), the request
-runs in the main branch's first active terminal."""
+`AuthMiddleware`) and `X-Terminal-Id`. faclab-web sends both since S2.9; a
+request without them is rejected."""
 
 import re
 
 from fastapi import Depends, Header, Request
 
-from config import config
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.exceptions import BranchRequiredError
 from src.auth.infra.dependencies import get_current_user
@@ -28,7 +26,8 @@ _BRANCH_DESCRIPTION = (
 
 def pos_terminal(
     request: Request,
-    user: AuthenticatedUser = Depends(get_current_user),
+    # Authenticated first: a request without a token answers 401, not 400
+    _user: AuthenticatedUser = Depends(get_current_user),
     branch: str | None = Header(
         None, alias="X-Branch-Id", description=_BRANCH_DESCRIPTION
     ),
@@ -39,31 +38,32 @@ def pos_terminal(
     ),
 ) -> TerminalRequest:
     """The terminal a POS operation starts at (`TERMINAL_REQUIRED` without it)"""
-    branch_id = getattr(request.state, "branch_id", None)
     if terminal is None:
-        if not config.POS_TERMINAL_FALLBACK:
-            raise TerminalRequiredError()
-        return TerminalRequest(branch_id=branch_id, allowed_branches=user.branch_ids)
+        raise TerminalRequiredError()
     value = terminal.strip()
     if not _TERMINAL_ID.fullmatch(value) or int(value) > _MAX_ID:
         raise InvalidTerminalHeaderError()
-    if branch is None or branch_id is None:
-        raise BranchRequiredError()
     return TerminalRequest(
-        branch_id=branch_id, terminal_id=int(value), allowed_branches=user.branch_ids
+        branch_id=_branch_id(request, branch), terminal_id=int(value)
     )
 
 
 def pos_branch(
     request: Request,
-    user: AuthenticatedUser = Depends(get_current_user),
+    _user: AuthenticatedUser = Depends(get_current_user),
     branch: str | None = Header(
         None, alias="X-Branch-Id", description=_BRANCH_DESCRIPTION
     ),
 ) -> TerminalRequest:
     """The branch of a POS operation on an existing sale, shift or refund
     (`BRANCH_REQUIRED` without it)"""
+    return TerminalRequest(branch_id=_branch_id(request, branch))
+
+
+def _branch_id(request: Request, header: str | None) -> int:
+    """The branch `AuthMiddleware` read from `X-Branch-Id` (`BRANCH_REQUIRED`
+    without it)"""
     branch_id = getattr(request.state, "branch_id", None)
-    if (branch is None or branch_id is None) and not config.POS_TERMINAL_FALLBACK:
+    if header is None or branch_id is None:
         raise BranchRequiredError()
-    return TerminalRequest(branch_id=branch_id, allowed_branches=user.branch_ids)
+    return branch_id

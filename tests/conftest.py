@@ -12,8 +12,6 @@ from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 # Tests never export telemetry nor talk to Kafka.
 os.environ["OTEL_ENABLED"] = "false"
 os.environ["KAFKA_ENABLED"] = "false"
-# POS requests name their branch and terminal; the fallback has its own tests
-os.environ["POS_TERMINAL_FALLBACK"] = "false"
 
 # Postgres-backed tests run against TEST_DATABASE_URL, a superuser that creates
 # the database and looks at it from outside row-level security. The app, the

@@ -2,7 +2,7 @@ from wireup import injectable
 
 from src.pos.refund.app.repositories import RefundRepository
 from src.pos.shift.app.repositories import ShiftRepository
-from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
+from src.pos.terminal.app.resolver import TerminalRequest
 from src.sales.app.repositories import SaleRepository
 from src.shared.domain.exceptions import NotFoundError
 
@@ -16,12 +16,10 @@ class PosBranchGuard:
 
     def __init__(
         self,
-        resolver: TerminalResolver,
         sales: SaleRepository,
         shifts: ShiftRepository,
         refunds: RefundRepository,
     ):
-        self.resolver = resolver
         self.sales = sales
         self.shifts = shifts
         self.refunds = refunds
@@ -42,4 +40,4 @@ class PosBranchGuard:
             raise NotFoundError(f"Refund with id {refund_id} not found")
 
     def _in_branch(self, branch_id: int | None, request: TerminalRequest) -> bool:
-        return branch_id is None or branch_id == self.resolver.branch_id(request)
+        return branch_id is None or branch_id == request.branch_id

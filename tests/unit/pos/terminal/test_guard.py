@@ -9,7 +9,6 @@ from src.pos.terminal.app.resolver import TerminalRequest
 from src.pos.terminal.app.scope import branch_scope, in_scope
 from src.sales.domain.entities import Sale
 from src.shared.domain.exceptions import NotFoundError
-from tests.unit.pos.terminals import terminal_resolver
 
 IN_BRANCH_1 = TerminalRequest(branch_id=1)
 
@@ -19,7 +18,7 @@ def _guard(sale=None, shift=None, refund=None) -> PosBranchGuard:
     sales.get_by_id.return_value = sale
     shifts.get_by_id.return_value = shift
     refunds.get_by_id.return_value = refund
-    return PosBranchGuard(terminal_resolver(), sales, shifts, refunds)
+    return PosBranchGuard(sales, shifts, refunds)
 
 
 def test_a_sale_shift_or_refund_of_the_branch_passes():

@@ -24,7 +24,6 @@ AT_TERMINAL = TerminalRequest(branch_id=BRANCH_ID, terminal_id=3)
 def terminal_resolver(terminal: PosTerminal = TERMINAL) -> MagicMock:
     resolver = MagicMock()
     resolver.terminal.return_value = terminal
-    resolver.branch_id.return_value = terminal.branch_id
     return resolver
 
 

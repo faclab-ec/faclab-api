@@ -6,8 +6,7 @@ from src.shared.domain.exceptions import (
 
 
 class TerminalRequiredError(ApplicationError):
-    """A terminal operation without `X-Terminal-Id`, or, with the local
-    fallback, in a branch without an active terminal"""
+    """A terminal operation without `X-Terminal-Id`"""
 
     error_code = "TERMINAL_REQUIRED"
 

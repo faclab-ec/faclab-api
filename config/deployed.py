@@ -36,12 +36,6 @@ class DeployedConfig(BaseConfig):
                 "JWT_SECRET must be unique and at least "
                 f"{_MIN_JWT_SECRET_LENGTH} characters in {self.ENVIRONMENT}"
             )
-        # Picking a terminal for the client is a development aid: a deployed
-        # POS always names its own
-        if self.POS_TERMINAL_FALLBACK:
-            raise RuntimeError(
-                f"POS_TERMINAL_FALLBACK is for local development, not {self.ENVIRONMENT}"
-            )
         # The API allows credentials, and with "*" the browser would accept
         # them from any site
         if "*" in self.CORS_ORIGINS:
