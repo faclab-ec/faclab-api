@@ -662,7 +662,7 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 | `SHIFT_ALREADY_CLOSED` | 400 | El turno ya está cerrado |
 | `NO_OPEN_SHIFT` | 400 | No hay turno activo |
 | `SALE_HAS_NO_ITEMS` | 400 | Venta sin items al confirmar |
-| `INSUFFICIENT_STOCK` | 400 | Stock insuficiente |
+| `INSUFFICIENT_STOCK` | 400 | La ubicación de la terminal no tiene disponible (sin lo reservado por transferencias) la suma de las líneas de un producto; `detail` dice `requested` y `available` |
 | `INVALID_REFUND_STATUS` | 400 | Estado inválido para la operación |
 | `EXCEEDS_ORIGINAL_QUANTITY` | 400 | Cantidad devuelta excede disponible |
 | `SALE_NOT_CONFIRMED` | 400 | Venta no confirmada (para devolución) |

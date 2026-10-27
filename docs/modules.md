@@ -142,11 +142,17 @@ Nivel de inventario de un producto en una ubicacion especifica. El stock no se g
 
 **Entidades:** `Stock`
 
-**Campos:** `id`, `product_id`, `location_id`, `quantity`, `min_quantity`, `updated_at`
+**Campos:** `id`, `product_id`, `location_id`, `quantity`, `reserved_quantity`, `min_quantity`, `updated_at`
 
 **Queries:** `GetAllStock`, `GetStockById`, `GetStockByProduct`, `GetStockByLocation`
 
-**Eventos recibidos:** `MovementCreated` → actualiza `quantity`
+**Eventos recibidos:** `MovementCreated` → actualiza `quantity` (crea la fila si la ubicacion no tenia)
+
+**Reglas (S3.2):** el stock nunca queda negativo. Una salida solo toma lo disponible
+(`available_quantity = quantity - reserved_quantity`; lo reservado es de transferencias confirmadas):
+un OUT que no cubre, tambien cuando la ubicacion no tiene fila, falla con `INSUFFICIENT_STOCK`. La
+base lo garantiza ademas con `CHECK (quantity >= 0)` y
+`CHECK (reserved_quantity >= 0 AND reserved_quantity <= quantity)`.
 
 ---
 
@@ -168,8 +174,9 @@ Registro de entradas (`IN`) y salidas (`OUT`) de inventario. Cada movimiento gen
 - Confirmacion de venta → `SaleConfirmed` → OUT
 - Anulacion de venta → `SaleCancelled` → IN
 - Recepcion de compra → `PurchaseOrderReceived` → IN
-- Ajuste de inventario → directo
-- Creacion manual → via endpoint
+- Ajuste de inventario → directo (la diferencia contra el stock al confirmar)
+- Creacion manual → via endpoint, sin documento: `POST /api/admin/movements` no acepta
+  `referenceType` ni `referenceId`, que solo llenan los flujos anteriores
 
 ---
 
