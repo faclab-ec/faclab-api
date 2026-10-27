@@ -17,11 +17,11 @@ class Stock(Entity):
         return self.quantity - self.reserved_quantity
 
     def update_quantity(self, delta: int) -> None:
-        """Suma `delta` (negativo para salidas) sin dejar la cantidad bajo cero"""
-        new_quantity = self.quantity + delta
-        if new_quantity < 0:
+        """Suma `delta` (negativo para salidas). Una salida solo toma lo
+        disponible: nunca deja la cantidad bajo cero ni bajo lo reservado"""
+        if delta < 0 and -delta > self.available_quantity:
             raise InsufficientStockError(self.product_id, delta)
-        self.quantity = new_quantity
+        self.quantity += delta
 
     def reserve(self, quantity: int) -> None:
         """Aparta unidades disponibles (p. ej. al confirmar una transferencia)"""

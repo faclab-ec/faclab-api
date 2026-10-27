@@ -4,6 +4,8 @@ and the inventory reports that aggregate them."""
 from datetime import date, datetime, timedelta
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from tests.integration.postgres.api import (
     Api,
@@ -96,6 +98,110 @@ def test_out_movement_beyond_stock_is_rejected(api, store):
     )
 
     assert _stock(api, product["id"], shelf["id"])["quantity"] == 2
+
+
+def test_out_movement_without_stock_is_rejected_not_stored_negative(api, store):
+    product, shelf, backroom = store["product"], store["shelf"], store["backroom"]
+    make_movement(api, product["id"], 5, shelf["id"])
+
+    for location_id in (backroom["id"], None):
+        error = api.error(
+            "POST",
+            "/api/admin/movements",
+            400,
+            json={
+                "productId": product["id"],
+                "quantity": -1,
+                "type": "OUT",
+                "locationId": location_id,
+            },
+        )
+        assert error["code"] == "INSUFFICIENT_STOCK"
+
+    rows = api.get("/api/admin/stock", params={"productId": product["id"]})
+    assert [(r["locationId"], r["quantity"]) for r in rows] == [(shelf["id"], 5)]
+
+
+def test_out_movement_cannot_take_units_reserved_by_a_transfer(api, store):
+    product, shelf, backroom = store["product"], store["shelf"], store["backroom"]
+    make_movement(api, product["id"], 10, backroom["id"])
+    transfer = api.post(
+        "/api/admin/transfers",
+        {"sourceLocationId": backroom["id"], "destinationLocationId": shelf["id"]},
+    )
+    api.post(
+        f"/api/admin/transfers/{transfer['id']}/items",
+        {"productId": product["id"], "quantity": 8},
+    )
+    api.post(f"/api/admin/transfers/{transfer['id']}/confirm")
+
+    error = api.error(
+        "POST",
+        "/api/admin/movements",
+        400,
+        json={
+            "productId": product["id"],
+            "quantity": -3,
+            "type": "OUT",
+            "locationId": backroom["id"],
+        },
+    )
+    make_movement(api, product["id"], -2, backroom["id"])
+
+    assert error["code"] == "INSUFFICIENT_STOCK"
+    source = _stock(api, product["id"], backroom["id"])
+    assert (source["quantity"], source["reservedQuantity"]) == (8, 8)
+    received = api.post(f"/api/admin/transfers/{transfer['id']}/receive")
+    assert received["status"] == "received"
+
+
+@pytest.mark.parametrize(
+    ("statement", "constraint"),
+    [
+        ("UPDATE stocks SET quantity = -1", "ck_stocks_quantity_non_negative"),
+        (
+            "UPDATE stocks SET reserved_quantity = quantity + 1",
+            "ck_stocks_reserved_quantity_range",
+        ),
+        (
+            "UPDATE stocks SET reserved_quantity = -1",
+            "ck_stocks_reserved_quantity_range",
+        ),
+        (
+            "INSERT INTO stocks (tenant_id, product_id, location_id, quantity,"
+            " reserved_quantity) SELECT tenant_id, product_id, NULL, -4, 0 FROM stocks",
+            "ck_stocks_quantity_non_negative",
+        ),
+    ],
+)
+def test_the_database_rejects_negative_or_over_reserved_stock(
+    api, store, pg_engine, statement, constraint
+):
+    """The last barrier: a write that skips the domain (as the superuser,
+    without row-level security) still can't leave a stock row below zero"""
+    make_movement(api, store["product"]["id"], 3, store["shelf"]["id"])
+
+    with pytest.raises(IntegrityError) as error, pg_engine.begin() as conn:
+        conn.execute(text(statement))
+
+    diag = getattr(error.value.orig, "diag", None)
+    assert diag is not None
+    assert diag.constraint_name == constraint
+
+
+def test_a_manual_movement_has_no_document(api, store):
+    """`referenceType`/`referenceId` belong to the documents that move stock
+    (sales, refunds, adjustments...): the body can't claim one"""
+    movement = make_movement(
+        api,
+        store["product"]["id"],
+        5,
+        store["shelf"]["id"],
+        referenceType="sale",
+        referenceId=1,
+    )
+
+    assert (movement["referenceType"], movement["referenceId"]) == (None, None)
 
 
 def test_stock_alerts_follow_product_thresholds(api, store):

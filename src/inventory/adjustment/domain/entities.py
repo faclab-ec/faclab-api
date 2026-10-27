@@ -69,6 +69,12 @@ class AdjustmentItem(Entity):
     def difference(self) -> int:
         return self.actual_quantity - self.expected_quantity
 
+    def compare_with(self, stock_quantity: int) -> None:
+        """Compara el conteo con el stock del sistema. Al confirmar es el
+        stock de ese momento: lo que se mueve lleva el stock al valor contado,
+        aunque haya cambiado desde que se agregó el ítem"""
+        self.expected_quantity = stock_quantity
+
     def update(
         self, actual_quantity: int | None = None, notes: str | None = None
     ) -> None:
