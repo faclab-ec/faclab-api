@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -16,7 +17,11 @@ from src.sales.app.commands import (
     RemoveSaleItemCommandHandler,
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
-from src.sales.domain.exceptions import InvalidSaleStatusError
+from src.sales.domain.exceptions import (
+    InvalidSaleStatusError,
+    PaymentExceedsBalanceError,
+    SaleNotPayableError,
+)
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 
@@ -245,3 +250,55 @@ def test_register_payment_sale_not_found():
 
     with pytest.raises(NotFoundError):
         handler.handle(command)
+
+
+@pytest.mark.parametrize("status", [SaleStatus.CANCELLED, SaleStatus.INVOICED])
+def test_register_payment_rejects_cancelled_or_invoiced_sales(status):
+    sale_repo = _mock_repo(entity=_make_sale(status=status, total=Decimal("100")))
+    payment_repo = _mock_repo(entities=[])
+    handler = RegisterPaymentCommandHandler(sale_repo, payment_repo, MagicMock())
+
+    with pytest.raises(SaleNotPayableError):
+        handler.handle(
+            RegisterPaymentCommand(
+                sale_id=1, amount=Decimal("10"), payment_method="CASH"
+            )
+        )
+    payment_repo.create.assert_not_called()
+    sale_repo.update.assert_not_called()
+
+
+def test_register_payment_keeps_the_change_of_cash_in_excess():
+    sale = _make_sale(total=Decimal("100"))
+    payment_repo = _mock_repo(entities=[_make_payment(amount=Decimal("60"))])
+    # Persisted with its id
+    payment_repo.create.side_effect = lambda payment: replace(payment, id=2)
+    handler = RegisterPaymentCommandHandler(
+        _mock_repo(entity=sale), payment_repo, MagicMock()
+    )
+
+    result = handler.handle(
+        RegisterPaymentCommand(sale_id=1, amount=Decimal("50"), payment_method="CASH")
+    )
+
+    assert (result["amount"], result["amount_tendered"], result["change"]) == (
+        Decimal("40"),
+        Decimal("50"),
+        Decimal("10"),
+    )
+    assert sale.payment_status == "PAID"
+
+
+def test_register_payment_rejects_a_card_payment_above_the_balance():
+    payment_repo = _mock_repo(entities=[])
+    handler = RegisterPaymentCommandHandler(
+        _mock_repo(entity=_make_sale(total=Decimal("100"))), payment_repo, MagicMock()
+    )
+
+    with pytest.raises(PaymentExceedsBalanceError):
+        handler.handle(
+            RegisterPaymentCommand(
+                sale_id=1, amount=Decimal("101"), payment_method="CREDIT_CARD"
+            )
+        )
+    payment_repo.create.assert_not_called()

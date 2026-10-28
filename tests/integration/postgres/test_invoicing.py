@@ -1,8 +1,8 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
 message follows its v2 contract (tenant, RUC, establishment and emission point
 of the sale) and carries the invoice amounts, an authorized
-invoice from the `invoices` topic marks the sale as invoiced, and a confirmed
-sale can be sent again."""
+invoice from the `invoices` topic marks the sale as invoiced, a sale waiting for
+its invoice is not cancelled, and a confirmed sale can be sent again."""
 
 from decimal import Decimal
 
@@ -93,6 +93,16 @@ def _authorized(sale_id: int) -> dict:
         "status": "authorized",
         "occurredAt": "2026-10-08T15:00:00.000Z",
     }
+
+
+def _rejected(sale_id: int) -> dict:
+    return {**_authorized(sale_id), "type": "InvoiceRejected", "status": "rejected"}
+
+
+def _invoice_status(session: Session, sale_id: int) -> str | None:
+    return session.scalar(
+        select(SaleModel.invoice_status).where(SaleModel.id == sale_id)
+    )
 
 
 def test_sales_confirmed_lines_add_up_to_the_charged_total(
@@ -257,6 +267,7 @@ def test_only_confirmed_sales_can_be_sent_again(
     invoiced = _checkout(pos, [1, 0, 0])
     _handle(_authorized(invoiced["id"]), tenant)
     cancelled = _checkout(pos, [1, 0, 0])
+    _handle(_rejected(cancelled["id"]), tenant)
     cashier.post(f"/api/pos/sales/{cancelled['id']}/cancel")
 
     for sale in (invoiced, cancelled):
@@ -273,6 +284,47 @@ def test_only_confirmed_sales_can_be_sent_again(
     assert error["code"] == "INVOICING_DISABLED"
     # Only the two checkouts made with Kafka on wrote a message
     assert len(db_session.scalars(select(OutboxMessageModel)).all()) == 2
+
+
+def test_a_sale_is_not_cancelled_while_its_invoice_is_in_progress(
+    pos, client, admin, db_session: Session, monkeypatch, tenant
+):
+    """Cancelled before the SRI answers, an authorized invoice would have no
+    sale behind it (G-20): only a rejected invoice lets it be cancelled"""
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+    assert _invoice_status(db_session, sale["id"]) == "PENDING"
+
+    error = cashier.error("POST", f"/api/pos/sales/{sale['id']}/cancel", 400)
+    assert error["code"] == "INVOICE_IN_PROGRESS"
+
+    _handle(_rejected(sale["id"]), tenant)
+    assert _invoice_status(db_session, sale["id"]) == "REJECTED"
+    # Sent again, it waits for the SRI once more
+    Api(client, admin).post(f"/api/admin/sales/{sale['id']}/request-invoice")
+    assert _invoice_status(db_session, sale["id"]) == "PENDING"
+    error = cashier.error("POST", f"/api/pos/sales/{sale['id']}/cancel", 400)
+    assert error["code"] == "INVOICE_IN_PROGRESS"
+
+    _handle(_rejected(sale["id"]), tenant)
+    cancelled = cashier.post(f"/api/pos/sales/{sale['id']}/cancel")
+    assert cancelled["status"] == "CANCELLED"
+
+
+def test_an_invoiced_sale_is_voided_with_a_credit_note(
+    pos, db_session: Session, monkeypatch, tenant
+):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+    _handle(_authorized(sale["id"]), tenant)
+    assert _invoice_status(db_session, sale["id"]) is None
+
+    error = cashier.error("POST", f"/api/pos/sales/{sale['id']}/cancel", 400)
+
+    assert error["code"] == "CREDIT_NOTE_REQUIRED"
+    assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "INVOICED"
 
 
 def test_cashiers_can_send_a_sale_again_but_viewers_cannot(

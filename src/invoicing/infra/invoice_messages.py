@@ -2,9 +2,10 @@
 
 faclab-invoicing usa ese topic como su propia máquina de estados (created →
 signed → sent → authorized | rejected) y publica ahí cada transición. Core lo lee
-con su propio consumer group y solo actúa cuando el SRI autoriza la factura: la
-venta pasa a INVOICED. La forma del mensaje es el contrato
-`contracts/events/invoices/v1.schema.json`.
+con su propio consumer group y actúa con el resultado del SRI: si autoriza la
+factura, la venta pasa a INVOICED; si la rechaza, su factura deja de estar
+pendiente (`invoice_status = REJECTED`) y la venta se puede reenviar o cancelar.
+La forma del mensaje es el contrato `contracts/events/invoices/v1.schema.json`.
 
 La venta se busca en la empresa del mensaje (header `faclab-tenant-id`, que
 faclab-invoicing copia de la factura desde S2.8), que el consumidor fija antes de
@@ -18,6 +19,10 @@ import structlog
 from src.sales.app.commands.invoice_sale import (
     InvoiceSaleCommand,
     InvoiceSaleCommandHandler,
+)
+from src.sales.app.commands.reject_invoice import (
+    RejectSaleInvoiceCommand,
+    RejectSaleInvoiceCommandHandler,
 )
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError
@@ -34,7 +39,8 @@ SUPPORTED_SCHEMA_VERSIONS = (1,)
 
 
 def handle_invoice_message(message: dict[str, Any]) -> None:
-    """Marca la venta como facturada cuando su factura queda autorizada.
+    """Marca la venta como facturada cuando su factura queda autorizada, o su
+    factura como rechazada.
 
     Los errores que reintentar no arregla se registran y el mensaje se da por
     procesado; cualquier otro (p. ej. la base de datos caída) se propaga para
@@ -51,14 +57,7 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
             schema_version=schema_version,
         )
         return
-    if event_type == INVOICE_REJECTED:
-        logger.warning(
-            "invoice_rejected",
-            sale_id=message.get("saleId"),
-            invoice_id=message.get("invoiceId"),
-        )
-        return
-    if event_type != INVOICE_AUTHORIZED:
+    if event_type not in (INVOICE_AUTHORIZED, INVOICE_REJECTED):
         return
 
     try:
@@ -81,9 +80,17 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
 
     try:
         with create_sync_scope() as scope:
-            scope.get(InvoiceSaleCommandHandler).handle(
-                InvoiceSaleCommand(sale_id=sale_id, invoice_id=invoice_id)
-            )
+            if event_type == INVOICE_REJECTED:
+                logger.warning(
+                    "invoice_rejected", sale_id=sale_id, invoice_id=invoice_id
+                )
+                scope.get(RejectSaleInvoiceCommandHandler).handle(
+                    RejectSaleInvoiceCommand(sale_id=sale_id, invoice_id=invoice_id)
+                )
+            else:
+                scope.get(InvoiceSaleCommandHandler).handle(
+                    InvoiceSaleCommand(sale_id=sale_id, invoice_id=invoice_id)
+                )
     except (NotFoundError, InvalidSaleStatusError) as exc:
         # P. ej. la venta se anuló antes de que el SRI autorizara su factura:
         # eso se resuelve con una nota de crédito, no reintentando

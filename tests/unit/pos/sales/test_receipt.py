@@ -49,6 +49,8 @@ def _make_payment_model(**overrides):
     payment = MagicMock()
     payment.payment_method = overrides.get("payment_method", "CASH")
     payment.amount = overrides.get("amount", Decimal("112"))
+    payment.change = overrides.get("change", Decimal("0"))
+    payment.amount_tendered = payment.amount + payment.change
     payment.reference = overrides.get("reference")
     return payment
 
@@ -92,7 +94,9 @@ class TestGenerateReceiptQueryHandler:
             if model_name == "SaleModel":
                 mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter.return_value.all.return_value = [payment]
+                mock.filter.return_value.order_by.return_value.all.return_value = [
+                    payment
+                ]
             elif model_name == "CustomerModel":
                 mock.filter.return_value.first.return_value = customer
             elif model_name == "ShiftModel":
@@ -187,7 +191,9 @@ class TestGenerateReceiptQueryHandler:
             if model_name == "SaleModel":
                 mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter.return_value.all.return_value = [payment]
+                mock.filter.return_value.order_by.return_value.all.return_value = [
+                    payment
+                ]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item, "Product A")
@@ -227,7 +233,9 @@ class TestGenerateReceiptQueryHandler:
             if model_name == "SaleModel":
                 mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter.return_value.all.return_value = [payment]
+                mock.filter.return_value.order_by.return_value.all.return_value = [
+                    payment
+                ]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item_0, "Product Zero"),
@@ -311,7 +319,9 @@ class TestGenerateReceiptQueryHandler:
             if model_name == "SaleModel":
                 mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter.return_value.all.return_value = [payment]
+                mock.filter.return_value.order_by.return_value.all.return_value = [
+                    payment
+                ]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = items
             return mock
@@ -337,7 +347,8 @@ class TestGenerateReceiptQueryHandler:
         handler = _build_handler()
         sale = _make_sale_model(total=Decimal("100"))
         item = _make_item_model()
-        payment = _make_payment_model(amount=Decimal("120"))
+        # 120 handed over: 100 applied and 20 given back, as stored
+        payment = _make_payment_model(amount=Decimal("100"), change=Decimal("20"))
 
         query_mock = handler.session.query
 
@@ -348,7 +359,9 @@ class TestGenerateReceiptQueryHandler:
             if model_name == "SaleModel":
                 mock.filter.return_value.first.return_value = sale
             elif model_name == "PaymentModel":
-                mock.filter.return_value.all.return_value = [payment]
+                mock.filter.return_value.order_by.return_value.all.return_value = [
+                    payment
+                ]
             else:
                 mock.join.return_value.filter.return_value.all.return_value = [
                     (item, "Product A")
@@ -359,8 +372,9 @@ class TestGenerateReceiptQueryHandler:
 
         result = handler._handle(GenerateReceiptQuery(sale_id=1))
 
-        assert result["total_paid"] == Decimal("120")
+        assert result["total_paid"] == Decimal("100")
         assert result["change"] == Decimal("20")
+        assert result["payments"][0]["amount_tendered"] == Decimal("120")
 
     def test_receipt_sale_not_found(self):
         handler = _build_handler()

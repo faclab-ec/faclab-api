@@ -15,8 +15,10 @@ from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import (
+    InsufficientPaymentError,
     InsufficientStockError,
     OverrideReasonRequiredError,
+    PaymentExceedsBalanceError,
 )
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
@@ -124,6 +126,7 @@ def _build_handler(
         terminals=terminal_resolver(),
         numbering=numbering(),
         event_publisher=event_publisher or MagicMock(),
+        session=MagicMock(),
     )
 
 
@@ -181,6 +184,46 @@ class TestQuickSaleHappyPath:
         assert stock_repo.update.call_args[0][0].quantity == 98
         payment_repo.create.assert_called_once()
         event_publisher.publish.assert_called_once()
+
+    def test_quick_sale_keeps_the_change_apart_from_what_is_applied(self):
+        """Cash handed over in excess: the sale, the cash register and the
+        invoice take the total, and the rest is the change"""
+        payment_repo = _mock_repo()
+        payment_repo.create.side_effect = lambda payment: payment
+        event_publisher = MagicMock()
+        handler = _build_handler(
+            sale_repo=_mock_repo(entity=_make_sale()),
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=_mock_repo(entity=_make_stock(quantity=100)),
+            payment_repo=payment_repo,
+            shift_repo=_mock_repo(entity=_make_shift()),
+            event_publisher=event_publisher,
+        )
+
+        result = handler.handle(
+            _quick_sale_command(
+                payments=[
+                    {"amount": 50.00, "payment_method": "DEBIT_CARD"},
+                    {"amount": 70.00, "payment_method": "CASH"},
+                ]
+            )
+        )
+
+        card, cash = (call.args[0] for call in payment_repo.create.call_args_list)
+        assert (card.amount, card.amount_tendered, card.change) == (
+            Decimal("50.00"),
+            Decimal("50.00"),
+            Decimal("0"),
+        )
+        assert (cash.amount, cash.amount_tendered, cash.change) == (
+            Decimal("62.00"),
+            Decimal("70.00"),
+            Decimal("8.00"),
+        )
+        assert result["payment_status"] == "PAID"
+        event = event_publisher.publish.call_args.args[0]
+        assert sum(p["amount"] for p in event.payments) == event.total
 
     def test_quick_sale_runs_at_the_terminal(self):
         """La venta queda en la sucursal, el punto de emisión y la terminal, toma el
@@ -429,10 +472,45 @@ class TestQuickSaleErrors:
             shift_repo=_mock_repo(entity=shift),
         )
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(InsufficientPaymentError):
             handler.handle(
                 _quick_sale_command(
                     payments=[{"amount": 10.00, "payment_method": "CASH"}]
+                )
+            )
+
+    def test_payments_are_checked_before_locking_the_stock(self):
+        stock_repo = _mock_repo(entity=_make_stock(quantity=100))
+        handler = _build_handler(
+            sale_repo=_mock_repo(entity=_make_sale()),
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=stock_repo,
+            shift_repo=_mock_repo(entity=_make_shift()),
+        )
+
+        with pytest.raises(InsufficientPaymentError):
+            handler.handle(
+                _quick_sale_command(
+                    payments=[{"amount": 111.99, "payment_method": "CASH"}]
+                )
+            )
+
+        stock_repo.first_for_update.assert_not_called()
+
+    def test_only_cash_can_be_handed_over_in_excess(self):
+        handler = _build_handler(
+            sale_repo=_mock_repo(entity=_make_sale()),
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=_mock_repo(entity=_make_stock(quantity=100)),
+            shift_repo=_mock_repo(entity=_make_shift()),
+        )
+
+        with pytest.raises(PaymentExceedsBalanceError):
+            handler.handle(
+                _quick_sale_command(
+                    payments=[{"amount": 120.00, "payment_method": "CREDIT_CARD"}]
                 )
             )
 

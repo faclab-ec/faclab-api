@@ -3,6 +3,17 @@
 Cada versión de un mensaje, qué cambió y en qué orden se desplegó. Las reglas de compatibilidad
 están en [README.md](README.md#versiones-y-compatibilidad).
 
+## `sales.confirmed` v2: pagos aplicados (S3.3, 2026-10)
+
+- **Sin cambio de forma ni de versión**: `payments[].amount` pasa a ser lo aplicado a la venta, sin el
+  vuelto, así que la suma de los pagos es igual a `total` (antes era lo entregado y en efectivo podía
+  superarlo, G-16). El core guarda aparte lo entregado y el vuelto; no viajan en el mensaje.
+- **Compatible**: todo mensaje nuevo también cumplía el significado anterior (lo entregado puede ser
+  igual al total), y faclab-invoicing ya escribía `amount` como el `total` de cada forma de pago del
+  XML. No hay orden de despliegue.
+- Los ejemplos `final-consumer` y `branch-without-address` de v2 pagan lo aplicado (`7.44`). Los de
+  v1 quedan como estaban.
+
 ## `sales.confirmed` v2 (S2.8, 2026-10)
 
 - **Nuevos**: `tenant_id` en el sobre y, en `payload`, `sale_number`, `issuer_ruc`,

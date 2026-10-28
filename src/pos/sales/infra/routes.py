@@ -287,6 +287,11 @@ class POSSaleRouter:
         leaves the terminal's location and the sale gets its number of the branch.
         An optional sale-level discount (`discountType`/`discountValue`) follows the same
         rules as `POST /sales/{sale_id}/discount`; VAT is computed after the discount.
+        Each payment `amount` is what the customer hands over: the payments, in
+        order, take what the sale still owes and the rest of a cash payment is the
+        change (`amountTendered`, `change`). They must cover the total
+        (`INSUFFICIENT_PAYMENT`); any other method can't exceed it
+        (`PAYMENT_EXCEEDS_BALANCE`).
         Requires `Idempotency-Key`: a retry with it gets the same sale, charged once.
         """
 
@@ -400,7 +405,9 @@ class POSSaleRouter:
     ) -> DataResponse[SaleResponse] | JSONResponse:
         """Confirm a sale and trigger inventory movements.
 
-        The sale must have at least one item and payments covering the total amount.
+        The sale must have at least one item and payments covering the total
+        (`INSUFFICIENT_PAYMENT`). They are applied again to the final total, in the
+        order they were taken, so the change of a cash payment is recomputed.
         Once confirmed, inventory OUT movements are created for each line item.
         Requires `Idempotency-Key`: a retry with it gets the first confirmation.
         """
@@ -459,6 +466,10 @@ class POSSaleRouter:
     ) -> DataResponse[PaymentResponse] | JSONResponse:
         """Register a payment against a sale. Multiple payments with different methods are supported.
 
+        `amount` is what the customer hands over: the sale takes what it still owes
+        and the rest of a cash payment is the change; any other method can't exceed
+        the balance (`PAYMENT_EXCEEDS_BALANCE`). A cancelled or invoiced sale takes
+        no payments (`SALE_NOT_PAYABLE`).
         Requires `Idempotency-Key`: a retry with it gets the same payment, registered once.
         """
         guard.sale(sale_id, branch)

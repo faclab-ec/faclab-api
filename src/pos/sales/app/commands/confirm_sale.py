@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.organization.app.numbering import DocumentNumbering
@@ -38,6 +39,7 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         payment_repo: PaymentRepository,
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
+        session: Session,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -47,6 +49,7 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         self.payment_repo = payment_repo
         self.numbering = numbering
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: POSConfirmSaleCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -64,6 +67,16 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             raise SaleHasNoItemsError(command.sale_id)
 
         sale.ensure_draft("confirm")
+        # The payments cover the total, applied again in the order they were
+        # taken because the items may have changed after paying; checked
+        # before locking anything
+        payments = sorted(
+            self.payment_repo.filter_by(sale_id=sale.id), key=lambda p: p.require_id()
+        )
+        sale.settle(payments)
+        for payment in payments:
+            self.payment_repo.update(payment)
+
         # The stock of the terminal's location, not of any other. Stock rows
         # are locked before the number's counter, in every POS document
         terminal = (
@@ -87,8 +100,6 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         sale.confirm(number)
         self.sale_repo.update(sale)
 
-        payments = self.payment_repo.filter_by(sale_id=sale.id)
-
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
@@ -103,7 +114,9 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
                 branch_id=sale.branch_id,
                 emission_point_id=sale.emission_point_id,
                 number=sale.number,
-            )
+            ),
+            # Its sales.confirmed message goes to the outbox in this transaction
+            session=self.session,
         )
 
         return sale.dict()

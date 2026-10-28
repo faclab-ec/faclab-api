@@ -98,7 +98,8 @@ class PosTerminalModel(TenantScoped, Base):
 
 
 class DocumentSequenceModel(TenantScoped, Base):
-    """The last number issued per branch and internal document type (ADR-0012)"""
+    """The last number issued per branch and internal document type (ADR-0012);
+    without a branch, the counter of the whole tenant (purchase orders)"""
 
     __tablename__ = "document_sequences"
     __table_args__ = (
@@ -108,6 +109,15 @@ class DocumentSequenceModel(TenantScoped, Base):
             "doc_type",
             name="uq_document_sequences_tenant_branch_doc_type",
         ),
+        # NULLs never collide in the constraint above: one tenant counter per type
+        Index(
+            "uq_document_sequences_tenant_doc_type",
+            "tenant_id",
+            "doc_type",
+            unique=True,
+            postgresql_where=text("branch_id IS NULL"),
+            sqlite_where=text("branch_id IS NULL"),
+        ),
         ForeignKeyConstraint(
             ["tenant_id", "branch_id"],
             ["branches.tenant_id", "branches.id"],
@@ -116,6 +126,6 @@ class DocumentSequenceModel(TenantScoped, Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    branch_id: Mapped[int] = mapped_column(nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(nullable=True)
     doc_type: Mapped[str] = mapped_column(String(16), nullable=False)
     last_value: Mapped[int] = mapped_column(nullable=False)

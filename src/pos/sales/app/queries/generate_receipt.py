@@ -97,18 +97,22 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
             .filter(
                 PaymentModel.sale_id == query.sale_id, *tenant_criteria(PaymentModel)
             )
+            .order_by(PaymentModel.id)
             .all()
         )
         payments = [
             {
                 "method": p.payment_method,
                 "amount": p.amount,
+                "amount_tendered": p.amount_tendered,
+                "change": p.change,
                 "reference": p.reference,
             }
             for p in payment_rows
         ]
-        total_paid = sum(p.amount for p in payment_rows)
-        change = max(total_paid - sale.total, Decimal("0"))
+        # What the payments applied and gave back, as stored when they were taken
+        total_paid = sum((p.amount for p in payment_rows), Decimal("0"))
+        change = sum((p.change for p in payment_rows), Decimal("0"))
 
         # Fetch customer if exists
         customer = None

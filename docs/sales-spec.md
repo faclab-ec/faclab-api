@@ -187,6 +187,8 @@ GET /api/admin/sales/{sale_id}/payments
       "id": 1,
       "saleId": 1,
       "amount": 150.00,
+      "amountTendered": 160.00,
+      "change": 10.00,
       "paymentMethod": "CASH",
       "paymentDate": "2026-03-08T10:00:00",
       "reference": "REF-001",
@@ -197,6 +199,8 @@ GET /api/admin/sales/{sale_id}/payments
       "id": 2,
       "saleId": 1,
       "amount": 119.91,
+      "amountTendered": 119.91,
+      "change": 0,
       "paymentMethod": "CREDIT_CARD",
       "paymentDate": "2026-03-08T10:02:00",
       "reference": null,
@@ -207,6 +211,9 @@ GET /api/admin/sales/{sale_id}/payments
   "meta": { "requestId": "uuid", "timestamp": "..." }
 }
 ```
+
+`amount` es lo aplicado a la venta, `amountTendered` lo que entregó el cliente y `change` el vuelto
+(solo en efectivo): `amountTendered = amount + change` (ver «Pagos» en la sección de reglas).
 
 ---
 
@@ -222,7 +229,7 @@ faclab-invoicing ignora el reenvío si la venta ya tiene una factura que no est�
 
 El mensaje dice quién emite y desde dónde (`sales.confirmed` v2): la empresa, su RUC, el establecimiento y la dirección de la sucursal de la venta y su punto de emisión. faclab-invoicing factura con el perfil fiscal, el certificado y el secuencial de esa empresa, establecimiento y punto de emisión.
 
-Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Una venta sin punto de emisión (anterior a S2.6) no se puede facturar: `400 SALE_WITHOUT_EMISSION_POINT`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`.
+Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Una venta sin punto de emisión (anterior a S2.6) no se puede facturar: `400 SALE_WITHOUT_EMISSION_POINT`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`. Sus pagos se vuelven a aplicar al total, así que los `pagos` de la factura suman el total; una venta confirmada antes de S3.3 sin cubrirlo responde `400 INSUFFICIENT_PAYMENT`. Con el mensaje en el outbox, la factura queda pendiente (`INVOICE_IN_PROGRESS` al cancelar).
 
 **Response** `202`: la venta (mismo formato que 2.2).
 
@@ -317,7 +324,9 @@ interface SaleItem {
 interface Payment {
   id: number;
   saleId: number;
-  amount: number;
+  amount: number;          // aplicado a la venta
+  amountTendered: number;  // entregado por el cliente
+  change: number;          // vuelto, solo en efectivo
   paymentMethod: PaymentMethod;
   paymentDate: string | null;
   reference: string | null;
@@ -404,10 +413,49 @@ El descuento global hoy se aplica desde el POS (`POST /api/pos/sales/{id}/discou
 ### Payment status
 
 ```
-total_paid = Σ payment.amount
+total_paid = Σ payment.amount          (lo aplicado, sin el vuelto)
 if total_paid == 0:        PENDING
 elif total_paid < total:   PARTIAL
 else:                      PAID
 ```
 
 `total_paid` y `total` se comparan redondeados al centavo.
+
+### Pagos: aplicado, entregado y vuelto (S3.3)
+
+El monto que se envía al registrar un pago (`POST /api/pos/sales/{id}/payments`, `payments[]` de la
+venta rápida) es **lo que entrega el cliente**, redondeado al centavo. El core lo aplica así
+(`Sale.take_payment` y `Sale.settle` en `src/sales/domain/entities.py`):
+
+```
+adeudado = total - Σ aplicado por los pagos anteriores
+aplicado = min(entregado, adeudado)
+vuelto   = entregado - aplicado
+```
+
+- Solo el efectivo puede superar lo adeudado; el resto es el vuelto. Otro medio de pago que lo supera,
+  o un pago que llega con la venta ya cubierta, responde `400 PAYMENT_EXCEEDS_BALANCE`.
+- Una venta `CANCELLED` o `INVOICED` no recibe pagos: `400 SALE_NOT_PAYABLE`.
+- **Confirmar exige cobertura**: al confirmar, los pagos se vuelven a aplicar en el orden en que se
+  registraron sobre el total final (los ítems de un borrador pueden cambiar después de cobrar) y deben
+  cubrirlo; si no, `400 INSUFFICIENT_PAYMENT`. La venta queda `PAID`. Las ventas a crédito llegan en
+  S5.5.
+- Lo aplicado es lo que cuenta en la caja (resumen, X, Z, por medio de pago, cierre de turno) y lo que
+  viaja a facturación: la suma de los pagos de `sales.confirmed` es igual al total de la venta.
+- Los pagos anteriores a S3.3 guardaban lo entregado: la migración `f19314b5842a` pasó el excedente de
+  las ventas pagadas de más (de sus pagos en efectivo, el último primero) al vuelto.
+
+### Anulación y factura (S3.3)
+
+- `sales.invoice_status` (no se expone todavía; S3.4 lo muestra con el motivo del rechazo): `PENDING`
+  desde que el mensaje `sales.confirmed` de la venta entra al outbox (al confirmar con Kafka encendido
+  o al reenviar) y `REJECTED` cuando faclab-invoicing informa `InvoiceRejected`. Facturarla lo limpia.
+- Una venta `CONFIRMED` con la factura pendiente no se cancela: `400 INVOICE_IN_PROGRESS`. Con la
+  factura rechazada, o sin enviar (Kafka apagado o ventas anteriores a S3.3), se cancela como antes.
+- Una venta `INVOICED` no se cancela: `400 CREDIT_NOTE_REQUIRED`. Se anula con nota de crédito (S4.5).
+
+### Montos
+
+El dinero se guarda como `numeric(18, 6)`: hasta 999.999.999.999,999999 por campo (antes de S3.3,
+`numeric(12, 6)`, con tope de 999.999,99). Las APIs de administración y POS lo envían como número JSON;
+los mensajes de Kafka (`contracts/`) y la API pública (S6.x) lo envían como texto decimal.

@@ -1,5 +1,7 @@
 """Excepciones específicas del dominio de Sales"""
 
+from decimal import Decimal
+
 from src.shared.domain.exceptions import DomainError
 
 
@@ -115,5 +117,83 @@ class SaleWithoutEmissionPointError(SalesError):
         self.sale_id = sale_id
         super().__init__(
             message=f"Sale {sale_id} has no emission point and cannot be invoiced",
+            detail=f"sale_id={sale_id}",
+        )
+
+
+class SaleNotPayableError(SalesError):
+    """Una venta cancelada o facturada no recibe pagos"""
+
+    error_code = "SALE_NOT_PAYABLE"
+
+    def __init__(self, sale_id: int | None, status: str):
+        self.sale_id = sale_id
+        self.status = status
+        super().__init__(
+            message=f"Sale {sale_id} is {status} and cannot take payments",
+            detail=f"sale_id={sale_id}, status={status}",
+        )
+
+
+class PaymentExceedsBalanceError(SalesError):
+    """El pago no aplica nada a la venta, o no es en efectivo y supera lo que
+    falta pagar: solo el efectivo deja vuelto"""
+
+    error_code = "PAYMENT_EXCEEDS_BALANCE"
+
+    def __init__(self, tendered: Decimal, owed: Decimal, payment_method: str):
+        self.tendered = tendered
+        self.owed = owed
+        self.payment_method = payment_method
+        super().__init__(
+            message=(
+                f"A {payment_method} payment of {tendered} exceeds the balance "
+                f"of {owed}; only cash can be handed over in excess"
+            ),
+            detail=f"tendered={tendered}, owed={owed}, payment_method={payment_method}",
+        )
+
+
+class InsufficientPaymentError(SalesError):
+    """Los pagos no cubren el total de la venta"""
+
+    error_code = "INSUFFICIENT_PAYMENT"
+
+    def __init__(self, sale_id: int | None, total: Decimal, paid: Decimal):
+        self.sale_id = sale_id
+        self.total = total
+        self.paid = paid
+        super().__init__(
+            message=f"Payments of sale {sale_id} do not cover its total",
+            detail=f"total={total}, paid={paid}",
+        )
+
+
+class InvoiceInProgressError(SalesError):
+    """La factura de la venta está en faclab-invoicing sin resultado: anularla
+    ahora podría dejar una factura autorizada sin venta que la respalde"""
+
+    error_code = "INVOICE_IN_PROGRESS"
+
+    def __init__(self, sale_id: int | None):
+        self.sale_id = sale_id
+        super().__init__(
+            message=(
+                f"Sale {sale_id} cannot be cancelled while its invoice is in "
+                "progress; wait for the SRI's answer"
+            ),
+            detail=f"sale_id={sale_id}",
+        )
+
+
+class CreditNoteRequiredError(SalesError):
+    """Una venta facturada no se anula: se anula con una nota de crédito (S4.5)"""
+
+    error_code = "CREDIT_NOTE_REQUIRED"
+
+    def __init__(self, sale_id: int | None):
+        self.sale_id = sale_id
+        super().__init__(
+            message=f"Sale {sale_id} is invoiced: void it with a credit note",
             detail=f"sale_id={sale_id}",
         )

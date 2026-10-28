@@ -20,6 +20,10 @@ prorrateado (ver `invoice_lines`). faclab-invoicing los usa tal cual.
 `SaleInvoicingRequested` (reenvío manual) produce el mismo mensaje con un
 `event_id` nuevo. faclab-invoicing deduplica por `event_id` y, en un reenvío,
 lo ignora si la venta ya tiene una factura que no está rechazada.
+
+Con el mensaje en el outbox la factura de la venta queda pendiente
+(`invoice_status = PENDING`): la venta no se cancela hasta que el SRI responda
+(`INVOICE_IN_PROGRESS`, ver `invoice_messages.py`).
 """
 
 from dataclasses import dataclass
@@ -31,9 +35,11 @@ from src.catalog.product.app.repositories import ProductRepository
 from src.customers.app.repositories import CustomerRepository
 from src.invoicing.domain.exceptions import InvoicingDisabledError
 from src.organization.app.repositories import BranchRepository, EmissionPointRepository
+from src.sales.app.repositories import SaleRepository
 from src.sales.domain.events import SaleConfirmed, SaleInvoicingRequested
 from src.sales.domain.exceptions import SaleWithoutEmissionPointError
 from src.sales.domain.services import SaleLine, invoice_lines
+from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import TaxCode
 from src.shared.domain.tenant import require_tenant
 from src.shared.infra.events.decorators import event_handler
@@ -184,6 +190,14 @@ def _enqueue(event: SaleConfirmed | SaleInvoicingRequested, session: Any) -> Non
             event_type="SaleConfirmed",
             event_id=event.event_id,
         )
+        # The sale's own handler publishes last and writes the sale no more
+        # after it, so this change is not overwritten
+        sales = scope.get(SaleRepository)
+        sale = sales.get_by_id(event.sale_id)
+        if sale is None:
+            raise NotFoundError(f"Sale with id {event.sale_id} not found")
+        sale.await_invoice()
+        sales.update(sale)
 
 
 @event_handler(SaleConfirmed)

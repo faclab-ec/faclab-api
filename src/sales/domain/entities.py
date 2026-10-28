@@ -4,7 +4,15 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
+from src.sales.domain.exceptions import (
+    CreditNoteRequiredError,
+    InsufficientPaymentError,
+    InvalidSaleStatusError,
+    InvoiceInProgressError,
+    PaymentExceedsBalanceError,
+    SaleNotParkedError,
+    SaleNotPayableError,
+)
 from src.sales.domain.services import discount_factor, tax_breakdown
 from src.shared.domain.entities import Entity
 from src.shared.domain.exceptions import InvalidValueError, ValidationError
@@ -33,6 +41,17 @@ class PaymentStatus(StrEnum):
     PENDING = "PENDING"
     PARTIAL = "PARTIAL"
     PAID = "PAID"
+
+
+class InvoiceStatus(StrEnum):
+    """Factura de una venta CONFIRMED en faclab-invoicing; sin valor, no se envió.
+
+    INVOICED ya dice que se autorizó. S3.4 agrega AUTHORIZED y el motivo del
+    rechazo.
+    """
+
+    PENDING = "PENDING"
+    REJECTED = "REJECTED"
 
 
 class PaymentMethod(StrEnum):
@@ -99,6 +118,7 @@ class Sale(Entity):
     created_by: str | None = None
     parked_at: datetime | None = None
     park_reason: str | None = None
+    invoice_status: InvoiceStatus | None = None
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -109,8 +129,11 @@ class Sale(Entity):
             raise InvalidSaleStatusError(self.status, operation)
 
     def confirm(self, number: str | None = None) -> None:
-        """Confirma la venta (solo si está en DRAFT) con su número de documento"""
+        """Confirma la venta (solo si está en DRAFT y pagada, ver `settle`) con
+        su número de documento. Las ventas a crédito llegan en S5.5."""
         self.ensure_draft("confirm")
+        if self.payment_status != PaymentStatus.PAID:
+            raise InsufficientPaymentError(self.id, self.total, Decimal("0"))
         self.status = SaleStatus.CONFIRMED
         if number is not None:
             self.number = number
@@ -118,9 +141,17 @@ class Sale(Entity):
             self.sale_date = datetime.now()
 
     def cancel(self) -> None:
-        """Cancela la venta (solo si está en DRAFT o CONFIRMED)"""
+        """Cancela la venta (solo si está en DRAFT o CONFIRMED).
+
+        Una confirmada no se cancela mientras su factura espera al SRI, y una
+        facturada solo se anula con nota de crédito (S4.5).
+        """
+        if self.status == SaleStatus.INVOICED:
+            raise CreditNoteRequiredError(self.id)
         if self.status not in (SaleStatus.DRAFT, SaleStatus.CONFIRMED):
             raise InvalidSaleStatusError(self.status, "cancel")
+        if self.invoice_status == InvoiceStatus.PENDING:
+            raise InvoiceInProgressError(self.id)
         self.status = SaleStatus.CANCELLED
 
     @property
@@ -128,11 +159,26 @@ class Sale(Entity):
         """Confirmada, facturada o no (ver `COMPLETED_SALE_STATUSES`)"""
         return self.status in COMPLETED_SALE_STATUSES
 
+    def await_invoice(self) -> None:
+        """La venta se envió a faclab-invoicing (al confirmarla o reenviarla)"""
+        if self.status != SaleStatus.CONFIRMED:
+            raise InvalidSaleStatusError(self.status, "invoice")
+        self.invoice_status = InvoiceStatus.PENDING
+
+    def reject_invoice(self) -> bool:
+        """El SRI rechazó la factura: la venta se puede corregir y reenviar o
+        cancelar. Solo cambia una factura pendiente; dice si cambió."""
+        if self.invoice_status != InvoiceStatus.PENDING:
+            return False
+        self.invoice_status = InvoiceStatus.REJECTED
+        return True
+
     def invoice(self) -> None:
         """Marca la venta como facturada (solo si está CONFIRMED)"""
         if self.status != SaleStatus.CONFIRMED:
             raise InvalidSaleStatusError(self.status, "invoice")
         self.status = SaleStatus.INVOICED
+        self.invoice_status = None
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""
@@ -200,25 +246,94 @@ class Sale(Entity):
         else:
             self.payment_status = PaymentStatus.PARTIAL
 
+    def balance(self, payments: Iterable["Payment"]) -> Decimal:
+        """Lo que falta pagar del total después de lo aplicado por los pagos"""
+        paid = sum((payment.amount for payment in payments), Decimal("0"))
+        return round_money(self.total) - paid
+
+    def take_payment(self, payment: "Payment", previous: Iterable["Payment"]) -> None:
+        """Aplica un pago nuevo a lo que falta pagar, después de los anteriores.
+
+        Una venta cancelada o facturada no recibe pagos.
+        """
+        if self.status in (SaleStatus.CANCELLED, SaleStatus.INVOICED):
+            raise SaleNotPayableError(self.id, self.status)
+        previous = list(previous)
+        payment.apply(self.balance(previous))
+        self.update_payment_status(sum((p.amount for p in previous), payment.amount))
+
+    def settle(self, payments: Iterable["Payment"]) -> None:
+        """Aplica los pagos, en orden, al total de la venta.
+
+        Cada pago toma lo que todavía falta y el resto de uno en efectivo es el
+        vuelto, así que lo aplicado suma exactamente el total. Se vuelve a
+        calcular al confirmar porque los ítems de un borrador cambian después de
+        cobrar. Falla si los pagos no cubren el total.
+        """
+        owed = round_money(self.total)
+        paid = Decimal("0")
+        for payment in payments:
+            payment.apply(owed - paid)
+            paid += payment.amount
+        if paid < owed:
+            raise InsufficientPaymentError(self.id, owed, paid)
+        self.payment_status = PaymentStatus.PAID
+
 
 @dataclass
 class Payment(Entity):
-    """Pago realizado para una venta"""
+    """Pago de una venta: lo que entrega el cliente, lo que se aplica y el vuelto"""
 
     sale_id: int
+    # Applied to the sale: what counts in its balance, in the cash register
+    # and in the invoice's `pagos`
     amount: Decimal
     payment_method: PaymentMethod
     payment_date: datetime | None = None
     reference: str | None = None
     notes: str | None = None
+    # What the customer handed over, to the cent: amount + change
+    amount_tendered: Decimal | None = None
+    # Given back from a cash payment that exceeds what the sale owed
+    change: Decimal = Decimal("0")
     id: int | None = None
     created_at: datetime | None = None
 
     def __post_init__(self):
-        """Valida que el monto sea positivo"""
-        if self.amount <= Decimal("0"):
+        """Valida que lo entregado sea positivo; por defecto es el monto más el vuelto.
+
+        Lo aplicado puede ser cero solo en un pago anterior a S3.3 que la
+        migración dejó entero como vuelto; `apply` no lo permite en uno nuevo.
+        """
+        if self.amount_tendered is None:
+            self.amount_tendered = self.amount + self.change
+        if self.amount_tendered <= Decimal("0"):
             raise InvalidValueError(
-                f"Payment amount must be positive, got {self.amount}"
+                f"Payment amount must be positive, got {self.amount_tendered}"
             )
+        if self.amount < Decimal("0") or self.change < Decimal("0"):
+            raise InvalidValueError(
+                f"Payment amount and change can't be negative, got "
+                f"{self.amount} and {self.change}"
+            )
+        self.amount_tendered = round_money(self.amount_tendered)
         if self.payment_date is None:
             self.payment_date = datetime.now()
+
+    def apply(self, owed: Decimal) -> None:
+        """Aplica a la venta lo que todavía debe, tomado de lo entregado.
+
+        El resto de un pago en efectivo es el vuelto; otro medio de pago no
+        puede pasarse de lo que se debe, y un pago que no aplica nada sobra.
+        """
+        tendered = self.amount_tendered or self.amount
+        applied = min(tendered, round_money(owed))
+        change = tendered - applied
+        if applied <= Decimal("0") or (
+            change > Decimal("0") and self.payment_method != PaymentMethod.CASH
+        ):
+            raise PaymentExceedsBalanceError(
+                tendered, max(owed, Decimal("0")), self.payment_method
+            )
+        self.amount = applied
+        self.change = change

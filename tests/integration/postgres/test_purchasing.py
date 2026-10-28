@@ -1,6 +1,8 @@
 """Purchasing flows against PostgreSQL: purchase orders, receipts and their
 inventory effects (stock, lots, serial numbers)."""
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import select
 
@@ -8,6 +10,7 @@ from src.inventory.lot.infra.models import LotModel, MovementLotItemModel
 from src.inventory.movement.infra.models import MovementModel
 from tests.integration.postgres.api import (
     Api,
+    concurrently,
     make_location,
     make_product,
     make_supplier,
@@ -151,6 +154,28 @@ def test_deleting_an_older_draft_does_not_reuse_a_live_order_number(api, order):
     assert newer["orderNumber"].endswith("-0004")
 
 
+def test_concurrent_orders_get_distinct_numbers(api, admin):
+    """The tenant's counter in document_sequences, not MAX() (G-33): ten
+    orders created at once get ten consecutive numbers, none a 409"""
+    supplier_id = make_supplier(api)["id"]
+
+    responses = concurrently(
+        *(
+            lambda client: client.post(
+                "/api/admin/purchase-orders",
+                json={"supplierId": supplier_id},
+                headers=admin,
+            )
+            for _ in range(10)
+        )
+    )
+
+    assert [r.status_code for r in responses] == [200] * 10
+    numbers = sorted(r.json()["data"]["orderNumber"] for r in responses)
+    year = datetime.now().year
+    assert numbers == [f"PO-{year}-{n:04d}" for n in range(1, 11)]
+
+
 def test_order_items_carry_the_product_name_and_sku(api, order):
     [item] = api.get(f"/api/admin/purchase-orders/{order['po']['id']}/items")
 
@@ -158,3 +183,22 @@ def test_order_items_carry_the_product_name_and_sku(api, order):
         order["product"]["name"],
         order["product"]["sku"],
     )
+
+
+def test_an_order_line_of_a_million_and_a_half_is_stored_and_read(api, order):
+    """Up to 999,999.99 until S3.3 (numeric(12, 6)); a purchase order goes past it"""
+    po_id = order["po"]["id"]
+    product = make_product(api, "SKU-BIG", purchasePrice="1500000.00")
+    api.post(
+        "/api/admin/purchase-order-items",
+        {
+            "purchaseOrderId": po_id,
+            "productId": product["id"],
+            "quantityOrdered": 1,
+            "unitCost": "1500000.00",
+        },
+    )
+
+    items = api.get(f"/api/admin/purchase-orders/{po_id}/items")
+    assert [i["unitCost"] for i in items] == [6.0, 1_500_000.0]
+    assert api.get(f"/api/admin/purchase-orders/{po_id}")["subtotal"] == 1_500_060.0

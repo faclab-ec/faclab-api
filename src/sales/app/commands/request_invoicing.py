@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.sales.app.repositories import (
@@ -46,11 +47,13 @@ class RequestSaleInvoicingCommandHandler(
         sale_item_repo: SaleItemRepository,
         payment_repo: PaymentRepository,
         event_publisher: EventPublisher,
+        session: Session,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.payment_repo = payment_repo
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: RequestSaleInvoicingCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -63,6 +66,16 @@ class RequestSaleInvoicingCommandHandler(
         # The invoice needs the sale's establishment and emission point
         if sale.emission_point_id is None:
             raise SaleWithoutEmissionPointError(sale_id)
+        # Its `pagos` add up to the total: a sale confirmed before S3.3 without
+        # covering it fails here instead of reaching the SRI
+        payments = sorted(
+            self.payment_repo.filter_by(sale_id=sale_id), key=lambda p: p.require_id()
+        )
+        sale.settle(payments)
+        for payment in payments:
+            self.payment_repo.update(payment)
+        self.sale_repo.update(sale)
+
         self.event_publisher.publish(
             SaleInvoicingRequested(
                 aggregate_id=sale_id,
@@ -72,13 +85,13 @@ class RequestSaleInvoicingCommandHandler(
                 subtotal=sale.subtotal,
                 total_discount=sale.discount,
                 total=sale.total,
-                payments=sale_payments_data(
-                    self.payment_repo.filter_by(sale_id=sale_id)
-                ),
+                payments=sale_payments_data(payments),
                 source="pos" if sale.shift_id is not None else "admin",
                 branch_id=sale.branch_id,
                 emission_point_id=sale.emission_point_id,
                 number=sale.number,
-            )
+            ),
+            # The message goes to the outbox in this transaction
+            session=self.session,
         )
         return sale.dict()

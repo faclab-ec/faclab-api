@@ -12,7 +12,7 @@ from src.pos.sales.app.commands.confirm_sale import (
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
-from src.sales.domain.entities import Sale, SaleItem, SaleStatus
+from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
 from tests.unit.pos.terminals import numbering
 
 
@@ -70,6 +70,14 @@ def _make_stock() -> Stock:
     return Stock(id=1, product_id=100, quantity=100)
 
 
+def _paid_in_full():
+    """The payments of a sale of 100, in cash"""
+    payment = Payment(
+        id=1, sale_id=1, amount=Decimal("100"), payment_method=PaymentMethod.CASH
+    )
+    return _mock_repo(entities=[payment])
+
+
 def test_confirm_sale_with_open_shift():
     """Test confirmar venta cuando el turno esta abierto"""
     sale = _make_sale()
@@ -90,9 +98,10 @@ def test_confirm_sale_with_open_shift():
         TerminalStock(stock_repo, movement_repo),
         shift_repo,
         MagicMock(),
-        _mock_repo(entities=[]),
+        _paid_in_full(),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     result = handler.handle(POSConfirmSaleCommand(sale_id=1))
@@ -122,6 +131,7 @@ def test_confirm_sale_shift_closed_raises_error():
         _mock_repo(entities=[]),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     with pytest.raises(NoOpenShiftError):
@@ -147,9 +157,10 @@ def test_confirm_sale_no_shift_linked():
         TerminalStock(stock_repo, movement_repo),
         shift_repo,
         MagicMock(),
-        _mock_repo(entities=[]),
+        _paid_in_full(),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     result = handler.handle(POSConfirmSaleCommand(sale_id=1))

@@ -206,6 +206,92 @@ def test_step_by_step_sale_then_cancel_restores_stock(api, admin_api, product, s
     assert _stock_quantity(admin_api, product["id"]) == 10
 
 
+def test_cash_handed_over_in_excess_is_change_not_cash(api, product, shift):
+    """The cash register, the reports and the invoice count what the payment
+    applied; the receipt shows what was handed over and the change (S3.3)"""
+    sale = _quick_sale(api, product["id"], 1, "20.00")
+
+    [payment] = api.get(f"/api/pos/sales/{sale['id']}/payments")
+    assert (payment["amount"], payment["amountTendered"], payment["change"]) == (
+        11.5,
+        20.0,
+        8.5,
+    )
+    receipt = api.get(f"/api/pos/sales/{sale['id']}/receipt")
+    assert (receipt["totalPaid"], receipt["change"]) == (11.5, 8.5)
+    assert receipt["payments"][0]["amountTendered"] == 20.0
+
+    summary = api.get(f"/api/pos/shifts/{shift['id']}/cash-summary")
+    assert (summary["cashSales"], summary["expectedBalance"]) == (11.5, 111.5)
+    x_report = api.get("/api/pos/reports/x-report", params={"shiftId": shift["id"]})
+    assert [m["total"] for m in x_report["paymentsByMethod"]] == [11.5]
+    closed = api.post(
+        f"/api/pos/shifts/{shift['id']}/close", {"closingBalance": "111.50"}
+    )
+    assert closed["discrepancy"] == 0
+
+
+def test_a_sale_of_a_million_and_a_half_is_stored_and_read(
+    api, admin_api, shelf, shift
+):
+    """Up to 999,999.99 until S3.3 (numeric(12, 6)): G-31"""
+    product = make_product(
+        admin_api, "SKU-BIG", salePrice="1500000.00", taxCode="VAT_0"
+    )
+    make_movement(admin_api, product["id"], 1, shelf["id"])
+
+    sale = _quick_sale(api, product["id"], 1, "1500000.00")
+
+    assert sale["total"] == 1_500_000.0
+    assert api.get(f"/api/pos/sales/{sale['id']}")["total"] == 1_500_000.0
+    receipt = api.get(f"/api/pos/sales/{sale['id']}/receipt")
+    assert (receipt["total"], receipt["totalPaid"]) == (1_500_000.0, 1_500_000.0)
+    summary = api.get(f"/api/pos/shifts/{shift['id']}/cash-summary")
+    assert summary["expectedBalance"] == 1_500_100.0
+
+
+def test_a_sale_is_confirmed_once_paid_and_cancelled_takes_no_payments(
+    api, admin_api, product, shift
+):
+    sale = api.post("/api/pos/sales", {"isFinalConsumer": True})
+    api.post(
+        f"/api/pos/sales/{sale['id']}/items",
+        {"productId": product["id"], "quantity": 3, "unitPrice": "10.00"},
+    )
+    api.post(
+        f"/api/pos/sales/{sale['id']}/payments",
+        {"amount": "20.00", "paymentMethod": "DEBIT_CARD"},
+    )
+
+    error = api.error("POST", f"/api/pos/sales/{sale['id']}/confirm", 400)
+    assert error["code"] == "INSUFFICIENT_PAYMENT"
+    assert _stock_quantity(admin_api, product["id"]) == 10
+    error = api.error(
+        "POST",
+        f"/api/pos/sales/{sale['id']}/payments",
+        400,
+        json={"amount": "20.00", "paymentMethod": "TRANSFER"},
+    )
+    assert error["code"] == "PAYMENT_EXCEEDS_BALANCE"
+
+    cash = api.post(
+        f"/api/pos/sales/{sale['id']}/payments",
+        {"amount": "20.00", "paymentMethod": "CASH"},
+    )
+    assert (cash["amount"], cash["change"]) == (14.5, 5.5)
+    confirmed = api.post(f"/api/pos/sales/{sale['id']}/confirm")
+    assert (confirmed["status"], confirmed["paymentStatus"]) == ("CONFIRMED", "PAID")
+
+    api.post(f"/api/pos/sales/{sale['id']}/cancel")
+    error = api.error(
+        "POST",
+        f"/api/pos/sales/{sale['id']}/payments",
+        400,
+        json={"amount": "1.00", "paymentMethod": "CASH"},
+    )
+    assert error["code"] == "SALE_NOT_PAYABLE"
+
+
 def test_refund_returns_stock_and_cash(
     api, admin_api, client, auth_headers, terminal, shelf, product, shift
 ):

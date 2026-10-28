@@ -98,7 +98,8 @@ def _event(
     source: str = "pos",
     number: str | None = "V-002-000017",
 ) -> SaleConfirmed | SaleInvoicingRequested:
-    """A sale with a line discount, a sale discount and two VAT rates."""
+    """A sale with a line discount, a sale discount and two VAT rates, paid by
+    transfer and with cash handed over in excess."""
     items = [
         _item(10, 2, "8.500000", TaxCode.VAT_15, discount=Decimal("10.00")),
         _item(11, 1, "6.000000", TaxCode.VAT_0),
@@ -107,13 +108,12 @@ def _event(
     sale.apply_discount("AMOUNT", Decimal("1.00"))
     sale.recalculate_totals(items)
     payments = [
-        Payment(sale_id=1, amount=Decimal("20.00"), payment_method=PaymentMethod.CASH),
         Payment(
-            sale_id=1,
-            amount=sale.total - Decimal("20.00"),
-            payment_method=PaymentMethod.TRANSFER,
+            sale_id=1, amount=Decimal("6.79"), payment_method=PaymentMethod.TRANSFER
         ),
+        Payment(sale_id=1, amount=Decimal("30.00"), payment_method=PaymentMethod.CASH),
     ]
+    sale.settle(payments)
     return event_type(
         aggregate_id=1,
         sale_id=1,
@@ -230,6 +230,24 @@ def test_missing_contact_data_and_products_travel_as_null(session):
     )
     item = message["payload"]["items"][0]
     assert (item["sku"], item["product_name"]) == (None, None)
+
+
+def test_the_payments_add_up_to_the_total(session):
+    """Only what the payments applied reaches the invoice's `pagos`, never the
+    cash handed over in excess (G-16)"""
+    payload = _written(session, _event(7), CUSTOMER, PRODUCTS)["payload"]
+
+    amounts = [Decimal(p["amount"]) for p in payload["payments"]]
+    assert sum(amounts) == Decimal(payload["total"]) == Decimal("22.49")
+    # 30.00 in cash handed over: 15.70 applied, 14.30 of change
+    assert amounts == [Decimal("6.79"), Decimal("15.70")]
+
+
+@pytest.mark.parametrize("name", sorted(EXAMPLES))
+def test_the_payments_of_the_examples_add_up_to_the_total(name):
+    payload = EXAMPLES[name]["payload"]
+    paid = sum(Decimal(p["amount"]) for p in payload["payments"])
+    assert paid == Decimal(payload["total"])
 
 
 def test_the_edge_cases_have_examples():

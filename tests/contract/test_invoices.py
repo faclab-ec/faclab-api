@@ -9,6 +9,7 @@ import pytest
 from src.invoicing.infra import invoice_messages
 from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.sales.app.commands.invoice_sale import InvoiceSaleCommand
+from src.sales.app.commands.reject_invoice import RejectSaleInvoiceCommand
 from tests.contract.contracts import errors, examples, validator
 
 SCHEMA = validator("invoices")
@@ -40,17 +41,18 @@ def test_examples_match_the_contract(name):
 
 
 @pytest.mark.parametrize("name", sorted(EXAMPLES))
-def test_core_invoices_the_sale_only_when_authorized(command_handler, name):
+def test_core_acts_only_on_the_sris_answer(command_handler, name):
+    """Authorized: the sale is invoiced. Rejected: its invoice stops being
+    pending (S3.3). Any other step is ignored"""
     message = EXAMPLES[name]
 
     handle_invoice_message(message)
 
+    ids = {"sale_id": int(message["saleId"]), "invoice_id": message["invoiceId"]}
     if message["type"] == "InvoiceAuthorized":
-        command_handler.handle.assert_called_once_with(
-            InvoiceSaleCommand(
-                sale_id=int(message["saleId"]), invoice_id=message["invoiceId"]
-            )
-        )
+        command_handler.handle.assert_called_once_with(InvoiceSaleCommand(**ids))
+    elif message["type"] == "InvoiceRejected":
+        command_handler.handle.assert_called_once_with(RejectSaleInvoiceCommand(**ids))
     else:
         command_handler.handle.assert_not_called()
 

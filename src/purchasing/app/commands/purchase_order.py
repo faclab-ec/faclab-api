@@ -3,6 +3,8 @@ from datetime import datetime
 
 from wireup import injectable
 
+from src.organization.app.numbering import DocumentNumbering
+from src.organization.domain.numbering import DocumentType
 from src.purchasing.app.repositories import PurchaseOrderRepository
 from src.purchasing.domain.entities import PurchaseOrder
 from src.purchasing.domain.events import (
@@ -29,17 +31,20 @@ class CreatePurchaseOrderCommandHandler(
     def __init__(
         self,
         repo: PurchaseOrderRepository,
+        numbering: DocumentNumbering,
         event_publisher: EventPublisher,
     ):
         self.repo = repo
+        self.numbering = numbering
         self.event_publisher = event_publisher
 
     def _handle(self, command: CreatePurchaseOrderCommand) -> dict:
-        # Derive the number from the highest existing one, not from a count:
-        # deleted drafts would otherwise make count+1 collide.
-        prefix = f"PO-{datetime.now().year}-"
-        last_sequence = self.repo.last_sequence_for_prefix(prefix)
-        order_number = f"{prefix}{last_sequence + 1:04d}"
+        # The tenant's counter, locked until the order commits: concurrent
+        # orders wait for it instead of colliding, and a deleted draft keeps
+        # its number
+        order_number = self.numbering.next_in_tenant(
+            DocumentType.PURCHASE_ORDER, datetime.now().year
+        )
 
         purchase_order = PurchaseOrder(
             supplier_id=command.supplier_id,

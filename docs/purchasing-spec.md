@@ -70,7 +70,7 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `createdAt`    | `datetime \| null`| auto      | —           | Fecha de creación                        |
 | `updatedAt`    | `datetime \| null`| auto      | —           | Fecha de última actualización            |
 
-> **Nota:** `orderNumber` se genera automáticamente con formato `PO-{año}-{secuencial:04d}`. Ejemplo: `PO-2026-0001`.
+> **Nota:** `orderNumber` se genera automáticamente con formato `PO-{año}-{secuencial:04d}`. Ejemplo: `PO-2026-0001`. Desde S3.3 el secuencial sale del contador de la empresa en `document_sequences` (ADR-0012), que se bloquea hasta que la orden se guarda: dos órdenes creadas a la vez reciben números distintos en lugar de un 409. El contador es continuo (no vuelve a 1 cada año; el año dice cuándo se creó la orden) y un borrador eliminado no devuelve su número.
 
 ### PurchaseOrderItem
 

@@ -24,7 +24,8 @@ def sale_items_data(items: Iterable[SaleItem]) -> list[dict[str, Any]]:
 
 
 def sale_payments_data(payments: Iterable[Payment]) -> list[dict[str, Any]]:
-    """Pagos de la venta como los llevan SaleConfirmed y SaleInvoicingRequested"""
+    """Pagos de la venta como los llevan SaleConfirmed y SaleInvoicingRequested:
+    lo aplicado, sin el vuelto, así que suman el total de la venta"""
     return [{"method": p.payment_method, "amount": p.amount} for p in payments]
 
 

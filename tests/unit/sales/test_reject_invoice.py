@@ -1,0 +1,58 @@
+from unittest.mock import MagicMock
+
+import pytest
+
+from src.sales.app.commands import (
+    RejectSaleInvoiceCommand,
+    RejectSaleInvoiceCommandHandler,
+)
+from src.sales.domain.entities import InvoiceStatus, Sale, SaleStatus
+from src.shared.domain.exceptions import NotFoundError
+
+
+def _handler(sale: Sale | None) -> tuple[RejectSaleInvoiceCommandHandler, MagicMock]:
+    sale_repo = MagicMock()
+    sale_repo.get_by_id.return_value = sale
+    return RejectSaleInvoiceCommandHandler(sale_repo), sale_repo
+
+
+def _command() -> RejectSaleInvoiceCommand:
+    return RejectSaleInvoiceCommand(sale_id=1, invoice_id="inv-1")
+
+
+def test_a_pending_invoice_becomes_rejected():
+    sale = Sale(id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING)
+    handler, sale_repo = _handler(sale)
+
+    result = handler.handle(_command())
+
+    assert result["invoice_status"] == InvoiceStatus.REJECTED
+    sale_repo.update.assert_called_once_with(sale)
+
+
+@pytest.mark.parametrize(
+    ("status", "invoice_status"),
+    [
+        # Delivered again
+        (SaleStatus.CONFIRMED, InvoiceStatus.REJECTED),
+        # Sent before S3.3
+        (SaleStatus.CONFIRMED, None),
+        (SaleStatus.INVOICED, None),
+        (SaleStatus.CANCELLED, None),
+    ],
+)
+def test_anything_but_a_pending_invoice_is_left_as_is(status, invoice_status):
+    sale = Sale(id=1, status=status, invoice_status=invoice_status)
+    handler, sale_repo = _handler(sale)
+
+    handler.handle(_command())
+
+    assert sale.invoice_status == invoice_status
+    sale_repo.update.assert_not_called()
+
+
+def test_missing_sale():
+    handler, _ = _handler(None)
+
+    with pytest.raises(NotFoundError):
+        handler.handle(_command())

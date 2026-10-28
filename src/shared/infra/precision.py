@@ -3,9 +3,10 @@
 from sqlalchemy import Numeric
 
 # Monetary values: prices, costs, subtotals, taxes, totals, amounts, credit limits
-# Precision 12 = up to 999,999.999999 (6 integer digits + 6 decimal digits)
+# Precision 18 = up to 999,999,999,999.999999 (12 integer digits + 6 decimal
+# digits; 12 until S3.3 capped every amount at 999,999.99)
 # Scale 6 = 6 decimal places for calculation accuracy
-MONEY_PRECISION = 12
+MONEY_PRECISION = 18
 MONEY_SCALE = 6
 MoneyColumn = Numeric(MONEY_PRECISION, MONEY_SCALE)
 

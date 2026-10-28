@@ -102,7 +102,15 @@ class QuickSaleItemInput(BaseModel):
 class QuickSalePaymentInput(BaseModel):
     """Payment for a quick sale."""
 
-    amount: Decimal = Field(..., gt=0, description="Payment amount")
+    amount: Decimal = Field(
+        ...,
+        gt=0,
+        description=(
+            "Amount the customer hands over. The sale takes what it still owes; "
+            "the rest of a cash payment is the change, and any other method "
+            "cannot exceed the balance"
+        ),
+    )
     payment_method: PaymentMethod = Field(
         ...,
         description="Payment method",
@@ -126,7 +134,9 @@ class QuickSaleRequest(BaseModel):
         ..., min_length=1, description="Line items for the sale"
     )
     payments: list[QuickSalePaymentInput] = Field(
-        ..., min_length=1, description="Payments (total must cover the sale amount)"
+        ...,
+        min_length=1,
+        description="Payments, applied in order: they must cover the sale total",
     )
     discount_type: Literal["PERCENTAGE", "AMOUNT"] | None = Field(
         None,
@@ -222,7 +232,14 @@ class ReceiptPaymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     method: str
-    amount: DecimalNumber
+    amount: DecimalNumber = Field(..., description="Applied to the sale")
+    amount_tendered: DecimalNumber = Field(
+        ...,
+        description="What the customer handed over",
+        validation_alias=AliasChoices("amountTendered", "amount_tendered"),
+        serialization_alias="amountTendered",
+    )
+    change: DecimalNumber = Field(..., description="Given back (cash only)")
     reference: str | None = None
 
 
@@ -320,7 +337,8 @@ class ReceiptResponse(BaseModel):
     payments: list[ReceiptPaymentResponse]
     total_paid: DecimalNumber = Field(
         ...,
+        description="Applied by the payments: the total of a confirmed sale",
         validation_alias=AliasChoices("totalPaid", "total_paid"),
         serialization_alias="totalPaid",
     )
-    change: DecimalNumber
+    change: DecimalNumber = Field(..., description="Given back by the payments")

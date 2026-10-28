@@ -6,6 +6,7 @@ import pytest
 from src.invoicing.infra import invoice_messages
 from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.sales.app.commands.invoice_sale import InvoiceSaleCommand
+from src.sales.app.commands.reject_invoice import RejectSaleInvoiceCommand
 from src.sales.domain.entities import SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError
@@ -70,8 +71,16 @@ def test_a_message_without_a_tenant_is_dropped(command_handler, scope_tenants):
     command_handler.handle.assert_not_called()
 
 
+def test_rejected_invoice_stops_being_pending(command_handler, message_tenant):
+    handle_invoice_message(_message(type="InvoiceRejected", status="rejected"))
+
+    command_handler.handle.assert_called_once_with(
+        RejectSaleInvoiceCommand(sale_id=42, invoice_id="inv-1")
+    )
+
+
 @pytest.mark.parametrize(
-    "event_type", ["InvoiceCreated", "InvoiceSigned", "InvoiceSent", "InvoiceRejected"]
+    "event_type", ["InvoiceCreated", "InvoiceSigned", "InvoiceSent"]
 )
 def test_other_invoice_events_are_ignored(command_handler, message_tenant, event_type):
     handle_invoice_message(_message(type=event_type))

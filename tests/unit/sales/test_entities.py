@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from src.sales.domain.entities import (
+    InvoiceStatus,
     Payment,
     PaymentMethod,
     PaymentStatus,
@@ -11,7 +12,15 @@ from src.sales.domain.entities import (
     SaleItem,
     SaleStatus,
 )
-from src.sales.domain.exceptions import InvalidSaleStatusError, SaleNotParkedError
+from src.sales.domain.exceptions import (
+    CreditNoteRequiredError,
+    InsufficientPaymentError,
+    InvalidSaleStatusError,
+    InvoiceInProgressError,
+    PaymentExceedsBalanceError,
+    SaleNotParkedError,
+    SaleNotPayableError,
+)
 from src.shared.domain.exceptions import ValidationError
 
 
@@ -43,9 +52,115 @@ def test_sale_item_subtotal_no_discount():
 def test_sale_confirm_changes_status():
     """Test que confirmar una venta cambia su estado"""
     sale = Sale(customer_id=1, status=SaleStatus.DRAFT)
+    sale.settle([])
     sale.confirm()
     assert sale.status == SaleStatus.CONFIRMED
     assert sale.sale_date is not None
+
+
+def test_sale_confirm_requires_it_paid():
+    sale = Sale(customer_id=1, status=SaleStatus.DRAFT, total=Decimal("10"))
+    with pytest.raises(InsufficientPaymentError):
+        sale.confirm()
+    assert sale.status == SaleStatus.DRAFT
+
+
+def _payment(amount: str, method=PaymentMethod.CASH, **kwargs) -> Payment:
+    return Payment(sale_id=1, amount=Decimal(amount), payment_method=method, **kwargs)
+
+
+def test_settle_applies_payments_in_order_and_cash_gives_change():
+    sale = Sale(id=1, total=Decimal("24.15"))
+    card = _payment("10", PaymentMethod.CREDIT_CARD)
+    cash = _payment("20")
+
+    sale.settle([card, cash])
+
+    assert (card.amount, card.change) == (Decimal("10"), Decimal("0"))
+    assert (cash.amount, cash.amount_tendered, cash.change) == (
+        Decimal("14.15"),
+        Decimal("20"),
+        Decimal("5.85"),
+    )
+    assert sale.payment_status == PaymentStatus.PAID
+
+
+def test_settle_fails_when_payments_dont_cover_the_total():
+    sale = Sale(id=1, total=Decimal("24.15"))
+    with pytest.raises(InsufficientPaymentError):
+        sale.settle([_payment("24.14")])
+    assert sale.payment_status == PaymentStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        PaymentMethod.CREDIT_CARD,
+        PaymentMethod.DEBIT_CARD,
+        PaymentMethod.TRANSFER,
+        PaymentMethod.OTHER,
+    ],
+)
+def test_only_cash_exceeds_what_is_owed(method):
+    sale = Sale(id=1, total=Decimal("24.15"))
+    with pytest.raises(PaymentExceedsBalanceError):
+        sale.settle([_payment("25", method)])
+
+
+def test_a_payment_after_the_total_is_covered_is_rejected():
+    sale = Sale(id=1, total=Decimal("10"))
+    with pytest.raises(PaymentExceedsBalanceError):
+        sale.settle([_payment("10"), _payment("5")])
+
+
+def test_settle_applies_again_what_an_earlier_settle_applied():
+    """A draft paid, then its items changed: the change is recomputed"""
+    cash = _payment("50")
+    Sale(id=1, total=Decimal("40")).settle([cash])
+    assert cash.change == Decimal("10")
+
+    Sale(id=1, total=Decimal("45")).settle([cash])
+
+    assert (cash.amount, cash.amount_tendered, cash.change) == (
+        Decimal("45"),
+        Decimal("50"),
+        Decimal("5"),
+    )
+
+
+def test_what_is_handed_over_is_rounded_to_the_cent():
+    payment = _payment("10.005")
+    assert payment.amount_tendered == Decimal("10.01")
+
+
+def test_take_payment_applies_what_is_still_owed():
+    sale = Sale(id=1, total=Decimal("30"))
+    previous = [_payment("10", PaymentMethod.TRANSFER)]
+    cash = _payment("25")
+
+    sale.take_payment(cash, previous)
+
+    assert (cash.amount, cash.change) == (Decimal("20"), Decimal("5"))
+    assert sale.payment_status == PaymentStatus.PAID
+
+
+def test_take_payment_keeps_a_partial_payment():
+    sale = Sale(id=1, total=Decimal("30"))
+    sale.take_payment(_payment("10", PaymentMethod.TRANSFER), [])
+    assert sale.payment_status == PaymentStatus.PARTIAL
+
+
+@pytest.mark.parametrize("status", [SaleStatus.CANCELLED, SaleStatus.INVOICED])
+def test_cancelled_or_invoiced_sales_take_no_payments(status):
+    sale = Sale(id=1, status=status, total=Decimal("30"))
+    with pytest.raises(SaleNotPayableError):
+        sale.take_payment(_payment("10"), [])
+
+
+def test_a_paid_sale_takes_no_more_payments():
+    sale = Sale(id=1, status=SaleStatus.CONFIRMED, total=Decimal("30"))
+    with pytest.raises(PaymentExceedsBalanceError):
+        sale.take_payment(_payment("5"), [_payment("30")])
 
 
 def test_sale_confirm_only_draft():
@@ -69,11 +184,56 @@ def test_sale_cancel_from_confirmed():
     assert sale.status == SaleStatus.CANCELLED
 
 
-def test_sale_cancel_from_invoiced_fails():
-    """Test que no se pueden cancelar ventas facturadas"""
+def test_sale_cancel_from_invoiced_requires_a_credit_note():
+    """Una venta facturada se anula con nota de crédito (S4.5)"""
     sale = Sale(customer_id=1, status=SaleStatus.INVOICED)
+    with pytest.raises(CreditNoteRequiredError):
+        sale.cancel()
+    assert sale.status == SaleStatus.INVOICED
+
+
+def test_sale_cancel_from_cancelled_fails():
+    sale = Sale(customer_id=1, status=SaleStatus.CANCELLED)
     with pytest.raises(InvalidSaleStatusError):
         sale.cancel()
+
+
+def test_sale_cancel_while_its_invoice_is_pending_fails():
+    sale = Sale(
+        customer_id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING
+    )
+    with pytest.raises(InvoiceInProgressError):
+        sale.cancel()
+    assert sale.status == SaleStatus.CONFIRMED
+
+
+def test_sale_cancel_after_its_invoice_was_rejected():
+    sale = Sale(
+        customer_id=1,
+        status=SaleStatus.CONFIRMED,
+        invoice_status=InvoiceStatus.REJECTED,
+    )
+    sale.cancel()
+    assert sale.status == SaleStatus.CANCELLED
+
+
+def test_a_sale_sent_to_invoicing_awaits_its_invoice():
+    sale = Sale(customer_id=1, status=SaleStatus.CONFIRMED)
+    sale.await_invoice()
+    assert sale.invoice_status == InvoiceStatus.PENDING
+
+
+def test_a_draft_does_not_await_an_invoice():
+    with pytest.raises(InvalidSaleStatusError):
+        Sale(customer_id=1, status=SaleStatus.DRAFT).await_invoice()
+
+
+def test_invoicing_the_sale_clears_its_pending_invoice():
+    sale = Sale(
+        customer_id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING
+    )
+    sale.invoice()
+    assert (sale.status, sale.invoice_status) == (SaleStatus.INVOICED, None)
 
 
 def test_sale_invoice_only_confirmed():
