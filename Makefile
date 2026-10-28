@@ -52,5 +52,20 @@ seed-admin:  ## Bootstrap the default tenant and its first admin (idempotent)
 provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ..."
 	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m src.tenancy.provision $(args)
 
-purge-idempotency-keys:  ## Delete the Idempotency-Key rows older than IDEMPOTENCY_KEY_RETENTION_HOURS (every tenant)
+purge-idempotency-keys:  ## Delete the Idempotency-Key rows older than IDEMPOTENCY_KEY_RETENTION_HOURS now (the worker does it hourly)
 	docker compose run --rm api python -m src.shared.infra.idempotency.purge
+
+worker:  ## Run the worker (outbox relay, Kafka consumer, purges) in the foreground
+	docker compose rm -sf worker && docker compose run --rm worker
+
+outbox-failed:  ## List the outbox messages that failed (every tenant)
+	docker compose run --rm api python -m src.background.cli outbox-failed
+
+outbox-retry:  ## Put failed outbox messages back in the queue: ids="1 2" (or ids=--all) by=<who>
+	docker compose run --rm api python -m src.background.cli outbox-retry $(ids) --by "$(by)"
+
+dead-letters:  ## List the consumer's pending dead letters (every tenant)
+	docker compose run --rm api python -m src.background.cli dead-letters
+
+reprocess-dead-letter:  ## Process a dead letter again: id=<id> by=<who>
+	docker compose run --rm api python -m src.background.cli dead-letter-reprocess $(id) --by "$(by)"
