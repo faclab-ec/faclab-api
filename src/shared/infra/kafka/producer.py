@@ -7,10 +7,11 @@ from typing import Any
 
 import structlog
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import KafkaError
+from aiokafka.errors import KafkaError, KafkaTimeoutError
 from opentelemetry import trace
 from opentelemetry.propagate import extract, inject
 
+from src.shared.infra.outbox.relay import BrokerUnavailableError
 from src.shared.infra.telemetry_instruments import (
     kafka_messages_sent,
     kafka_send_errors,
@@ -26,6 +27,13 @@ def json_default(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+def _broker_unavailable(exc: Exception) -> bool:
+    """A failure of the broker, not of the message: retrying later may work"""
+    if isinstance(exc, TimeoutError | KafkaTimeoutError):
+        return True
+    return isinstance(exc, KafkaError) and exc.retriable
 
 
 class KafkaEventProducer:
@@ -99,7 +107,10 @@ class KafkaEventProducer:
         key: str | None = None,
     ) -> None:
         """Send a message and wait for the broker's ack; raise if it fails, so
-        the outbox relay keeps the message and retries it.
+        the outbox relay keeps the message and retries it. When the broker is
+        the problem (not connected yet, a timeout, an error aiokafka marks as
+        retriable) it raises BrokerUnavailableError, and the relay waits
+        without counting the attempt against the message.
 
         `key` picks the partition: the outbox uses the message's tenant, so
         the messages of a tenant keep their order.
@@ -110,7 +121,7 @@ class KafkaEventProducer:
         and the consumer receives this span as its parent.
         """
         if self._loop is None or self._producer is None:
-            raise RuntimeError("Kafka producer is not started")
+            raise BrokerUnavailableError("Kafka producer is not connected")
 
         carrier = {key: raw.decode("utf-8", "replace") for key, raw in headers}
         event_id = value.get("event_id")
@@ -142,8 +153,12 @@ class KafkaEventProducer:
             )
             try:
                 future.result(timeout=5)
-            except Exception:
+            except Exception as exc:
                 kafka_send_errors.add(1, {"kafka.topic": topic})
+                if _broker_unavailable(exc):
+                    raise BrokerUnavailableError(
+                        str(exc) or type(exc).__name__
+                    ) from exc
                 raise
             kafka_messages_sent.add(1, {"kafka.topic": topic})
             logger.info("kafka_message_sent", topic=topic, event_id=event_id)
