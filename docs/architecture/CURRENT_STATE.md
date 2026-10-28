@@ -193,11 +193,15 @@ Puntos fuertes verificados:
 
 - Consumidor de `invoices` (grupo `faclab-core`): actúa solo ante `InvoiceAuthorized`;
   `InvoiceRejected` solo se registra (`src/invoicing/infra/invoice_messages.py:36-42`) [V].
+  *S3.3–S3.4:* el rechazo deja la factura en `REJECTED` con el motivo del SRI, y la venta lo muestra.
 - Ante un fallo del handler hace `seek` al mismo offset y reintenta cada 5 s **sin límite**
   (`src/shared/infra/kafka/consumer.py:102-106`) [V].
+  *S3.4:* reintenta con backoff hasta un máximo y luego guarda el mensaje en `dead_letters`.
 - El relay **se detiene en el primer mensaje que falla**, cuenta intentos sin máximo, no tiene estado de
   fallo definitivo y nunca borra mensajes publicados (`relay.py:86-102`) [V].
+  *S3.4:* estados `pending`/`published`/`failed`, máximo de intentos, orden por empresa y purga.
 - Relay, productor y consumidor corren como hilos dentro de cada proceso del API (`main.py:80-110`) [V].
+  *S3.4:* corren en el proceso `worker.py`; el API solo los arranca con `RUN_BACKGROUND=true`.
 - Los mensajes se publican sin clave de partición (`src/shared/infra/kafka/producer.py:100`) [V].
   *S2.8:* el relay usa el `tenant_id` del mensaje como clave.
 - Si Kafka no está disponible al arrancar, el hilo del productor termina; los mensajes quedan pendientes

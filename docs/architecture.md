@@ -136,7 +136,15 @@ async def on_sale_confirmed(event: SaleConfirmed, repo: ...) -> None:
 
 ### Outbox de Kafka
 
-Los mensajes hacia otros servicios no se publican desde el handler: `OutboxWriter.add()` los guarda en la tabla `outbox_messages` dentro de la misma transacción del request, junto con el contexto de traza. Si la transacción se revierte, el mensaje desaparece con ella. `OutboxRelay` (un hilo que arranca el lifespan cuando `KAFKA_ENABLED`) publica los mensajes confirmados en orden, usando `FOR UPDATE SKIP LOCKED` para que varias réplicas no dupliquen envíos, con la empresa del mensaje como clave (los de una empresa van por la misma partición) y el header `faclab-tenant-id`; se despierta tras cada commit que escribió uno y reintenta los fallos en la siguiente vuelta (`OUTBOX_POLL_INTERVAL_SECONDS`).
+Los mensajes hacia otros servicios no se publican desde el handler: `OutboxWriter.add()` los guarda en la tabla `outbox_messages` dentro de la misma transacción del request, junto con el contexto de traza. Si la transacción se revierte, el mensaje desaparece con ella. `OutboxRelay` publica los mensajes confirmados con la empresa del mensaje como clave (los de una empresa van por la misma partición) y el header `faclab-tenant-id`. Corre en el proceso worker (ver [Worker](#worker)) y revisa el outbox cada `OUTBOX_POLL_INTERVAL_SECONDS` (1 s). Con `RUN_BACKGROUND=true` corre también en el API, donde además se despierta tras cada commit que escribió un mensaje.
+
+Cada mensaje tiene un estado: `pending`, `published` o `failed` (S3.4).
+
+- **Orden por empresa, no global** (ADR-0005). Cada lote toma un advisory lock de su transacción, así que publica un solo relay a la vez aunque convivan el API y el worker durante un despliegue. Los mensajes de cada empresa salen por `id`.
+- **Un mensaje que falla espera su próximo intento** (`next_attempt_at`) con backoff exponencial (`OUTBOX_RETRY_BASE_SECONDS` · 2^(n-1), con tope `OUTBOX_RETRY_MAX_SECONDS`). Mientras tanto frena solo a los siguientes de su empresa: los de las demás empresas se publican igual.
+- **Tras `OUTBOX_MAX_ATTEMPTS` (10) queda `failed`**, se registra un log ERROR `outbox_message_failed` con el comando para reprocesarlo, y deja de frenar a su empresa. Se vuelve a encolar con `make outbox-retry` (ver [Mensajes atascados](#mensajes-atascados)).
+- **Si el que falla es el broker**, el lote se corta sin contar el intento: una caída de Kafka no deja mensajes sanos en `failed`. `KafkaEventProducer` traduce a `BrokerUnavailableError` el productor sin conectar, los timeouts y los errores que aiokafka marca como reintentables.
+- **Los publicados se purgan** después de `OUTBOX_RETENTION_DAYS` (14); los `failed` y `pending` se conservan.
 
 Hoy el único mensaje es `sales.confirmed` para faclab-invoicing; lo arma `src/invoicing/infra/event_handlers.py` con la empresa que emite y su RUC, el establecimiento, la dirección y el punto de emisión de la venta, y los datos del cliente y los productos. Cada ítem lleva además `invoice_discount`, `invoice_base` e `invoice_tax`: sus montos en la factura del SRI, redondeados a centavos y con el descuento global ya prorrateado (`invoice_lines` en `src/sales/domain/services.py`). Las bases suman `subtotal - descuento` y bases más IVA suman el total cobrado, así que faclab-invoicing los copia al XML sin recalcular nada.
 
@@ -144,9 +152,33 @@ La forma de cada mensaje es un contrato versionado en `contracts/events/` (JSON 
 
 ### Consumidor de Kafka
 
-`KafkaMessageConsumer` (`src/shared/infra/kafka/consumer.py`) también corre en un hilo que arranca el lifespan cuando `KAFKA_ENABLED`, con el consumer group `KAFKA_CONSUMER_GROUP_ID` (por defecto `faclab-core`). Entrega cada mensaje al handler de su topic y confirma el offset solo si el handler termina bien; si falla, vuelve a ese offset y lo reintenta, así que los handlers deben ser idempotentes. Un mensaje que no es JSON se descarta. Si Kafka no está disponible, el consumidor y el productor reintentan la conexión en vez de morir.
+`KafkaMessageConsumer` (`src/shared/infra/kafka/consumer.py`) corre en el worker (o en el API con `RUN_BACKGROUND=true`), con el consumer group `KAFKA_CONSUMER_GROUP_ID` (por defecto `faclab-core`). Entrega cada mensaje al handler de su topic y confirma el offset cuando el handler termina bien, así que los handlers deben ser idempotentes. Un mensaje que no es JSON se descarta. Si Kafka no está disponible, el consumidor y el productor reintentan la conexión en vez de morir.
 
-Hoy lee el topic `invoices`, donde faclab-invoicing publica cada transición de sus facturas (created → signed → sent → authorized / rejected). `src/invoicing/infra/invoice_messages.py` solo actúa ante `InvoiceAuthorized`: la venta pasa de `CONFIRMED` a `INVOICED` y se publica `SaleInvoiced`. Si la venta ya estaba facturada no hace nada; si no existe o ya no está confirmada (p. ej. se anuló antes de que el SRI respondiera), lo registra como error y sigue, porque eso se resuelve con una nota de crédito y no reintentando. Lee los mensajes según `contracts/events/invoices/v1.schema.json`: uno sin `schema_version` es v1 y uno de una versión que no conoce se registra (`invoice_message_unsupported_version`) y se descarta. La venta se busca en la empresa del header `faclab-tenant-id`; un mensaje sin empresa se registra (`invoice_message_without_tenant`) y se descarta.
+Si el handler falla, el mensaje se reintenta con backoff (`KAFKA_CONSUMER_RETRY_BASE_SECONDS` · 2^(n-1), con tope de un minuto) sin pasar al siguiente de la partición. La espera es un `asyncio.sleep`, que no detiene el heartbeat del grupo. Al llegar a `KAFKA_CONSUMER_MAX_ATTEMPTS` (5), el mensaje se guarda en la tabla `dead_letters` con su tópico, partición, offset, clave, headers, valor, empresa y error, y se confirma su offset: la partición sigue. Una dead letter se guarda una vez por mensaje (`uq_dead_letters_message`), aunque llegue de nuevo. Si tampoco se puede guardar (la base caída), el offset no se confirma y el consumidor vuelve a él: el mensaje no se pierde. `dead_letters` es de infraestructura, como el outbox: sin RLS, y solo faclab_worker puede leerla y escribirla.
+
+Hoy lee el topic `invoices`, donde faclab-invoicing publica cada transición de sus facturas (created → signed → sent → authorized / rejected). `src/invoicing/infra/invoice_messages.py` actúa ante `InvoiceAuthorized` (la venta pasa de `CONFIRMED` a `INVOICED`, su factura a `AUTHORIZED` con su id, y se publica `SaleInvoiced`) y ante `InvoiceRejected`. En ese caso, la factura pendiente pasa a `REJECTED` con su id y el motivo del SRI (`reason`). Un rechazo de la factura que ya se rechazó, repetido después de un reenvío, se ignora. Si la venta ya estaba facturada no hace nada; si no existe o ya no está confirmada (p. ej. se anuló antes de que el SRI respondiera), lo registra como error y sigue, porque eso se resuelve con una nota de crédito y no reintentando. Lee los mensajes según `contracts/events/invoices/v1.schema.json`: uno sin `schema_version` es v1 y uno de una versión que no conoce se registra (`invoice_message_unsupported_version`) y se descarta. La venta se busca en la empresa del header `faclab-tenant-id`; un mensaje sin empresa se registra (`invoice_message_without_tenant`) y se descarta.
+
+### Worker
+
+`worker.py` es la misma imagen que el API con otro comando (ADR-0007). Arranca la mensajería (productor, relay y consumidor, con `KAFKA_ENABLED`) y corre las purgas cada `WORKER_PURGE_INTERVAL_SECONDS` (una hora): los mensajes publicados del outbox, las claves de idempotencia (`IDEMPOTENCY_KEY_RETENTION_HOURS`) y las sesiones revocadas o vencidas (`AUTH_SESSION_RETENTION_DAYS`). Todas trabajan como faclab_worker en todas las empresas y son DELETE idempotentes, así que dos workers solo repiten trabajo.
+
+- Con SIGTERM termina la tarea en curso y se detiene en orden: consumidor, relay, productor y OpenTelemetry. Su `service.name` es `faclab-core-worker`.
+- `WorkerHealth` guarda el último ciclo exitoso de cada tarea (el relay y el consumidor reportan cada vuelta) en `WORKER_HEALTH_FILE`. `python -m src.shared.infra.worker.health` falla si el archivo no se actualizó en un minuto o si una tarea pasó su `max_age` sin un ciclo exitoso: es el healthcheck del servicio `worker`.
+- El API arranca la mensajería solo con `RUN_BACKGROUND=true` (por defecto, para volver atrás), y entonces su readiness informa el productor. `docker-compose.yml` levanta el servicio `worker` y pone `RUN_BACKGROUND=false` en el API.
+- La composición (los handlers de cada tópico, `create_messaging()`, las tareas) vive en `src/background/`, porque importa módulos.
+
+### Mensajes atascados
+
+Hasta que exista el rol de plataforma (S8.5), un CLI corre como faclab_worker sobre todas las empresas:
+
+| Comando | Qué hace |
+|---|---|
+| `make outbox-failed` | Lista los mensajes `failed` del outbox, con su empresa, intentos y último error |
+| `make outbox-retry ids="1 2" by=<quién>` (o `ids=--all`) | Los devuelve a `pending` con los intentos en cero; el relay los publica en su próxima vuelta |
+| `make dead-letters` | Lista las dead letters pendientes |
+| `make reprocess-dead-letter id=<id> by=<quién>` | Entrega el mensaje otra vez al handler de su tópico, en su empresa; si funciona queda `reprocessed`, si no suma un intento y el error |
+
+Cada uno es `python -m src.background.cli <comando>`. `--by` es obligatorio y queda en la fila (`retried_by`/`retried_at`, `reprocessed_by`/`reprocessed_at`) y en el log (`outbox_message_retried`, `dead_letter_reprocessed`).
 
 ### Specification Pattern
 
@@ -293,12 +325,19 @@ src/shared/
     │   ├── event_bus.py          # EventBus implementacion
     │   └── decorators.py         # @event_handler decorator
     ├── kafka/
-    │   ├── producer.py           # KafkaEventProducer (aiokafka)
-    │   └── consumer.py           # KafkaMessageConsumer: offsets tras procesar, reintentos
+    │   ├── producer.py           # KafkaEventProducer (aiokafka); BrokerUnavailableError
+    │   ├── consumer.py           # KafkaMessageConsumer: offsets tras procesar, backoff, dead letters
+    │   ├── models.py             # dead_letters
+    │   └── dead_letters.py       # DeadLetterStore, listar y reprocesar
     ├── outbox/
-    │   ├── models.py             # outbox_messages
+    │   ├── models.py             # outbox_messages (pending, published, failed)
     │   ├── writer.py             # OutboxWriter: guarda el mensaje en la transacción
-    │   └── relay.py              # OutboxRelay: publica lo confirmado
+    │   ├── relay.py              # OutboxRelay: publica lo confirmado, por empresa
+    │   ├── purge.py              # purga de los publicados
+    │   └── admin.py              # listar y reencolar los failed
+    ├── worker/
+    │   ├── runner.py             # Worker, PeriodicTask, WorkerHealth
+    │   └── health.py             # healthcheck del worker
     └── adapters/
         └── telemetry.py      # OpenTelemetry instrumentation setup
 ```
