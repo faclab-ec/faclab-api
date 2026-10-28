@@ -94,7 +94,7 @@
 | G-47 | Login sin hash para usuarios inexistentes (enumeración por tiempo) | P | `src/auth/app/commands/login.py:39-43` | Enumeración de usuarios | P3 | S1.4 (resuelta: hash ficticio para usuarios inexistentes; también se bloquean) |
 | G-48 | Invoicing comparte el secreto HS256 y puede emitir tokens para el core | V | `faclab-invoicing/src/shared/infra/http/auth.ts:45-109` | Un compromiso de invoicing compromete todo | P2 | S6.1 |
 | G-49 | Kafka sin TLS ni SASL; kafka-ui sin autenticación | V | `faclab-infra/docker-compose.yml` | Aceptable solo en red privada | P2 | S8.1 |
-| G-50 | No hay bitácora de auditoría | V | Búsqueda sin resultados | Sin trazabilidad de cambios de precio, ajustes, caja y usuarios | P1 | S3.5 |
+| G-50 | No hay bitácora de auditoría | V | Búsqueda sin resultados | Sin trazabilidad de cambios de precio, ajustes, caja y usuarios | P1 | S3.5 (resuelta: tabla `audit_log` por empresa, inmutable para faclab_app y faclab_worker, escrita en la transacción de la operación con el actor del token; catálogo de 34 acciones y `GET /api/admin/audit-log` con `audit:read`, solo ADMIN; pantalla en faclab-web) |
 | G-51 | `scripts/seed.py` borra tablas sin verificar el entorno | V | `scripts/seed.py:79-82` | Borrado accidental en un entorno real | P2 | S1.2 (resuelta: solo corre con `ENVIRONMENT=local`) |
 | G-52 | El secreto de SigNoz en el compose de ejemplo es el valor por defecto del proyecto | V | `Telemetry/deploy/docker/docker-compose.yaml:122` | Acceso no autorizado al panel de observabilidad | P1 | S8.6 |
 
@@ -163,7 +163,7 @@
 | F-13 | Variantes de producto | No existe | Puede esperar (se usan SKU separados) | — |
 | F-14 | Guía de remisión (entregas a obra) y comprobante de retención | No existe | Depende del cliente piloto (PV) | Posterior a la Etapa 9 |
 | F-15 | Transferencias, ajustes, lotes, series, stock por ubicación | Existe | — | — |
-| F-16 | Bitácora de cambios de precio, ajustes y caja | No existe | Muy recomendable | S3.5 |
+| F-16 | Bitácora de cambios de precio, ajustes y caja | Existe (S3.5) | Muy recomendable | S3.5 |
 
 ## 4. Cumplimiento SRI
 

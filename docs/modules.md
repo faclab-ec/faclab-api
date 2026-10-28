@@ -372,3 +372,46 @@ Consultas analiticas de inventario sin estado propio — leen datos de los modul
 - `GetInventoryRotation` — frecuencia de rotacion por producto en un periodo
 - `GetInventoryMovementsReport` — movimientos agrupados por tipo y periodo
 - `GetInventorySummary` — resumen consolidado de stock, alertas y valuacion
+
+---
+
+## Auditoria
+
+Bitacora inmutable de operaciones sensibles por empresa (`src/audit/`, S3.5). Ruta
+`GET /api/admin/audit-log` (`audit:read`, solo ADMIN), paginada (por defecto 50, maximo 500)
+y con filtros `fromDate`/`toDate` (dias completos), `actorId`, `action`, `resourceType`,
+`resourceId` y `branchId`; el orden es de la mas reciente a la mas antigua. La sucursal se
+filtra solo con `branchId`, no con `X-Branch-Id`.
+
+**Entrada (`audit_log`):** `occurred_at`, actor (`actor_user_id` y `actor_name`, el nombre
+completo o usuario del token en ese momento), `action` (`<recurso>.<verbo>`),
+`resource_type`/`resource_id`, `branch_id` (la del recurso; si no la tiene, la de
+`X-Branch-Id`), `source` (`request`, `message`, `task`), `request_id` (el `X-Request-Id`) y
+`before`/`after` con solo los campos relevantes (dinero como texto decimal; nunca contrasenas,
+tokens ni correos). Sin claves foraneas al recurso: la entrada sobrevive a su borrado.
+
+**Registro:** cada handler del catalogo llama `AuditTrail.record(...)`
+(`src/shared/app/audit.py`) despues de cambiar el recurso. `SqlAlchemyAuditTrail`
+(`src/audit/infra/trail.py`) inserta con la sesion de la solicitud, asi que la entrada se
+confirma o se revierte con la operacion. Sin contexto de empresa falla; el aprovisionamiento
+del primer admin (fuera de toda empresa) no deja entrada.
+
+**Inmutable:** RLS como toda tabla de negocio; `faclab_app` y `faclab_worker` solo tienen
+`SELECT` e `INSERT` (migracion `37a810c62c07`). Ningun rol tiene `TRUNCATE`.
+
+**Catalogo de acciones (`AuditAction`):**
+
+| Recurso | Acciones | Campos |
+|---|---|---|
+| Producto | `product.created`, `product.updated`, `product.price_changed` (cambio de costo, precio de venta o IVA), `product.deleted` | sku, nombre, costo, precio, IVA, activo; en una edicion, solo los que cambiaron (un PUT sin cambios no deja entrada) |
+| Movimiento | `movement.created` (solo el manual de `POST /movements`) | producto, ubicacion, tipo, cantidad, motivo |
+| Ajuste | `adjustment.confirmed`, `adjustment.cancelled` | estado, bodega, motivo, items con diferencia |
+| Transferencia | `transfer.confirmed`, `transfer.received`, `transfer.cancelled` | estado, origen, destino, items |
+| Venta (POS) | `sale.cancelled`, `sale.price_overridden` (endpoint de precio y cada linea con otro precio en la venta rapida), `sale.discount_applied` (endpoint y venta rapida con descuento) | estado y total / precio anterior, nuevo y motivo / descuento |
+| Devolucion | `refund.processed` (quien la aprueba), `refund.cancelled` | estado, numero, venta original, total, pagos |
+| Caja | `cash_movement.registered`, `shift.opened`, `shift.closed` | turno, tipo, monto, motivo / fondo inicial / contado, esperado, diferencia |
+| Usuario | `user.created`, `user.role_changed`, `user.branches_changed`, `user.renamed`, `user.activated`, `user.deactivated`, `user.password_reset` | usuario, rol, sucursales, nombre, activo; el restablecimiento de contrasena sin valores |
+| Organizacion | `branch.*`, `emission_point.*`, `pos_terminal.*` (`created`, `updated`, `deleted`) | codigo, nombre, direccion, activo, punto de emision, ubicacion de venta |
+
+**Regla:** toda accion sensible nueva se audita con `AuditTrail.record` y suma su escenario en
+`tests/integration/postgres/test_audit_log.py`, que falla si una accion del catalogo no lo tiene.
