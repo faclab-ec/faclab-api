@@ -13,6 +13,7 @@ from src.auth.domain.events import UserPasswordReset
 from src.auth.domain.exceptions import UserInOtherTenantsError
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
+from tests.audit import FakeAuditTrail
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -52,7 +53,12 @@ def test_admin_reset_password_sets_flag_and_rehashes():
 
     session_repo = MagicMock()
     handler = AdminResetPasswordCommandHandler(
-        repo, session_repo, _memberships(), hasher, publisher
+        repo,
+        session_repo,
+        _memberships(),
+        hasher,
+        publisher,
+        FakeAuditTrail(),
     )
     result = handler.handle(
         AdminResetPasswordCommand(
@@ -82,7 +88,12 @@ def test_admin_reset_password_of_a_user_outside_the_tenant_is_not_found():
     repo = Mock()
 
     handler = AdminResetPasswordCommandHandler(
-        repo, MagicMock(), _memberships(found=False), Mock(), MagicMock()
+        repo,
+        MagicMock(),
+        _memberships(found=False),
+        Mock(),
+        MagicMock(),
+        FakeAuditTrail(),
     )
 
     with pytest.raises(NotFoundError):
@@ -102,7 +113,12 @@ def test_the_password_of_a_user_who_also_works_elsewhere_cannot_be_reset():
     hasher = Mock()
 
     handler = AdminResetPasswordCommandHandler(
-        repo, MagicMock(), _memberships(elsewhere=True), hasher, MagicMock()
+        repo,
+        MagicMock(),
+        _memberships(elsewhere=True),
+        hasher,
+        MagicMock(),
+        FakeAuditTrail(),
     )
 
     with pytest.raises(UserInOtherTenantsError):
@@ -123,7 +139,12 @@ def test_admin_reset_password_rejects_weak_password():
     repo.get_by_id.return_value = _user()
 
     handler = AdminResetPasswordCommandHandler(
-        repo, MagicMock(), _memberships(), Mock(), MagicMock()
+        repo,
+        MagicMock(),
+        _memberships(),
+        Mock(),
+        MagicMock(),
+        FakeAuditTrail(),
     )
 
     with pytest.raises(ValueError):

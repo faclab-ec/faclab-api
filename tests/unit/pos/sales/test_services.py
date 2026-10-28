@@ -23,6 +23,7 @@ from src.sales.domain.exceptions import (
     SaleHasNoItemsError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.audit import FakeAuditTrail
 from tests.unit.pos.terminals import LOCATION_ID, TERMINAL, numbering
 
 
@@ -129,6 +130,7 @@ def _build_cancel_handler(sale=None, items=None, stock=None):
     handler.terminal_repo = MagicMock()
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.event_publisher = MagicMock()
+    handler.audit = FakeAuditTrail()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale

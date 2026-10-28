@@ -31,6 +31,7 @@ from src.inventory.adjustment.domain.entities import (
 )
 from src.inventory.stock.domain.entities import Stock
 from src.shared.domain.exceptions import DomainError, NotFoundError
+from tests.audit import FakeAuditTrail
 
 
 def _make_adjustment(**overrides) -> InventoryAdjustment:
@@ -171,7 +172,12 @@ def _confirm_handler(
 
     movement_handler = MagicMock()
     handler = ConfirmAdjustmentCommandHandler(
-        repo, item_repo, stock_repo, movement_handler, MagicMock()
+        repo,
+        item_repo,
+        stock_repo,
+        movement_handler,
+        MagicMock(),
+        FakeAuditTrail(),
     )
     return handler, item_repo, stock_repo, movement_handler
 
@@ -279,7 +285,12 @@ def test_confirm_adjustment_raises_if_not_found():
     repo.get_by_id.return_value = None
 
     handler = ConfirmAdjustmentCommandHandler(
-        repo, MagicMock(), MagicMock(), MagicMock(), MagicMock()
+        repo,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        FakeAuditTrail(),
     )
 
     with pytest.raises(NotFoundError):
@@ -297,7 +308,7 @@ def test_cancel_adjustment_success():
     repo = MagicMock()
     repo.get_by_id.return_value = adj
     repo.update.return_value = cancelled
-    handler = CancelAdjustmentCommandHandler(repo)
+    handler = CancelAdjustmentCommandHandler(repo, FakeAuditTrail())
 
     result = handler.handle(CancelAdjustmentCommand(id=1))
 
@@ -309,7 +320,7 @@ def test_cancel_confirmed_adjustment_raises():
     adj = _make_adjustment(status=AdjustmentStatus.CONFIRMED)
     repo = MagicMock()
     repo.get_by_id.return_value = adj
-    handler = CancelAdjustmentCommandHandler(repo)
+    handler = CancelAdjustmentCommandHandler(repo, FakeAuditTrail())
 
     with pytest.raises(DomainError):
         handler.handle(CancelAdjustmentCommand(id=1))

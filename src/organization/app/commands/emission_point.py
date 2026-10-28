@@ -4,8 +4,11 @@ from wireup import injectable
 
 from src.organization.app.repositories import EmissionPointRepository
 from src.organization.domain.entities import EmissionPoint
+from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
+
+AUDITED_FIELDS = ("code", "name", "is_active")
 
 
 @dataclass
@@ -23,8 +26,9 @@ class CreateEmissionPointCommandHandler(
     """A branch of another tenant, or none, fails its composite foreign key:
     `REFERENCE_NOT_FOUND`, as for a location's warehouse."""
 
-    def __init__(self, repo: EmissionPointRepository):
+    def __init__(self, repo: EmissionPointRepository, audit: AuditTrail):
         self.repo = repo
+        self.audit = audit
 
     def _handle(self, command: CreateEmissionPointCommand) -> dict:
         point = EmissionPoint(
@@ -34,6 +38,12 @@ class CreateEmissionPointCommandHandler(
             is_active=command.is_active,
         )
         point = self.repo.create(point)
+        self.audit.record(
+            AuditAction.EMISSION_POINT_CREATED,
+            point.require_id(),
+            after=snapshot(point, *AUDITED_FIELDS),
+            branch_id=point.branch_id,
+        )
         return point.dict()
 
 
@@ -51,13 +61,15 @@ class UpdateEmissionPointCommand(Command):
 class UpdateEmissionPointCommandHandler(
     CommandHandler[UpdateEmissionPointCommand, dict]
 ):
-    def __init__(self, repo: EmissionPointRepository):
+    def __init__(self, repo: EmissionPointRepository, audit: AuditTrail):
         self.repo = repo
+        self.audit = audit
 
     def _handle(self, command: UpdateEmissionPointCommand) -> dict:
         point = self.repo.get_by_id(command.emission_point_id)
         if point is None:
             raise NotFoundError(f"Emission point {command.emission_point_id} not found")
+        previous = snapshot(point, *AUDITED_FIELDS)
         point = EmissionPoint(
             id=command.emission_point_id,
             branch_id=point.branch_id,
@@ -66,6 +78,15 @@ class UpdateEmissionPointCommandHandler(
             is_active=command.is_active,
         )
         point = self.repo.update(point)
+        before, after = changed(previous, snapshot(point, *AUDITED_FIELDS))
+        if after:
+            self.audit.record(
+                AuditAction.EMISSION_POINT_UPDATED,
+                command.emission_point_id,
+                before=before,
+                after=after,
+                branch_id=point.branch_id,
+            )
         return point.dict()
 
 
@@ -78,10 +99,18 @@ class DeleteEmissionPointCommand(Command):
 class DeleteEmissionPointCommandHandler(
     CommandHandler[DeleteEmissionPointCommand, None]
 ):
-    def __init__(self, repo: EmissionPointRepository):
+    def __init__(self, repo: EmissionPointRepository, audit: AuditTrail):
         self.repo = repo
+        self.audit = audit
 
     def _handle(self, command: DeleteEmissionPointCommand) -> None:
-        if self.repo.get_by_id(command.emission_point_id) is None:
+        point = self.repo.get_by_id(command.emission_point_id)
+        if point is None:
             raise NotFoundError(f"Emission point {command.emission_point_id} not found")
         self.repo.delete(command.emission_point_id)
+        self.audit.record(
+            AuditAction.EMISSION_POINT_DELETED,
+            command.emission_point_id,
+            before=snapshot(point, *AUDITED_FIELDS),
+            branch_id=point.branch_id,
+        )

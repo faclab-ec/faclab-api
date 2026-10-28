@@ -19,6 +19,7 @@ from src.pos.shift.domain.exceptions import (
     ShiftAlreadyOpenError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.audit import FakeAuditTrail
 from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
 
 _ZERO_SUMMARY = {
@@ -62,7 +63,7 @@ def test_open_shift_command_handler():
     repo.create.side_effect = lambda shift: replace(shift, id=1)
     event_publisher = MagicMock()
     resolver = terminal_resolver()
-    handler = OpenShiftCommandHandler(repo, resolver, event_publisher)
+    handler = OpenShiftCommandHandler(repo, resolver, event_publisher, FakeAuditTrail())
 
     command = OpenShiftCommand(
         terminal=AT_TERMINAL,
@@ -89,7 +90,9 @@ def test_open_shift_publishes_event():
     repo = _mock_repo()
     repo.create.return_value = shift
     event_publisher = MagicMock()
-    handler = OpenShiftCommandHandler(repo, terminal_resolver(), event_publisher)
+    handler = OpenShiftCommandHandler(
+        repo, terminal_resolver(), event_publisher, FakeAuditTrail()
+    )
 
     handler.handle(
         OpenShiftCommand(
@@ -109,7 +112,9 @@ def test_open_shift_fails_if_already_open():
     """Test que falla si la terminal ya tiene un turno abierto"""
     existing_shift = _make_shift()
     repo = _mock_repo(entity=existing_shift)
-    handler = OpenShiftCommandHandler(repo, terminal_resolver(), MagicMock())
+    handler = OpenShiftCommandHandler(
+        repo, terminal_resolver(), MagicMock(), FakeAuditTrail()
+    )
 
     command = OpenShiftCommand(
         terminal=AT_TERMINAL,
@@ -132,7 +137,7 @@ def test_close_shift_command_handler(mock_summary):
     repo = _mock_repo(entity=shift)
     event_publisher = MagicMock()
     session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, event_publisher, session)
+    handler = CloseShiftCommandHandler(repo, event_publisher, session, FakeAuditTrail())
 
     command = CloseShiftCommand(
         shift_id=1,
@@ -158,7 +163,7 @@ def test_close_shift_publishes_event(mock_summary):
     repo = _mock_repo(entity=shift)
     event_publisher = MagicMock()
     session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, event_publisher, session)
+    handler = CloseShiftCommandHandler(repo, event_publisher, session, FakeAuditTrail())
 
     handler.handle(CloseShiftCommand(shift_id=1, closing_balance=Decimal("600.00")))
 
@@ -172,7 +177,7 @@ def test_close_shift_not_found():
     """Test que falla si el turno no existe"""
     repo = _mock_repo()
     session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session)
+    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
 
     command = CloseShiftCommand(shift_id=999, closing_balance=Decimal("500.00"))
 
@@ -187,7 +192,7 @@ def test_close_shift_already_closed(mock_summary):
     shift = _make_shift(status=ShiftStatus.CLOSED)
     repo = _mock_repo(entity=shift)
     session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session)
+    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
 
     command = CloseShiftCommand(shift_id=1, closing_balance=Decimal("500.00"))
 
@@ -202,7 +207,7 @@ def test_close_shift_with_notes(mock_summary):
     shift = _make_shift()
     repo = _mock_repo(entity=shift)
     session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session)
+    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
 
     command = CloseShiftCommand(
         shift_id=1,

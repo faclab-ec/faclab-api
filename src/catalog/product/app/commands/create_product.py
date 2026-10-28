@@ -6,9 +6,20 @@ from wireup import injectable
 from src.catalog.product.app.repositories import ProductRepository
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductCreated
+from src.shared.app.audit import AuditAction, AuditTrail, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.tax import TaxCode
+
+# What the audit log keeps of a product that is created or deleted
+AUDITED_FIELDS = (
+    "sku",
+    "name",
+    "purchase_price",
+    "sale_price",
+    "tax_code",
+    "is_active",
+)
 
 
 @dataclass
@@ -32,9 +43,15 @@ class CreateProductCommand(Command):
 
 @injectable(lifetime="scoped")
 class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
-    def __init__(self, repo: ProductRepository, event_publisher: EventPublisher):
+    def __init__(
+        self,
+        repo: ProductRepository,
+        event_publisher: EventPublisher,
+        audit: AuditTrail,
+    ):
         self.repo = repo
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: CreateProductCommand) -> dict:
         product = Product(
@@ -55,6 +72,11 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
             lead_time_days=command.lead_time_days,
         )
         product = self.repo.create(product)
+        self.audit.record(
+            AuditAction.PRODUCT_CREATED,
+            product.require_id(),
+            after=snapshot(product, *AUDITED_FIELDS),
+        )
 
         self.event_publisher.publish(
             ProductCreated(

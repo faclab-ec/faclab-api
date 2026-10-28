@@ -61,7 +61,9 @@ class MovementRouter:
         automatically; an OUT only takes what the location has available. A
         manual movement has no document (`referenceType`/`referenceId`)."""
         result = handler.handle(
-            CreateMovementCommand(**new_movement.model_dump(exclude_none=True))
+            CreateMovementCommand(
+                **new_movement.model_dump(exclude_none=True), manual=True
+            )
         )
         return DataResponse(data=MovementResponse.model_validate(result), meta=meta)
 

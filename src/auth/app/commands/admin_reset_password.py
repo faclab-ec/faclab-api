@@ -10,6 +10,7 @@ from src.auth.app.services.password_hasher import PasswordHasher
 from src.auth.domain.events import UserPasswordReset
 from src.auth.domain.exceptions import UserInOtherTenantsError
 from src.auth.domain.value_objects import PlainPassword
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.tenancy.app.repositories import MembershipRepository
@@ -38,12 +39,14 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         memberships: MembershipRepository,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.session_repo = session_repo
         self.memberships = memberships
         self.hasher = hasher
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: AdminResetPasswordCommand) -> dict:
         membership = lock_membership(
@@ -60,6 +63,8 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         user = self.repo.update(user)
         # Whoever had the old password is logged out
         self.session_repo.revoke_all_for_user(user.require_id(), datetime.now())
+        # Only the fact: never the password
+        self.audit.record(AuditAction.USER_PASSWORD_RESET, user.require_id())
 
         self.event_publisher.publish(
             UserPasswordReset(

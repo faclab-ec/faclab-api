@@ -13,8 +13,10 @@ from src.auth.domain.exceptions import (
     UsernameAlreadyExistsError,
 )
 from src.auth.domain.value_objects import PlainPassword
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
+from src.shared.domain.tenant import current_tenant
 from src.shared.domain.value_objects import Email
 from src.tenancy.app.repositories import MembershipRepository
 from src.tenancy.domain.entities import Membership
@@ -42,11 +44,13 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
         memberships: MembershipRepository,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.memberships = memberships
         self.hasher = hasher
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: CreateUserCommand) -> dict:
         Email(command.email)
@@ -74,6 +78,20 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
                 active=command.is_active,
             )
         )
+
+        # Provisioning creates a tenant's first admin outside any tenant: a
+        # platform action, logged by its CLI
+        if current_tenant() is not None:
+            self.audit.record(
+                AuditAction.USER_CREATED,
+                user.require_id(),
+                after={
+                    "username": user.username,
+                    "full_name": user.full_name,
+                    "role": membership.role.name,
+                    "active": membership.active,
+                },
+            )
 
         self.event_publisher.publish(
             UserCreated(

@@ -34,6 +34,8 @@ class TenantContext:
     source: TenantSource
     user_id: int | None = None
     branch_id: int | None = None  # Sucursal, desde S2.5
+    # Nombre del actor (nombre completo o usuario) para la bitácora, desde S3.5
+    user_name: str | None = None
 
 
 class TenantContextRequiredError(RuntimeError):

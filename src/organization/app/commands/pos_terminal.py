@@ -14,8 +14,17 @@ from src.organization.domain.exceptions import (
     EmissionPointOutsideBranchError,
     LocationOutsideBranchError,
 )
+from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
+
+AUDITED_FIELDS = (
+    "code",
+    "name",
+    "emission_point_id",
+    "default_location_id",
+    "is_active",
+)
 
 
 @injectable(lifetime="scoped")
@@ -65,9 +74,15 @@ class CreatePosTerminalCommand(Command):
 
 @injectable(lifetime="scoped")
 class CreatePosTerminalCommandHandler(CommandHandler[CreatePosTerminalCommand, dict]):
-    def __init__(self, repo: PosTerminalRepository, placement: TerminalPlacement):
+    def __init__(
+        self,
+        repo: PosTerminalRepository,
+        placement: TerminalPlacement,
+        audit: AuditTrail,
+    ):
         self.repo = repo
         self.placement = placement
+        self.audit = audit
 
     def _handle(self, command: CreatePosTerminalCommand) -> dict:
         self.placement.check(
@@ -82,6 +97,12 @@ class CreatePosTerminalCommandHandler(CommandHandler[CreatePosTerminalCommand, d
             is_active=command.is_active,
         )
         terminal = self.repo.create(terminal)
+        self.audit.record(
+            AuditAction.POS_TERMINAL_CREATED,
+            terminal.require_id(),
+            after=snapshot(terminal, *AUDITED_FIELDS),
+            branch_id=terminal.branch_id,
+        )
         return terminal.dict()
 
 
@@ -99,14 +120,21 @@ class UpdatePosTerminalCommand(Command):
 
 @injectable(lifetime="scoped")
 class UpdatePosTerminalCommandHandler(CommandHandler[UpdatePosTerminalCommand, dict]):
-    def __init__(self, repo: PosTerminalRepository, placement: TerminalPlacement):
+    def __init__(
+        self,
+        repo: PosTerminalRepository,
+        placement: TerminalPlacement,
+        audit: AuditTrail,
+    ):
         self.repo = repo
         self.placement = placement
+        self.audit = audit
 
     def _handle(self, command: UpdatePosTerminalCommand) -> dict:
         terminal = self.repo.get_by_id(command.terminal_id)
         if terminal is None:
             raise NotFoundError(f"POS terminal {command.terminal_id} not found")
+        previous = snapshot(terminal, *AUDITED_FIELDS)
         self.placement.check(
             terminal.branch_id, command.emission_point_id, command.default_location_id
         )
@@ -120,6 +148,15 @@ class UpdatePosTerminalCommandHandler(CommandHandler[UpdatePosTerminalCommand, d
             is_active=command.is_active,
         )
         terminal = self.repo.update(terminal)
+        before, after = changed(previous, snapshot(terminal, *AUDITED_FIELDS))
+        if after:
+            self.audit.record(
+                AuditAction.POS_TERMINAL_UPDATED,
+                command.terminal_id,
+                before=before,
+                after=after,
+                branch_id=terminal.branch_id,
+            )
         return terminal.dict()
 
 
@@ -130,10 +167,18 @@ class DeletePosTerminalCommand(Command):
 
 @injectable(lifetime="scoped")
 class DeletePosTerminalCommandHandler(CommandHandler[DeletePosTerminalCommand, None]):
-    def __init__(self, repo: PosTerminalRepository):
+    def __init__(self, repo: PosTerminalRepository, audit: AuditTrail):
         self.repo = repo
+        self.audit = audit
 
     def _handle(self, command: DeletePosTerminalCommand) -> None:
-        if self.repo.get_by_id(command.terminal_id) is None:
+        terminal = self.repo.get_by_id(command.terminal_id)
+        if terminal is None:
             raise NotFoundError(f"POS terminal {command.terminal_id} not found")
         self.repo.delete(command.terminal_id)
+        self.audit.record(
+            AuditAction.POS_TERMINAL_DELETED,
+            command.terminal_id,
+            before=snapshot(terminal, *AUDITED_FIELDS),
+            branch_id=terminal.branch_id,
+        )

@@ -7,6 +7,7 @@ from wireup import injectable
 from src.auth.app.commands.last_admin import ensure_not_last_admin
 from src.auth.app.commands.members import get_user, lock_membership, member_dict
 from src.auth.app.repositories import AuthSessionRepository, UserRepository
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.tenancy.app.repositories import MembershipRepository
 
@@ -27,10 +28,12 @@ class DeactivateUserCommandHandler(CommandHandler[DeactivateUserCommand, dict]):
         repo: UserRepository,
         session_repo: AuthSessionRepository,
         memberships: MembershipRepository,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.session_repo = session_repo
         self.memberships = memberships
+        self.audit = audit
 
     def _handle(self, command: DeactivateUserCommand) -> dict:
         membership = lock_membership(
@@ -39,8 +42,15 @@ class DeactivateUserCommandHandler(CommandHandler[DeactivateUserCommand, dict]):
         user = get_user(self.repo, command.user_id)
 
         ensure_not_last_admin(user, membership, self.memberships)
+        before = {"active": membership.active}
         membership.deactivate()
         membership = self.memberships.update(membership)
+        self.audit.record(
+            AuditAction.USER_DEACTIVATED,
+            command.user_id,
+            before=before,
+            after={"active": membership.active},
+        )
         # Its refresh tokens in this tenant stop working now, not when they expire
         self.session_repo.revoke_all_for_user(
             user.require_id(), datetime.now(), tenant_id=command.tenant_id

@@ -15,6 +15,7 @@ from src.pos.refund.domain.entities import RefundPayment
 from src.pos.refund.domain.events import RefundCompleted
 from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import PaymentMethod
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -38,6 +39,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         terminal_repo: PosTerminalRepository,
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
@@ -46,6 +48,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         self.terminal_repo = terminal_repo
         self.numbering = numbering
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: ProcessRefundCommand) -> dict:
         refund = self.refund_repo.get_by_id(command.refund_id)
@@ -53,6 +56,7 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
             raise NotFoundError(f"Refund with id {command.refund_id} not found")
 
         refund.ensure_pending("complete")
+        before_status = refund.status
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
@@ -106,6 +110,23 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         )
         refund.complete(number)
         self.refund_repo.update(refund)
+        # Who approved it: the refund only keeps who asked for it
+        self.audit.record(
+            AuditAction.REFUND_PROCESSED,
+            refund.require_id(),
+            before={"status": before_status},
+            after={
+                "status": refund.status,
+                "number": refund.number,
+                "original_sale_id": refund.original_sale_id,
+                "total": refund.total,
+                "payments": [
+                    {"payment_method": p.payment_method, "amount": p.amount}
+                    for p in created_payments
+                ],
+            },
+            branch_id=refund.branch_id,
+        )
 
         items_data = [
             {

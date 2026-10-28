@@ -75,3 +75,9 @@ def test_the_back_office_reads_the_structure_and_the_cashier_does_not():
     readers = {r for r in Role if Permission.ORGANIZATION_READ in permissions_for(r)}
 
     assert readers == {Role.ADMIN, Role.MANAGER, Role.OPERATOR, Role.VIEWER}
+
+
+def test_only_the_admin_reads_the_audit_log():
+    for role in Role:
+        perms = permissions_for(role)
+        assert (Permission.AUDIT_READ in perms) == (role == Role.ADMIN)

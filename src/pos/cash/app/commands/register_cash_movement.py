@@ -11,6 +11,7 @@ from src.pos.cash.domain.exceptions import (
 )
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.entities import ShiftStatus
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
 
@@ -32,9 +33,11 @@ class RegisterCashMovementCommandHandler(
         self,
         cash_repo: CashMovementRepository,
         shift_repo: ShiftRepository,
+        audit: AuditTrail,
     ):
         self.cash_repo = cash_repo
         self.shift_repo = shift_repo
+        self.audit = audit
 
     def _handle(self, command: RegisterCashMovementCommand) -> dict:
         if command.amount <= 0:
@@ -56,4 +59,15 @@ class RegisterCashMovementCommandHandler(
         )
 
         created = self.cash_repo.create(movement)
+        self.audit.record(
+            AuditAction.CASH_MOVEMENT_REGISTERED,
+            created.require_id(),
+            after={
+                "shift_id": created.shift_id,
+                "type": created.type,
+                "amount": created.amount,
+                "reason": created.reason,
+            },
+            branch_id=shift.branch_id,
+        )
         return created.dict()

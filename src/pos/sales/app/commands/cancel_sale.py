@@ -7,6 +7,7 @@ from src.pos.terminal.app.stock import TerminalStock
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import Sale, SaleStatus
 from src.sales.domain.events import SaleCancelled
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -27,18 +28,21 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
         stock: TerminalStock,
         terminal_repo: PosTerminalRepository,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.stock = stock
         self.terminal_repo = terminal_repo
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: POSCancelSaleCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
+        before = {"status": sale.status, "total": sale.total}
         was_confirmed = sale.status == SaleStatus.CONFIRMED
         items_data = []
 
@@ -63,6 +67,13 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
             sale.cancel()
             self.sale_repo.update(sale)
 
+        self.audit.record(
+            AuditAction.SALE_CANCELLED,
+            sale.require_id(),
+            before=before,
+            after={"status": sale.status, "reason": command.reason},
+            branch_id=sale.branch_id,
+        )
         self.event_publisher.publish(
             SaleCancelled(
                 aggregate_id=sale.require_id(),

@@ -12,6 +12,7 @@ from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError, SaleItemNotInSaleError
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.audit import FakeAuditTrail
 
 
 def _make_sale(**overrides) -> Sale:
@@ -45,6 +46,7 @@ def _build_handler(sale=None, item=None, items=None):
     handler = OverrideItemPriceCommandHandler.__new__(OverrideItemPriceCommandHandler)
     handler.sale_repo = MagicMock()
     handler.sale_item_repo = MagicMock()
+    handler.audit = FakeAuditTrail()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale

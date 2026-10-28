@@ -18,6 +18,7 @@ from src.inventory.stock.infra.event_handlers import handle_movement_created
 from src.sales.domain.events import SaleCancelled, SaleConfirmed
 from src.shared.infra.events.event_bus import EventBus
 from src.shared.infra.events.event_bus_publisher import EventBusPublisher
+from tests.audit import FakeAuditTrail
 
 
 @pytest.fixture(autouse=True)
@@ -82,7 +83,10 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
 
     # Create command handler
     handler = CreateMovementCommandHandler(
-        mock_movement_repo, EventBusPublisher(), Mock()
+        mock_movement_repo,
+        EventBusPublisher(),
+        Mock(),
+        FakeAuditTrail(),
     )
     command = CreateMovementCommand(
         product_id=10,
@@ -366,7 +370,10 @@ def test_multiple_movements_accumulate_stock(mock_stock_scope):
     mock_stock_scope.return_value.__enter__.return_value = mock_scope
 
     handler = CreateMovementCommandHandler(
-        mock_movement_repo, EventBusPublisher(), Mock()
+        mock_movement_repo,
+        EventBusPublisher(),
+        Mock(),
+        FakeAuditTrail(),
     )
 
     # Movement 1: +10

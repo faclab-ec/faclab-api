@@ -443,6 +443,7 @@ ROUTES: dict[str, Route] = {
     f"POST {ADMIN}/sales/{{sale_id}}/request-invoice": Route(path=("sale",)),
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
+    f"GET {ADMIN}/audit-log": Route(),
     f"POST {ADMIN}/users": Route(
         body=lambda ids: {
             "username": f"{ids['marker'].lower()}-new",

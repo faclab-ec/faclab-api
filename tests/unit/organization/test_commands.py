@@ -33,6 +33,7 @@ from src.organization.domain.exceptions import (
     MainBranchDeletionError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.audit import FakeAuditTrail
 
 # --- Helpers ---
 
@@ -43,11 +44,16 @@ def _branch(**overrides) -> Branch:
     return Branch(**defaults)
 
 
+def _persisted(entity):
+    entity.id = entity.id or 1
+    return entity
+
+
 def _echo_repo(existing=None) -> Mock:
     """A repository that returns what it is given"""
     repo = Mock()
     repo.get_by_id.return_value = existing
-    repo.create.side_effect = lambda entity: entity
+    repo.create.side_effect = _persisted
     repo.update.side_effect = lambda entity: entity
     return repo
 
@@ -78,7 +84,7 @@ def _placement(
 
 
 def _create_terminal(placement: TerminalPlacement) -> dict:
-    handler = CreatePosTerminalCommandHandler(_echo_repo(), placement)
+    handler = CreatePosTerminalCommandHandler(_echo_repo(), placement, FakeAuditTrail())
     return handler.handle(
         CreatePosTerminalCommand(
             branch_id=1,
@@ -96,7 +102,7 @@ def _create_terminal(placement: TerminalPlacement) -> dict:
 def test_a_new_branch_is_never_the_main_one():
     repo = _echo_repo()
 
-    result = CreateBranchCommandHandler(repo).handle(
+    result = CreateBranchCommandHandler(repo, FakeAuditTrail()).handle(
         CreateBranchCommand(establishment_code="002", name="Guayaquil")
     )
 
@@ -107,7 +113,7 @@ def test_a_new_branch_is_never_the_main_one():
 def test_updating_a_branch_keeps_whether_it_is_the_main_one():
     repo = _echo_repo(existing=_branch(is_main=True))
 
-    result = UpdateBranchCommandHandler(repo).handle(
+    result = UpdateBranchCommandHandler(repo, FakeAuditTrail()).handle(
         UpdateBranchCommand(branch_id=1, establishment_code="001", name="Quito")
     )
 
@@ -116,7 +122,7 @@ def test_updating_a_branch_keeps_whether_it_is_the_main_one():
 
 def test_updating_a_missing_branch_raises():
     with pytest.raises(NotFoundError):
-        UpdateBranchCommandHandler(_echo_repo()).handle(
+        UpdateBranchCommandHandler(_echo_repo(), FakeAuditTrail()).handle(
             UpdateBranchCommand(branch_id=9, establishment_code="001", name="X")
         )
 
@@ -125,14 +131,18 @@ def test_the_main_branch_cant_be_deleted():
     repo = _echo_repo(existing=_branch(is_main=True))
 
     with pytest.raises(MainBranchDeletionError):
-        DeleteBranchCommandHandler(repo).handle(DeleteBranchCommand(branch_id=1))
+        DeleteBranchCommandHandler(repo, FakeAuditTrail()).handle(
+            DeleteBranchCommand(branch_id=1)
+        )
     repo.delete.assert_not_called()
 
 
 def test_another_branch_is_deleted():
     repo = _echo_repo(existing=_branch(id=2, establishment_code="002"))
 
-    DeleteBranchCommandHandler(repo).handle(DeleteBranchCommand(branch_id=2))
+    DeleteBranchCommandHandler(repo, FakeAuditTrail()).handle(
+        DeleteBranchCommand(branch_id=2)
+    )
 
     repo.delete.assert_called_once_with(2)
 
@@ -143,7 +153,7 @@ def test_another_branch_is_deleted():
 def test_updating_an_emission_point_keeps_its_branch():
     repo = _echo_repo(existing=EmissionPoint(id=10, branch_id=4, code="001"))
 
-    result = UpdateEmissionPointCommandHandler(repo).handle(
+    result = UpdateEmissionPointCommandHandler(repo, FakeAuditTrail()).handle(
         UpdateEmissionPointCommand(emission_point_id=10, code="002", name="Caja")
     )
 
@@ -187,7 +197,9 @@ def test_updating_a_terminal_checks_against_its_own_branch():
         name="Caja 1",
     )
     handler = UpdatePosTerminalCommandHandler(
-        _echo_repo(existing=existing), _placement(warehouse_branch=2)
+        _echo_repo(existing=existing),
+        _placement(warehouse_branch=2),
+        FakeAuditTrail(),
     )
 
     with pytest.raises(LocationOutsideBranchError):
