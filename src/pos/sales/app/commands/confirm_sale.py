@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.organization.app.numbering import DocumentNumbering
@@ -38,6 +39,7 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         payment_repo: PaymentRepository,
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
+        session: Session,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -47,6 +49,7 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         self.payment_repo = payment_repo
         self.numbering = numbering
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: POSConfirmSaleCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -111,7 +114,9 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
                 branch_id=sale.branch_id,
                 emission_point_id=sale.emission_point_id,
                 number=sale.number,
-            )
+            ),
+            # Its sales.confirmed message goes to the outbox in this transaction
+            session=self.session,
         )
 
         return sale.dict()

@@ -126,6 +126,7 @@ def _build_handler(
         terminals=terminal_resolver(),
         numbering=numbering(),
         event_publisher=event_publisher or MagicMock(),
+        session=MagicMock(),
     )
 
 

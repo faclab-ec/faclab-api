@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.app.repositories import ProductRepository
@@ -52,6 +53,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         terminals: TerminalResolver,
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
+        session: Session,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -62,6 +64,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         self.terminals = terminals
         self.numbering = numbering
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: QuickSaleCommand) -> dict:
         # 1. Obtener el turno abierto de la terminal
@@ -174,7 +177,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 branch_id=sale.branch_id,
                 emission_point_id=sale.emission_point_id,
                 number=sale.number,
-            )
+            ),
+            # Its sales.confirmed message goes to the outbox in this transaction
+            session=self.session,
         )
 
         # 11. Retornar venta completa

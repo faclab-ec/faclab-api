@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.sales.app.repositories import (
@@ -46,11 +47,13 @@ class RequestSaleInvoicingCommandHandler(
         sale_item_repo: SaleItemRepository,
         payment_repo: PaymentRepository,
         event_publisher: EventPublisher,
+        session: Session,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.payment_repo = payment_repo
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: RequestSaleInvoicingCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -87,6 +90,8 @@ class RequestSaleInvoicingCommandHandler(
                 branch_id=sale.branch_id,
                 emission_point_id=sale.emission_point_id,
                 number=sale.number,
-            )
+            ),
+            # The message goes to the outbox in this transaction
+            session=self.session,
         )
         return sale.dict()

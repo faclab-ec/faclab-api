@@ -47,7 +47,7 @@ def _handler(
     )
     publisher = MagicMock()
     handler = RequestSaleInvoicingCommandHandler(
-        sale_repo, item_repo, payment_repo, publisher
+        sale_repo, item_repo, payment_repo, publisher, MagicMock()
     )
     return handler, publisher
 

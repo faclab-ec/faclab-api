@@ -101,6 +101,7 @@ def test_confirm_sale_with_open_shift():
         _paid_in_full(),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     result = handler.handle(POSConfirmSaleCommand(sale_id=1))
@@ -130,6 +131,7 @@ def test_confirm_sale_shift_closed_raises_error():
         _mock_repo(entities=[]),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     with pytest.raises(NoOpenShiftError):
@@ -158,6 +160,7 @@ def test_confirm_sale_no_shift_linked():
         _paid_in_full(),
         numbering(),
         event_publisher,
+        MagicMock(),
     )
 
     result = handler.handle(POSConfirmSaleCommand(sale_id=1))

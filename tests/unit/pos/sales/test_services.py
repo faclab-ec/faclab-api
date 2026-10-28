@@ -100,6 +100,7 @@ def _build_confirm_handler(sale=None, items=None, stock=None, payments=None):
         [_make_payment()] if payments is None else payments
     )
     handler.event_publisher = MagicMock()
+    handler.session = MagicMock()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale
