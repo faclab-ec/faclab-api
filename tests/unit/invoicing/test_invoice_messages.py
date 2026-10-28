@@ -72,10 +72,34 @@ def test_a_message_without_a_tenant_is_dropped(command_handler, scope_tenants):
 
 
 def test_rejected_invoice_stops_being_pending(command_handler, message_tenant):
-    handle_invoice_message(_message(type="InvoiceRejected", status="rejected"))
+    handle_invoice_message(
+        _message(
+            type="InvoiceRejected",
+            status="rejected",
+            reason="ERROR SECUENCIAL REGISTRADO",
+        )
+    )
 
     command_handler.handle.assert_called_once_with(
-        RejectSaleInvoiceCommand(sale_id=42, invoice_id="inv-1")
+        RejectSaleInvoiceCommand(
+            sale_id=42, invoice_id="inv-1", reason="ERROR SECUENCIAL REGISTRADO"
+        )
+    )
+
+
+@pytest.mark.parametrize("reason", [None, 7])
+def test_a_rejection_without_a_readable_reason_still_applies(
+    command_handler, message_tenant, reason
+):
+    """Messages from before S3.4 carry no reason"""
+    message = _message(type="InvoiceRejected", status="rejected")
+    if reason is not None:
+        message["reason"] = reason
+
+    handle_invoice_message(message)
+
+    command_handler.handle.assert_called_once_with(
+        RejectSaleInvoiceCommand(sale_id=42, invoice_id="inv-1", reason=None)
     )
 
 

@@ -119,4 +119,5 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             session=self.session,
         )
 
-        return sale.dict()
+        # Invoicing's handler marked its invoice as pending
+        return (self.sale_repo.get_by_id(sale.require_id()) or sale).dict()

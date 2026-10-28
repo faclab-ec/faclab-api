@@ -13,6 +13,8 @@ class RejectSaleInvoiceCommand(Command):
 
     sale_id: int
     invoice_id: str
+    # The SRI's messages, when faclab-invoicing sends them (`reason`)
+    reason: str | None = None
 
 
 @injectable(lifetime="scoped")
@@ -21,7 +23,7 @@ class RejectSaleInvoiceCommandHandler(CommandHandler[RejectSaleInvoiceCommand, d
 
     Con la factura rechazada la venta se puede reenviar o cancelar. Los
     mensajes de Kafka pueden llegar más de una vez: si la factura no está
-    pendiente no hace nada.
+    pendiente, o el rechazo es de la factura que ya se rechazó, no hace nada.
     """
 
     def __init__(self, sale_repo: SaleRepository):
@@ -32,6 +34,6 @@ class RejectSaleInvoiceCommandHandler(CommandHandler[RejectSaleInvoiceCommand, d
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
-        if sale.reject_invoice():
+        if sale.reject_invoice(command.invoice_id, command.reason):
             self.sale_repo.update(sale)
         return sale.dict()

@@ -231,6 +231,8 @@ class TestQuickSaleHappyPath:
         sale_repo = _mock_repo()
         sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
         sale_repo.update.side_effect = lambda sale: sale
+        # Read back after the event, as the real repository does
+        sale_repo.get_by_id.side_effect = lambda _id: sale_repo.update.call_args.args[0]
         shift_repo = _mock_repo(entity=_make_shift())
         stock_repo = _mock_repo(entity=_make_stock(quantity=100))
         movement_repo = _mock_repo()
@@ -285,6 +287,7 @@ class TestQuickSaleHappyPath:
         sale_repo = _mock_repo()
         # Like the real repository: persist what the handler built and assign an id
         sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
+        sale_repo.get_by_id.side_effect = lambda _id: sale_repo.update.call_args.args[0]
         event_publisher = MagicMock()
         handler = _build_handler(
             sale_repo=sale_repo,

@@ -52,9 +52,22 @@ def test_core_acts_only_on_the_sris_answer(command_handler, name):
     if message["type"] == "InvoiceAuthorized":
         command_handler.handle.assert_called_once_with(InvoiceSaleCommand(**ids))
     elif message["type"] == "InvoiceRejected":
-        command_handler.handle.assert_called_once_with(RejectSaleInvoiceCommand(**ids))
+        # With the SRI's reason (S3.4), which the sale shows
+        command_handler.handle.assert_called_once_with(
+            RejectSaleInvoiceCommand(**ids, reason=message["reason"])
+        )
     else:
         command_handler.handle.assert_not_called()
+
+
+def test_the_reason_is_optional():
+    """Messages from before S3.4 carry none"""
+    message = dict(EXAMPLES["invoice-rejected"])
+    del message["reason"]
+
+    assert errors(SCHEMA, message) == []
+    assert errors(SCHEMA, {**message, "reason": None}) == []
+    assert errors(SCHEMA, {**message, "reason": 45}) != []
 
 
 def test_a_message_from_before_v1_is_handled_as_v1(command_handler):

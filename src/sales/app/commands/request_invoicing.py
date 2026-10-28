@@ -94,4 +94,5 @@ class RequestSaleInvoicingCommandHandler(
             # The message goes to the outbox in this transaction
             session=self.session,
         )
-        return sale.dict()
+        # Invoicing's handler marked its invoice as pending again
+        return (self.sale_repo.get_by_id(sale_id) or sale).dict()

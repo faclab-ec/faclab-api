@@ -228,12 +228,62 @@ def test_a_draft_does_not_await_an_invoice():
         Sale(customer_id=1, status=SaleStatus.DRAFT).await_invoice()
 
 
-def test_invoicing_the_sale_clears_its_pending_invoice():
+def test_invoicing_the_sale_authorizes_its_invoice():
     sale = Sale(
         customer_id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING
     )
-    sale.invoice()
-    assert (sale.status, sale.invoice_status) == (SaleStatus.INVOICED, None)
+    sale.invoice("inv-1")
+    assert (sale.status, sale.invoice_status, sale.invoice_id) == (
+        SaleStatus.INVOICED,
+        InvoiceStatus.AUTHORIZED,
+        "inv-1",
+    )
+
+
+def test_a_rejected_invoice_keeps_its_id_and_reason():
+    sale = Sale(
+        customer_id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING
+    )
+
+    assert sale.reject_invoice("inv-1", "ERROR SECUENCIAL REGISTRADO") is True
+
+    assert (sale.invoice_status, sale.invoice_id, sale.invoice_rejection_reason) == (
+        InvoiceStatus.REJECTED,
+        "inv-1",
+        "ERROR SECUENCIAL REGISTRADO",
+    )
+
+
+def test_a_resend_clears_the_reason_and_ignores_the_old_rejection_again():
+    sale = Sale(
+        customer_id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING
+    )
+    sale.reject_invoice("inv-1", "ERROR SECUENCIAL REGISTRADO")
+
+    sale.await_invoice()
+    assert (sale.invoice_status, sale.invoice_rejection_reason) == (
+        InvoiceStatus.PENDING,
+        None,
+    )
+    # The rejection of inv-1 delivered again doesn't undo the resend
+    assert sale.reject_invoice("inv-1", "ERROR SECUENCIAL REGISTRADO") is False
+    assert sale.invoice_status == InvoiceStatus.PENDING
+    # The new invoice can be rejected too
+    assert sale.reject_invoice("inv-2", "OTRO ERROR") is True
+    assert (sale.invoice_id, sale.invoice_rejection_reason) == ("inv-2", "OTRO ERROR")
+
+
+def test_an_authorized_invoice_clears_the_last_rejection():
+    sale = Sale(
+        customer_id=1,
+        status=SaleStatus.CONFIRMED,
+        invoice_status=InvoiceStatus.PENDING,
+        invoice_id="inv-1",
+    )
+
+    sale.invoice("inv-2")
+
+    assert (sale.invoice_id, sale.invoice_rejection_reason) == ("inv-2", None)
 
 
 def test_sale_invoice_only_confirmed():

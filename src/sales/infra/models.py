@@ -89,6 +89,8 @@ class SaleModel(TenantScoped, Base):
     # PENDING while faclab-invoicing has the invoice, REJECTED after the SRI
     # rejects it; null if it was never sent
     invoice_status: Mapped[str | None] = mapped_column(String(16))
+    invoice_id: Mapped[str | None] = mapped_column(String(64))
+    invoice_rejection_reason: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
