@@ -1,6 +1,7 @@
 # ADR-0012: Numeración de documentos internos y tributarios
 
-- **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes desde S2.8)
+- **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes desde S2.8,
+  órdenes de compra desde S3.3)
 - **Relacionado:** [ADR-0004](0004-persistencia-de-facturacion-en-postgresql.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -46,8 +47,8 @@
   final el contador, así dos ventas de productos distintos solo se esperan en el número y no hay
   ciclos entre ventas y devoluciones.
 - El formato es fijo por ahora; el formato configurable por empresa y la numeración de cotizaciones,
-  órdenes de compra, ajustes, transferencias y cierres quedan para sus sesiones (anotado en
-  ROADMAP.md).
+  ajustes, transferencias y cierres quedan para sus sesiones (anotado en ROADMAP.md). Las órdenes de
+  compra se numeran desde S3.3 (abajo).
 
 ### Precisiones de la implementación (S2.8, comprobantes)
 
@@ -64,6 +65,20 @@
   (`SALE_WITHOUT_EMISSION_POINT`).
 - Bloquear el cambio del código de establecimiento o de punto de emisión cuando ya hay comprobantes
   sigue pendiente (ROADMAP.md).
+
+### Precisiones de la implementación (S3.3, órdenes de compra)
+
+- La orden de compra no tiene sucursal: usa el contador de la empresa, una fila de
+  `document_sequences` con `branch_id` nulo y `doc_type = PURCHASE_ORDER`. Como los NULL nunca chocan
+  en `uq_document_sequences_tenant_branch_doc_type`, el índice único parcial
+  `uq_document_sequences_tenant_doc_type (tenant_id, doc_type) WHERE branch_id IS NULL` deja uno por
+  tipo, y el upsert usa ese índice como destino del conflicto (`index_where`, en PostgreSQL y SQLite).
+- `DocumentNumbering.next_in_tenant(doc_type, year)` lo formatea `PO-2026-0001`
+  (`tenant_document_number`). El correlativo es continuo, por decisión del usuario: no vuelve a 1 cada
+  año y el año solo dice cuándo se creó. La migración `b0f0ab0bf0e3` arrancó el contador de cada empresa
+  en el mayor secuencial de sus órdenes, así que ningún número se repite.
+- El número se asigna al crear la orden (borrador), como antes: un borrador eliminado consume el suyo.
+- Desde purchasing se usa `DocumentNumbering` de organization, igual que en el POS.
 
 ## Consecuencias
 

@@ -121,9 +121,10 @@
   creación. La purga de claves vencidas es un CLI (`make purge-idempotency-keys`) hasta el worker de
   S3.4.
 - **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
-  del POS con formato fijo (`V-001-000123`). Faltan el formato configurable por empresa (ADR-0012) y
-  pasar a la misma tabla las órdenes de compra (G-33, S3.3), los ajustes, las transferencias, las
-  cotizaciones (S5.4) y el cierre de caja (S5.9).
+  del POS por sucursal (`V-001-000123`) y, desde S3.3, las órdenes de compra con el contador de la
+  empresa (`branch_id` nulo, `PO-2026-0001`, continuo). Faltan el formato configurable por empresa
+  (ADR-0012) y pasar a la misma tabla los ajustes, las transferencias, las cotizaciones (S5.4) y el
+  cierre de caja (S5.9).
 - **Turno en una terminal desactivada** (detectado en S2.6). Desactivar una terminal con un turno
   abierto hace que `GET /api/pos/shifts/active` responda `POS_TERMINAL_INACTIVE`; el turno se sigue
   cerrando por id (`POST /api/pos/shifts/{id}/close`). Conviene impedir desactivar una terminal con
@@ -163,7 +164,22 @@
   administración del POS todavía no ofrecen esos filtros ni muestran la caja de cada turno.
 - **Devolución por número de venta** (detectado en S2.9). El recibo y las listas muestran el número de
   la sucursal (`V-001-000123`), pero el diálogo de devolución del POS busca la venta por su id interno:
-  falta buscarla por número en el core y en la web (encaja con S3.3 o S4.5).
+  falta buscarla por número en el core y en la web (encaja con S4.5; S3.3 no lo tocó).
+- **Publicadores sin la sesión de la petición** (detectado en S3.3). Un handler de eventos corre en
+  la transacción de la petición solo si quien publica pasa `session=self.session`; si no, abre su
+  propio scope y confirma aparte. Desde S3.3 lo pasan todos los publicadores de eventos con
+  suscriptores que escriben (movimientos, recepciones, confirmación y venta rápida del POS, reenvío a
+  facturación). Antes, el mensaje `sales.confirmed` de las ventas del POS se guardaba en otra
+  transacción. Para que no se repita con un suscriptor nuevo, conviene que `EventBusPublisher` tome la
+  sesión de la petición por defecto (scoped) en lugar de depender de cada publicador.
+- **Pagos de devolución por encima del total** (detectado en S3.3). `ProcessRefundCommandHandler`
+  solo exige que los pagos cubran la devolución: lo que la supera se guarda como pagado y cuenta en
+  `cashRefunds`. Conviene aplicarles la misma regla que a los pagos de venta (sin vuelto, o con él
+  aparte); encaja con S4.5 o S5.9.
+- **Ventas confirmadas antes de S3.3 sin cobertura** (detectado en S3.3). Al reenviarlas a facturación
+  responden `INSUFFICIENT_PAYMENT`: hay que registrar el pago que falta antes del reenvío. En la base
+  de desarrollo hay 3 (datos del seed). Su `invoice_status` es nulo, así que también se pueden cancelar
+  aunque se hayan enviado a facturación.
 - **Sesión con sucursales viejas** (detectado en S2.9). Un cambio de accesos rige desde el próximo
   refresh y `/me` se relee cada 5 minutos: entre tanto la web puede ofrecer una sucursal que el token
   ya no acepta (`BRANCH_ACCESS_DENIED`, que reintenta una vez con un token nuevo). Conviene releer `/me`

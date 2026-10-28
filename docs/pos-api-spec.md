@@ -189,7 +189,9 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 |-------|------|-------------|
 | id | int | ID |
 | saleId | int | Venta |
-| amount | decimal | Monto (>0) |
+| amount | decimal | Aplicado a la venta: lo entregado menos el vuelto |
+| amountTendered | decimal | Lo que entregó el cliente (>0), al centavo |
+| change | decimal | Vuelto; solo en efectivo |
 | paymentMethod | enum | `CASH` \| `CREDIT_CARD` \| `DEBIT_CARD` \| `TRANSFER` \| `OTHER` |
 | paymentDate | datetime | Fecha auto-generada |
 | reference | string? | Referencia de pago |
@@ -251,7 +253,10 @@ Validaciones:
 - Productos deben existir
 - Stock suficiente para cada item en la ubicación de la terminal (lo de otras ubicaciones no cuenta)
 - Descuento global válido (PERCENTAGE: 0-100; AMOUNT: ≥0)
-- Total de pagos ≥ total de venta, comparados al centavo
+- Cada `amount` es lo que entrega el cliente. Los pagos, en orden, toman lo que falta del total y el
+  resto de uno en efectivo es el vuelto (`amountTendered`, `change`); deben cubrir el total
+  (`INSUFFICIENT_PAYMENT`) y otro medio de pago no puede pasarse de lo que falta
+  (`PAYMENT_EXCEEDS_BALANCE`). Se valida antes de tocar el stock
 - `customerId=null` → `isFinalConsumer=true` automáticamente
 - Un `unitPrice` distinto del precio del producto es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
 
@@ -285,11 +290,15 @@ Validaciones:
 
 - Venta debe tener items
 - Turno asociado debe estar OPEN
+- Los pagos cubren el total (`INSUFFICIENT_PAYMENT`): se vuelven a aplicar, en el orden en que se
+  registraron, al total final, porque los ítems pueden haber cambiado después de cobrar; el vuelto de un
+  pago en efectivo se recalcula y otro medio que ahora se pasa del total responde
+  `PAYMENT_EXCEEDS_BALANCE`. Se valida antes de tocar el stock
 - Stock suficiente para cada item en la ubicación de la terminal
 
 Efectos:
 
-- Status → CONFIRMED, con el siguiente número de la sucursal (`number`)
+- Status → CONFIRMED y `paymentStatus` → PAID, con el siguiente número de la sucursal (`number`)
 - Crea Movement(OUT) por cada item en la ubicación de la terminal (`referenceType: "sale"`) → Stock decrementado
 - Si algo falla no se consume número: el contador está en la misma transacción
 
@@ -301,6 +310,10 @@ Efectos:
 // Si la venta estaba CONFIRMED: restaura inventario (Movement IN) en la ubicación de donde salió,
 // aunque la terminal venda ahora desde otra. Conserva su número
 ```
+
+- Una venta CONFIRMED cuya factura espera al SRI (su mensaje a facturación ya salió) no se cancela:
+  `INVOICE_IN_PROGRESS`. Con la factura rechazada sí.
+- Una venta INVOICED no se cancela: `CREDIT_NOTE_REQUIRED` (se anula con nota de crédito, S4.5).
 
 **POST `/sales/{saleId}/park`** — Estacionar venta (pausar)
 
@@ -327,8 +340,13 @@ Efectos:
 
 ```json
 { "amount": 50.00, "paymentMethod": "CASH", "reference": null, "notes": null }
-// Response 201
+// amount: lo que entrega el cliente. Se aplica lo que falta pagar; el resto en efectivo es vuelto
+// Response 201 — { ..., "amount": 34.50, "amountTendered": 50.00, "change": 15.50 }
 ```
+
+- Una venta CANCELLED o INVOICED no recibe pagos: `SALE_NOT_PAYABLE`.
+- Otro medio que no sea efectivo no puede pasarse de lo que falta, y un pago con la venta ya cubierta
+  sobra: `PAYMENT_EXCEEDS_BALANCE`.
 
 **GET `/sales/{saleId}/payments`** — Listar pagos
 
@@ -378,9 +396,9 @@ Efectos:
     "tax": 3.15,
     "total": 24.15,
     "payments": [
-      { "method": "CASH", "amount": 25.00, "reference": null }
+      { "method": "CASH", "amount": 24.15, "amountTendered": 25.00, "change": 0.85, "reference": null }
     ],
-    "totalPaid": 25.00,
+    "totalPaid": 24.15,
     "change": 0.85
   }
 }
@@ -548,6 +566,9 @@ Efectos:
 
 Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn - cashOut`
 
+`cashSales` suma lo aplicado por los pagos en efectivo, sin el vuelto que se devolvió (S3.3): es lo que
+quedó en la caja. Los reportes X, Z, diario y por medio de pago suman lo mismo.
+
 ---
 
 ## 5. REPORTES
@@ -662,6 +683,11 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 | `SHIFT_ALREADY_CLOSED` | 400 | El turno ya está cerrado |
 | `NO_OPEN_SHIFT` | 400 | No hay turno activo |
 | `SALE_HAS_NO_ITEMS` | 400 | Venta sin items al confirmar |
+| `INSUFFICIENT_PAYMENT` | 400 | Los pagos no cubren el total al confirmar (también en la venta rápida) |
+| `PAYMENT_EXCEEDS_BALANCE` | 400 | Un pago que no es en efectivo se pasa de lo que falta, o la venta ya está cubierta |
+| `SALE_NOT_PAYABLE` | 400 | Pago en una venta cancelada o facturada |
+| `INVOICE_IN_PROGRESS` | 400 | Cancelar una venta cuya factura espera al SRI |
+| `CREDIT_NOTE_REQUIRED` | 400 | Cancelar una venta facturada: se anula con nota de crédito |
 | `INSUFFICIENT_STOCK` | 400 | La ubicación de la terminal no tiene disponible (sin lo reservado por transferencias) la suma de las líneas de un producto; `detail` dice `requested` y `available` |
 | `INVALID_REFUND_STATUS` | 400 | Estado inválido para la operación |
 | `EXCEEDS_ORIGINAL_QUANTITY` | 400 | Cantidad devuelta excede disponible |
@@ -706,7 +732,7 @@ Formato de error estándar:
 
 7. **Devoluciones parciales**: Se pueden devolver cantidades parciales de cada item. El sistema rastrea cuánto se ha devuelto previamente.
 
-8. **Recibo**: Disponible después de confirmar. Incluye número, sucursal, terminal, cajero, desglose de impuestos, cambio calculado, y toda la información para impresión.
+8. **Recibo**: Disponible después de confirmar. Incluye número, sucursal, terminal, cajero, desglose de impuestos, lo entregado y el vuelto de cada pago (guardados al cobrar), y toda la información para impresión.
 
 9. **Cierre de caja**: El Z-Report da la reconciliación completa. La discrepancia (diferencia entre esperado y declarado) se registra automáticamente.
 
