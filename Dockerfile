@@ -52,7 +52,7 @@ RUN groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid app --no-create-home --home-dir /app app
 
 # Owned by root: the app user can read the code but not change it
-COPY alembic.ini main.py ./
+COPY alembic.ini main.py worker.py ./
 COPY alembic ./alembic
 COPY config ./config
 COPY src ./src
@@ -72,6 +72,8 @@ USER app
 
 EXPOSE 8080
 
+# The API's. The worker is the same image with `command: python worker.py` and
+# its own healthcheck, `python -m src.shared.infra.worker.health` (ADR-0007)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live', timeout=4)"]
 
