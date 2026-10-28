@@ -1,9 +1,11 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
+from src.organization.domain.numbering import DocumentType
 from src.purchasing.app.commands.purchase_order import (
     CancelPurchaseOrderCommand,
     CancelPurchaseOrderCommandHandler,
@@ -87,18 +89,25 @@ def _make_receipt(**overrides) -> PurchaseReceipt:
 # ---------------------------------------------------------------------------
 
 
-def test_create_purchase_order_generates_order_number():
+def _numbering(number: str = "PO-2026-0001") -> MagicMock:
+    numbering = MagicMock()
+    numbering.next_in_tenant.return_value = number
+    return numbering
+
+
+def test_create_purchase_order_takes_the_tenants_next_number():
     po = _make_po()
     repo = MagicMock()
-    repo.last_sequence_for_prefix.return_value = 0
     repo.create.return_value = po
-    handler = CreatePurchaseOrderCommandHandler(repo, MagicMock())
+    numbering = _numbering("PO-2026-0005")
+    handler = CreatePurchaseOrderCommandHandler(repo, numbering, MagicMock())
 
-    result = handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
+    handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
 
-    repo.last_sequence_for_prefix.assert_called_once()
-    repo.create.assert_called_once()
-    assert result["order_number"] == "PO-2026-0001"
+    numbering.next_in_tenant.assert_called_once_with(
+        DocumentType.PURCHASE_ORDER, datetime.now().year
+    )
+    assert repo.create.call_args[0][0].order_number == "PO-2026-0005"
 
 
 def test_create_purchase_order_publishes_event():
@@ -109,35 +118,17 @@ def test_create_purchase_order_publishes_event():
     EventBus.clear()
     po = _make_po()
     repo = MagicMock()
-    repo.last_sequence_for_prefix.return_value = 2
     repo.create.return_value = po
 
     events_received = []
     EventBus.subscribe(PurchaseOrderCreated, lambda e: events_received.append(e))
 
-    handler = CreatePurchaseOrderCommandHandler(repo, EventBusPublisher())
+    handler = CreatePurchaseOrderCommandHandler(repo, _numbering(), EventBusPublisher())
     handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
 
     assert len(events_received) == 1
     assert events_received[0].purchase_order_id == 1
     EventBus.clear()
-
-
-def test_create_purchase_order_order_number_increments():
-    po = _make_po(order_number="PO-2026-0005")
-    repo = MagicMock()
-    repo.last_sequence_for_prefix.return_value = 4
-    repo.create.return_value = po
-    handler = CreatePurchaseOrderCommandHandler(repo, MagicMock())
-
-    handler.handle(CreatePurchaseOrderCommand(supplier_id=10))
-
-    # last sequence 4 → next is 5
-    called_po = repo.create.call_args[0][0]
-    import datetime
-
-    year = datetime.datetime.now().year
-    assert called_po.order_number == f"PO-{year}-0005"
 
 
 # ---------------------------------------------------------------------------

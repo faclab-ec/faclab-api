@@ -1,6 +1,8 @@
 """Purchasing flows against PostgreSQL: purchase orders, receipts and their
 inventory effects (stock, lots, serial numbers)."""
 
+from datetime import datetime
+
 import pytest
 from sqlalchemy import select
 
@@ -8,6 +10,7 @@ from src.inventory.lot.infra.models import LotModel, MovementLotItemModel
 from src.inventory.movement.infra.models import MovementModel
 from tests.integration.postgres.api import (
     Api,
+    concurrently,
     make_location,
     make_product,
     make_supplier,
@@ -149,6 +152,28 @@ def test_deleting_an_older_draft_does_not_reuse_a_live_order_number(api, order):
 
     assert latest["orderNumber"].endswith("-0003")
     assert newer["orderNumber"].endswith("-0004")
+
+
+def test_concurrent_orders_get_distinct_numbers(api, admin):
+    """The tenant's counter in document_sequences, not MAX() (G-33): ten
+    orders created at once get ten consecutive numbers, none a 409"""
+    supplier_id = make_supplier(api)["id"]
+
+    responses = concurrently(
+        *(
+            lambda client: client.post(
+                "/api/admin/purchase-orders",
+                json={"supplierId": supplier_id},
+                headers=admin,
+            )
+            for _ in range(10)
+        )
+    )
+
+    assert [r.status_code for r in responses] == [200] * 10
+    numbers = sorted(r.json()["data"]["orderNumber"] for r in responses)
+    year = datetime.now().year
+    assert numbers == [f"PO-{year}-{n:04d}" for n in range(1, 11)]
 
 
 def test_order_items_carry_the_product_name_and_sku(api, order):

@@ -79,29 +79,40 @@ class SqlAlchemyDocumentSequenceRepository(DocumentSequenceRepository):
     A Core statement: the tenant is set here, `assign_tenant` doesn't see it."""
 
     _KEY = ("tenant_id", "branch_id", "doc_type")
+    # A tenant's counter has no branch: its key is the partial unique index
+    # uq_document_sequences_tenant_doc_type
+    _TENANT_KEY = ("tenant_id", "doc_type")
 
     def __init__(self, session: Session):
         self.session = session
 
-    def next_value(self, branch_id: int, doc_type: DocumentType) -> int:
+    def next_value(self, branch_id: int | None, doc_type: DocumentType) -> int:
         values = {
             "tenant_id": require_tenant("numbering a document").tenant_id,
             "branch_id": branch_id,
             "doc_type": doc_type.value,
             "last_value": 1,
         }
+        conflict: dict = (
+            {"index_elements": self._KEY}
+            if branch_id is not None
+            else {
+                "index_elements": self._TENANT_KEY,
+                "index_where": DocumentSequenceModel.branch_id.is_(None),
+            }
+        )
         bump = {"last_value": DocumentSequenceModel.last_value + 1}
         if self.session.get_bind().dialect.name == "postgresql":
             statement = (
                 postgresql.insert(DocumentSequenceModel)
                 .values(**values)
-                .on_conflict_do_update(index_elements=self._KEY, set_=bump)
+                .on_conflict_do_update(set_=bump, **conflict)
             )
         else:
             statement = (
                 sqlite.insert(DocumentSequenceModel)
                 .values(**values)
-                .on_conflict_do_update(index_elements=self._KEY, set_=bump)
+                .on_conflict_do_update(set_=bump, **conflict)
             )
         returning = statement.returning(DocumentSequenceModel.last_value)
         return self.session.execute(returning).scalar_one()
