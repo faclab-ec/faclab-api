@@ -55,7 +55,8 @@
 
 - Roles de base: `faclab_owner` (dueño de las tablas; migraciones con `DATABASE_URL_MIGRATIONS`),
   `faclab_app` (el API, `DATABASE_URL`, sin `BYPASSRLS`) y `faclab_worker` (`DATABASE_URL_WORKER`, con
-  `BYPASSRLS`: el relay del outbox y, hasta S2.8, `_tenant_of_sale`). Ninguno es superusuario. Los crea
+  `BYPASSRLS`: el worker, es decir el relay del outbox, el consumidor y sus `dead_letters`, las purgas y
+  el CLI de plataforma; hasta S2.8 también `_tenant_of_sale`). Ninguno es superusuario. Los crea
   `python -m src.shared.infra.db_roles` (`make db-roles`), idempotente, con el superusuario de
   `DATABASE_URL_ADMIN`; también crea la base con dueño `faclab_owner`.
 - Permisos por migración (`80bfd3a8c63b`): app y worker leen y escriben todas las tablas y secuencias,
@@ -287,7 +288,7 @@ Del lado de facturación (base `faclab_invoicing`, ver [ADR-0004](ADR/0004-persi
 | `pos_shifts`, `pos_cash_movements` | Sucursal (terminal) | No | Un turno abierto por terminal |
 | `pos_refunds` | Sucursal | No | |
 | `document_sequences` | Empresa y sucursal | — | Ver ADR-0012 |
-| `outbox_messages`, `dead_letters` | Infraestructura con `tenant_id` | — | Sin RLS; `faclab_app` solo inserta y el relay (`faclab_worker`) lee y publica. `dead_letters` llega en S3.4 |
+| `outbox_messages`, `dead_letters` | Infraestructura con `tenant_id` | — | Sin RLS. En el outbox `faclab_app` solo inserta y el relay (`faclab_worker`) lee y publica; `dead_letters` (S3.4, `tenant_id` nulable) solo la usa `faclab_worker` |
 | `audit_log`, `idempotency_keys` | Empresa | — | Nuevas (Etapa 3) |
 | `integration_clients`, `webhook_endpoints`, `webhook_deliveries` | Empresa | — | Nuevas (Etapa 6) |
 | Perfil fiscal, certificados, secuenciales SRI, comprobantes | Empresa (en invoicing) | — | Secuencial por establecimiento y punto de emisión |
@@ -375,10 +376,11 @@ CREATE POLICY tenant_isolation ON products
 - Roles (los crea `python -m src.shared.infra.db_roles`, con el superusuario de `DATABASE_URL_ADMIN`):
   - `faclab_owner` es dueño de las tablas y ejecuta migraciones (`DATABASE_URL_MIGRATIONS`).
   - `faclab_app` es el que usa el API (`DATABASE_URL`), sin `BYPASSRLS`.
-  - `faclab_worker` tiene `BYPASSRLS` (`DATABASE_URL_WORKER`). Hoy solo lo usa el relay del outbox,
-    que corre en el proceso del API hasta que S3.4 lo mueva al worker (`_tenant_of_sale` se retiró en
-    S2.8). Las tareas de plataforma que recorran empresas abren un contexto por empresa o
-    usan este rol.
+  - `faclab_worker` tiene `BYPASSRLS` (`DATABASE_URL_WORKER`). Lo usa el proceso worker (S3.4): el
+    relay del outbox, las `dead_letters` del consumidor, las purgas y el CLI de plataforma
+    (`_tenant_of_sale` se retiró en S2.8). El handler de cada mensaje, en cambio, corre en la empresa
+    del mensaje como `faclab_app`. Las tareas de plataforma que recorran empresas abren un contexto
+    por empresa o usan este rol.
 - `SET LOCAL` (no `SET`) para que el valor muera con la transacción y no se filtre a otra solicitud que
   reutilice la conexión del pool.
 - Permisos (`80bfd3a8c63b`): app y worker tienen `SELECT, INSERT, UPDATE, DELETE` en todas las tablas

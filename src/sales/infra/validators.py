@@ -6,7 +6,12 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from src.sales.domain.entities import PaymentMethod, PaymentStatus, SaleStatus
+from src.sales.domain.entities import (
+    InvoiceStatus,
+    PaymentMethod,
+    PaymentStatus,
+    SaleStatus,
+)
 from src.shared.domain.tax import TaxCode
 from src.shared.infra.validators import DecimalNumber, QueryParams
 
@@ -284,6 +289,29 @@ class SaleResponse(BaseModel):
         None,
         validation_alias=AliasChoices("parkReason", "park_reason"),
         serialization_alias="parkReason",
+    )
+    invoice_status: InvoiceStatus | None = Field(
+        None,
+        description="Electronic invoice of a confirmed sale: PENDING while the SRI "
+        "answers, AUTHORIZED or REJECTED; null if it was never sent",
+        validation_alias=AliasChoices("invoiceStatus", "invoice_status"),
+        serialization_alias="invoiceStatus",
+    )
+    invoice_id: str | None = Field(
+        None,
+        description="Id in faclab-invoicing of the last invoice with a result "
+        "(authorized or rejected)",
+        validation_alias=AliasChoices("invoiceId", "invoice_id"),
+        serialization_alias="invoiceId",
+    )
+    invoice_rejection_reason: str | None = Field(
+        None,
+        description="Why the SRI rejected the invoice (its messages), while it "
+        "is REJECTED",
+        validation_alias=AliasChoices(
+            "invoiceRejectionReason", "invoice_rejection_reason"
+        ),
+        serialization_alias="invoiceRejectionReason",
     )
     created_at: datetime | None = Field(
         None,

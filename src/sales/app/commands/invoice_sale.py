@@ -38,7 +38,7 @@ class InvoiceSaleCommandHandler(CommandHandler[InvoiceSaleCommand, dict]):
         if sale.status == SaleStatus.INVOICED:
             return sale.dict()
 
-        sale.invoice()
+        sale.invoice(command.invoice_id)
         self.sale_repo.update(sale)
 
         self.event_publisher.publish(

@@ -186,6 +186,7 @@ def test_platform_tables_have_no_rls(pg_engine):
         "memberships",
         "user_branch_access",
         "outbox_messages",
+        "dead_letters",
     }
     assert secured == []
 
@@ -232,6 +233,20 @@ def test_the_app_only_inserts_into_the_outbox(pg_engine):
 
     # INSERT ... RETURNING id needs the id, and nothing else
     assert privileges == (True, True, False, False, False, False, True)
+
+
+def test_only_the_worker_touches_the_dead_letters(pg_engine):
+    privileges = _row(
+        pg_engine,
+        "SELECT has_table_privilege('faclab_app', 'dead_letters',"
+        " 'SELECT, INSERT, UPDATE, DELETE'),"
+        " has_table_privilege('faclab_worker', 'dead_letters', 'SELECT'),"
+        " has_table_privilege('faclab_worker', 'dead_letters', 'INSERT'),"
+        " has_table_privilege('faclab_worker', 'dead_letters', 'UPDATE'),"
+        " has_sequence_privilege('faclab_worker', 'dead_letters_id_seq', 'USAGE')",
+    )
+
+    assert privileges == (False, True, True, True, True)
 
 
 # Behavior

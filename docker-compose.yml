@@ -7,6 +7,9 @@ services:
     container_name: api
     env_file:
       - .env
+    environment:
+      # The outbox relay and the Kafka consumer run in `worker`
+      RUN_BACKGROUND: "false"
     volumes:
       - ./:/app/
     ports:
@@ -20,6 +23,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - faclab_network
+  # Outbox relay, Kafka consumer and purges (ADR-0007). No hot reload:
+  # `docker compose restart worker` after a change
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: worker
+    command: ["python", "worker.py"]
+    env_file:
+      - .env
+    volumes:
+      - ./:/app/
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.shared.infra.worker.health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - faclab_network
   db:

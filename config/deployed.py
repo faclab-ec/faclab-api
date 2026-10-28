@@ -13,15 +13,15 @@ class DeployedConfig(BaseConfig):
 
     def __init__(self):
         super().__init__()
+        # The outbox relay, the invoice consumer and the worker's purges work
+        # across tenants, which the API's role can't do under row-level
+        # security: without their own role they would silently see nothing
         required = {
             "DATABASE_URL": self.DB_CONNECTION_STRING,
+            "DATABASE_URL_WORKER": self.DB_WORKER_URL,
             "CORS_ORIGINS": self.CORS_ORIGINS,
             "JWT_SECRET": self.JWT_SECRET,
         }
-        # The outbox relay and the invoice consumer read across tenants, which
-        # the API's role can't do under row-level security
-        if self.KAFKA_ENABLED:
-            required["DATABASE_URL_WORKER"] = self.DB_WORKER_URL
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError(

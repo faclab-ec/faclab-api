@@ -19,6 +19,7 @@ from src.auth.infra.admin_routes import UserAdminRouter
 from src.auth.infra.middleware import AuthMiddleware
 from src.auth.infra.routes import AuthRouter
 from src.auth.infra.token_service import JwtTokenService
+from src.background.messaging import create_messaging
 from src.catalog.product.infra.routes import CategoryRouter, ProductRouter
 from src.catalog.uom.infra.routes import UnitOfMeasureRouter
 from src.container import create_wireup_container
@@ -32,7 +33,6 @@ from src.inventory.serial.infra.routes import SerialRouter
 from src.inventory.stock.infra.routes import StockRouter
 from src.inventory.transfer.infra.routes import TransferItemRouter, TransferRouter
 from src.inventory.warehouse.infra.routes import WarehouseRouter
-from src.invoicing.infra.invoice_messages import INVOICES_TOPIC, handle_invoice_message
 from src.organization.infra.routes import (
     BranchRouter,
     EmissionPointRouter,
@@ -49,7 +49,6 @@ from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
-from src.shared.infra.database import worker_session_maker
 from src.shared.infra.health import (
     HealthCheckAccessFilter,
     HealthRouter,
@@ -57,8 +56,6 @@ from src.shared.infra.health import (
     database_check,
     kafka_check,
 )
-from src.shared.infra.kafka.consumer import KafkaMessageConsumer
-from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.logging import configure_logging
 from src.shared.infra.middlewares import (
     BodySizeLimitMiddleware,
@@ -68,8 +65,6 @@ from src.shared.infra.middlewares import (
     http_exception_handler,
     request_validation_exception_handler,
 )
-from src.shared.infra.outbox import relay as outbox_relay
-from src.shared.infra.outbox.relay import OutboxRelay
 from src.suppliers.infra.routes import (
     SupplierContactRouter,
     SupplierProductRouter,
@@ -97,41 +92,23 @@ otel.setup(config.get_otel_config())
 
 _docs = config.get_docs_config()
 
-# Publishes the Kafka messages committed to the outbox; started by the lifespan
-# and reported by the readiness check
-producer = (
-    KafkaEventProducer(config.KAFKA_BOOTSTRAP_SERVERS) if config.KAFKA_ENABLED else None
+# The outbox relay and the Kafka consumer run in the worker (`worker.py`).
+# RUN_BACKGROUND=true starts them here too, as before the worker: the rollback
+# switch. Started by the lifespan; the readiness check reports the producer
+messaging = (
+    create_messaging() if config.KAFKA_ENABLED and config.RUN_BACKGROUND else None
 )
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    consumer = None
-    if producer:
-        producer.start()
-        # Reads every tenant's messages: faclab_worker, not the API's role
-        outbox_relay.start(
-            OutboxRelay(
-                worker_session_maker(),
-                producer,
-                poll_interval=config.OUTBOX_POLL_INTERVAL_SECONDS,
-            )
-        )
-        # Marks sales as invoiced when faclab-invoicing reports the SRI result
-        consumer = KafkaMessageConsumer(
-            config.KAFKA_BOOTSTRAP_SERVERS,
-            config.KAFKA_CONSUMER_GROUP_ID,
-            {INVOICES_TOPIC: handle_invoice_message},
-        )
-        consumer.start()
+    if messaging:
+        messaging.start()
 
     yield
 
-    if consumer:
-        consumer.stop()
-    outbox_relay.stop()
-    if producer:
-        producer.close()
+    if messaging:
+        messaging.stop()
 
     otel.shutdown()
 
@@ -437,7 +414,7 @@ health_router = HealthRouter(
     checks={
         "database": database_check(create_health_engine(config.DB_CONNECTION_STRING))
     },
-    informational={"kafka": kafka_check(producer)} if producer else None,
+    informational={"kafka": kafka_check(messaging.producer)} if messaging else None,
 )
 app.include_router(health_router.router)
 logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())

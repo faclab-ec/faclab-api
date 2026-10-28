@@ -24,6 +24,7 @@ _SETTINGS = (
     "JWT_SECRET",
     "DOCS_ENABLED",
     "KAFKA_ENABLED",
+    "RUN_BACKGROUND",
 )
 
 _PRINT_CONFIG = """
@@ -43,8 +44,20 @@ import main
 print(json.dumps(sorted(getattr(r, "path", "") for r in main.app.routes)))
 """
 
+# The API's lifespan with Kafka on: which messaging threads it starts
+_PRINT_BACKGROUND_THREADS = """
+import json
+import threading
+from fastapi.testclient import TestClient
+import main
+with TestClient(main.app):
+    names = sorted(t.name for t in threading.enumerate())
+print(json.dumps({"messaging": main.messaging is not None, "threads": names}))
+"""
+
 DEPLOYED = {
     "DATABASE_URL": "postgresql://faclab@db:5432/faclab",
+    "DATABASE_URL_WORKER": "postgresql://faclab_worker@db:5432/faclab",
     "CORS_ORIGINS": "https://app.faclab.ec,https://admin.faclab.ec",
     "JWT_SECRET": "x" * 40,
 }
@@ -77,7 +90,7 @@ def test_deployed_environment_refuses_to_start_without_required_settings(
     assert result.returncode != 0
     assert (
         f"Missing required settings for {environment}: "
-        "DATABASE_URL, CORS_ORIGINS, JWT_SECRET"
+        "DATABASE_URL, DATABASE_URL_WORKER, CORS_ORIGINS, JWT_SECRET"
     ) in result.stderr
 
 
@@ -87,37 +100,22 @@ def test_deployed_environment_reads_its_settings_with_docs_off(environment):
 
     assert settings == {
         "database_url": DEPLOYED["DATABASE_URL"],
-        "worker_database_url": DEPLOYED["DATABASE_URL"],
+        "worker_database_url": DEPLOYED["DATABASE_URL_WORKER"],
         "cors_origins": ["https://app.faclab.ec", "https://admin.faclab.ec"],
         "docs_enabled": False,
     }
 
 
-def test_production_with_kafka_requires_the_worker_url():
-    result = _run(
-        _PRINT_CONFIG, ENVIRONMENT="production", KAFKA_ENABLED="true", **DEPLOYED
-    )
+def test_production_requires_the_worker_url_even_without_kafka():
+    """The worker's purges cross tenants: as faclab_app they would see nothing"""
+    deployed = {k: v for k, v in DEPLOYED.items() if k != "DATABASE_URL_WORKER"}
+
+    result = _run(_PRINT_CONFIG, ENVIRONMENT="production", **deployed)
 
     assert result.returncode != 0
     assert "Missing required settings for production: DATABASE_URL_WORKER" in (
         result.stderr
     )
-
-
-def test_production_with_kafka_reads_the_worker_url():
-    worker = "postgresql://faclab_worker@db:5432/faclab"
-    settings = _last_json_line(
-        _run(
-            _PRINT_CONFIG,
-            ENVIRONMENT="production",
-            KAFKA_ENABLED="true",
-            DATABASE_URL_WORKER=worker,
-            **DEPLOYED,
-        )
-    )
-
-    assert settings["database_url"] == DEPLOYED["DATABASE_URL"]
-    assert settings["worker_database_url"] == worker
 
 
 def test_docs_can_be_enabled_in_production():
@@ -172,3 +170,27 @@ def test_production_app_has_health_but_no_docs(tmp_path):
 
     assert {"/health/live", "/health/ready"} <= set(routes)
     assert not {"/", "/docs", "/openapi.json", "/openapi/admin.json"} & set(routes)
+
+
+def test_without_run_background_the_api_starts_no_messaging_threads():
+    result = _last_json_line(
+        _run(_PRINT_BACKGROUND_THREADS, KAFKA_ENABLED="true", RUN_BACKGROUND="false")
+    )
+
+    assert result["messaging"] is False
+    assert not {"outbox-relay", "kafka-consumer", "kafka-producer"} & set(
+        result["threads"]
+    )
+
+
+def test_run_background_keeps_the_messaging_in_the_api():
+    """The rollback switch: the API builds its producer, relay and consumer"""
+    result = _last_json_line(
+        _run(
+            "import json, main; print(json.dumps(main.messaging is not None))",
+            KAFKA_ENABLED="true",
+            RUN_BACKGROUND="true",
+        )
+    )
+
+    assert result is True

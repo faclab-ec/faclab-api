@@ -4,7 +4,8 @@ faclab-invoicing usa ese topic como su propia máquina de estados (created →
 signed → sent → authorized | rejected) y publica ahí cada transición. Core lo lee
 con su propio consumer group y actúa con el resultado del SRI: si autoriza la
 factura, la venta pasa a INVOICED; si la rechaza, su factura deja de estar
-pendiente (`invoice_status = REJECTED`) y la venta se puede reenviar o cancelar.
+pendiente (`invoice_status = REJECTED`, con el motivo que envía en `reason`) y
+la venta se puede reenviar o cancelar.
 La forma del mensaje es el contrato `contracts/events/invoices/v1.schema.json`.
 
 La venta se busca en la empresa del mensaje (header `faclab-tenant-id`, que
@@ -84,8 +85,13 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
                 logger.warning(
                     "invoice_rejected", sale_id=sale_id, invoice_id=invoice_id
                 )
+                reason = message.get("reason")
                 scope.get(RejectSaleInvoiceCommandHandler).handle(
-                    RejectSaleInvoiceCommand(sale_id=sale_id, invoice_id=invoice_id)
+                    RejectSaleInvoiceCommand(
+                        sale_id=sale_id,
+                        invoice_id=invoice_id,
+                        reason=reason if isinstance(reason, str) else None,
+                    )
                 )
             else:
                 scope.get(InvoiceSaleCommandHandler).handle(

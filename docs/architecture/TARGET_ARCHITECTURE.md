@@ -136,7 +136,8 @@ desventajas, impacto, complejidad, y prioridad con dependencias.
 ### R-5 Mensajería resiliente
 
 - **Estado actual:** outbox y consumidor sin límites (G-24, G-25); hilos dentro del API (G-35);
-  llamadas al SRI dentro del consumidor (G-13).
+  llamadas al SRI dentro del consumidor (G-13). *S3.4 resolvió los tres primeros en el core* (estado
+  `failed`, `dead_letters`, proceso `worker`); queda G-13 en facturación (S4.2).
 - **Problema:** un mensaje dañado detiene la facturación; un SRI lento frena las ventas entrantes.
 - **Recomendación:** límites de intentos y estado `failed`, tabla de mensajes fallidos con reproceso,
   clave por empresa, `worker` separado, y en facturación una cola en PostgreSQL para el trabajo con el

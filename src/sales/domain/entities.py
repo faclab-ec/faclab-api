@@ -44,13 +44,15 @@ class PaymentStatus(StrEnum):
 
 
 class InvoiceStatus(StrEnum):
-    """Factura de una venta CONFIRMED en faclab-invoicing; sin valor, no se envió.
+    """Factura de la venta en faclab-invoicing; sin valor, no se envió.
 
-    INVOICED ya dice que se autorizó. S3.4 agrega AUTHORIZED y el motivo del
-    rechazo.
+    PENDING desde que su `sales.confirmed` llega al outbox (al confirmar o
+    reenviar), REJECTED cuando el SRI la rechaza (con el motivo) y AUTHORIZED
+    cuando la autoriza (la venta pasa a INVOICED).
     """
 
     PENDING = "PENDING"
+    AUTHORIZED = "AUTHORIZED"
     REJECTED = "REJECTED"
 
 
@@ -119,6 +121,10 @@ class Sale(Entity):
     parked_at: datetime | None = None
     park_reason: str | None = None
     invoice_status: InvoiceStatus | None = None
+    # The last invoice faclab-invoicing reported a result for (authorized or
+    # rejected), and why the SRI rejected it
+    invoice_id: str | None = None
+    invoice_rejection_reason: str | None = None
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -160,25 +166,38 @@ class Sale(Entity):
         return self.status in COMPLETED_SALE_STATUSES
 
     def await_invoice(self) -> None:
-        """La venta se envió a faclab-invoicing (al confirmarla o reenviarla)"""
+        """La venta se envió a faclab-invoicing (al confirmarla o reenviarla).
+        Conserva el id de la factura rechazada: así se reconoce un rechazo
+        repetido de esa factura (ver `reject_invoice`)."""
         if self.status != SaleStatus.CONFIRMED:
             raise InvalidSaleStatusError(self.status, "invoice")
         self.invoice_status = InvoiceStatus.PENDING
+        self.invoice_rejection_reason = None
 
-    def reject_invoice(self) -> bool:
+    def reject_invoice(self, invoice_id: str, reason: str | None = None) -> bool:
         """El SRI rechazó la factura: la venta se puede corregir y reenviar o
-        cancelar. Solo cambia una factura pendiente; dice si cambió."""
+        cancelar. Solo cambia una factura pendiente, y no por un rechazo de la
+        factura que ya se rechazó (un mensaje repetido que llega después del
+        reenvío); dice si cambió."""
         if self.invoice_status != InvoiceStatus.PENDING:
             return False
+        if invoice_id == self.invoice_id:
+            return False
         self.invoice_status = InvoiceStatus.REJECTED
+        self.invoice_id = invoice_id
+        self.invoice_rejection_reason = reason[:1000] if reason else None
         return True
 
-    def invoice(self) -> None:
-        """Marca la venta como facturada (solo si está CONFIRMED)"""
+    def invoice(self, invoice_id: str | None = None) -> None:
+        """Marca la venta como facturada (solo si está CONFIRMED) con la
+        factura que autorizó el SRI"""
         if self.status != SaleStatus.CONFIRMED:
             raise InvalidSaleStatusError(self.status, "invoice")
         self.status = SaleStatus.INVOICED
-        self.invoice_status = None
+        self.invoice_status = InvoiceStatus.AUTHORIZED
+        if invoice_id is not None:
+            self.invoice_id = invoice_id
+        self.invoice_rejection_reason = None
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""

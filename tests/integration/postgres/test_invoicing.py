@@ -1,8 +1,9 @@
 """Integration with faclab-invoicing against PostgreSQL: the `sales.confirmed`
 message follows its v2 contract (tenant, RUC, establishment and emission point
 of the sale) and carries the invoice amounts, an authorized
-invoice from the `invoices` topic marks the sale as invoiced, a sale waiting for
-its invoice is not cancelled, and a confirmed sale can be sent again."""
+invoice from the `invoices` topic marks the sale as invoiced, a rejected one
+shows its reason, a sale waiting for its invoice is not cancelled, and a
+confirmed sale can be sent again."""
 
 from decimal import Decimal
 
@@ -85,18 +86,26 @@ def _handle(message: dict, tenant_id) -> None:
         handle_invoice_message(message)
 
 
-def _authorized(sale_id: int) -> dict:
+REASON = "ERROR 45 : ERROR SECUENCIAL REGISTRADO : La clave de acceso ya fue registrada"
+
+
+def _authorized(sale_id: int, invoice_id: str = "3f6c1a52-invoice") -> dict:
     return {
         "type": "InvoiceAuthorized",
-        "invoiceId": "3f6c1a52-invoice",
+        "invoiceId": invoice_id,
         "saleId": str(sale_id),
         "status": "authorized",
         "occurredAt": "2026-10-08T15:00:00.000Z",
     }
 
 
-def _rejected(sale_id: int) -> dict:
-    return {**_authorized(sale_id), "type": "InvoiceRejected", "status": "rejected"}
+def _rejected(sale_id: int, invoice_id: str = "3f6c1a52-invoice") -> dict:
+    return {
+        **_authorized(sale_id, invoice_id),
+        "type": "InvoiceRejected",
+        "status": "rejected",
+        "reason": REASON,
+    }
 
 
 def _invoice_status(session: Session, sale_id: int) -> str | None:
@@ -162,7 +171,12 @@ def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant):
     # Kafka can deliver the same message again
     _handle(_authorized(sale["id"]), tenant)
 
-    assert cashier.get(f"/api/pos/sales/{sale['id']}")["status"] == "INVOICED"
+    shown = cashier.get(f"/api/pos/sales/{sale['id']}")
+    assert (shown["status"], shown["invoiceStatus"], shown["invoiceId"]) == (
+        "INVOICED",
+        "AUTHORIZED",
+        "3f6c1a52-invoice",
+    )
     shift = cashier.get("/api/pos/shifts/active")
     summary = cashier.get(f"/api/pos/shifts/{shift['id']}/cash-summary")
     assert summary["cashSales"] == sale["total"]
@@ -307,9 +321,59 @@ def test_a_sale_is_not_cancelled_while_its_invoice_is_in_progress(
     error = cashier.error("POST", f"/api/pos/sales/{sale['id']}/cancel", 400)
     assert error["code"] == "INVOICE_IN_PROGRESS"
 
-    _handle(_rejected(sale["id"]), tenant)
+    # The resend is a new invoice in faclab-invoicing
+    _handle(_rejected(sale["id"], invoice_id="7b0e2d41-invoice"), tenant)
     cancelled = cashier.post(f"/api/pos/sales/{sale['id']}/cancel")
     assert cancelled["status"] == "CANCELLED"
+
+
+def test_a_rejected_sale_shows_the_sris_reason(pos, client, admin, monkeypatch, tenant):
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+    # The confirm's own answer already shows the invoice waiting for the SRI
+    assert sale["invoiceStatus"] == "PENDING"
+
+    _handle(_rejected(sale["id"]), tenant)
+
+    for shown in (
+        cashier.get(f"/api/pos/sales/{sale['id']}"),
+        Api(client, admin).get(f"/api/admin/sales/{sale['id']}"),
+    ):
+        assert (
+            shown["status"],
+            shown["invoiceStatus"],
+            shown["invoiceId"],
+            shown["invoiceRejectionReason"],
+        ) == ("CONFIRMED", "REJECTED", "3f6c1a52-invoice", REASON)
+
+
+def test_a_repeated_rejection_does_not_undo_a_resend(
+    pos, client, admin, monkeypatch, tenant
+):
+    """Kafka delivers the old invoice's rejection again after the sale was
+    resent: the new invoice is still waiting for the SRI"""
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, _ = pos
+    sale = _checkout(pos, [1, 0, 0])
+    _handle(_rejected(sale["id"]), tenant)
+    resent = Api(client, admin).post(f"/api/admin/sales/{sale['id']}/request-invoice")
+    assert (resent["invoiceStatus"], resent["invoiceRejectionReason"]) == (
+        "PENDING",
+        None,
+    )
+
+    _handle(_rejected(sale["id"]), tenant)
+
+    shown = cashier.get(f"/api/pos/sales/{sale['id']}")
+    assert shown["invoiceStatus"] == "PENDING"
+    _handle(_authorized(sale["id"], invoice_id="7b0e2d41-invoice"), tenant)
+    shown = cashier.get(f"/api/pos/sales/{sale['id']}")
+    assert (shown["status"], shown["invoiceStatus"], shown["invoiceId"]) == (
+        "INVOICED",
+        "AUTHORIZED",
+        "7b0e2d41-invoice",
+    )
 
 
 def test_an_invoiced_sale_is_voided_with_a_credit_note(
@@ -319,7 +383,7 @@ def test_an_invoiced_sale_is_voided_with_a_credit_note(
     cashier, _ = pos
     sale = _checkout(pos, [1, 0, 0])
     _handle(_authorized(sale["id"]), tenant)
-    assert _invoice_status(db_session, sale["id"]) is None
+    assert _invoice_status(db_session, sale["id"]) == "AUTHORIZED"
 
     error = cashier.error("POST", f"/api/pos/sales/{sale['id']}/cancel", 400)
 

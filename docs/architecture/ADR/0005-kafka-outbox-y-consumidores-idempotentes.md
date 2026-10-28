@@ -1,6 +1,6 @@
 # ADR-0005: Kafka con outbox transaccional y consumidores idempotentes; sin Saga
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-10-28, S3.4; propuesto el 2026-10-14)
 - **Relacionado:** [ADR-0006](0006-contratos-de-eventos-versionados.md), [ADR-0007](0007-worker-para-procesos-en-segundo-plano.md)
 
 ## Contexto
@@ -70,3 +70,28 @@ Se conserva Kafka (KRaft, un nodo en el VPS) con estas reglas:
 - **Idempotencia**: la factura activa única de facturación ya es por empresa y venta,
   `uq_invoices_active_sale (tenant_id, sale_id) WHERE status <> 'rejected'`.
 - El resto (límite de intentos del outbox, `dead_letters`, purga, reproceso) sigue en S3.4.
+
+## Implementación (S3.4, 2026-10-28)
+
+- **Outbox**: `outbox_messages.status` (`pending`, `published`, `failed`), `next_attempt_at` y
+  `OUTBOX_MAX_ATTEMPTS` (10). Un fallo espera con backoff exponencial (`OUTBOX_RETRY_BASE_SECONDS` 5,
+  tope `OUTBOX_RETRY_MAX_SECONDS` 600) y frena solo a los siguientes de su empresa. Si el que falla es
+  el broker (`BrokerUnavailableError`), no cuenta el intento.
+- **Un relay a la vez**: cada lote toma un advisory lock de su transacción. `SKIP LOCKED` evitaba
+  duplicados, pero dos relays en paralelo podían desordenar los mensajes de una empresa.
+- **Retención**: los publicados se purgan a los `OUTBOX_RETENTION_DAYS` (14) desde el worker; los
+  `failed` y `pending` nunca.
+- **Tópicos**: `faclab-infra/scripts/create-topics.sh` crea `sales.confirmed`, `invoices` y `dlq` con
+  `KAFKA_TOPIC_PARTITIONS` (6), y Kafka ya no los crea por su cuenta.
+- **Consumidor del core**: backoff con `KAFKA_CONSUMER_MAX_ATTEMPTS` (5) y
+  `KAFKA_CONSUMER_RETRY_BASE_SECONDS` (2, tope de un minuto). Al agotarse, el mensaje va a la tabla
+  `dead_letters` (sin RLS, solo faclab_worker) y se confirma su offset. Si no se puede guardar, no se
+  confirma.
+- **Reproceso**: por ahora es un CLI de plataforma (`python -m src.background.cli`, `make outbox-retry`,
+  `make reprocess-dead-letter`), que exige `--by` y lo registra en la fila y en el log. El endpoint de
+  plataforma llega con su rol (S8.5) y la bitácora general con S3.5.
+- **Resultado de la factura**: `invoices` v1 suma el campo opcional `reason` en `InvoiceRejected`. La
+  venta guarda `invoice_status` (`PENDING`, `AUTHORIZED`, `REJECTED`), el id de la factura y el
+  motivo, y un rechazo repetido de una factura ya rechazada no deshace un reenvío.
+- **Pendiente**: el reproceso de la `dlq` de facturación y la conciliación (S4.3), y LISTEN/NOTIFY si
+  el poll de 1 s del worker llega a pesar.

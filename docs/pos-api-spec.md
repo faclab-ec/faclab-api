@@ -165,6 +165,9 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | createdBy | string? | Usuario autenticado que creó la venta (no se envía en el cuerpo) |
 | parkedAt | datetime? | Fecha de estacionamiento |
 | parkReason | string? | Razón de estacionamiento |
+| invoiceStatus | enum? | Factura electrónica: `PENDING` \| `AUTHORIZED` \| `REJECTED`; `null` si no se envió (ver `sales-spec.md`) |
+| invoiceId | string? | Última factura con resultado en faclab-invoicing |
+| invoiceRejectionReason | string? | Mensajes del SRI mientras la factura está `REJECTED` |
 | createdAt | datetime | Fecha creación |
 
 ### Entidad: SaleItem

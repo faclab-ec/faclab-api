@@ -285,6 +285,7 @@ interface ErrorResponse {
 // Enums
 type SaleStatus = "DRAFT" | "CONFIRMED" | "INVOICED" | "CANCELLED";
 type PaymentStatus = "PENDING" | "PARTIAL" | "PAID";
+type InvoiceStatus = "PENDING" | "AUTHORIZED" | "REJECTED";
 type PaymentMethod = "CASH" | "CREDIT_CARD" | "DEBIT_CARD" | "TRANSFER" | "OTHER";
 
 // Entidades
@@ -305,6 +306,9 @@ interface Sale {
   paymentStatus: PaymentStatus;
   notes: string | null;
   createdBy: string | null;
+  invoiceStatus: InvoiceStatus | null; // null: nunca se envió a facturación
+  invoiceId: string | null; // última factura con resultado en faclab-invoicing
+  invoiceRejectionReason: string | null; // mensajes del SRI, mientras está REJECTED
   createdAt: string;
   updatedAt: string | null;
 }
@@ -445,11 +449,20 @@ vuelto   = entregado - aplicado
 - Los pagos anteriores a S3.3 guardaban lo entregado: la migración `f19314b5842a` pasó el excedente de
   las ventas pagadas de más (de sus pagos en efectivo, el último primero) al vuelto.
 
-### Anulación y factura (S3.3)
+### Anulación y factura (S3.3, S3.4)
 
-- `sales.invoice_status` (no se expone todavía; S3.4 lo muestra con el motivo del rechazo): `PENDING`
-  desde que el mensaje `sales.confirmed` de la venta entra al outbox (al confirmar con Kafka encendido
-  o al reenviar) y `REJECTED` cuando faclab-invoicing informa `InvoiceRejected`. Facturarla lo limpia.
+- `invoiceStatus` (`sales.invoice_status`) es la factura electrónica de la venta:
+  - `PENDING` desde que el mensaje `sales.confirmed` de la venta entra al outbox, al confirmar con
+    Kafka encendido o al reenviar. La respuesta del confirm, de la venta rápida y del reenvío ya lo
+    muestra.
+  - `REJECTED` cuando faclab-invoicing informa `InvoiceRejected`, con `invoiceRejectionReason` (los
+    mensajes del SRI, campo `reason` de `invoices` v1) e `invoiceId`.
+  - `AUTHORIZED` cuando informa `InvoiceAuthorized`: la venta pasa a `INVOICED`.
+  - `null` si nunca se envió (Kafka apagado, o ventas anteriores a S3.3). Las facturadas antes de S3.4
+    quedaron en `AUTHORIZED` con la migración.
+- Reenviar una venta rechazada la deja en `PENDING` otra vez y borra el motivo, pero conserva
+  `invoiceId`. Así, si Kafka repite el rechazo de esa factura después del reenvío, se ignora y no deja
+  como rechazada la factura nueva.
 - Una venta `CONFIRMED` con la factura pendiente no se cancela: `400 INVOICE_IN_PROGRESS`. Con la
   factura rechazada, o sin enviar (Kafka apagado o ventas anteriores a S3.3), se cancela como antes.
 - Una venta `INVOICED` no se cancela: `400 CREDIT_NOTE_REQUIRED`. Se anula con nota de crédito (S4.5).

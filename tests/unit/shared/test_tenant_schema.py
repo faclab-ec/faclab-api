@@ -10,8 +10,9 @@ from tests.sqlite import load_all_models
 
 load_all_models()
 
-# Platform tables: no tenant at all
-PLATFORM_TABLES = {"tenants", "users", "login_failures"}
+# Platform tables: no tenant at all, or one that may be missing (a dead letter
+# keeps the tenant of its message, when the message carried one)
+PLATFORM_TABLES = {"tenants", "users", "login_failures", "dead_letters"}
 # They carry their tenant, but auth, provisioning and the outbox relay read them
 # across tenants, so the base repository doesn't filter them
 CROSS_TENANT_TABLES = {

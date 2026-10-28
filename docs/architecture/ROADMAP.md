@@ -118,8 +118,8 @@
   reanudar), abrir y cerrar turno ni las anulaciones: las protege el estado o un índice único, pero un
   reintento de "agregar ítem" al retener una venta desde la web puede duplicar una línea del borrador.
   Tampoco la piden las rutas de administración; la API v1 (S6.3) la exige en todos sus POST de
-  creación. La purga de claves vencidas es un CLI (`make purge-idempotency-keys`) hasta el worker de
-  S3.4.
+  creación. La purga de claves vencidas la corre el worker cada hora desde S3.4;
+  `make purge-idempotency-keys` queda para correrla a mano.
 - **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
   del POS por sucursal (`V-001-000123`) y, desde S3.3, las órdenes de compra con el contador de la
   empresa (`branch_id` nulo, `PO-2026-0001`, continuo). Faltan el formato configurable por empresa
@@ -158,7 +158,7 @@
   obligatorio de la aplicación (decisión del usuario), probado por repositorio y por API. Falta
   separar dueño, aplicación y un rol con `BYPASSRLS` para el consumidor y la recuperación, y activar
   RLS por `tenant_id` como en el core (S2.4); toca faclab-infra (script de roles). Encaja antes de
-  producción (S8.1) o con S3.4.
+  producción (S8.1); no entró en S3.4.
 - **Historiales y reportes del POS por sucursal y caja en faclab-web** (detectado en S2.9). El backend
   acepta `branchId` y `terminalId` en turnos, devoluciones y reportes (S2.6), pero las pantallas de
   administración del POS todavía no ofrecen esos filtros ni muestran la caja de cada turno.
@@ -205,8 +205,20 @@
   a crear las tablas vacías: tras `npm run migrate up` hay que volver a guardar el perfil fiscal de
   cada empresa y subir su certificado. Los mensajes `sales.confirmed` v1 que queden en el topic local
   solo se facturan con `SALES_V1_TENANT_ID`.
-- **Clave de partición en Kafka** (hecho en S2.8 para S3.4). El relay del core y faclab-invoicing ya
-  usan el `tenant_id` como clave; falta crear los tópicos con varias particiones por script (S3.4).
+- **Clave de partición en Kafka** (hecho en S2.8 y S3.4). El relay del core y faclab-invoicing usan el
+  `tenant_id` como clave, y `faclab-infra/scripts/create-topics.sh` crea los tópicos con 6 particiones
+  (S3.4). El stack de producción (S8.1) tiene que correr ese script antes de arrancar los servicios.
+- **Mensajería, lo que quedó de S3.4** (detectado en S3.4):
+  - El reproceso de mensajes `failed` y `dead_letters` es un CLI (`make outbox-retry`,
+    `make reprocess-dead-letter`) que deja el autor en la fila y en el log. Los endpoints HTTP llegan
+    con el rol de plataforma (S8.5), y el registro en la bitácora general, con S3.5.
+  - faclab-web no muestra todavía `invoiceStatus`, `invoiceId` ni `invoiceRejectionReason` de la venta
+    (la vista "requiere atención" es de S4.3).
+  - El worker revisa el outbox cada segundo, porque el `wake()` tras el commit solo llega al relay del
+    mismo proceso. Si llega a pesar, cambiar a LISTEN/NOTIFY.
+  - Las dead letters reprocesadas no se purgan.
+  - El stack de producción (S8.1) tiene que levantar el servicio `worker` con su healthcheck y
+    `RUN_BACKGROUND=false` en el API.
 
 ## 2. Dependencias
 
@@ -289,7 +301,7 @@ flowchart LR
 | [S3.1](sessions/S3.1-idempotencia.md) | Idempotencia | `Idempotency-Key` en POS y pagos | S2.6 | core, web | G-26 | M |
 | [S3.2](sessions/S3.2-reglas-de-inventario.md) | Reglas de inventario | Sin stock negativo, disponibilidad real, ajustes correctos | S2.6 | core | G-27, G-28, G-29, G-32, G-36 | M |
 | [S3.3](sessions/S3.3-ventas-pagos-y-precision.md) | Ventas, pagos y precisión | Pagos válidos, vuelto, anulación con factura en curso, dinero sin tope bajo | S2.6 | core, web | G-16, G-20, G-30, G-31, G-33 | M |
-| [S3.4](sessions/S3.4-worker-y-mensajeria-resiliente.md) | Worker y mensajería resiliente | Worker separado, límites, mensajes fallidos, estado de facturación en la venta | S2.3 | core | G-21, G-24, G-25, G-35 | M |
+| [S3.4](sessions/S3.4-worker-y-mensajeria-resiliente.md) | Worker y mensajería resiliente | Worker separado, límites, mensajes fallidos, estado de facturación en la venta | S2.3 | core, infra, invoicing | G-21, G-24, G-25, G-35 | M |
 | [S3.5](sessions/S3.5-bitacora-de-auditoria.md) | Bitácora de auditoría | Registro inmutable de operaciones sensibles | S2.3, S1.4 | core, web | G-50, F-16 | M |
 | [S4.1](sessions/S4.1-cumplimiento-de-la-factura.md) | Cumplimiento de la factura | Ambiente por emisor, autorización guardada, XSD, campos tributarios | S2.8 | invoicing, core | G-10, G-15, G-16, G-17, G-19, G-22 | L |
 | [S4.2](sessions/S4.2-sri-desacoplado.md) | SRI desacoplado | Cola en PostgreSQL y worker para firmar y enviar | S2.7 | invoicing | G-13, G-14 | M |

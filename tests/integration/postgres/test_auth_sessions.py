@@ -3,12 +3,16 @@ and rotates, a reused one revokes the session, repeated failures lock the
 login, and refresh stops working after logout, a password change or
 deactivation. The last admin can't be removed."""
 
+from datetime import datetime, timedelta
+
 import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from src.auth.infra.cookies import REFRESH_COOKIE
+from src.auth.infra.session_purge import purge_finished
+from src.shared.infra.database import worker_session_maker
 from tests.integration.postgres.api import Api
 
 PASSWORD = "secret-pass-1"
@@ -256,3 +260,27 @@ def test_the_last_admin_stays(client, admin_api, auth_headers):
     )
     admin_api.put(f"/api/admin/users/{me['id']}/role", {"role": 2})
     assert other["role"] == 1
+
+
+def test_the_worker_purges_old_finished_sessions(client, cashier, pg_engine):
+    """Revoked or expired long ago they go; an active one stays, and a refresh
+    with a purged session is rejected like a revoked one"""
+    _, kept_cookie = _session(client)
+    _, purged_cookie = _session(client)
+    with pg_engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE auth_sessions SET revoked_at = now() - interval '40 days'"
+                " WHERE id = (SELECT max(id) FROM auth_sessions)"
+            )
+        )
+
+    deleted = purge_finished(
+        worker_session_maker(), datetime.now() - timedelta(days=30)
+    )
+
+    assert deleted == 1
+    with pg_engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM auth_sessions")).scalar() == 2
+    assert _refresh(client, purged_cookie).status_code == 401
+    assert _refresh(client, kept_cookie).status_code == 200

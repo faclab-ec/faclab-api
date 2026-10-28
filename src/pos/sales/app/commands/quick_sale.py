@@ -182,8 +182,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             session=self.session,
         )
 
-        # 11. Retornar venta completa
-        result = sale.dict()
+        # 11. Retornar venta completa, con la factura que el handler de
+        # facturación dejó pendiente
+        result = (self.sale_repo.get_by_id(sale.require_id()) or sale).dict()
         result["items"] = [
             {**item.dict(), "subtotal": item.subtotal} for item in created_items
         ]

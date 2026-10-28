@@ -134,7 +134,9 @@ Endpoints publicos, fuera de la documentacion y del log de acceso:
 | URL | Respuesta |
 |---|---|
 | `GET /health/live` | `200 {"status": "ok"}` mientras el proceso responde |
-| `GET /health/ready` | `200` con `status` `ok`, o `degraded` si Kafka esta activo pero el productor no esta conectado (el outbox conserva los mensajes); `503` con `status` `unavailable` si la base de datos no responde a `SELECT 1` |
+| `GET /health/ready` | `200` con `status` `ok`, o `degraded` si el API corre la mensajeria (`RUN_BACKGROUND=true`) y el productor de Kafka no esta conectado (el outbox conserva los mensajes); `503` con `status` `unavailable` si la base de datos no responde a `SELECT 1` |
+
+El worker no expone HTTP: escribe el ultimo ciclo exitoso de cada tarea en `WORKER_HEALTH_FILE`, y su healthcheck es `python -m src.shared.infra.worker.health`.
 
 Ver [docs/api-reference.md](docs/api-reference.md) para la referencia completa de endpoints.
 
@@ -230,7 +232,8 @@ Variables principales (la lista completa esta en `config/base.py`):
 |---|---|---|
 | `ENVIRONMENT` | `local` (por defecto) | `staging` o `production` |
 | `DATABASE_URL` | Por defecto `sqlite:///./warehouse.db` | **Obligatoria**: el rol `faclab_app`, por ejemplo `postgresql://faclab_app:password@db:5432/faclab` |
-| `DATABASE_URL_WORKER` | Por defecto la de `DATABASE_URL` | **Obligatoria con `KAFKA_ENABLED`**: el rol `faclab_worker` (relay del outbox) |
+| `DATABASE_URL_WORKER` | Por defecto la de `DATABASE_URL` | **Obligatoria**: el rol `faclab_worker` (worker: relay del outbox, consumidor y purgas) |
+| `RUN_BACKGROUND` | Por defecto `true`; `docker-compose.yml` lo pone en `false` en el API y levanta el servicio `worker` | `false` en el API cuando corre el worker; `true` lo vuelve a arrancar en el API (vuelta atras) |
 | `DATABASE_URL_MIGRATIONS` | Por defecto la de `DATABASE_URL` | El rol `faclab_owner`; solo la usa Alembic |
 | `DATABASE_URL_ADMIN` | Superusuario para `make db-roles` y `make test-integration` | Solo para crear los roles (`python -m src.shared.infra.db_roles`) |
 | `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
@@ -242,7 +245,7 @@ Variables principales (la lista completa esta en `config/base.py`):
 
 Si falta alguna variable obligatoria, el arranque falla con un mensaje que las nombra.
 
-Cada proceso entra a PostgreSQL con su rol (Row-Level Security, S2.4): el API como `faclab_app`, que no puede saltarse las politicas por empresa; el relay del outbox como `faclab_worker`, que si puede porque publica los mensajes de todas; y las migraciones como `faclab_owner`, dueno de las tablas. `make db-roles` crea los tres roles (con las contrasenas de sus URLs) y la base, y se corre antes de `make upgrade`. Detalle en [docs/architecture/MULTI_TENANCY.md](docs/architecture/MULTI_TENANCY.md) §6.
+Cada proceso entra a PostgreSQL con su rol (Row-Level Security, S2.4): el API como `faclab_app`, que no puede saltarse las politicas por empresa; el worker (relay del outbox, consumidor y purgas) como `faclab_worker`, que si puede porque trabaja con los mensajes y las filas de todas; y las migraciones como `faclab_owner`, dueno de las tablas. `make db-roles` crea los tres roles (con las contrasenas de sus URLs) y la base, y se corre antes de `make upgrade`. Detalle en [docs/architecture/MULTI_TENANCY.md](docs/architecture/MULTI_TENANCY.md) §6.
 
 La imagen de produccion lee ademas `WEB_CONCURRENCY` (workers de uvicorn, por defecto 2) y `FORWARDED_ALLOW_IPS` (de quien confiar los encabezados `X-Forwarded-*`, por defecto `*` porque el API solo se expone detras del proxy).
 
@@ -251,8 +254,10 @@ La imagen de produccion lee ademas `WEB_CONCURRENCY` (workers de uvicorn, por de
 ### Docker (Recomendado)
 
 ```bash
-make dev     # Servidor con hot-reload en http://localhost:3000
+make dev     # Servidor con hot-reload en http://localhost:3000, mas el worker
 ```
+
+`make dev` levanta tambien el servicio `worker` (`python worker.py`): relay del outbox y consumidor de Kafka (con `KAFKA_ENABLED`), y cada hora las purgas del outbox publicado, de las claves de idempotencia y de las sesiones vencidas. No se recarga solo: `docker compose restart worker` despues de un cambio, o `make worker` para verlo en primer plano.
 
 ### Local
 
@@ -279,6 +284,13 @@ make upgrade                    # Aplicar migraciones (como faclab_owner)
 make downgrade d=revision_id    # Revertir migracion
 make seed                       # Datos de ejemplo en dos empresas; reemplaza los suyos y solo corre con ENVIRONMENT=local
 make seed-admin                 # Primer usuario admin desde AUTH_SEED_* (idempotente)
+
+# Worker y mensajes atascados (como faclab_worker, todas las empresas)
+make worker                     # Worker en primer plano
+make outbox-failed              # Mensajes del outbox en estado failed
+make outbox-retry ids="1 2" by=<quien>   # Devolverlos a la cola (ids=--all: todos)
+make dead-letters               # Mensajes de Kafka que el consumidor no pudo procesar
+make reprocess-dead-letter id=<id> by=<quien>  # Procesar uno otra vez
 
 # Testing y calidad
 make test                       # Tests con cobertura (Docker)

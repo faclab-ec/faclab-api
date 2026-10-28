@@ -67,12 +67,36 @@ class BaseConfig:
     #
     KAFKA_BOOTSTRAP_SERVERS = env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
     KAFKA_ENABLED = env.bool("KAFKA_ENABLED", False)
-    # How often the outbox relay looks for unpublished messages; it also wakes
-    # up right after a commit that wrote one
-    OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", 5.0)
+    # How often the outbox relay looks for unpublished messages; in the API
+    # (RUN_BACKGROUND) it also wakes up right after a commit that wrote one
+    OUTBOX_POLL_INTERVAL_SECONDS = env.float("OUTBOX_POLL_INTERVAL_SECONDS", 1.0)
+    # A message that fails this many times is `failed` and stops holding back
+    # its tenant's next ones; between attempts it waits BASE * 2^(n-1) seconds,
+    # up to MAX. A broker outage counts no attempt
+    OUTBOX_MAX_ATTEMPTS = env.int("OUTBOX_MAX_ATTEMPTS", 10)
+    OUTBOX_RETRY_BASE_SECONDS = env.float("OUTBOX_RETRY_BASE_SECONDS", 5.0)
+    OUTBOX_RETRY_MAX_SECONDS = env.float("OUTBOX_RETRY_MAX_SECONDS", 600.0)
+    # Published messages are kept this long (to look at or send again)
+    OUTBOX_RETENTION_DAYS = env.int("OUTBOX_RETENTION_DAYS", 14)
     # Consumer group for the topics core reads (invoice results); every replica
     # shares it so each message is handled once
     KAFKA_CONSUMER_GROUP_ID = env("KAFKA_CONSUMER_GROUP_ID", "faclab-core")
+    # A message whose handler fails this many times (waiting BASE * 2^(n-1)
+    # seconds between them, up to a minute) goes to dead_letters
+    KAFKA_CONSUMER_MAX_ATTEMPTS = env.int("KAFKA_CONSUMER_MAX_ATTEMPTS", 5)
+    KAFKA_CONSUMER_RETRY_BASE_SECONDS = env.float(
+        "KAFKA_CONSUMER_RETRY_BASE_SECONDS", 2.0
+    )
+
+    #
+    # Background work (S3.4): the worker process (`python worker.py`) runs the
+    # messaging and the purges. RUN_BACKGROUND=true also starts the messaging
+    # in the API, as before the worker (rollback switch)
+    #
+    RUN_BACKGROUND = env.bool("RUN_BACKGROUND", True)
+    WORKER_PURGE_INTERVAL_SECONDS = env.float("WORKER_PURGE_INTERVAL_SECONDS", 3600.0)
+    # Last successful cycle of each task, read by the container's health check
+    WORKER_HEALTH_FILE = env.str("WORKER_HEALTH_FILE", "/tmp/faclab-worker-health.json")
 
     #
     # Auth / JWT config
@@ -88,6 +112,8 @@ class BaseConfig:
     # A user with several tenants gets a selection token at login and trades it
     # for a session of one tenant in POST /api/auth/select-tenant
     JWT_SELECTION_TTL_SECONDS = env.int("JWT_SELECTION_TTL_SECONDS", 300)
+    # Revoked or expired sessions are deleted after this many days
+    AUTH_SESSION_RETENTION_DAYS = env.int("AUTH_SESSION_RETENTION_DAYS", 30)
 
     #
     # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)

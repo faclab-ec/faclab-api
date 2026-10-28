@@ -104,7 +104,7 @@ error. Hoy ambos se marcan (G-65).
 ### 4.3 Mensajes
 
 - Deben responder qué pasó, en qué operación y sobre qué recurso, y qué puede hacer el operador.
-  Ejemplo: `"No se pudo publicar el mensaje en sales.confirmed tras 10 intentos; quedó en estado failed. Revisar /api/platform/outbox/failed y reprocesar"`.
+  Ejemplo (`outbox_message_failed`, S3.4): `"Could not publish SaleConfirmed to sales.confirmed after 10 attempts; it is failed. Retry it with python -m src.background.cli outbox-retry 42"`. La consola de plataforma (S8.5) lo hará por HTTP.
 - Prohibidos: `"Something went wrong"`, `"Error processing request"`, mensajes sin `event.name`.
 
 ### 4.4 HTTP
