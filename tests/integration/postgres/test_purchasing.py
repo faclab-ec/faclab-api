@@ -158,3 +158,22 @@ def test_order_items_carry_the_product_name_and_sku(api, order):
         order["product"]["name"],
         order["product"]["sku"],
     )
+
+
+def test_an_order_line_of_a_million_and_a_half_is_stored_and_read(api, order):
+    """Up to 999,999.99 until S3.3 (numeric(12, 6)); a purchase order goes past it"""
+    po_id = order["po"]["id"]
+    product = make_product(api, "SKU-BIG", purchasePrice="1500000.00")
+    api.post(
+        "/api/admin/purchase-order-items",
+        {
+            "purchaseOrderId": po_id,
+            "productId": product["id"],
+            "quantityOrdered": 1,
+            "unitCost": "1500000.00",
+        },
+    )
+
+    items = api.get(f"/api/admin/purchase-orders/{po_id}/items")
+    assert [i["unitCost"] for i in items] == [6.0, 1_500_000.0]
+    assert api.get(f"/api/admin/purchase-orders/{po_id}")["subtotal"] == 1_500_060.0
