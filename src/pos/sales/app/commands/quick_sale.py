@@ -124,9 +124,23 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
 
         # 5. Recalcular totales
         sale.recalculate_totals(created_items)
+
+        # 6. Aplicar los pagos al total: cada monto es lo que entrega el
+        #    cliente, se aplica lo que falta y el resto en efectivo es el vuelto.
+        #    Antes de bloquear el stock
+        payments = [
+            Payment(
+                sale_id=sale.require_id(),
+                amount=Decimal(str(payment_data["amount"])),
+                payment_method=self._payment_method(payment_data["payment_method"]),
+                reference=payment_data.get("reference"),
+            )
+            for payment_data in command.payments
+        ]
+        sale.settle(payments)
         self.sale_repo.update(sale)
 
-        # 6. Descontar el stock de la ubicación de la terminal (bloquea las filas
+        # 7. Descontar el stock de la ubicación de la terminal (bloquea las filas
         #    por product_id, en orden, para que dos ventas concurrentes no se
         #    pisen ni se bloqueen mutuamente)
         self.stock.take(
@@ -137,46 +151,15 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             reference_id=sale.require_id(),
         )
 
-        # 7. Validar pagos cubren el total
-        total_payment = sum(
-            (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
-        )
-        if not sale.is_covered_by(total_payment):
-            raise ValidationError(
-                message="Payment amount is insufficient",
-                detail=f"Total: {sale.total}, paid: {total_payment}",
-            )
-
         # 8. Confirmar la venta con su número de la sucursal (después del stock,
         #    como en todo documento del POS)
         sale.confirm(self.numbering.next(terminal.branch_id, DocumentType.SALE))
         self.sale_repo.update(sale)
 
         # 9. Registrar pagos
-        created_payments = []
-        for payment_data in command.payments:
-            try:
-                payment_method = PaymentMethod(payment_data["payment_method"])
-            except ValueError:
-                raise ValidationError(
-                    message=f"Invalid payment method: {payment_data['payment_method']}",
-                    detail=f"Valid methods: {[m.value for m in PaymentMethod]}",
-                ) from None
+        created_payments = [self.payment_repo.create(p) for p in payments]
 
-            payment = Payment(
-                sale_id=sale.require_id(),
-                amount=Decimal(str(payment_data["amount"])),
-                payment_method=payment_method,
-                reference=payment_data.get("reference"),
-            )
-            payment = self.payment_repo.create(payment)
-            created_payments.append(payment)
-
-        # 10. Actualizar estado de pago
-        sale.update_payment_status(total_payment)
-        self.sale_repo.update(sale)
-
-        # 11. Publicar evento
+        # 10. Publicar evento
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
@@ -194,10 +177,20 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             )
         )
 
-        # 12. Retornar venta completa
+        # 11. Retornar venta completa
         result = sale.dict()
         result["items"] = [
             {**item.dict(), "subtotal": item.subtotal} for item in created_items
         ]
         result["payments"] = [p.dict() for p in created_payments]
         return result
+
+    @staticmethod
+    def _payment_method(value: str) -> PaymentMethod:
+        try:
+            return PaymentMethod(value)
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid payment method: {value}",
+                detail=f"Valid methods: {[m.value for m in PaymentMethod]}",
+            ) from None

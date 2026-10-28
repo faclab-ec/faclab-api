@@ -134,6 +134,13 @@ class SaleItemModel(TenantScoped, Base):
     sale: Mapped["SaleModel"] = relationship(back_populates="items")
 
 
+def _tendered_without_change(context) -> Decimal:
+    """A payment written without what was handed over (e.g. by the seed) gave
+    no change: it handed over what it applied"""
+    params = context.get_current_parameters()
+    return params["amount"] + (params.get("change") or Decimal("0"))
+
+
 class PaymentModel(TenantScoped, Base):
     """Modelo SQLAlchemy para Payments"""
 
@@ -143,7 +150,14 @@ class PaymentModel(TenantScoped, Base):
     sale_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("sales.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # Applied to the sale; amount_tendered = amount + change
     amount: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
+    amount_tendered: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=_tendered_without_change
+    )
+    change: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal("0")
+    )
     payment_method: Mapped[str] = mapped_column(String(16), nullable=False)
     payment_date: Mapped[datetime | None] = mapped_column(DateTime)
     reference: Mapped[str | None] = mapped_column(String(128))

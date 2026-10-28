@@ -106,7 +106,8 @@ publica: el core responde `SALE_WITHOUT_EMISSION_POINT`.
 | `invoice_tax` | decimal | no | Valor del IVA en la factura, en centavos |
 
 `payments[]`: `method` (`CASH` \| `CREDIT_CARD` \| `DEBIT_CARD` \| `TRANSFER` \| `OTHER`) y `amount`
-(decimal; lo entregado, que en efectivo puede superar el total).
+(decimal; lo aplicado a la venta, sin el vuelto). La suma de `payments[].amount` es igual a `total`
+desde S3.3: el core guarda aparte lo entregado y el vuelto, que no viajan a facturación.
 
 ### `sales.confirmed` v1
 

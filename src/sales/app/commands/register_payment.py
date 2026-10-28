@@ -52,7 +52,8 @@ class RegisterPaymentCommandHandler(CommandHandler[RegisterPaymentCommand, dict]
                 detail=f"Valid methods: {[m.value for m in PaymentMethod]}",
             ) from None
 
-        # Crear el pago
+        # El monto es lo que entrega el cliente: se aplica lo que falta pagar y
+        # el resto de un pago en efectivo es el vuelto
         payment = Payment(
             sale_id=command.sale_id,
             amount=command.amount,
@@ -60,15 +61,9 @@ class RegisterPaymentCommandHandler(CommandHandler[RegisterPaymentCommand, dict]
             reference=command.reference,
             notes=command.notes,
         )
+        sale.take_payment(payment, self.payment_repo.filter_by(sale_id=sale.id))
 
         payment = self.payment_repo.create(payment)
-
-        # Calcular total pagado
-        all_payments = self.payment_repo.filter_by(sale_id=command.sale_id)
-        total_paid = sum((p.amount for p in all_payments), Decimal("0"))
-
-        # Actualizar estado de pago de la venta
-        sale.update_payment_status(total_paid)
         self.sale_repo.update(sale)
 
         # Publicar evento

@@ -8,8 +8,20 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
 from src.pos.terminal.app.stock import TerminalStock
-from src.sales.domain.entities import Sale, SaleItem, SaleStatus
-from src.sales.domain.exceptions import InsufficientStockError, SaleHasNoItemsError
+from src.sales.domain.entities import (
+    Payment,
+    PaymentMethod,
+    PaymentStatus,
+    Sale,
+    SaleItem,
+    SaleStatus,
+)
+from src.sales.domain.exceptions import (
+    InsufficientPaymentError,
+    InsufficientStockError,
+    PaymentExceedsBalanceError,
+    SaleHasNoItemsError,
+)
 from src.shared.domain.exceptions import NotFoundError
 from tests.unit.pos.terminals import LOCATION_ID, TERMINAL, numbering
 
@@ -39,6 +51,17 @@ def _make_sale_item(**overrides) -> SaleItem:
     return SaleItem(**defaults)
 
 
+def _make_payment(**overrides) -> Payment:
+    defaults: dict[str, Any] = {
+        "id": 1,
+        "sale_id": 1,
+        "amount": Decimal("1000"),
+        "payment_method": PaymentMethod.CASH,
+    }
+    defaults.update(overrides)
+    return Payment(**defaults)
+
+
 def _make_stock(**overrides) -> Stock:
     defaults: dict[str, Any] = {
         "id": 1,
@@ -56,7 +79,7 @@ class _Repos:
     stock_repo: MagicMock
 
 
-def _build_confirm_handler(sale=None, items=None, stock=None):
+def _build_confirm_handler(sale=None, items=None, stock=None, payments=None):
     from src.pos.sales.app.commands import POSConfirmSaleCommandHandler
 
     class Handler(_Repos, POSConfirmSaleCommandHandler):
@@ -72,7 +95,10 @@ def _build_confirm_handler(sale=None, items=None, stock=None):
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.numbering = numbering()
     handler.payment_repo = MagicMock()
-    handler.payment_repo.filter_by.return_value = []
+    # By default paid in full
+    handler.payment_repo.filter_by.return_value = (
+        [_make_payment()] if payments is None else payments
+    )
     handler.event_publisher = MagicMock()
 
     if sale is not None:
@@ -244,6 +270,81 @@ class TestPOSConfirmSaleCommandHandler:
         assert result["status"] == SaleStatus.CONFIRMED
         assert handler.movement_repo.create.call_count == 2
         assert handler.stock_repo.update.call_count == 2
+
+    def test_confirm_requires_payments_covering_the_total(self):
+        from src.pos.sales.app.commands import POSConfirmSaleCommand
+
+        handler = _build_confirm_handler(
+            sale=_make_sale(),
+            items=[_make_sale_item()],
+            stock=_make_stock(),
+            payments=[_make_payment(amount=Decimal("999.99"))],
+        )
+
+        with pytest.raises(InsufficientPaymentError):
+            handler._handle(POSConfirmSaleCommand(sale_id=1))
+
+        # Checked before locking the stock or taking a number
+        handler.stock_repo.first_for_update.assert_not_called()
+        handler.numbering.next.assert_not_called()
+        handler.sale_repo.update.assert_not_called()
+
+    def test_confirm_without_payments_fails(self):
+        from src.pos.sales.app.commands import POSConfirmSaleCommand
+
+        handler = _build_confirm_handler(
+            sale=_make_sale(), items=[_make_sale_item()], payments=[]
+        )
+
+        with pytest.raises(InsufficientPaymentError):
+            handler._handle(POSConfirmSaleCommand(sale_id=1))
+
+    def test_confirm_applies_the_payments_to_the_final_total(self):
+        """A draft paid before its items changed: the cash handed over in excess
+        is change, and only what was applied reaches the event"""
+        from src.pos.sales.app.commands import POSConfirmSaleCommand
+
+        card = _make_payment(
+            id=1, amount=Decimal("300"), payment_method=PaymentMethod.CREDIT_CARD
+        )
+        cash = _make_payment(id=2, amount=Decimal("800"))
+        sale = _make_sale()
+        handler = _build_confirm_handler(
+            sale=sale,
+            items=[_make_sale_item()],
+            stock=_make_stock(),
+            # Not in the order they were taken
+            payments=[cash, card],
+        )
+
+        handler._handle(POSConfirmSaleCommand(sale_id=1))
+
+        assert (card.amount, card.change) == (Decimal("300"), Decimal("0"))
+        assert (cash.amount, cash.amount_tendered, cash.change) == (
+            Decimal("700"),
+            Decimal("800"),
+            Decimal("100"),
+        )
+        assert handler.payment_repo.update.call_count == 2
+        assert sale.payment_status == PaymentStatus.PAID
+        event = handler.event_publisher.publish.call_args.args[0]
+        assert [p["amount"] for p in event.payments] == [Decimal("300"), Decimal("700")]
+
+    def test_confirm_rejects_a_card_payment_above_the_total(self):
+        from src.pos.sales.app.commands import POSConfirmSaleCommand
+
+        handler = _build_confirm_handler(
+            sale=_make_sale(),
+            items=[_make_sale_item()],
+            payments=[
+                _make_payment(
+                    amount=Decimal("1200"), payment_method=PaymentMethod.DEBIT_CARD
+                )
+            ],
+        )
+
+        with pytest.raises(PaymentExceedsBalanceError):
+            handler._handle(POSConfirmSaleCommand(sale_id=1))
 
 
 # === POSCancelSaleCommandHandler Tests ===

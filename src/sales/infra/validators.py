@@ -65,7 +65,15 @@ class SaleRequest(BaseModel):
 class PaymentRequest(BaseModel):
     """Register a payment against a sale."""
 
-    amount: Decimal = Field(..., gt=0, description="Payment amount")
+    amount: Decimal = Field(
+        ...,
+        gt=0,
+        description=(
+            "Amount the customer hands over. The sale takes what it still owes; "
+            "the rest of a cash payment is the change, and any other method "
+            "cannot exceed the balance"
+        ),
+    )
     payment_method: PaymentMethod = Field(
         ...,
         description="Payment method",
@@ -153,7 +161,17 @@ class PaymentResponse(BaseModel):
         validation_alias=AliasChoices("saleId", "sale_id"),
         serialization_alias="saleId",
     )
-    amount: DecimalNumber
+    amount: DecimalNumber = Field(
+        ...,
+        description="Applied to the sale (what the customer handed over minus the change)",
+    )
+    amount_tendered: DecimalNumber = Field(
+        ...,
+        description="What the customer handed over",
+        validation_alias=AliasChoices("amountTendered", "amount_tendered"),
+        serialization_alias="amountTendered",
+    )
+    change: DecimalNumber = Field(..., description="Given back (cash only)")
     payment_method: PaymentMethod = Field(
         ...,
         description="Payment method used",
