@@ -5,8 +5,10 @@ from decimal import Decimal
 from enum import StrEnum
 
 from src.sales.domain.exceptions import (
+    CreditNoteRequiredError,
     InsufficientPaymentError,
     InvalidSaleStatusError,
+    InvoiceInProgressError,
     PaymentExceedsBalanceError,
     SaleNotParkedError,
     SaleNotPayableError,
@@ -39,6 +41,17 @@ class PaymentStatus(StrEnum):
     PENDING = "PENDING"
     PARTIAL = "PARTIAL"
     PAID = "PAID"
+
+
+class InvoiceStatus(StrEnum):
+    """Factura de una venta CONFIRMED en faclab-invoicing; sin valor, no se envió.
+
+    INVOICED ya dice que se autorizó. S3.4 agrega AUTHORIZED y el motivo del
+    rechazo.
+    """
+
+    PENDING = "PENDING"
+    REJECTED = "REJECTED"
 
 
 class PaymentMethod(StrEnum):
@@ -105,6 +118,7 @@ class Sale(Entity):
     created_by: str | None = None
     parked_at: datetime | None = None
     park_reason: str | None = None
+    invoice_status: InvoiceStatus | None = None
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -127,9 +141,17 @@ class Sale(Entity):
             self.sale_date = datetime.now()
 
     def cancel(self) -> None:
-        """Cancela la venta (solo si está en DRAFT o CONFIRMED)"""
+        """Cancela la venta (solo si está en DRAFT o CONFIRMED).
+
+        Una confirmada no se cancela mientras su factura espera al SRI, y una
+        facturada solo se anula con nota de crédito (S4.5).
+        """
+        if self.status == SaleStatus.INVOICED:
+            raise CreditNoteRequiredError(self.id)
         if self.status not in (SaleStatus.DRAFT, SaleStatus.CONFIRMED):
             raise InvalidSaleStatusError(self.status, "cancel")
+        if self.invoice_status == InvoiceStatus.PENDING:
+            raise InvoiceInProgressError(self.id)
         self.status = SaleStatus.CANCELLED
 
     @property
@@ -137,11 +159,26 @@ class Sale(Entity):
         """Confirmada, facturada o no (ver `COMPLETED_SALE_STATUSES`)"""
         return self.status in COMPLETED_SALE_STATUSES
 
+    def await_invoice(self) -> None:
+        """La venta se envió a faclab-invoicing (al confirmarla o reenviarla)"""
+        if self.status != SaleStatus.CONFIRMED:
+            raise InvalidSaleStatusError(self.status, "invoice")
+        self.invoice_status = InvoiceStatus.PENDING
+
+    def reject_invoice(self) -> bool:
+        """El SRI rechazó la factura: la venta se puede corregir y reenviar o
+        cancelar. Solo cambia una factura pendiente; dice si cambió."""
+        if self.invoice_status != InvoiceStatus.PENDING:
+            return False
+        self.invoice_status = InvoiceStatus.REJECTED
+        return True
+
     def invoice(self) -> None:
         """Marca la venta como facturada (solo si está CONFIRMED)"""
         if self.status != SaleStatus.CONFIRMED:
             raise InvalidSaleStatusError(self.status, "invoice")
         self.status = SaleStatus.INVOICED
+        self.invoice_status = None
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""

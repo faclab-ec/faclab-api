@@ -86,6 +86,9 @@ class SaleModel(TenantScoped, Base):
     created_by: Mapped[str | None] = mapped_column(String(64))
     parked_at: Mapped[datetime | None] = mapped_column(DateTime)
     park_reason: Mapped[str | None] = mapped_column(String(512))
+    # PENDING while faclab-invoicing has the invoice, REJECTED after the SRI
+    # rejects it; null if it was never sent
+    invoice_status: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

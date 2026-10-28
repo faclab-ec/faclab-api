@@ -16,6 +16,10 @@ from src.sales.app.commands.register_payment import (
     RegisterPaymentCommand,
     RegisterPaymentCommandHandler,
 )
+from src.sales.app.commands.reject_invoice import (
+    RejectSaleInvoiceCommand,
+    RejectSaleInvoiceCommandHandler,
+)
 from src.sales.app.commands.remove_sale_item import (
     RemoveSaleItemCommand,
     RemoveSaleItemCommandHandler,
@@ -34,6 +38,8 @@ __all__ = [
     "RemoveSaleItemCommandHandler",
     "InvoiceSaleCommand",
     "InvoiceSaleCommandHandler",
+    "RejectSaleInvoiceCommand",
+    "RejectSaleInvoiceCommandHandler",
     "RegisterPaymentCommand",
     "RegisterPaymentCommandHandler",
     "RequestSaleInvoicingCommand",

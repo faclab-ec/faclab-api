@@ -2,6 +2,7 @@ from src.sales.app.commands.add_sale_item import AddSaleItemCommandHandler
 from src.sales.app.commands.create_sale import CreateSaleCommandHandler
 from src.sales.app.commands.invoice_sale import InvoiceSaleCommandHandler
 from src.sales.app.commands.register_payment import RegisterPaymentCommandHandler
+from src.sales.app.commands.reject_invoice import RejectSaleInvoiceCommandHandler
 from src.sales.app.commands.remove_sale_item import RemoveSaleItemCommandHandler
 from src.sales.app.commands.request_invoicing import RequestSaleInvoicingCommandHandler
 from src.sales.app.commands.update_sale_item import UpdateSaleItemCommandHandler
@@ -31,6 +32,7 @@ INJECTABLES = [
     UpdateSaleItemCommandHandler,
     RegisterPaymentCommandHandler,
     InvoiceSaleCommandHandler,
+    RejectSaleInvoiceCommandHandler,
     RequestSaleInvoicingCommandHandler,
     GetAllSalesQueryHandler,
     GetSaleByIdQueryHandler,
