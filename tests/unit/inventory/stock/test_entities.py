@@ -103,6 +103,24 @@ def test_update_quantity_error_references_product_id():
     assert exc_info.value.data["product_id"] == 42
 
 
+def test_update_quantity_out_cannot_take_reserved_units():
+    stock = _make_stock(quantity=10, reserved_quantity=4)
+
+    with pytest.raises(InsufficientStockError):
+        stock.update_quantity(-7)
+
+    assert stock.quantity == 10
+    stock.update_quantity(-6)
+    assert (stock.quantity, stock.available_quantity) == (4, 0)
+
+
+def test_update_quantity_in_is_allowed_with_reservations():
+    stock = _make_stock(quantity=4, reserved_quantity=4)
+    stock.update_quantity(3)
+
+    assert (stock.quantity, stock.available_quantity) == (7, 3)
+
+
 # --- location_id ---
 
 

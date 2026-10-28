@@ -47,11 +47,15 @@ class OrSpecification(Specification):
         )
 
     def to_query_criteria(self) -> list[Any]:
-        from sqlalchemy import or_
+        from sqlalchemy import and_, or_
 
         left_criteria = self.left.to_query_criteria()
         right_criteria = self.right.to_query_criteria()
-        return [or_(*left_criteria, *right_criteria)]
+        # A side without criteria accepts everything, and so does the OR
+        if not left_criteria or not right_criteria:
+            return []
+        # Each side's criteria hold together: (a AND b) OR (c AND d)
+        return [or_(and_(*left_criteria), and_(*right_criteria))]
 
 
 class NotSpecification(Specification):

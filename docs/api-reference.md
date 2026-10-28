@@ -123,7 +123,7 @@ una devolución de otra sucursal responde 404. Detalle en `pos-api-spec.md` §0.
 
 | Metodo | Ruta | Descripcion |
 |---|---|---|
-| `POST` | `/api/admin/movements` | Crear movimiento (IN/OUT) |
+| `POST` | `/api/admin/movements` | Crear movimiento manual (IN/OUT), sin documento (`referenceType`/`referenceId` solo los llenan ventas, devoluciones, ajustes, transferencias y compras); un OUT solo toma lo disponible (`INSUFFICIENT_STOCK`) |
 | `GET` | `/api/admin/movements` | Listar movimientos; `productId`, `type`, `fromDate` y `toDate` (fecha y hora, ambos incluidos) |
 | `GET` | `/api/admin/movements/{id}` | Obtener por ID |
 

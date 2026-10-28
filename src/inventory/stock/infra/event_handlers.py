@@ -55,9 +55,12 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
                 )
                 stock = Stock(
                     product_id=event.product_id,
-                    quantity=event.quantity,
+                    quantity=0,
                     location_id=event.location_id,
                 )
+                # An OUT where there is no stock fails here instead of
+                # leaving a row with negative stock
+                stock.update_quantity(event.quantity)
                 stock = stock_repo.create(stock)
 
                 EventBus.publish(

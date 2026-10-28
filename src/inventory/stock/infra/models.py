@@ -1,6 +1,12 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKeyConstraint, Index, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Index,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
@@ -33,6 +39,13 @@ class StockModel(TenantScoped, Base):
             unique=True,
             postgresql_where=text("location_id IS NULL"),
             sqlite_where=text("location_id IS NULL"),
+        ),
+        # The domain rejects these first (INSUFFICIENT_STOCK); the database
+        # is the last barrier for any write that skips it
+        CheckConstraint("quantity >= 0", name="ck_stocks_quantity_non_negative"),
+        CheckConstraint(
+            "reserved_quantity >= 0 AND reserved_quantity <= quantity",
+            name="ck_stocks_reserved_quantity_range",
         ),
     )
 

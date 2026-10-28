@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.inventory.stock.domain.entities import Stock
 from src.pos.sales.app.commands.confirm_sale import (
     POSConfirmSaleCommand,
     POSConfirmSaleCommandHandler,
@@ -65,10 +66,8 @@ def _mock_repo(entity=None, entities=None):
     return repo
 
 
-def _make_stock():
-    stock = MagicMock()
-    stock.quantity = 100
-    return stock
+def _make_stock() -> Stock:
+    return Stock(id=1, product_id=100, quantity=100)
 
 
 def test_confirm_sale_with_open_shift():

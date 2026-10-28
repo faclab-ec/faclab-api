@@ -128,11 +128,22 @@
   abierto hace que `GET /api/pos/shifts/active` responda `POS_TERMINAL_INACTIVE`; el turno se sigue
   cerrando por id (`POST /api/pos/shifts/{id}/close`). Conviene impedir desactivar una terminal con
   turno abierto, junto con el cierre de caja (S5.9).
-- **Disponibilidad en el POS** (ya en S3.2). El POS valida contra `quantity` de la ubicación, no
+- ~~**Disponibilidad en el POS**~~ (resuelto en S3.2: el POS valida contra `available_quantity` y la
+  suma de las líneas de cada producto). El POS valida contra `quantity` de la ubicación, no
   contra `available_quantity`: puede vender stock reservado por una transferencia.
-- **`movements.reference_id` sin FK** (detectado en S2.4). Es un entero libre que `POST /movements`
+- ~~**`movements.reference_id` sin FK**~~ (detectado en S2.4; resuelto en S3.2: `POST /movements` ya
+  no acepta `referenceType` ni `referenceId`, que solo llenan los documentos que mueven stock; un
+  movimiento manual no tiene documento). Es un entero libre que `POST /movements`
   acepta del body: puede nombrar una venta u orden de otra empresa. No expone datos (nada se lee por
   ese número), pero conviene validarlo o quitarlo del body cuando se revisen los movimientos (S3.2).
+- **Movimientos manuales de faclab-web sin ubicación** (detectado en S3.2). El formulario de
+  movimientos envía `productId`, `quantity`, `type`, `reason` y `date`, nunca `locationId`: todo
+  movimiento manual cae en el stock "sin ubicación", que el POS no vende. Desde S3.2 un OUT que esa
+  fila no cubre responde `INSUFFICIENT_STOCK` (antes dejaba stock negativo). Falta un selector de
+  bodega y ubicación en el formulario.
+- **Ítems de ajuste repetidos** (detectado en S3.2). Un ajuste acepta dos ítems del mismo producto y
+  ubicación; al confirmar, cada uno lleva el stock a su conteo, así que gana el último. Conviene
+  rechazar el segundo (o sumar los conteos) al agregarlo.
 - ~~**El secuencial de facturación puede retroceder**~~ (detectado en S2.7; resuelto en S2.8: el
   secuencial ya no es parte de la configuración, que ignora `invoiceSequence`, y su valor inicial se
   fija aparte sin poder retroceder). Guardar la configuración sin

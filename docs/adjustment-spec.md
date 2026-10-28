@@ -54,13 +54,13 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `productId`        | int            | Si        | -       | FK a Product                       |
 | `productName`, `productSku` | string? | Auto     | -       | Nombre y SKU del producto (solo en el listado de items) |
 | `locationId`       | int            | Si        | -       | FK a Location                      |
-| `expectedQuantity` | int            | Auto      | -       | Cantidad en sistema (capturada al agregar item) |
+| `expectedQuantity` | int            | Auto      | -       | Cantidad en sistema: la del momento de agregar el item, y al confirmar la del momento de confirmar |
 | `actualQuantity`   | int            | Si        | -       | Cantidad contada/real              |
 | `difference`       | int            | Calculado | -       | `actualQuantity - expectedQuantity` |
 | `lotId`            | int \| null    | No        | null    | FK a Lot (opcional)                |
 | `notes`            | string \| null | No        | null    | Observaciones del item             |
 
-> **Nota:** `expectedQuantity` lo asigna el backend automaticamente consultando el stock actual del producto en la ubicacion. No se envia desde el frontend.
+> **Nota:** `expectedQuantity` lo asigna el backend automaticamente consultando el stock actual del producto en la ubicacion. No se envia desde el frontend. Al confirmar se vuelve a leer (ver Reglas): en un ajuste confirmado es el stock contra el que se aplico el conteo.
 
 > **Nota:** `difference` es calculado: positivo = sobrante, negativo = faltante.
 
@@ -250,20 +250,30 @@ Base URL: `/api/admin`
 1. **Solo en DRAFT** se puede: editar, eliminar, cancelar, agregar/editar/eliminar items.
 2. **Confirmar** solo desde DRAFT:
    - Cambia estado a `confirmed`.
-   - Por cada item con `difference != 0`, genera un movimiento de inventario:
+   - Por cada item lee el stock actual de su producto y ubicacion, bloqueado (`SELECT ... FOR UPDATE`)
+     hasta el final de la transaccion, y lo guarda como `expectedQuantity`.
+   - Por cada item con `difference != 0` (contra ese stock), genera un movimiento de inventario:
      - `difference > 0` (sobrante) -> movimiento tipo `IN`
      - `difference < 0` (faltante) -> movimiento tipo `OUT`
      - `difference == 0` -> no genera movimiento
-   - Los movimientos actualizan el stock automaticamente via eventos.
+   - Los movimientos actualizan el stock automaticamente via eventos: al terminar, el stock de cada
+     item es su `actualQuantity`.
 3. **Cancelar** solo desde DRAFT -> cambia a `cancelled`, sin efecto en stock.
 4. Un ajuste CONFIRMED no se puede modificar ni cancelar.
-5. `expectedQuantity` se congela al momento de agregar el item (snapshot del stock actual).
+5. `expectedQuantity` es una referencia mientras el ajuste esta en DRAFT: si entre el conteo y la
+   confirmacion hubo ventas, recepciones o transferencias, la confirmacion aplica la diferencia contra
+   el stock de ese momento, no la de cuando se agrego el item (S3.2). Ejemplo: se cuentan 7 con 10 en
+   sistema, se venden 2 y se confirma: el ajuste saca 1 y el stock queda en 7.
+6. Un faltante solo puede tomar lo disponible: si el conteo es menor que lo reservado por
+   transferencias confirmadas, la confirmacion falla con `INSUFFICIENT_STOCK` (hay que recibir o
+   cancelar la transferencia primero).
 
 ### Logica de Movimientos al Confirmar
 
-Para cada item del ajuste:
+Para cada item del ajuste, en orden de producto y ubicacion:
 
 ```
+expectedQuantity = stock actual (bloqueado)
 difference = actualQuantity - expectedQuantity
 
 Si difference > 0:  movimiento IN  con cantidad = difference
@@ -283,6 +293,7 @@ Referencia del movimiento: `referenceType = "adjustment"`, `referenceId = adjust
 | 400         | Intentar cancelar un ajuste ya confirmado         |
 | 400         | Intentar editar/eliminar un ajuste no DRAFT       |
 | 400         | Intentar agregar items a un ajuste no DRAFT       |
+| 400         | `INSUFFICIENT_STOCK`: el conteo de un item es menor que lo reservado en su ubicacion |
 | 404         | Ajuste no encontrado                              |
 | 404         | Item de ajuste no encontrado                      |
 
@@ -360,7 +371,7 @@ Todas las operaciones fuera de DRAFT responden 400 con `INVALID_ADJUSTMENT_STATU
    - Ingresar cantidad contada (actualQuantity)
    - El sistema muestra expectedQuantity y difference
 3. Revisar diferencias
-4. Confirmar ajuste -> stock se actualiza automaticamente
+4. Confirmar ajuste -> el stock de cada item queda en la cantidad contada (la diferencia se recalcula contra el stock del momento)
 ```
 
 ### Consideraciones de UX

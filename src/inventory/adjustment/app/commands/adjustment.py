@@ -138,11 +138,13 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
         self,
         repo: InventoryAdjustmentRepository,
         item_repo: AdjustmentItemRepository,
+        stock_repo: StockRepository,
         movement_handler: CreateMovementCommandHandler,
         event_publisher: EventPublisher,
     ):
         self.repo = repo
         self.item_repo = item_repo
+        self.stock_repo = stock_repo
         self.movement_handler = movement_handler
         self.event_publisher = event_publisher
 
@@ -156,7 +158,15 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
         items = self.item_repo.filter_by(adjustment_id=adjustment.id)
         adjusted_count = 0
 
-        for item in items:
+        # Each count is compared with the stock now, locked until the end of
+        # the transaction (sorted, like every lock of stock rows): what sold
+        # or arrived since the item was added doesn't drift the result
+        for item in sorted(items, key=lambda i: (i.product_id, i.location_id)):
+            stock = self.stock_repo.first_for_update(
+                product_id=item.product_id, location_id=item.location_id
+            )
+            item.compare_with(stock.quantity if stock else 0)
+            self.item_repo.update(item)
             diff = item.difference
             if diff == 0:
                 continue

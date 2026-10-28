@@ -22,16 +22,6 @@ class MovementBase(BaseModel):
         validation_alias=AliasChoices("locationId", "location_id"),
         serialization_alias="locationId",
     )
-    reference_type: str | None = Field(
-        None,
-        validation_alias=AliasChoices("referenceType", "reference_type"),
-        serialization_alias="referenceType",
-    )
-    reference_id: int | None = Field(
-        None,
-        validation_alias=AliasChoices("referenceId", "reference_id"),
-        serialization_alias="referenceId",
-    )
     reason: str | None = None
     date: datetime | None = None
 
@@ -59,6 +49,18 @@ class MovementRequest(MovementBase):
 
 class MovementResponse(MovementBase):
     id: int
+    # The document that moved the stock (sale, refund, adjustment, transfer,
+    # purchase order). Only those flows set it: a manual movement has none
+    reference_type: str | None = Field(
+        None,
+        validation_alias=AliasChoices("referenceType", "reference_type"),
+        serialization_alias="referenceType",
+    )
+    reference_id: int | None = Field(
+        None,
+        validation_alias=AliasChoices("referenceId", "reference_id"),
+        serialization_alias="referenceId",
+    )
 
 
 class MovementQueryParams(QueryParams):

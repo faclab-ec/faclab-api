@@ -400,7 +400,7 @@ POST /api/admin/transfers/7/confirm
 → Respuesta: transfer con status="confirmed"
 ```
 
-> En este punto el stock disponible en origen se reduce (se reserva), pero aún no se ha movido.
+> En este punto el stock disponible en origen se reduce (se reserva), pero aún no se ha movido. Lo reservado no se puede vender en el POS ni sacar con otro movimiento OUT o ajuste hasta recibir o cancelar la transferencia (`INSUFFICIENT_STOCK`).
 
 ### 4. Recibir (ejecuta movimientos)
 

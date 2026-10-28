@@ -57,7 +57,9 @@ class MovementRouter:
         handler: Injected[CreateMovementCommandHandler],
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[MovementResponse]:
-        """Create a manual inventory movement (IN or OUT). Stock is updated automatically."""
+        """Create a manual inventory movement (IN or OUT). Stock is updated
+        automatically; an OUT only takes what the location has available. A
+        manual movement has no document (`referenceType`/`referenceId`)."""
         result = handler.handle(
             CreateMovementCommand(**new_movement.model_dump(exclude_none=True))
         )

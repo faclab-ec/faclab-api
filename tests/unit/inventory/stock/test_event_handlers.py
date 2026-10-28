@@ -167,6 +167,55 @@ def test_handle_movement_created_insufficient_stock_raises(mock_create_scope):
 
 
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
+def test_handle_movement_created_out_without_stock_raises(mock_create_scope):
+    """An OUT where the location has no stock row is rejected, not stored as
+    a row with negative stock"""
+    mock_repo = Mock()
+    mock_repo.first_for_update.return_value = None
+
+    mock_scope = Mock()
+    mock_scope.get.return_value = mock_repo
+    mock_create_scope.return_value.__enter__.return_value = mock_scope
+
+    event = MovementCreated(
+        aggregate_id=5,
+        product_id=10,
+        quantity=-5,
+        type=MovementType.OUT.value,
+        location_id=3,
+    )
+
+    with pytest.raises(InsufficientStockError) as exc_info:
+        handle_movement_created(event)
+
+    assert exc_info.value.data == {"product_id": 10, "quantity": -5}
+    mock_repo.create.assert_not_called()
+
+
+@patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
+def test_handle_movement_created_out_cannot_take_reserved_units(mock_create_scope):
+    existing_stock = Stock(id=1, product_id=10, quantity=10, reserved_quantity=8)
+    mock_repo = Mock()
+    mock_repo.first_for_update.return_value = existing_stock
+
+    mock_scope = Mock()
+    mock_scope.get.return_value = mock_repo
+    mock_create_scope.return_value.__enter__.return_value = mock_scope
+
+    event = MovementCreated(
+        aggregate_id=6,
+        product_id=10,
+        quantity=-3,
+        type=MovementType.OUT.value,
+    )
+
+    with pytest.raises(InsufficientStockError):
+        handle_movement_created(event)
+
+    mock_repo.update.assert_not_called()
+
+
+@patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_publishes_stock_created_event(mock_create_scope):
     """Test that StockCreated event is published when creating new stock"""
     mock_repo = Mock()

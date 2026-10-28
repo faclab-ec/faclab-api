@@ -410,6 +410,113 @@ def test_a_sale_takes_stock_only_from_its_terminals_location(
     assert _stock_quantity(admin_api, product["id"], backroom["id"]) == 10
 
 
+def test_a_sale_leaves_the_units_reserved_by_a_transfer(
+    api, admin_api, shelf, product, shift
+):
+    backroom = make_location(admin_api, shelf["warehouseId"], "B1")
+    transfer = admin_api.post(
+        "/api/admin/transfers",
+        {"sourceLocationId": shelf["id"], "destinationLocationId": backroom["id"]},
+    )
+    admin_api.post(
+        f"/api/admin/transfers/{transfer['id']}/items",
+        {"productId": product["id"], "quantity": 6},
+    )
+    admin_api.post(f"/api/admin/transfers/{transfer['id']}/confirm")
+
+    # 10 units on the shelf, 6 of them on their way to the backroom
+    error = api.error(
+        "POST",
+        "/api/pos/sales/quick",
+        400,
+        json={
+            "items": [{"productId": product["id"], "quantity": 5}],
+            "payments": [{"amount": "57.50", "paymentMethod": "CASH"}],
+        },
+    )
+    _quick_sale(api, product["id"], 4, "46.00")
+
+    assert error["code"] == "INSUFFICIENT_STOCK"
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 6
+
+
+def test_a_sale_checks_the_total_of_the_lines_of_a_product(
+    api, admin_api, shelf, product, shift
+):
+    error = api.error(
+        "POST",
+        "/api/pos/sales/quick",
+        400,
+        json={
+            "items": [
+                {"productId": product["id"], "quantity": 6},
+                {"productId": product["id"], "quantity": 6},
+            ],
+            "payments": [{"amount": "138.00", "paymentMethod": "CASH"}],
+        },
+    )
+
+    assert error["code"] == "INSUFFICIENT_STOCK"
+    assert "requested=12, available=10" in error["detail"]
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 10
+
+
+def test_an_adjustment_confirmed_after_a_sale_leaves_the_counted_stock(
+    api, admin_api, shelf, product, shift
+):
+    adjustment = admin_api.post(
+        "/api/admin/adjustments",
+        {"warehouseId": shelf["warehouseId"], "reason": "physical_count"},
+    )
+    item = admin_api.post(
+        f"/api/admin/adjustments/{adjustment['id']}/items",
+        {"productId": product["id"], "locationId": shelf["id"], "actualQuantity": 7},
+    )
+    assert item["expectedQuantity"] == 10
+    # A sale between the count and the confirmation
+    _quick_sale(api, product["id"], 2, "23.00")
+
+    admin_api.post(f"/api/admin/adjustments/{adjustment['id']}/confirm")
+
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 7
+    [confirmed] = admin_api.get(f"/api/admin/adjustments/{adjustment['id']}/items")
+    assert (confirmed["expectedQuantity"], confirmed["difference"]) == (8, -1)
+
+
+def test_a_refund_creates_the_stock_row_where_it_returns_the_goods(
+    api, admin_api, client, auth_headers, terminal, shelf, product, shift
+):
+    manager = Api(client, at_terminal(auth_headers(Role.MANAGER), terminal))
+    sale = _quick_sale(api, product["id"], 2, "23.00")
+    [item] = api.get(f"/api/pos/sales/{sale['id']}/items")
+    # The terminal sells from a location without stock since then
+    backroom = make_location(admin_api, shelf["warehouseId"], "B1")
+    admin_api.put(
+        f"/api/admin/pos-terminals/{terminal['id']}",
+        {
+            "emissionPointId": terminal["emissionPointId"],
+            "defaultLocationId": backroom["id"],
+            "code": terminal["code"],
+            "name": terminal["name"],
+        },
+    )
+    refund = api.post(
+        "/api/pos/refunds",
+        {
+            "originalSaleId": sale["id"],
+            "items": [{"saleItemId": item["id"], "quantity": 1}],
+        },
+    )
+
+    manager.post(
+        f"/api/pos/refunds/{refund['id']}/process",
+        {"payments": [{"amount": "11.50", "paymentMethod": "CASH"}]},
+    )
+
+    assert _stock_quantity(admin_api, product["id"], backroom["id"]) == 1
+    assert _stock_quantity(admin_api, product["id"], shelf["id"]) == 8
+
+
 def test_concurrent_checkouts_cannot_oversell_the_location(
     api, admin_api, shelf, product, shift
 ):
