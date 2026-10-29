@@ -231,6 +231,29 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Facturación, lo que quedó de S4.1** (2026-10-29):
+  - Códigos de materiales de construcción en `codigoAuxiliar` (Anexo 23 de la ficha técnica, G-79):
+    sesión nueva [S4.6](sessions/S4.6-materiales-de-construccion.md), necesaria para el piloto con
+    una ferretería.
+  - Leyenda "Gran Contribuyente" con su resolución (Anexo 24, G-80): un campo más del perfil fiscal y
+    un `campoAdicional`. Sin sesión: hacerlo cuando un cliente lo sea.
+  - Fijar `INVOICING_PROVIDER_RUC` en producción (Anexo 26, G-81) y leer la Res.
+    NAC-DGERCGC26-00000027 para confirmar a qué proveedores aplica (la ficha cita la "resolución
+    2718"). Con el despliegue (S8.1).
+  - Bloquear en el core la venta a consumidor final que supera el límite (hoy invoicing la rechaza
+    antes de numerarla y el core la ve `REJECTED` con el motivo): al confirmar en el admin y en el
+    POS, con el mismo valor que `FINAL_CONSUMER_MAX_TOTAL`. Encaja con S5.9 o antes del piloto.
+  - D-4 sigue abierta con el contador: qué fecha llevan las facturas que esperaron
+    (`INVOICE_EMISSION_DATE`, `sale` por defecto) y si RIMPE Negocio Popular tiene otro límite de
+    consumidor final (fuentes secundarias citan USD 200).
+  - Probar la leyenda `CONTRIBUYENTE NEGOCIO POPULAR - RÉGIMEN RIMPE` con un emisor de ese régimen en
+    el SRI de pruebas: el XSD publicado no la tiene y se agregó desde la ficha.
+  - Número y fecha de autorización hacia el core: `InvoiceAuthorized` (invoices v1) solo lleva el id
+    de la factura. Con S4.3 o S4.4, si la web los necesita.
+  - Servicio compatible con S3 del VPS (S8.1) y copia de los XML autorizados fuera del servidor, con
+    su retención (S8.3).
+  - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
+    `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
 
 ## 2. Dependencias
 
@@ -278,6 +301,8 @@ flowchart LR
     S28 --> S41[S4.1 Cumplimiento]
     S27 --> S42[S4.2 SRI desacoplado]
     S41 --> S45[S4.5 Nota de crédito]
+    S41 --> S46[S4.6 Materiales de construcción]
+    S46 --> S94
     S42 --> S45
     S33 --> S45
     S33 --> S51[S5.1 Decimales] --> S52[S5.2 Presentaciones]
@@ -320,6 +345,7 @@ flowchart LR
 | [S4.3](sessions/S4.3-conciliacion-y-reproceso.md) | Conciliación y reproceso | Detección de discrepancias y herramientas de reproceso | S3.4, S4.2 | core, invoicing, web | G-21 | M |
 | [S4.4](sessions/S4.4-ride-y-correo.md) | RIDE y correo | PDF del comprobante y envío al cliente | S4.1 | invoicing, web | G-12 | M |
 | [S4.5](sessions/S4.5-nota-de-credito.md) | Nota de crédito | Emisión desde devoluciones y anulaciones | S4.1, S4.2, S3.3 | invoicing, core, web | G-11, G-20, G-22, F-04 | L |
+| [S4.6](sessions/S4.6-materiales-de-construccion.md) | Materiales de construcción | Código de subcategoría del Anexo 23 en `codigoAuxiliar` | S4.1 | core, invoicing, web | G-79 | M |
 | [S5.1](sessions/S5.1-cantidades-decimales.md) | Cantidades decimales | Cantidades con precisión configurable en todo el flujo | S3.3 | core, web, invoicing | F-01 | L |
 | [S5.2](sessions/S5.2-unidades-y-presentaciones.md) | Unidades y presentaciones | Conversiones, presentaciones y códigos de barras | S5.1 | core, web | F-02, F-03 | L |
 | [S5.3](sessions/S5.3-listas-de-precios.md) | Listas de precios | Minorista, mayorista, por volumen y por sucursal | S5.2 | core, web | F-06 | M |

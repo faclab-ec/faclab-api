@@ -1,6 +1,6 @@
 # ADR-0004: Persistencia de faclab-invoicing en PostgreSQL
 
-- **Estado:** aceptado (2026-10-20, implementado en S2.7; la parte multiempresa, en S2.8 el 2026-10-21)
+- **Estado:** aceptado (2026-10-20, implementado en S2.7; la parte multiempresa, en S2.8 el 2026-10-21; el almacenamiento de objetos, en S4.1 el 2026-10-29)
 - **Relacionado:** [ADR-0011](0011-despliegue-en-vps-con-docker-compose.md), [ADR-0012](0012-numeracion-de-documentos.md)
 
 ## Contexto
@@ -42,7 +42,7 @@ mover a otra instancia sin cambiar código). Tablas iniciales: `issuers` (perfil
   claves `tenants/{tenant_id}/...`.
 - **Se conserva el adaptador S3**: el AWS SDK v3 funciona con cualquier proveedor compatible. El
   proveedor queda como decisión D-2. *S2.7:* el adaptador se retiró porque solo guardaba el `.p12`;
-  vuelve en S4.1 para los XML y el RIDE.
+  vuelve en S4.1 para los XML y el RIDE. *S4.1:* D-2 resuelta, ver abajo.
 
 La migración se hace en dos pasos: primero se cambia la persistencia manteniendo un solo emisor y el
 mismo comportamiento (S2.7); después se vuelve multiempresa (S2.8).
@@ -105,3 +105,26 @@ mismo comportamiento (S2.7); después se vuelve multiempresa (S2.8).
 - **Secuencial**: `INSERT ... ON CONFLICT DO UPDATE SET last_value = last_value + 1 RETURNING`, en la
   misma transacción que lo guarda en la factura; el valor inicial se fija con
   `PUT /api/sequences/{establishment}/{emissionPoint}` y no retrocede.
+
+## Implementación del almacenamiento de objetos (S4.1, 2026-10-29)
+
+- **D-2 (decisión del usuario):** un servicio compatible con S3 autogestionado en el VPS. El código
+  solo usa la API de S3 (`S3DocumentStorage`, `@aws-sdk/client-s3`, rutas `bucket/clave` y checksums
+  solo donde S3 los exige), así que el producto se cambia sin tocar código: se elige con el
+  despliegue (S8.1). La copia fuera del servidor y la retención llegan con los respaldos (S8.3).
+- **Local:** faclab-infra agrega `object-storage`, [Garage](https://garagehq.deuxfleurs.fr) v2.4.1 en
+  un nodo, que crea su bucket (`faclab-invoicing`) y la llave de desarrollo al arrancar. Se descartó
+  MinIO porque su edición comunitaria dejó de publicar imágenes en 2025 y archivó su repositorio en
+  2026.
+- **Qué se guarda:** el documento `autorizacion` del SRI (estado, número, fecha, ambiente y el
+  comprobante firmado en CDATA) en `tenants/{tenant_id}/invoices/{año de emisión}/{clave de acceso}.xml`.
+  Se sube antes de marcar la factura como autorizada: si falla, la factura sigue `sent` con el issue
+  transitorio `STORAGE_UNAVAILABLE` y el reintento vuelve a consultar al SRI y a subir la misma
+  clave. `invoices` guarda `authorization_number`, `authorized_at` y `authorized_xml_key`
+  (migración `1793292828955_invoice-authorization`), y `GET /api/invoices/:id/authorized-xml` lo
+  descarga con el filtro por empresa.
+- **Configuración:** `OBJECT_STORAGE_ENDPOINT` (vacío: AWS), `OBJECT_STORAGE_REGION`,
+  `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`
+  (obligatorias en producción) y `OBJECT_STORAGE_FORCE_PATH_STYLE`.
+- El RIDE (S4.4) usará el mismo puerto `DocumentStorage`.
+

@@ -39,6 +39,7 @@ Cada archivo contiene los 15 campos obligatorios y un prompt autocontenido para 
 - [S4.3 — Conciliación entre ventas y comprobantes, y reproceso de fallidos](S4.3-conciliacion-y-reproceso.md) · depende de: S3.4, S4.2
 - [S4.4 — RIDE y envío del comprobante al cliente](S4.4-ride-y-correo.md) · depende de: S4.1
 - [S4.5 — Nota de crédito electrónica](S4.5-nota-de-credito.md) · depende de: S4.1, S4.2, S3.3
+- [S4.6 — Códigos de materiales de construcción en la factura](S4.6-materiales-de-construccion.md) · depende de: S4.1
 
 ## Etapa 5 — Operación de ferretería
 
