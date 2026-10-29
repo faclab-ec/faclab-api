@@ -24,6 +24,7 @@ from src.inventory.transfer.domain.events import (
     StockTransferReceived,
 )
 from src.inventory.transfer.domain.exceptions import TransferHasNoItemsError
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -93,6 +94,27 @@ class RemoveTransferItemCommand(Command):
     id: int = 0
 
 
+def _audit(
+    audit: AuditTrail,
+    action: AuditAction,
+    transfer: StockTransfer,
+    before_status: TransferStatus,
+    items: list[StockTransferItem] | None = None,
+) -> None:
+    after: dict = {
+        "status": transfer.status,
+        "source_location_id": transfer.source_location_id,
+        "destination_location_id": transfer.destination_location_id,
+    }
+    if items is not None:
+        after["items"] = [
+            {"product_id": item.product_id, "quantity": item.quantity} for item in items
+        ]
+    audit.record(
+        action, transfer.require_id(), before={"status": before_status}, after=after
+    )
+
+
 # ---------------------------------------------------------------------------
 # Handlers
 # ---------------------------------------------------------------------------
@@ -158,17 +180,20 @@ class ConfirmStockTransferCommandHandler(
         item_repo: StockTransferItemRepository,
         stock_repo: StockRepository,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: ConfirmStockTransferCommand) -> dict:
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
 
+        before_status = transfer.status
         transfer.confirm()
         items = self.item_repo.filter_by(transfer_id=transfer.id)
         if not items:
@@ -186,6 +211,7 @@ class ConfirmStockTransferCommandHandler(
             self.stock_repo.update(stock)
 
         saved = self.repo.update(transfer)
+        _audit(self.audit, AuditAction.TRANSFER_CONFIRMED, saved, before_status, items)
         self.event_publisher.publish(
             StockTransferConfirmed(
                 aggregate_id=saved.require_id(),
@@ -209,17 +235,20 @@ class ReceiveStockTransferCommandHandler(
         stock_repo: StockRepository,
         movement_handler: CreateMovementCommandHandler,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.movement_handler = movement_handler
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: ReceiveStockTransferCommand) -> dict:
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
+        before_status = transfer.status
         transfer.receive()
         items = self.item_repo.filter_by(transfer_id=transfer.id)
 
@@ -262,6 +291,7 @@ class ReceiveStockTransferCommandHandler(
             )
 
         saved = self.repo.update(transfer)
+        _audit(self.audit, AuditAction.TRANSFER_RECEIVED, saved, before_status, items)
         self.event_publisher.publish(
             StockTransferReceived(
                 aggregate_id=saved.require_id(),
@@ -284,17 +314,20 @@ class CancelStockTransferCommandHandler(
         item_repo: StockTransferItemRepository,
         stock_repo: StockRepository,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: CancelStockTransferCommand) -> dict:
         transfer = self.repo.get_by_id(command.id)
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {command.id} not found")
 
+        before_status = transfer.status
         was_confirmed = transfer.status == TransferStatus.CONFIRMED
         transfer.cancel()
 
@@ -310,6 +343,7 @@ class CancelStockTransferCommandHandler(
                     self.stock_repo.update(stock)
 
         saved = self.repo.update(transfer)
+        _audit(self.audit, AuditAction.TRANSFER_CANCELLED, saved, before_status)
         self.event_publisher.publish(
             StockTransferCancelled(
                 aggregate_id=saved.require_id(),

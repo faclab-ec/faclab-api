@@ -18,6 +18,7 @@ from src.catalog.product.app.commands.update_product import (
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductUpdated
 from src.shared.domain.exceptions import NotFoundError
+from tests.audit import FakeAuditTrail
 
 # --- Helpers ---
 
@@ -62,7 +63,7 @@ def test_create_product_with_all_new_fields():
     )
     repo = Mock()
     repo.create.return_value = product
-    handler = CreateProductCommandHandler(repo, MagicMock())
+    handler = CreateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         CreateProductCommand(
@@ -98,7 +99,7 @@ def test_create_product_service_type():
     product = _make_product(is_service=True, min_stock=0, reorder_point=0)
     repo = Mock()
     repo.create.return_value = product
-    handler = CreateProductCommandHandler(repo, MagicMock())
+    handler = CreateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         CreateProductCommand(sku="SVC-001", name="Consulting", is_service=True)
@@ -112,7 +113,7 @@ def test_create_product_inactive():
     product = _make_product(is_active=False)
     repo = Mock()
     repo.create.return_value = product
-    handler = CreateProductCommandHandler(repo, MagicMock())
+    handler = CreateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         CreateProductCommand(sku="SKU-001", name="Old Product", is_active=False)
@@ -126,7 +127,7 @@ def test_create_product_defaults_for_new_fields():
     product = _make_product()
     repo = Mock()
     repo.create.return_value = product
-    handler = CreateProductCommandHandler(repo, MagicMock())
+    handler = CreateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(CreateProductCommand(sku="SKU-001", name="Simple Product"))
 
@@ -146,7 +147,7 @@ def test_create_product_passes_new_fields_to_entity():
     """Handler passes new fields correctly to the entity constructor."""
     repo = Mock()
     repo.create.side_effect = lambda e: replace(e, id=1)  # simulate persistence
-    handler = CreateProductCommandHandler(repo, MagicMock())
+    handler = CreateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     handler.handle(
         CreateProductCommand(
@@ -183,7 +184,7 @@ def test_update_product_with_new_fields():
     repo = Mock()
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
-    handler = UpdateProductCommandHandler(repo, MagicMock())
+    handler = UpdateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         UpdateProductCommand(
@@ -214,7 +215,7 @@ def test_update_product_tracks_new_field_changes_in_event():
     repo.update.return_value = updated
 
     event_publisher = MagicMock()
-    handler = UpdateProductCommandHandler(repo, event_publisher)
+    handler = UpdateProductCommandHandler(repo, event_publisher, FakeAuditTrail())
     handler.handle(
         UpdateProductCommand(
             product_id=1,
@@ -241,7 +242,7 @@ def test_update_product_deactivate():
     repo = Mock()
     repo.get_by_id.return_value = existing
     repo.update.return_value = deactivated
-    handler = UpdateProductCommandHandler(repo, MagicMock())
+    handler = UpdateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         UpdateProductCommand(
@@ -255,7 +256,7 @@ def test_update_product_deactivate():
 def test_update_product_not_found_raises():
     repo = Mock()
     repo.get_by_id.return_value = None
-    handler = UpdateProductCommandHandler(repo, MagicMock())
+    handler = UpdateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     with pytest.raises(NotFoundError):
         handler.handle(
@@ -271,7 +272,7 @@ def test_update_product_no_changes_does_not_include_unchanged_fields_in_event():
     repo.update.return_value = product
 
     event_publisher = MagicMock()
-    handler = UpdateProductCommandHandler(repo, event_publisher)
+    handler = UpdateProductCommandHandler(repo, event_publisher, FakeAuditTrail())
     handler.handle(
         UpdateProductCommand(
             product_id=1,
@@ -293,7 +294,7 @@ def test_update_product_set_barcode():
     repo = Mock()
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
-    handler = UpdateProductCommandHandler(repo, MagicMock())
+    handler = UpdateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         UpdateProductCommand(
@@ -313,7 +314,7 @@ def test_update_product_with_unit_of_measure():
     repo = Mock()
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
-    handler = UpdateProductCommandHandler(repo, MagicMock())
+    handler = UpdateProductCommandHandler(repo, MagicMock(), FakeAuditTrail())
 
     result = handler.handle(
         UpdateProductCommand(

@@ -72,7 +72,7 @@ _SENSITIVE_KEYS = frozenset(
 _REDACTED = "[REDACTED]"
 
 
-def _is_sensitive(key) -> bool:
+def is_sensitive_key(key) -> bool:
     return (
         isinstance(key, str)
         and key.lower().replace("_", "").replace("-", "") in _SENSITIVE_KEYS
@@ -82,7 +82,7 @@ def _is_sensitive(key) -> bool:
 def _redact(value):
     if isinstance(value, dict):
         return {
-            key: _REDACTED if _is_sensitive(key) else _redact(item)
+            key: _REDACTED if is_sensitive_key(key) else _redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):

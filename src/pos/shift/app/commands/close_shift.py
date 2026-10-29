@@ -7,6 +7,7 @@ from wireup import injectable
 from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.events import ShiftClosed
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -31,10 +32,12 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
         repo: ShiftRepository,
         event_publisher: EventPublisher,
         session: Session,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.event_publisher = event_publisher
         self.session = session
+        self.audit = audit
 
     def _handle(self, command: CloseShiftCommand) -> dict:
         shift = self.repo.get_by_id(command.shift_id)
@@ -50,6 +53,7 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
             - summary["cash_out"]
         )
 
+        before_status = shift.status
         discrepancy = shift.close(
             closing_balance=command.closing_balance,
             expected_balance=expected_balance,
@@ -60,6 +64,18 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
             shift.notes = command.notes
 
         self.repo.update(shift)
+        self.audit.record(
+            AuditAction.SHIFT_CLOSED,
+            shift.require_id(),
+            before={"status": before_status},
+            after={
+                "status": shift.status,
+                "closing_balance": command.closing_balance,
+                "expected_balance": expected_balance,
+                "discrepancy": discrepancy,
+            },
+            branch_id=shift.branch_id,
+        )
 
         self.event_publisher.publish(
             ShiftClosed(

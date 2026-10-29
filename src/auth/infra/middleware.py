@@ -75,7 +75,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         branch_id = _branch(request, user)
         context = TenantContext(
-            user.tenant_id, TenantSource.REQUEST, user_id=user.id, branch_id=branch_id
+            user.tenant_id,
+            TenantSource.REQUEST,
+            user_id=user.id,
+            branch_id=branch_id,
+            user_name=user.display_name,
         )
         with tenant_scope(context):
             return await call_next(request)

@@ -20,8 +20,10 @@ from src.sales.domain.exceptions import (
     OverrideReasonRequiredError,
     PaymentExceedsBalanceError,
 )
+from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.audit import FakeAuditTrail
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 
 
@@ -115,6 +117,7 @@ def _build_handler(
     payment_repo=None,
     shift_repo=None,
     event_publisher=None,
+    audit=None,
 ):
     return QuickSaleCommandHandler(
         sale_repo=sale_repo or _mock_repo(),
@@ -127,6 +130,7 @@ def _build_handler(
         numbering=numbering(),
         event_publisher=event_publisher or MagicMock(),
         session=MagicMock(),
+        audit=audit or FakeAuditTrail(),
     )
 
 
@@ -289,6 +293,7 @@ class TestQuickSaleHappyPath:
         sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
         sale_repo.get_by_id.side_effect = lambda _id: sale_repo.update.call_args.args[0]
         event_publisher = MagicMock()
+        audit = FakeAuditTrail()
         handler = _build_handler(
             sale_repo=sale_repo,
             sale_item_repo=_mock_repo(entity=_make_sale_item()),
@@ -297,6 +302,7 @@ class TestQuickSaleHappyPath:
             payment_repo=_mock_repo(entity=_make_payment(amount=Decimal("100.8"))),
             shift_repo=_mock_repo(entity=_make_shift()),
             event_publisher=event_publisher,
+            audit=audit,
         )
 
         # subtotal 100 - 10% = 90 → IVA 12% = 10.8 → total 100.8; the front pays
@@ -318,6 +324,11 @@ class TestQuickSaleHappyPath:
         event = event_publisher.publish.call_args[0][0]
         assert event.total_discount == Decimal("10")
         assert event.total == Decimal("100.8")
+        # The discount is in the audit log, once
+        (entry,) = audit.entries
+        assert entry.action == AuditAction.SALE_DISCOUNT_APPLIED
+        assert entry.after is not None
+        assert entry.after["discount_value"] == Decimal("10")
 
     def test_quick_sale_rejects_invalid_discount_before_writing(self):
         sale_repo = _mock_repo(entity=_make_sale())
@@ -367,9 +378,12 @@ class TestQuickSaleHappyPath:
 
 
 class TestQuickSalePriceOverride:
+    audit: FakeAuditTrail
+
     def _handle(self, item: dict):
         sale_item_repo = _mock_repo()
         sale_item_repo.create.side_effect = lambda sale_item: sale_item
+        self.audit = FakeAuditTrail()
         handler = _build_handler(
             sale_repo=_mock_repo(entity=_make_sale()),
             sale_item_repo=sale_item_repo,
@@ -377,6 +391,7 @@ class TestQuickSalePriceOverride:
             stock_repo=_mock_repo(entity=_make_stock()),
             payment_repo=_mock_repo(entity=_make_payment()),
             shift_repo=_mock_repo(entity=_make_shift()),
+            audit=self.audit,
         )
         handler.handle(
             _quick_sale_command(
@@ -394,12 +409,19 @@ class TestQuickSalePriceOverride:
         assert sale_item.unit_price == Decimal("45")
         assert sale_item.price_override == Decimal("45")
         assert sale_item.override_reason == "Cliente frecuente"
+        (entry,) = self.audit.entries
+        assert entry.action == AuditAction.SALE_PRICE_OVERRIDDEN
+        assert entry.before == {"unit_price": Decimal("50")}
+        assert entry.after is not None
+        assert entry.after["unit_price"] == Decimal("45")
+        assert entry.after["reason"] == "Cliente frecuente"
 
     def test_list_price_is_not_an_override(self):
         sale_item = self._handle({"unit_price": 50.0})
 
         assert sale_item.price_override is None
         assert sale_item.override_reason is None
+        assert self.audit.entries == []
 
     def test_another_price_needs_a_reason(self):
         with pytest.raises(OverrideReasonRequiredError):

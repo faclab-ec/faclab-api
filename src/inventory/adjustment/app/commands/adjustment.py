@@ -18,6 +18,7 @@ from src.inventory.movement.app.commands.movement import (
 )
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.stock.app.repositories import StockRepository
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -141,22 +142,26 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
         stock_repo: StockRepository,
         movement_handler: CreateMovementCommandHandler,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.movement_handler = movement_handler
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: ConfirmAdjustmentCommand) -> dict:
         adjustment = self.repo.get_by_id(command.id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
 
+        before = {"status": adjustment.status}
         adjustment.confirm()
 
         items = self.item_repo.filter_by(adjustment_id=adjustment.id)
         adjusted_count = 0
+        adjusted_items: list[dict] = []
 
         # Each count is compared with the stock now, locked until the end of
         # the transaction (sorted, like every lock of stock rows): what sold
@@ -170,6 +175,14 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
             diff = item.difference
             if diff == 0:
                 continue
+            adjusted_items.append(
+                {
+                    "product_id": item.product_id,
+                    "location_id": item.location_id,
+                    "expected_quantity": item.expected_quantity,
+                    "actual_quantity": item.actual_quantity,
+                }
+            )
             movement_type = MovementType.IN if diff > 0 else MovementType.OUT
             self.movement_handler.handle(
                 CreateMovementCommand(
@@ -185,6 +198,17 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
             adjusted_count += 1
 
         confirmed = self.repo.update(adjustment)
+        self.audit.record(
+            AuditAction.ADJUSTMENT_CONFIRMED,
+            confirmed.require_id(),
+            before=before,
+            after={
+                "status": confirmed.status,
+                "warehouse_id": confirmed.warehouse_id,
+                "reason": confirmed.reason,
+                "items": adjusted_items,
+            },
+        )
         self.event_publisher.publish(
             AdjustmentConfirmed(
                 aggregate_id=confirmed.require_id(),
@@ -198,16 +222,24 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
 
 @injectable(lifetime="scoped")
 class CancelAdjustmentCommandHandler(CommandHandler[CancelAdjustmentCommand, dict]):
-    def __init__(self, repo: InventoryAdjustmentRepository):
+    def __init__(self, repo: InventoryAdjustmentRepository, audit: AuditTrail):
         self.repo = repo
+        self.audit = audit
 
     def _handle(self, command: CancelAdjustmentCommand) -> dict:
         adjustment = self.repo.get_by_id(command.id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.id} not found")
 
+        before = {"status": adjustment.status}
         adjustment.cancel()
         saved = self.repo.update(adjustment)
+        self.audit.record(
+            AuditAction.ADJUSTMENT_CANCELLED,
+            saved.require_id(),
+            before=before,
+            after={"status": saved.status},
+        )
         return saved.dict()
 
 

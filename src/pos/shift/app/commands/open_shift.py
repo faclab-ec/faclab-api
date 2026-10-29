@@ -8,6 +8,7 @@ from src.pos.shift.domain.entities import Shift
 from src.pos.shift.domain.events import ShiftOpened
 from src.pos.shift.domain.exceptions import ShiftAlreadyOpenError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 
@@ -33,10 +34,12 @@ class OpenShiftCommandHandler(CommandHandler[OpenShiftCommand, dict]):
         repo: ShiftRepository,
         terminals: TerminalResolver,
         event_publisher: EventPublisher,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.terminals = terminals
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: OpenShiftCommand) -> dict:
         terminal = self.terminals.terminal(command.terminal)
@@ -54,6 +57,15 @@ class OpenShiftCommandHandler(CommandHandler[OpenShiftCommand, dict]):
         )
 
         shift = self.repo.create(shift)
+        self.audit.record(
+            AuditAction.SHIFT_OPENED,
+            shift.require_id(),
+            after={
+                "terminal_id": shift.terminal_id,
+                "opening_balance": shift.opening_balance,
+            },
+            branch_id=shift.branch_id,
+        )
 
         self.event_publisher.publish(
             ShiftOpened(

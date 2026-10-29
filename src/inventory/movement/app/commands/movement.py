@@ -8,6 +8,7 @@ from src.inventory.movement.app.repositories import MovementRepository
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
 from src.inventory.movement.domain.events import MovementCreated
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 
@@ -23,6 +24,9 @@ class CreateMovementCommand(Command):
     reference_id: int | None = None
     reason: str | None = None
     date: datetime | None = None
+    # POST /movements: the audit log keeps it. A document that moves stock
+    # audits itself (adjustment, transfer) or is a normal operation (sale)
+    manual: bool = False
 
 
 @injectable(lifetime="scoped")
@@ -37,10 +41,12 @@ class CreateMovementCommandHandler(CommandHandler[CreateMovementCommand, dict]):
         repo: MovementRepository,
         event_publisher: EventPublisher,
         session: Session,
+        audit: AuditTrail,
     ):
         self.repo = repo
         self.event_publisher = event_publisher
         self.session = session
+        self.audit = audit
 
     def _handle(self, command: CreateMovementCommand) -> dict:
         movement_type = MovementType(command.type)
@@ -58,6 +64,18 @@ class CreateMovementCommandHandler(CommandHandler[CreateMovementCommand, dict]):
         )
 
         movement = self.repo.create(movement)
+        if command.manual:
+            self.audit.record(
+                AuditAction.MOVEMENT_CREATED,
+                movement.require_id(),
+                after={
+                    "product_id": movement.product_id,
+                    "location_id": movement.location_id,
+                    "type": movement.type,
+                    "quantity": movement.quantity,
+                    "reason": movement.reason,
+                },
+            )
 
         self.event_publisher.publish(
             MovementCreated(

@@ -6,10 +6,14 @@ from wireup import injectable
 from src.catalog.product.app.repositories import ProductRepository
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductUpdated
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import TaxCode
+
+# A change of any of them is audited as a price change
+PRICE_FIELDS = frozenset({"purchase_price", "sale_price", "tax_code"})
 
 
 @dataclass
@@ -34,9 +38,15 @@ class UpdateProductCommand(Command):
 
 @injectable(lifetime="scoped")
 class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
-    def __init__(self, repo: ProductRepository, event_publisher: EventPublisher):
+    def __init__(
+        self,
+        repo: ProductRepository,
+        event_publisher: EventPublisher,
+        audit: AuditTrail,
+    ):
         self.repo = repo
         self.event_publisher = event_publisher
+        self.audit = audit
 
     def _handle(self, command: UpdateProductCommand) -> dict:
         existing = self.repo.get_by_id(command.product_id)
@@ -85,6 +95,16 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             new_val = getattr(product, field)
             if old_val != new_val:
                 changes[field] = {"old": old_val, "new": new_val}
+
+        if changes:
+            self.audit.record(
+                AuditAction.PRODUCT_PRICE_CHANGED
+                if PRICE_FIELDS & changes.keys()
+                else AuditAction.PRODUCT_UPDATED,
+                product.require_id(),
+                before={field: change["old"] for field, change in changes.items()},
+                after={field: change["new"] for field, change in changes.items()},
+            )
 
         self.event_publisher.publish(
             ProductUpdated(

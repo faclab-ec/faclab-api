@@ -52,6 +52,7 @@ class Permission(StrEnum):
 
     # Admin
     USER_MANAGE = "user:manage"
+    AUDIT_READ = "audit:read"
 
 
 _ALL_READS = frozenset(
@@ -69,9 +70,15 @@ _ALL_READS = frozenset(
     }
 )
 
-# The structure (SRI establishments and emission points) is the admin's
+# The structure (SRI establishments and emission points) and the audit log
+# are the admin's
 _MANAGER_PERMS = frozenset(Permission) - frozenset(
-    {Permission.USER_MANAGE, Permission.POS_OPERATE, Permission.ORGANIZATION_WRITE}
+    {
+        Permission.USER_MANAGE,
+        Permission.POS_OPERATE,
+        Permission.ORGANIZATION_WRITE,
+        Permission.AUDIT_READ,
+    }
 )
 
 _OPERATOR_PERMS = frozenset(

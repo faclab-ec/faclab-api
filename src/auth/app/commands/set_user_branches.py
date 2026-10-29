@@ -4,6 +4,7 @@ from uuid import UUID
 from wireup import injectable
 
 from src.auth.app.commands.members import lock_membership
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.tenancy.app.repositories import MembershipRepository
 
@@ -22,15 +23,21 @@ class SetUserBranchesCommandHandler(CommandHandler[SetUserBranchesCommand, dict]
     un cambio de rol. Una sucursal que no es de la empresa falla su FK
     compuesta: `REFERENCE_NOT_FOUND`."""
 
-    def __init__(self, memberships: MembershipRepository):
+    def __init__(self, memberships: MembershipRepository, audit: AuditTrail):
         self.memberships = memberships
+        self.audit = audit
 
     def _handle(self, command: SetUserBranchesCommand) -> dict:
         membership = lock_membership(
             self.memberships, command.tenant_id, command.user_id
         )
+        before = self.memberships.branch_ids(membership.require_id())
         self.memberships.set_branches(membership, command.branch_ids)
-        return {
-            "user_id": command.user_id,
-            "branch_ids": self.memberships.branch_ids(membership.require_id()),
-        }
+        branch_ids = self.memberships.branch_ids(membership.require_id())
+        self.audit.record(
+            AuditAction.USER_BRANCHES_CHANGED,
+            command.user_id,
+            before={"branch_ids": before},
+            after={"branch_ids": branch_ids},
+        )
+        return {"user_id": command.user_id, "branch_ids": branch_ids}

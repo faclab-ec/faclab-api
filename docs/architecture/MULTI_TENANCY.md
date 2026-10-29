@@ -289,7 +289,7 @@ Del lado de facturación (base `faclab_invoicing`, ver [ADR-0004](ADR/0004-persi
 | `pos_refunds` | Sucursal | No | |
 | `document_sequences` | Empresa y sucursal | — | Ver ADR-0012 |
 | `outbox_messages`, `dead_letters` | Infraestructura con `tenant_id` | — | Sin RLS. En el outbox `faclab_app` solo inserta y el relay (`faclab_worker`) lee y publica; `dead_letters` (S3.4, `tenant_id` nulable) solo la usa `faclab_worker` |
-| `audit_log`, `idempotency_keys` | Empresa | — | Nuevas (Etapa 3) |
+| `audit_log`, `idempotency_keys` | Empresa | — | Nuevas (Etapa 3): `idempotency_keys` en S3.1; `audit_log` en S3.5, sin `UPDATE` ni `DELETE` para faclab_app y faclab_worker |
 | `integration_clients`, `webhook_endpoints`, `webhook_deliveries` | Empresa | — | Nuevas (Etapa 6) |
 | Perfil fiscal, certificados, secuenciales SRI, comprobantes | Empresa (en invoicing) | — | Secuencial por establecimiento y punto de emisión |
 

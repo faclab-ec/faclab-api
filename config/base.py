@@ -343,6 +343,15 @@ All errors follow a consistent structure with one or more error entries:
                 "Requires the `user:manage` permission."
             ),
         },
+        {
+            "name": "Audit Log",
+            "description": (
+                "Sensitive operations of the tenant (prices, stock, cancellations, "
+                "refunds, cash, shifts, users, organization): who did them, on what, "
+                "and the relevant fields before and after. Entries are never changed "
+                "or deleted. Requires the `audit:read` permission (admins)."
+            ),
+        },
         # Admin — Organization
         {
             "name": "Branches",
@@ -551,7 +560,7 @@ All errors follow a consistent structure with one or more error entries:
     API_TAG_GROUPS: list[dict] = [
         {
             "name": "Administration",
-            "tags": ["Auth", "Users"],
+            "tags": ["Auth", "Users", "Audit Log"],
         },
         {
             "name": "Organization",

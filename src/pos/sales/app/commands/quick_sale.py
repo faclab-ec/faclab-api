@@ -7,6 +7,8 @@ from wireup import injectable
 from src.catalog.product.app.repositories import ProductRepository
 from src.organization.app.numbering import DocumentNumbering
 from src.organization.domain.numbering import DocumentType
+from src.pos.sales.app.commands.apply_discount import audit_discount
+from src.pos.sales.app.commands.override_price import audit_price_override
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
@@ -19,6 +21,7 @@ from src.sales.app.repositories import (
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
 from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
 from src.sales.domain.exceptions import OverrideReasonRequiredError
+from src.shared.app.audit import AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError, ValidationError
@@ -54,6 +57,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
         session: Session,
+        audit: AuditTrail,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -65,6 +69,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         self.numbering = numbering
         self.event_publisher = event_publisher
         self.session = session
+        self.audit = audit
 
     def _handle(self, command: QuickSaleCommand) -> dict:
         # 1. Obtener el turno abierto de la terminal
@@ -124,9 +129,13 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             sale_item.recalculate_tax()
             sale_item = self.sale_item_repo.create(sale_item)
             created_items.append(sale_item)
+            if overridden:
+                audit_price_override(self.audit, sale, sale_item, product.sale_price)
 
         # 5. Recalcular totales
         sale.recalculate_totals(created_items)
+        if sale.discount_value > 0:
+            audit_discount(self.audit, sale)
 
         # 6. Aplicar los pagos al total: cada monto es lo que entrega el
         #    cliente, se aplica lo que falta y el resto en efectivo es el vuelto.

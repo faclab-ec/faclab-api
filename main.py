@@ -15,6 +15,7 @@ from wireup.integration.fastapi import setup as wireup_fastapi_setup
 
 import src
 from config import config
+from src.audit.infra.routes import AuditLogRouter
 from src.auth.infra.admin_routes import UserAdminRouter
 from src.auth.infra.middleware import AuthMiddleware
 from src.auth.infra.routes import AuthRouter
@@ -326,6 +327,9 @@ admin_router.include_router(
 )
 admin_router.include_router(AlertRouter().router, prefix="/alerts", tags=["Alerts"])
 admin_router.include_router(UserAdminRouter().router, prefix="/users", tags=["Users"])
+admin_router.include_router(
+    AuditLogRouter().router, prefix="/audit-log", tags=["Audit Log"]
+)
 admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",

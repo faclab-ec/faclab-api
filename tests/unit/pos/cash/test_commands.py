@@ -15,6 +15,7 @@ from src.pos.cash.domain.exceptions import (
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.shared.domain.exceptions import NotFoundError
+from tests.audit import FakeAuditTrail
 
 
 def _make_shift(**overrides) -> Shift:
@@ -54,7 +55,9 @@ def test_register_cash_movement_in():
     cash_repo = MagicMock()
     cash_repo.create.return_value = movement
 
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
     result = handler.handle(
         RegisterCashMovementCommand(
             shift_id=1,
@@ -81,7 +84,9 @@ def test_register_cash_movement_out():
     cash_repo = MagicMock()
     cash_repo.create.return_value = movement
 
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
     result = handler.handle(
         RegisterCashMovementCommand(
             shift_id=1,
@@ -96,7 +101,9 @@ def test_register_cash_movement_out():
 def test_register_cash_movement_invalid_amount():
     shift_repo = MagicMock()
     cash_repo = MagicMock()
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
 
     with pytest.raises(InvalidCashMovementAmountError):
         handler.handle(
@@ -111,7 +118,9 @@ def test_register_cash_movement_invalid_amount():
 def test_register_cash_movement_negative_amount():
     shift_repo = MagicMock()
     cash_repo = MagicMock()
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
 
     with pytest.raises(InvalidCashMovementAmountError):
         handler.handle(
@@ -126,7 +135,9 @@ def test_register_cash_movement_negative_amount():
 def test_register_cash_movement_shift_not_found():
     shift_repo = _mock_repo()
     cash_repo = MagicMock()
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
 
     with pytest.raises(NotFoundError):
         handler.handle(
@@ -142,7 +153,9 @@ def test_register_cash_movement_shift_closed():
     shift = _make_shift(status=ShiftStatus.CLOSED)
     shift_repo = _mock_repo(entity=shift)
     cash_repo = MagicMock()
-    handler = RegisterCashMovementCommandHandler(cash_repo, shift_repo)
+    handler = RegisterCashMovementCommandHandler(
+        cash_repo, shift_repo, FakeAuditTrail()
+    )
 
     with pytest.raises(ShiftNotOpenForCashMovementError):
         handler.handle(

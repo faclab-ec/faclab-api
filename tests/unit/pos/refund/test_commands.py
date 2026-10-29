@@ -32,6 +32,7 @@ from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.audit import FakeAuditTrail
 from tests.unit.pos.terminals import (
     AT_TERMINAL,
     LOCATION_ID,
@@ -410,6 +411,7 @@ class TestProcessRefund:
             terminal_repo,
             numbering("D-001-000001"),
             event_publisher,
+            FakeAuditTrail(),
         )
         return handler, movement_repo, stock_repo, event_publisher
 
@@ -499,7 +501,7 @@ class TestCancelRefund:
     def test_happy_path(self):
         refund = _make_refund()
         refund_repo = _mock_repo(refund)
-        handler = CancelRefundCommandHandler(refund_repo)
+        handler = CancelRefundCommandHandler(refund_repo, FakeAuditTrail())
 
         result = handler.handle(CancelRefundCommand(refund_id=1))
 
@@ -508,7 +510,7 @@ class TestCancelRefund:
 
     def test_not_found(self):
         refund_repo = _mock_repo()
-        handler = CancelRefundCommandHandler(refund_repo)
+        handler = CancelRefundCommandHandler(refund_repo, FakeAuditTrail())
 
         with pytest.raises(NotFoundError):
             handler.handle(CancelRefundCommand(refund_id=999))
@@ -516,7 +518,7 @@ class TestCancelRefund:
     def test_not_pending(self):
         refund = _make_refund(status=RefundStatus.COMPLETED)
         refund_repo = _mock_repo(refund)
-        handler = CancelRefundCommandHandler(refund_repo)
+        handler = CancelRefundCommandHandler(refund_repo, FakeAuditTrail())
 
         with pytest.raises(InvalidRefundStatusError):
             handler.handle(CancelRefundCommand(refund_id=1))

@@ -20,6 +20,7 @@ from src.auth.domain.entities import Role, User
 from src.auth.domain.exceptions import LastAdminError
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
+from tests.audit import FakeAuditTrail
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -61,7 +62,7 @@ def _repos(user=None, membership=None, admins=1):
 def test_update_user_role_changes_the_membership():
     users, memberships = _repos(membership=_membership(role=Role.VIEWER))
 
-    handler = UpdateUserRoleCommandHandler(users, memberships)
+    handler = UpdateUserRoleCommandHandler(users, memberships, FakeAuditTrail())
     result = handler.handle(
         UpdateUserRoleCommand(tenant_id=TENANT, user_id=1, role=Role.MANAGER.value)
     )
@@ -77,13 +78,20 @@ def test_update_user_role_changes_the_membership():
     "call",
     [
         lambda users, memberships: UpdateUserRoleCommandHandler(
-            users, memberships
+            users,
+            memberships,
+            FakeAuditTrail(),
         ).handle(UpdateUserRoleCommand(tenant_id=TENANT, user_id=999, role=1)),
         lambda users, memberships: DeactivateUserCommandHandler(
-            users, Mock(), memberships
+            users,
+            Mock(),
+            memberships,
+            FakeAuditTrail(),
         ).handle(DeactivateUserCommand(tenant_id=TENANT, user_id=999)),
         lambda users, memberships: ActivateUserCommandHandler(
-            users, memberships
+            users,
+            memberships,
+            FakeAuditTrail(),
         ).handle(ActivateUserCommand(tenant_id=TENANT, user_id=999)),
     ],
     ids=["role", "deactivate", "activate"],
@@ -99,7 +107,7 @@ def test_a_user_of_another_tenant_is_not_found(call):
 def test_update_user_role_invalid_role():
     users, memberships = _repos(membership=_membership())
 
-    handler = UpdateUserRoleCommandHandler(users, memberships)
+    handler = UpdateUserRoleCommandHandler(users, memberships, FakeAuditTrail())
 
     with pytest.raises(ValueError):
         handler.handle(UpdateUserRoleCommand(tenant_id=TENANT, user_id=1, role=99))
@@ -110,9 +118,9 @@ def test_deactivate_removes_the_user_from_the_tenant_only():
     users, memberships = _repos(user=user, membership=_membership())
     session_repo = Mock()
 
-    result = DeactivateUserCommandHandler(users, session_repo, memberships).handle(
-        DeactivateUserCommand(tenant_id=TENANT, user_id=1)
-    )
+    result = DeactivateUserCommandHandler(
+        users, session_repo, memberships, FakeAuditTrail()
+    ).handle(DeactivateUserCommand(tenant_id=TENANT, user_id=1))
 
     assert result["is_active"] is False
     assert memberships.update.call_args.args[0].active is False
@@ -126,7 +134,7 @@ def test_deactivate_removes_the_user_from_the_tenant_only():
 def test_activate_gives_back_access_to_the_tenant():
     users, memberships = _repos(membership=_membership(active=False))
 
-    result = ActivateUserCommandHandler(users, memberships).handle(
+    result = ActivateUserCommandHandler(users, memberships, FakeAuditTrail()).handle(
         ActivateUserCommand(tenant_id=TENANT, user_id=1)
     )
 
@@ -138,9 +146,9 @@ def test_last_active_admin_of_the_tenant_cannot_be_deactivated():
     users, memberships = _repos(membership=_membership(role=Role.ADMIN), admins=1)
 
     with pytest.raises(LastAdminError):
-        DeactivateUserCommandHandler(users, Mock(), memberships).handle(
-            DeactivateUserCommand(tenant_id=TENANT, user_id=1)
-        )
+        DeactivateUserCommandHandler(
+            users, Mock(), memberships, FakeAuditTrail()
+        ).handle(DeactivateUserCommand(tenant_id=TENANT, user_id=1))
     memberships.lock_active_admins.assert_called_once_with(TENANT)
     memberships.update.assert_not_called()
 
@@ -148,9 +156,9 @@ def test_last_active_admin_of_the_tenant_cannot_be_deactivated():
 def test_an_admin_can_be_deactivated_while_another_remains_in_the_tenant():
     users, memberships = _repos(membership=_membership(role=Role.ADMIN), admins=2)
 
-    result = DeactivateUserCommandHandler(users, Mock(), memberships).handle(
-        DeactivateUserCommand(tenant_id=TENANT, user_id=1)
-    )
+    result = DeactivateUserCommandHandler(
+        users, Mock(), memberships, FakeAuditTrail()
+    ).handle(DeactivateUserCommand(tenant_id=TENANT, user_id=1))
 
     assert result["is_active"] is False
 
@@ -159,7 +167,7 @@ def test_last_active_admin_cannot_lose_the_admin_role():
     users, memberships = _repos(membership=_membership(role=Role.ADMIN), admins=1)
 
     with pytest.raises(LastAdminError):
-        UpdateUserRoleCommandHandler(users, memberships).handle(
+        UpdateUserRoleCommandHandler(users, memberships, FakeAuditTrail()).handle(
             UpdateUserRoleCommand(tenant_id=TENANT, user_id=1, role=Role.MANAGER.value)
         )
     memberships.update.assert_not_called()
@@ -177,7 +185,7 @@ def test_last_active_admin_cannot_lose_the_admin_role():
 def test_only_an_active_admin_counts_for_the_last_admin_rule(user, membership):
     users, memberships = _repos(user=user, membership=membership, admins=1)
 
-    DeactivateUserCommandHandler(users, Mock(), memberships).handle(
+    DeactivateUserCommandHandler(users, Mock(), memberships, FakeAuditTrail()).handle(
         DeactivateUserCommand(tenant_id=TENANT, user_id=1)
     )
 

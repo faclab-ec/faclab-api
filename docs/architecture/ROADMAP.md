@@ -210,8 +210,9 @@
   (S3.4). El stack de producción (S8.1) tiene que correr ese script antes de arrancar los servicios.
 - **Mensajería, lo que quedó de S3.4** (detectado en S3.4):
   - El reproceso de mensajes `failed` y `dead_letters` es un CLI (`make outbox-retry`,
-    `make reprocess-dead-letter`) que deja el autor en la fila y en el log. Los endpoints HTTP llegan
-    con el rol de plataforma (S8.5), y el registro en la bitácora general, con S3.5.
+    `make reprocess-dead-letter`) que deja el autor en la fila y en el log. Los endpoints HTTP y su
+    registro en la bitácora de auditoría llegan con el rol de plataforma (S8.5): S3.5 lo dejó fuera
+    porque cruzan empresas y una dead letter puede no tener empresa.
   - faclab-web no muestra todavía `invoiceStatus`, `invoiceId` ni `invoiceRejectionReason` de la venta
     (la vista "requiere atención" es de S4.3).
   - El worker revisa el outbox cada segundo, porque el `wake()` tras el commit solo llega al relay del
@@ -219,6 +220,17 @@
   - Las dead letters reprocesadas no se purgan.
   - El stack de producción (S8.1) tiene que levantar el servicio `worker` con su healthcheck y
     `RUN_BACKGROUND=false` en el API.
+- **Bitácora de auditoría, lo que quedó de S3.5** (detectado en S3.5):
+  - Quedan fuera del catálogo: el reproceso por CLI (S8.5), la configuración fiscal y los
+    certificados (viven en faclab-invoicing; auditarlos allá, con S4.x), los datos del tenant (sin
+    rutas hasta S8.5), las órdenes de compra, el reenvío a facturación y el resultado del SRI por
+    Kafka, y los borradores de ajustes y transferencias.
+  - `POST /api/pos/sales/{id}/items` acepta cualquier `unitPrice` sin motivo ni entrada en la
+    bitácora (la venta rápida y `PUT .../price` sí la dejan). Cerrarlo con las listas de precios (S5.3)
+    o antes: exigir motivo cuando difiere del precio del producto.
+  - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
+    cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
+  - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
 
 ## 2. Dependencias
 

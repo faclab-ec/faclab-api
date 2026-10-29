@@ -16,6 +16,7 @@ from src.auth.domain.events import UserCreated
 from src.auth.domain.exceptions import UserInOtherTenantsError
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
+from tests.audit import FakeAuditTrail
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -38,7 +39,7 @@ def test_update_profile_sets_and_clears_the_full_name():
     repo = Mock()
     repo.get_by_id.return_value = user
     repo.update.side_effect = lambda u: u
-    handler = UpdateUserProfileCommandHandler(repo, _memberships())
+    handler = UpdateUserProfileCommandHandler(repo, _memberships(), FakeAuditTrail())
 
     result = handler.handle(
         UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="Ana Pérez")
@@ -58,7 +59,7 @@ def test_update_profile_of_a_user_outside_the_tenant_raises_not_found():
     memberships.get_for.return_value = None
 
     with pytest.raises(NotFoundError):
-        UpdateUserProfileCommandHandler(repo, memberships).handle(
+        UpdateUserProfileCommandHandler(repo, memberships, FakeAuditTrail()).handle(
             UpdateUserProfileCommand(tenant_id=TENANT, user_id=9, full_name="X")
         )
     repo.update.assert_not_called()
@@ -70,7 +71,7 @@ def test_the_name_of_a_user_who_also_works_elsewhere_cannot_change_here():
     memberships = _memberships(elsewhere=True)
 
     with pytest.raises(UserInOtherTenantsError) as exc:
-        UpdateUserProfileCommandHandler(repo, memberships).handle(
+        UpdateUserProfileCommandHandler(repo, memberships, FakeAuditTrail()).handle(
             UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="X")
         )
 
@@ -101,9 +102,9 @@ def _create(**overrides) -> tuple[dict, Mock, Mock]:
         password="Secret123",
         **overrides,
     )
-    result = CreateUserCommandHandler(repo, memberships, hasher, publisher).handle(
-        command
-    )
+    result = CreateUserCommandHandler(
+        repo, memberships, hasher, publisher, FakeAuditTrail()
+    ).handle(command)
     return result, memberships, publisher
 
 

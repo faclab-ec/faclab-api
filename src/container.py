@@ -4,6 +4,7 @@ from config import config
 def create_wireup_container():
     from wireup import create_async_container
 
+    from src.audit.infra.container import INJECTABLES as AUDIT_INJECTABLES
     from src.auth.infra.container import INJECTABLES as AUTH_INJECTABLES
     from src.catalog.product.infra.container import INJECTABLES as CATALOG_INJECTABLES
     from src.catalog.uom.infra.container import INJECTABLES as UOM_INJECTABLES
@@ -55,6 +56,7 @@ def create_wireup_container():
             EventBusPublisher,
             OutboxWriter,
             Idempotency,
+            *AUDIT_INJECTABLES,
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
             *ORGANIZATION_INJECTABLES,
