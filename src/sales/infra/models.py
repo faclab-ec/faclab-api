@@ -6,9 +6,11 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,6 +48,13 @@ class SaleModel(TenantScoped, Base):
         # The number is a correlative per branch (document_sequences)
         UniqueConstraint(
             "tenant_id", "branch_id", "number", name="uq_sales_tenant_branch_number"
+        ),
+        # The reconciliation looks for confirmed sales still without an invoice
+        Index(
+            "ix_sales_confirmed_tenant",
+            "tenant_id",
+            postgresql_where=text("status = 'CONFIRMED'"),
+            sqlite_where=text("status = 'CONFIRMED'"),
         ),
     )
 
@@ -91,6 +100,8 @@ class SaleModel(TenantScoped, Base):
     invoice_status: Mapped[str | None] = mapped_column(String(16))
     invoice_id: Mapped[str | None] = mapped_column(String(64))
     invoice_rejection_reason: Mapped[str | None] = mapped_column(String(1000))
+    # When it was last sent to faclab-invoicing (S4.3)
+    invoice_requested_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

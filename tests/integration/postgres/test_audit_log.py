@@ -13,8 +13,10 @@ from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
+from config import config
 from src.audit.infra.models import AuditLogModel
 from src.auth.domain.entities import Role
+from src.invoicing.infra.reconciliation import reconcile
 from src.shared.app.audit import AuditAction
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.shared.infra.database import create_session_maker
@@ -313,6 +315,28 @@ def _sale_discount_applied(w):
     return sale["id"]
 
 
+def _sale_invoice_requested(w):
+    _shift(w)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "KAFKA_ENABLED", True)
+        sale = _quick_sale(w)
+        w.send(w.admin, "POST", f"/api/admin/sales/{sale['id']}/request-invoice")
+    return sale["id"]
+
+
+def _invoice_discrepancy_reviewed(w):
+    _shift(w)
+    _quick_sale(w)
+    with pytest.MonkeyPatch.context() as patch:
+        # Every confirmed sale without an invoice result is overdue
+        patch.setattr(config, "INVOICE_RECONCILIATION_PENDING_MINUTES", -1)
+        reconcile()
+    [discrepancy] = w.admin.api.get("/api/admin/invoice-discrepancies")
+    path = f"/api/admin/invoice-discrepancies/{discrepancy['id']}/review"
+    w.send(w.manager, "POST", path, {"note": "Revisado con facturación"})
+    return discrepancy["id"]
+
+
 def _refund_processed(w):
     refund = _refund(w)
     w.send(
@@ -491,6 +515,8 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.SALE_CANCELLED: _sale_cancelled,
     AuditAction.SALE_PRICE_OVERRIDDEN: _sale_price_overridden,
     AuditAction.SALE_DISCOUNT_APPLIED: _sale_discount_applied,
+    AuditAction.SALE_INVOICE_REQUESTED: _sale_invoice_requested,
+    AuditAction.INVOICE_DISCREPANCY_REVIEWED: _invoice_discrepancy_reviewed,
     AuditAction.REFUND_PROCESSED: _refund_processed,
     AuditAction.REFUND_CANCELLED: _refund_cancelled,
     AuditAction.CASH_MOVEMENT_REGISTERED: _cash_movement_registered,

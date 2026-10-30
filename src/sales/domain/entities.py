@@ -125,6 +125,9 @@ class Sale(Entity):
     # rejected), and why the SRI rejected it
     invoice_id: str | None = None
     invoice_rejection_reason: str | None = None
+    # When it was last sent to faclab-invoicing: the reconciliation measures
+    # from here how long it has waited for its result
+    invoice_requested_at: datetime | None = None
     id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -173,6 +176,7 @@ class Sale(Entity):
             raise InvalidSaleStatusError(self.status, "invoice")
         self.invoice_status = InvoiceStatus.PENDING
         self.invoice_rejection_reason = None
+        self.invoice_requested_at = datetime.now()
 
     def reject_invoice(self, invoice_id: str, reason: str | None = None) -> bool:
         """El SRI rechazó la factura: la venta se puede corregir y reenviar o

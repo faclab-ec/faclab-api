@@ -7,6 +7,10 @@ seed, so a response of A that shows any of B's markers is a leak."""
 from datetime import date, timedelta
 from typing import Any
 
+import pytest
+
+from config import config
+from src.invoicing.infra.reconciliation import reconcile
 from tests.integration.postgres.api import (
     Api,
     make_branch,
@@ -224,6 +228,15 @@ def build_tenant(api: Api, marker: str, seed: int) -> Ids:
             "reason": f"{m} devolución",
         },
     )["id"]
+    # A reconciliation discrepancy of the confirmed sale: with the threshold in
+    # the future, every confirmed sale without an invoice result is overdue
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "INVOICE_RECONCILIATION_PENDING_MINUTES", -60)
+        reconcile()
+    [discrepancy] = api.get(
+        "/api/admin/invoice-discrepancies", params={"saleId": ids["sale"]}
+    )
+    ids["invoice_discrepancy"] = discrepancy["id"]
     return ids
 
 

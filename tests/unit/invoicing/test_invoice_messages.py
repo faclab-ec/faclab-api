@@ -3,11 +3,23 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.invoicing.app.commands.discrepancies import (
+    OpenInvoiceDiscrepancyCommand,
+    OpenInvoiceDiscrepancyCommandHandler,
+    ResolveInvoiceDiscrepancyCommand,
+    ResolveInvoiceDiscrepancyCommandHandler,
+)
 from src.invoicing.infra import invoice_messages
 from src.invoicing.infra.invoice_messages import handle_invoice_message
-from src.sales.app.commands.invoice_sale import InvoiceSaleCommand
-from src.sales.app.commands.reject_invoice import RejectSaleInvoiceCommand
-from src.sales.domain.entities import SaleStatus
+from src.sales.app.commands.invoice_sale import (
+    InvoiceSaleCommand,
+    InvoiceSaleCommandHandler,
+)
+from src.sales.app.commands.reject_invoice import (
+    RejectSaleInvoiceCommand,
+    RejectSaleInvoiceCommandHandler,
+)
+from src.sales.domain.entities import InvoiceStatus, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError
 
@@ -19,10 +31,17 @@ def scope_tenants(monkeypatch) -> list:
 
 
 @pytest.fixture
-def command_handler(monkeypatch, scope_tenants) -> MagicMock:
-    handler = MagicMock()
+def handlers(monkeypatch, scope_tenants) -> dict:
+    """A mock per handler class the scope is asked for; the two sale commands
+    share one, which answers the sale with its invoice authorized"""
+    sale_handler = MagicMock()
+    sale_handler.handle.return_value = {"invoice_status": InvoiceStatus.AUTHORIZED}
+    found: dict = {
+        InvoiceSaleCommandHandler: sale_handler,
+        RejectSaleInvoiceCommandHandler: sale_handler,
+    }
     scope = MagicMock()
-    scope.get.return_value = handler
+    scope.get.side_effect = lambda cls: found.setdefault(cls, MagicMock())
 
     @contextmanager
     def fake_scope(tenant=None):
@@ -30,7 +49,12 @@ def command_handler(monkeypatch, scope_tenants) -> MagicMock:
         yield scope
 
     monkeypatch.setattr(invoice_messages, "create_sync_scope", fake_scope)
-    return handler
+    return found
+
+
+@pytest.fixture
+def command_handler(handlers) -> MagicMock:
+    return handlers[InvoiceSaleCommandHandler]
 
 
 @pytest.fixture
@@ -148,3 +172,57 @@ def test_unexpected_errors_propagate_so_the_message_is_retried(
 
     with pytest.raises(ConnectionError):
         handle_invoice_message(_message())
+
+
+@pytest.mark.parametrize(
+    ("message", "status"),
+    [
+        (_message(), InvoiceStatus.AUTHORIZED),
+        (_message(type="InvoiceRejected", status="rejected"), InvoiceStatus.REJECTED),
+    ],
+)
+def test_a_result_resolves_the_sales_reconciliation_discrepancy(
+    handlers, command_handler, message_tenant, message, status
+):
+    command_handler.handle.return_value = {"invoice_status": status}
+
+    handle_invoice_message(message)
+
+    handlers[ResolveInvoiceDiscrepancyCommandHandler].handle.assert_called_once_with(
+        ResolveInvoiceDiscrepancyCommand(sale_id=42)
+    )
+
+
+def test_a_repeated_rejection_after_a_resend_leaves_the_discrepancy(
+    handlers, command_handler, message_tenant
+):
+    """The sale still waits for its new invoice"""
+    command_handler.handle.return_value = {"invoice_status": InvoiceStatus.PENDING}
+
+    handle_invoice_message(_message(type="InvoiceRejected", status="rejected"))
+
+    assert ResolveInvoiceDiscrepancyCommandHandler not in handlers
+
+
+def test_an_authorized_invoice_of_a_cancelled_sale_opens_a_discrepancy(
+    handlers, command_handler, message_tenant, scope_tenants
+):
+    command_handler.handle.side_effect = InvalidSaleStatusError(
+        SaleStatus.CANCELLED, "invoice"
+    )
+
+    handle_invoice_message(_message())
+
+    handlers[OpenInvoiceDiscrepancyCommandHandler].handle.assert_called_once_with(
+        OpenInvoiceDiscrepancyCommand(sale_id=42, invoice_id="inv-1")
+    )
+    # In a second scope of the message's tenant: the first one rolled back
+    assert scope_tenants == [None, None]
+
+
+def test_a_missing_sale_opens_no_discrepancy(handlers, command_handler, message_tenant):
+    command_handler.handle.side_effect = NotFoundError("Sale with id 42 not found")
+
+    handle_invoice_message(_message())
+
+    assert OpenInvoiceDiscrepancyCommandHandler not in handlers

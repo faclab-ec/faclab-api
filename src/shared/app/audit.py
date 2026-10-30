@@ -32,6 +32,10 @@ class AuditAction(StrEnum):
     SALE_CANCELLED = "sale.cancelled"
     SALE_PRICE_OVERRIDDEN = "sale.price_overridden"
     SALE_DISCOUNT_APPLIED = "sale.discount_applied"
+    # Reenvío a faclab-invoicing (POST /sales/{id}/request-invoice)
+    SALE_INVOICE_REQUESTED = "sale.invoice_requested"
+    # Conciliación con faclab-invoicing (S4.3)
+    INVOICE_DISCREPANCY_REVIEWED = "invoice_discrepancy.reviewed"
     REFUND_PROCESSED = "refund.processed"
     REFUND_CANCELLED = "refund.cancelled"
     CASH_MOVEMENT_REGISTERED = "cash_movement.registered"

@@ -313,6 +313,13 @@ class SaleResponse(BaseModel):
         ),
         serialization_alias="invoiceRejectionReason",
     )
+    invoice_requested_at: datetime | None = Field(
+        None,
+        description="When the sale was last sent to faclab-invoicing (confirmed "
+        "or resent)",
+        validation_alias=AliasChoices("invoiceRequestedAt", "invoice_requested_at"),
+        serialization_alias="invoiceRequestedAt",
+    )
     created_at: datetime | None = Field(
         None,
         validation_alias=AliasChoices("createdAt", "created_at"),
@@ -338,3 +345,6 @@ class SaleDetailResponse(SaleResponse):
 class SaleQueryParams(QueryParams):
     customer_id: int | None = Field(None, ge=1, description="Filter by customer ID")
     status: SaleStatus | None = Field(None, description="Filter by sale status")
+    invoice_status: InvoiceStatus | None = Field(
+        None, description="Filter by the status of the sale's invoice"
+    )

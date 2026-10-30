@@ -34,6 +34,7 @@ from src.inventory.serial.infra.routes import SerialRouter
 from src.inventory.stock.infra.routes import StockRouter
 from src.inventory.transfer.infra.routes import TransferItemRouter, TransferRouter
 from src.inventory.warehouse.infra.routes import WarehouseRouter
+from src.invoicing.infra.routes import InvoiceDiscrepancyRouter
 from src.organization.infra.routes import (
     BranchRouter,
     EmissionPointRouter,
@@ -305,6 +306,11 @@ admin_router.include_router(
     tags=["Purchase Order Items"],
 )
 admin_router.include_router(SaleRouter().router, prefix="/sales", tags=["Sales"])
+admin_router.include_router(
+    InvoiceDiscrepancyRouter().router,
+    prefix="/invoice-discrepancies",
+    tags=["Invoice Discrepancies"],
+)
 admin_router.include_router(
     AdjustmentRouter().router,
     prefix="/adjustments",

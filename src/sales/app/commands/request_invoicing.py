@@ -18,9 +18,12 @@ from src.sales.domain.exceptions import (
     InvalidSaleStatusError,
     SaleWithoutEmissionPointError,
 )
+from src.shared.app.audit import AuditAction, AuditTrail, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
+
+AUDITED_FIELDS = ("invoice_status", "invoice_id", "invoice_rejection_reason")
 
 
 @dataclass
@@ -37,8 +40,9 @@ class RequestSaleInvoicingCommandHandler(
     """Publica SaleInvoicingRequested con los datos actuales de la venta.
 
     Sirve cuando el mensaje original no llegó o el SRI rechazó la factura.
-    faclab-invoicing lo ignora si la venta ya tiene una factura que no está
-    rechazada, así que reenviar de más no duplica facturas.
+    faclab-invoicing lo ignora si la venta ya tiene una factura en curso, así
+    que reenviar de más no duplica facturas; si ya la autorizó, vuelve a
+    publicar el resultado. Queda en la bitácora.
     """
 
     def __init__(
@@ -48,12 +52,14 @@ class RequestSaleInvoicingCommandHandler(
         payment_repo: PaymentRepository,
         event_publisher: EventPublisher,
         session: Session,
+        audit: AuditTrail,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.payment_repo = payment_repo
         self.event_publisher = event_publisher
         self.session = session
+        self.audit = audit
 
     def _handle(self, command: RequestSaleInvoicingCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -63,6 +69,7 @@ class RequestSaleInvoicingCommandHandler(
             raise InvalidSaleStatusError(sale.status, "request invoicing for")
 
         sale_id = sale.require_id()
+        before = snapshot(sale, *AUDITED_FIELDS)
         # The invoice needs the sale's establishment and emission point
         if sale.emission_point_id is None:
             raise SaleWithoutEmissionPointError(sale_id)
@@ -95,4 +102,12 @@ class RequestSaleInvoicingCommandHandler(
             session=self.session,
         )
         # Invoicing's handler marked its invoice as pending again
-        return (self.sale_repo.get_by_id(sale_id) or sale).dict()
+        sale = self.sale_repo.get_by_id(sale_id) or sale
+        self.audit.record(
+            AuditAction.SALE_INVOICE_REQUESTED,
+            sale_id,
+            before=before,
+            after=snapshot(sale, *AUDITED_FIELDS),
+            branch_id=sale.branch_id,
+        )
+        return sale.dict()

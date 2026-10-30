@@ -7,13 +7,21 @@ from src.sales.app.commands import (
     RequestSaleInvoicingCommand,
     RequestSaleInvoicingCommandHandler,
 )
-from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
+from src.sales.domain.entities import (
+    InvoiceStatus,
+    Payment,
+    PaymentMethod,
+    Sale,
+    SaleItem,
+    SaleStatus,
+)
 from src.sales.domain.events import SaleInvoicingRequested
 from src.sales.domain.exceptions import (
     InsufficientPaymentError,
     InvalidSaleStatusError,
     SaleWithoutEmissionPointError,
 )
+from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import TaxCode
 
@@ -47,7 +55,7 @@ def _handler(
     )
     publisher = MagicMock()
     handler = RequestSaleInvoicingCommandHandler(
-        sale_repo, item_repo, payment_repo, publisher, MagicMock()
+        sale_repo, item_repo, payment_repo, publisher, MagicMock(), MagicMock()
     )
     return handler, publisher
 
@@ -154,3 +162,49 @@ def test_a_sale_without_emission_point_is_not_sent():
     with pytest.raises(SaleWithoutEmissionPointError):
         handler.handle(RequestSaleInvoicingCommand(sale_id=1))
     publisher.publish.assert_not_called()
+
+
+def test_the_resend_is_recorded_in_the_audit_log():
+    """With what the invoicing handler left on the sale, read again"""
+    rejected = _confirmed_sale()
+    rejected.branch_id = 4
+    rejected.invoice_status = InvoiceStatus.REJECTED
+    rejected.invoice_id = "inv-1"
+    rejected.invoice_rejection_reason = "IDENTIFICACION INVALIDA"
+    pending = Sale(
+        id=1,
+        branch_id=4,
+        status=SaleStatus.CONFIRMED,
+        invoice_status=InvoiceStatus.PENDING,
+        invoice_id="inv-1",
+    )
+    sale_repo = MagicMock()
+    sale_repo.get_by_id.side_effect = [rejected, pending]
+    payment_repo = MagicMock()
+    payment_repo.filter_by.return_value = [
+        Payment(
+            id=7, sale_id=1, amount=Decimal("23"), payment_method=PaymentMethod.CASH
+        )
+    ]
+    audit = MagicMock()
+    handler = RequestSaleInvoicingCommandHandler(
+        sale_repo, MagicMock(), payment_repo, MagicMock(), MagicMock(), audit
+    )
+
+    handler.handle(RequestSaleInvoicingCommand(sale_id=1))
+
+    audit.record.assert_called_once_with(
+        AuditAction.SALE_INVOICE_REQUESTED,
+        1,
+        before={
+            "invoice_status": InvoiceStatus.REJECTED,
+            "invoice_id": "inv-1",
+            "invoice_rejection_reason": "IDENTIFICACION INVALIDA",
+        },
+        after={
+            "invoice_status": InvoiceStatus.PENDING,
+            "invoice_id": "inv-1",
+            "invoice_rejection_reason": None,
+        },
+        branch_id=4,
+    )
