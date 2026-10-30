@@ -3,6 +3,15 @@
 Cada versión de un mensaje, qué cambió y en qué orden se desplegó. Las reglas de compatibilidad
 están en [README.md](README.md#versiones-y-compatibilidad).
 
+## `invoices` v1: solo el resultado de cada factura (S4.2, 2026-10)
+
+- **Sin cambio de esquema**: faclab-invoicing deja de consumir `invoices` (avanza sus facturas con
+  una cola en PostgreSQL) y solo publica `InvoiceAuthorized` e `InvoiceRejected`, desde su worker.
+  Los otros cuatro tipos siguen siendo válidos en v1, pero ya no se publican.
+- Un resultado puede repetirse: si Kafka falla, faclab-invoicing vuelve a publicarlo. El core ya
+  ignoraba la repetición (una venta facturada no cambia; un rechazo repetido tampoco).
+- **Despliegue**: solo faclab-invoicing; el core no cambia.
+
 ## `invoices` v1: motivo del rechazo (S3.4, 2026-10)
 
 - **Nuevo, opcional**: `reason` (texto o `null`) en `InvoiceRejected`, con los mensajes del SRI

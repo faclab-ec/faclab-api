@@ -24,7 +24,7 @@ contracts/
 | Topic | Productor | Consumidores | Versión vigente |
 |---|---|---|---|
 | `sales.confirmed` | faclab-core (`src/invoicing/infra/event_handlers.py`, vía outbox) | faclab-invoicing | 2 (acepta también 1, solo en desarrollo) |
-| `invoices` | faclab-invoicing (transiciones de `Invoice`) | faclab-invoicing (su máquina de estados), faclab-core (`src/invoicing/infra/invoice_messages.py`) | 1 |
+| `invoices` | faclab-invoicing (resultado de cada `Invoice`, desde su worker) | faclab-core (`src/invoicing/infra/invoice_messages.py`) | 1 |
 
 **Clave y headers.** Todo mensaje lleva el header `faclab-tenant-id` con la empresa y usa esa misma
 empresa como clave en Kafka, así los mensajes de una empresa van en orden por la misma partición.
@@ -118,9 +118,13 @@ producción va a la cola de mensajes fallidos.
 
 ## `invoices` v1
 
-Cada transición de estado de una factura en faclab-invoicing. faclab-core solo actúa con
-`InvoiceAuthorized` (la venta pasa a `INVOICED` y su factura a `AUTHORIZED`) e `InvoiceRejected`
-(la factura pasa a `REJECTED`, con el motivo).
+El resultado de una factura en faclab-invoicing: `InvoiceAuthorized` (la venta pasa a `INVOICED` y
+su factura a `AUTHORIZED`) o `InvoiceRejected` (la factura pasa a `REJECTED`, con el motivo).
+Hasta S4.2 faclab-invoicing publicaba aquí cada transición y las consumía como su máquina de
+estados; desde S4.2 avanza las facturas con una cola en su base y solo publica estos dos tipos. v1
+sigue admitiendo los otros cuatro (`InvoiceReceived`, `InvoiceCreated`, `InvoiceSigned`,
+`InvoiceSent`), que el core ignora y nadie publica ya. Un mismo resultado puede llegar más de una
+vez (la publicación se reintenta si Kafka falla): el core lo aplica una sola vez.
 
 | Campo | Tipo | Nulo | Notas |
 |---|---|---|---|
@@ -149,8 +153,8 @@ un mensaje sin él se descarta.
 - **faclab-invoicing** (`test/contract/`, pasos `Contract copy matches faclab-core` y `Contract tests`):
   - cada ejemplo de `sales.confirmed` (v1 y v2) pasa por su zod y produce el XML de la factura; con
     v2, el XML usa el establecimiento, la dirección y el punto de emisión del mensaje;
-  - los mensajes que publica en `invoices` cumplen `invoices/v1.schema.json`, y el rechazo lleva
-    los mensajes del SRI en `reason`.
+  - los mensajes que publica en `invoices` (solo `InvoiceAuthorized` e `InvoiceRejected`) cumplen
+    `invoices/v1.schema.json`, y el rechazo lleva los mensajes del SRI en `reason`.
 
 ## Cómo lo obtiene faclab-invoicing
 

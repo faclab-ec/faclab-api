@@ -1,7 +1,7 @@
 """Resultados de facturación que publica faclab-invoicing en el topic `invoices`.
 
-faclab-invoicing usa ese topic como su propia máquina de estados (created →
-signed → sent → authorized | rejected) y publica ahí cada transición. Core lo lee
+faclab-invoicing publica ahí el resultado de cada factura (desde S4.2 solo
+`InvoiceAuthorized` e `InvoiceRejected`; antes, cada transición). Core lo lee
 con su propio consumer group y actúa con el resultado del SRI: si autoriza la
 factura, la venta pasa a INVOICED; si la rechaza, su factura deja de estar
 pendiente (`invoice_status = REJECTED`, con el motivo que envía en `reason`) y

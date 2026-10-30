@@ -172,7 +172,10 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
   - Cuando procesa en lote, usa *links* en vez de padre.
 - Outbox: el relay crea `send <tópico>` como **hijo** del contexto guardado con el mensaje e inyecta su
   propio contexto. Así la venta queda en una sola traza: request → `send sales.confirmed` →
-  `process sales.confirmed` → `send invoices` → `process invoices`. Un link en vez de padre la partiría
+  `process sales.confirmed` → `process invoice` → `send invoices` → `process invoices`.
+- Cola de facturación (S4.2): el consumidor de invoicing guarda el contexto del mensaje con la factura
+  (`trace_context`) y cada trabajo del worker abre `process invoice` (kind CONSUMER) como **hijo** de
+  ese contexto, con las llamadas al SRI dentro; `send invoices` es hijo del trabajo. Un link en vez de padre la partiría
   en dos (decidido en S1.5). Los links quedan para lotes y mensajes fallidos.
 - Reintentos y mensajes fallidos: cada intento es un span nuevo con `faclab.retry.attempt`. El envío a
   fallidos crea un span `dead_letter <tópico>` con link al original.
