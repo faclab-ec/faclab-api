@@ -345,6 +345,14 @@ Ciclo de vida completo de ventas con items, pagos e integracion con inventario.
 - Solo se puede confirmar una venta `DRAFT` con al menos un item
 - Solo se puede cancelar una venta `CONFIRMED` o `DRAFT`
 
+**Conciliacion con faclab-invoicing (S4.3, `src/invoicing/`):** la tarea `invoice_reconciliation`
+del worker abre una discrepancia (`invoice_discrepancies`) por cada venta confirmada que sigue sin
+resultado de facturacion 30 minutos despues de enviarse (`confirmed_without_result`), y el
+consumidor de `invoices` otra cuando el SRI autoriza la factura de una venta anulada
+(`authorized_on_cancelled`). `GET /api/admin/invoice-discrepancies` las lista y
+`POST .../{id}/review` las marca revisadas; el reenvio (`POST /api/admin/sales/{id}/request-invoice`)
+y el resultado de la factura las resuelven. Detalle en [sales-spec.md](sales-spec.md) (2.6).
+
 ---
 
 ## POS (Punto de Venta) — En desarrollo
@@ -408,6 +416,7 @@ del primer admin (fuera de toda empresa) no deja entrada.
 | Ajuste | `adjustment.confirmed`, `adjustment.cancelled` | estado, bodega, motivo, items con diferencia |
 | Transferencia | `transfer.confirmed`, `transfer.received`, `transfer.cancelled` | estado, origen, destino, items |
 | Venta (POS) | `sale.cancelled`, `sale.price_overridden` (endpoint de precio y cada linea con otro precio en la venta rapida), `sale.discount_applied` (endpoint y venta rapida con descuento) | estado y total / precio anterior, nuevo y motivo / descuento |
+| Venta (facturacion, S4.3) | `sale.invoice_requested` (reenvio a facturacion), `invoice_discrepancy.reviewed` (discrepancia de conciliacion marcada revisada) | estado, factura y motivo del rechazo antes y despues / estado, tipo, venta y nota |
 | Devolucion | `refund.processed` (quien la aprueba), `refund.cancelled` | estado, numero, venta original, total, pagos |
 | Caja | `cash_movement.registered`, `shift.opened`, `shift.closed` | turno, tipo, monto, motivo / fondo inicial / contado, esperado, diferencia |
 | Usuario | `user.created`, `user.role_changed`, `user.branches_changed`, `user.renamed`, `user.activated`, `user.deactivated`, `user.password_reset` | usuario, rol, sucursales, nombre, activo; el restablecimiento de contrasena sin valores |

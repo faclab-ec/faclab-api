@@ -219,7 +219,7 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.outbox.pending` | Gauge | `messaging.destination.name` | Core worker | Falta |
 | `faclab.outbox.oldest_age` | Gauge, s | `messaging.destination.name` | Core worker | Falta |
 | `faclab.outbox.failed` | Gauge | `messaging.destination.name` | Core worker | Falta |
-| `faclab.dead_letters.pending` | Gauge | `messaging.destination.name`, `service.name` | Ambos | Falta (invoicing tiene `dlq.message.count` como contador) |
+| `faclab.dead_letters.pending` | Gauge | `messaging.destination.name`, `service.name` | Ambos | Falta (invoicing tiene `dlq.message.count` como contador; desde S4.3 cuenta los mensajes que guarda en su tabla `dead_letters`) |
 | `kafka.consumer_group.lag` | Gauge | `group`, `topic` | Collector (`kafkametrics`) | Falta |
 | `faclab.sri.request.duration` | Histograma, s | `faclab.sri.operation`, `faclab.sri.outcome` | Invoicing | Existe como `soap.call.duration` |
 | `faclab.webhooks.deliveries` | Contador | `result` (`success`, `retry`, `failed`) | Core worker | Falta (Etapa 6) |
@@ -240,7 +240,7 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.invoices.time_to_final` | Histograma, s | `result` (`authorized`, `rejected`) | Tiempo desde la venta hasta el resultado del SRI |
 | `faclab.invoices.rejections` | Contador | `faclab.sri.message.code` (código SRI, acotado) | Rechazos tributarios |
 | `faclab.certificates.expiring` | Gauge | `window` (`30d`, `7d`, `expired`) | Cuántos certificados vencen pronto; el detalle por empresa va en un log diario `certificate.expiring` |
-| `faclab.reconciliation.discrepancies` | Gauge | `kind` (`confirmed_without_result`, `authorized_on_cancelled`…) | Operaciones que requieren conciliación |
+| `faclab.reconciliation.discrepancies` | Gauge | `kind` (`confirmed_without_result`, `authorized_on_cancelled`) | Operaciones que requieren conciliación. Existe (S4.3): la tarea `invoice_reconciliation` del worker la fija después de cada pasada con las abiertas de todas las empresas por tipo (las revisadas no cuentan). Sus logs: `invoice_discrepancy_detected` (WARN, una por discrepancia nueva, con la venta y el tipo), `invoice_reconciliation_done` (INFO si abrió o cerró alguna, DEBUG si no) e `invoice_reconciliation_failed` (ERROR, la empresa que falló) |
 
 **Prohibido como etiqueta de métrica:** ids de venta, factura, usuario, cliente, producto o empresa.
 Excepción evaluada y rechazada: certificados por empresa (se resuelve con conteos por ventana más un
@@ -368,6 +368,7 @@ en 4317.
 | Sesión | Alcance |
 |---|---|
 | S1.5 | Corregir correlación, middleware, SQL, recurso, sampler, niveles, redacción, spans de Kafka, apagado de invoicing; SigNoz local conectado a `faclab_network` (terminada 2026-10-15) |
+| S4.3 | `faclab.reconciliation.discrepancies` y los logs de la conciliación (terminada 2026-10-30) |
 | S7.1 | Métricas técnicas y de negocio del core (outbox, fallidos, ventas, inventario, login) |
 | S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, certificados) |
 | S7.3 | SDK web, errores de interfaz y web vitals |

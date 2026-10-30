@@ -1,6 +1,6 @@
 # Sales Module — API Specification (Admin, solo lectura)
 
-Specification del módulo de ventas para implementación frontend. Solo endpoints de consulta (Admin).
+Specification del módulo de ventas para implementación frontend. Endpoints de consulta (Admin), el reenvío a facturación y la conciliación con faclab-invoicing (S4.3).
 
 ---
 
@@ -43,6 +43,7 @@ GET /api/admin/sales?customerId=1&status=DRAFT&limit=20&offset=0
 |-------------|--------|---------|---------------|
 | customerId  | int    | null    | >= 1          |
 | status      | string | null    | SaleStatus    |
+| invoiceStatus | string | null  | InvoiceStatus (`PENDING`, `AUTHORIZED`, `REJECTED`) |
 | limit       | int    | 100     | 1–1000        |
 | offset      | int    | 0       | >= 0          |
 
@@ -225,13 +226,88 @@ POST /api/admin/sales/{sale_id}/request-invoice
 
 Permiso: `sale:write`. Vuelve a publicar la venta en `sales.confirmed` (mismo mensaje, `event_id` nuevo) para cuando su factura nunca llegó a faclab-invoicing o el SRI la rechazó y ya se corrigieron los datos (por ejemplo, la cédula del cliente). No mueve inventario.
 
-faclab-invoicing ignora el reenvío si la venta ya tiene una factura que no está rechazada (pendiente, en proceso o autorizada), así que reenviar de más no duplica facturas. Las facturas que esperan la configuración fiscal o un reintento del SRI no necesitan reenvío: se reanudan solas en faclab-invoicing.
+faclab-invoicing ignora el reenvío si la venta ya tiene una factura en curso (pendiente o en proceso), así que reenviar de más no duplica facturas. Si ya la autorizó, vuelve a publicar `InvoiceAuthorized` (S4.3): la venta que sigue `PENDING` en el core es una cuyo resultado se perdió, y el reenvío lo repite. Las facturas que esperan la configuración fiscal o un reintento del SRI no necesitan reenvío: se reanudan solas en faclab-invoicing.
 
 El mensaje dice quién emite y desde dónde (`sales.confirmed` v2): la empresa, su RUC, el establecimiento y la dirección de la sucursal de la venta y su punto de emisión. faclab-invoicing factura con el perfil fiscal, el certificado y el secuencial de esa empresa, establecimiento y punto de emisión.
 
-Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Una venta sin punto de emisión (anterior a S2.6) no se puede facturar: `400 SALE_WITHOUT_EMISSION_POINT`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`. Sus pagos se vuelven a aplicar al total, así que los `pagos` de la factura suman el total; una venta confirmada antes de S3.3 sin cubrirlo responde `400 INSUFFICIENT_PAYMENT`. Con el mensaje en el outbox, la factura queda pendiente (`INVOICE_IN_PROGRESS` al cancelar).
+Solo ventas `CONFIRMED`; en otro estado responde `400 INVALID_SALE_STATUS`. Una venta sin punto de emisión (anterior a S2.6) no se puede facturar: `400 SALE_WITHOUT_EMISSION_POINT`. Si `KAFKA_ENABLED` está apagado responde `400 INVOICING_DISABLED`. Sus pagos se vuelven a aplicar al total, así que los `pagos` de la factura suman el total; una venta confirmada antes de S3.3 sin cubrirlo responde `400 INSUFFICIENT_PAYMENT`. Con el mensaje en el outbox, la factura queda pendiente desde ese momento (`invoiceRequestedAt`; `INVOICE_IN_PROGRESS` al cancelar) y se resuelve su discrepancia `confirmed_without_result` (2.6), si la tenía. Queda en la bitácora de auditoría (`sale.invoice_requested`, con `invoice_status`, `invoice_id` e `invoice_rejection_reason` antes y después).
 
 **Response** `202`: la venta (mismo formato que 2.2).
+
+### 2.6 Conciliación con faclab-invoicing (S4.3)
+
+Una tarea del worker (`invoice_reconciliation`) compara las ventas con el estado de facturación que el core ya recibió (`invoice_status`, `invoiceRequestedAt`) y abre una **discrepancia** por cada venta que necesita que alguien la mire. No consulta a faclab-invoicing: la web muestra lo que facturación tiene de cada venta con `GET /api/invoices/by-sale/:saleId` de facturación.
+
+| Tipo (`kind`) | Cuándo se abre | Cuándo se cierra sola |
+|---|---|---|
+| `confirmed_without_result` | Venta `CONFIRMED` con punto de emisión que sigue `PENDING` `INVOICE_RECONCILIATION_PENDING_MINUTES` (30) después de enviarse (`invoiceRequestedAt`), o que nunca se envió (`invoiceStatus` null, Kafka apagado al confirmarla) desde su `saleDate`. La revisa la tarea cada `INVOICE_RECONCILIATION_INTERVAL_SECONDS` (300) | Al reenviarla (en la misma transacción), al llegar su resultado (autorizada o rechazada) o al anularse; la tarea cierra las que quedan |
+| `authorized_on_cancelled` | faclab-invoicing informa `InvoiceAuthorized` de una venta ya `CANCELLED` (antes se descartaba con `invoice_not_applied`) | Nunca: hay que anular la factura con nota de crédito (S4.5) y marcarla revisada |
+
+Estados: `open` → `reviewed` (un usuario la marca) o `resolved` (la condición desapareció). Una venta tiene a lo sumo una discrepancia sin resolver por tipo (índice único parcial), así que una revisada no se vuelve a abrir mientras siga atrasada; una venta que se atrasa otra vez después de resolverse abre una nueva. La tarea solo corre con `KAFKA_ENABLED` y se apaga con `INVOICE_RECONCILIATION_ENABLED=false`; publica el gauge `faclab.reconciliation.discrepancies` (abiertas por tipo, de todas las empresas).
+
+Qué hacer con cada una (vista "Requieren atención" de faclab-web):
+
+- Facturación no tiene la venta (el mensaje se perdió) o se la rechazó: **reenviar** (2.5).
+- Facturación la tiene en curso con un problema (SRI caído, configuración incompleta): reintentarla en facturación, o marcarla revisada mientras se resuelve.
+- Facturación ya la autorizó pero la venta sigue `PENDING` (se perdió el resultado): reenviar, y facturación vuelve a publicarlo.
+- `authorized_on_cancelled`: nota de crédito (S4.5) y marcarla revisada.
+
+#### Listar discrepancias
+
+```
+GET /api/admin/invoice-discrepancies?status=open&kind=confirmed_without_result&saleId=12&limit=50&offset=0
+```
+
+Permiso: `sale:read`. Solo las de la empresa del token, las más antiguas primero.
+
+| Query Param | Tipo | Default | Validación |
+|---|---|---|---|
+| status | string | `open` | `open`, `reviewed`, `resolved` |
+| kind | string | null | `confirmed_without_result`, `authorized_on_cancelled` |
+| saleId | int | null | >= 1 |
+| limit | int | 50 | 1–500 |
+| offset | int | 0 | >= 0 |
+
+**Response** `200` (paginado):
+
+```json
+{
+  "data": [
+    {
+      "id": 7,
+      "kind": "confirmed_without_result",
+      "status": "open",
+      "saleId": 501,
+      "invoiceId": null,
+      "detectedAt": "2026-10-29T10:40:00",
+      "resolvedAt": null,
+      "reviewedAt": null,
+      "reviewedByName": null,
+      "reviewNote": null,
+      "sale": {
+        "id": 501,
+        "number": "V-001-000501",
+        "status": "CONFIRMED",
+        "total": 11.5,
+        "branchId": 1,
+        "saleDate": "2026-10-29T10:00:00",
+        "invoiceStatus": "PENDING",
+        "invoiceRequestedAt": "2026-10-29T10:00:00"
+      }
+    }
+  ],
+  "meta": { "requestId": "...", "timestamp": "...", "pagination": { "total": 1, "limit": 50, "offset": 0 } }
+}
+```
+
+#### Marcar revisada
+
+```
+POST /api/admin/invoice-discrepancies/{id}/review
+{ "note": "El SRI está caído, facturación la reintenta sola" }
+```
+
+Permiso: `sale:write`. `note` es opcional (hasta 500 caracteres); quien la revisa sale del token. Solo una discrepancia `open`: si no, `409 INVOICE_DISCREPANCY_NOT_OPEN`. Queda en la bitácora (`invoice_discrepancy.reviewed`). **Response** `200`: la discrepancia.
 
 ---
 
@@ -309,6 +385,7 @@ interface Sale {
   invoiceStatus: InvoiceStatus | null; // null: nunca se envió a facturación
   invoiceId: string | null; // última factura con resultado en faclab-invoicing
   invoiceRejectionReason: string | null; // mensajes del SRI, mientras está REJECTED
+  invoiceRequestedAt: string | null; // último envío a facturación (al confirmar o reenviar)
   createdAt: string;
   updatedAt: string | null;
 }
@@ -342,8 +419,36 @@ interface Payment {
 interface SaleQueryParams {
   customerId?: number;
   status?: SaleStatus;
+  invoiceStatus?: InvoiceStatus;
   limit?: number;  // default: 100, max: 1000
   offset?: number; // default: 0
+}
+
+// Conciliación (S4.3)
+type DiscrepancyKind = "confirmed_without_result" | "authorized_on_cancelled";
+type DiscrepancyStatus = "open" | "reviewed" | "resolved";
+
+interface InvoiceDiscrepancy {
+  id: number;
+  kind: DiscrepancyKind;
+  status: DiscrepancyStatus;
+  saleId: number;
+  invoiceId: string | null; // la factura que informó facturación, si hay
+  detectedAt: string;
+  resolvedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByName: string | null;
+  reviewNote: string | null;
+  sale: {
+    id: number;
+    number: string | null;
+    status: SaleStatus;
+    total: number;
+    branchId: number | null;
+    saleDate: string | null;
+    invoiceStatus: InvoiceStatus | null;
+    invoiceRequestedAt: string | null;
+  } | null;
 }
 ```
 
@@ -358,6 +463,7 @@ interface SaleQueryParams {
 | `INVALID_SALE_STATUS` | 400 | Reenvío a facturación de una venta que no está `CONFIRMED` |
 | `INVOICING_DISABLED`  | 400 | Reenvío a facturación con `KAFKA_ENABLED` apagado |
 | `SALE_WITHOUT_EMISSION_POINT` | 400 | Reenvío (o confirmación con Kafka activo) de una venta sin punto de emisión, anterior a S2.6 |
+| `INVOICE_DISCREPANCY_NOT_OPEN` | 409 | Marcar revisada una discrepancia que ya está revisada o resuelta |
 
 ### Estructura de error
 
@@ -453,8 +559,9 @@ vuelto   = entregado - aplicado
 
 - `invoiceStatus` (`sales.invoice_status`) es la factura electrónica de la venta:
   - `PENDING` desde que el mensaje `sales.confirmed` de la venta entra al outbox, al confirmar con
-    Kafka encendido o al reenviar. La respuesta del confirm, de la venta rápida y del reenvío ya lo
-    muestra.
+    Kafka encendido o al reenviar (`invoiceRequestedAt` dice cuándo). La respuesta del confirm, de la
+    venta rápida y del reenvío ya lo muestra. Si sigue así más de 30 minutos, la conciliación abre
+    una discrepancia (2.6).
   - `REJECTED` cuando faclab-invoicing informa `InvoiceRejected`, con `invoiceRejectionReason` (los
     mensajes del SRI, campo `reason` de `invoices` v1) e `invoiceId`.
   - `AUTHORIZED` cuando informa `InvoiceAuthorized`: la venta pasa a `INVOICED`.
