@@ -45,3 +45,28 @@ despliegue, la mensajería se detiene. En facturación, el consumidor también e
   servicio `worker`, y el stack de producción (S8.1) hará lo mismo.
 - El API sigue con uvicorn y `WEB_CONCURRENCY` workers (S1.2), no con gunicorn.
 - Staging y producción exigen `DATABASE_URL_WORKER` siempre.
+
+## Implementación en faclab-invoicing (S4.2, 2026-10-29)
+
+- `src/worker.ts`, misma imagen con otro comando (`node -r ./dist/instrumentation.js dist/worker.js`):
+  corre el consumidor de `sales.confirmed`, el worker de facturas y la recuperación. `RUN_BACKGROUND`
+  (`true` por defecto) hace que la API también los corra, como en el core.
+- El consumidor solo guarda la venta como factura `pending` y confirma el offset. La tabla `invoices`
+  es la cola: `next_attempt_at` dice cuándo hay algo que hacer (el siguiente paso, un reintento con el
+  backoff de siempre o publicar el resultado) y `locked_until`/`locked_by` quién la tiene. Cada worker
+  corre `INVOICE_WORKER_CONCURRENCY` ranuras que toman facturas con `FOR UPDATE SKIP LOCKED` y un
+  lease de `INVOICE_LOCK_TIMEOUT_MS` (al menos dos veces el timeout del SRI) que se renueva entre
+  pasos. Dos workers nunca envían la misma factura, y las de un worker que muere se retoman cuando
+  vence su lease.
+- El tópico `invoices` deja de ser la máquina de estados interna: solo lleva `InvoiceAuthorized` e
+  `InvoiceRejected` para el core, publicados desde la tabla (`result_published_at`), así que un fallo
+  de Kafka ya no los pierde. El contrato v1 no cambia.
+- La recuperación ya no procesa ni usa un bloqueo en memoria: devuelve a la cola las facturas que
+  esperan al emisor cuando está listo, y con "reintentar todas" también las demás. Corre en el worker
+  cada `INVOICE_RETRY_INTERVAL_MS` y en la API tras un cambio de configuración o de certificado.
+- Apagado ordenado: el consumidor primero, luego el worker deja de tomar facturas y espera las que
+  tiene en curso, y al final Kafka y el pool. La salud del worker es `/health` en su `HTTP_PORT`
+  (503 si sus ranuras dejan de completar ciclos), así el `HEALTHCHECK` de la imagen sirve para los dos
+  comandos. Su `service.name` es `<OTEL_SERVICE_NAME>-worker`.
+- El servicio `invoicing-worker` del stack de producción, con un periodo de gracia mayor que el
+  timeout del SRI, queda para S8.1.

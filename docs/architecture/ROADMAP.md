@@ -254,6 +254,21 @@
     su retención (S8.3).
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
     `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
+- **Facturación, lo que quedó de S4.2** (2026-10-29):
+  - Métricas de la cola de facturas (vencidas, edad de la más antigua, leases vencidos, duración de
+    cada paso): S7.2.
+  - Servicio `invoicing-worker` en el stack de producción: la API con `RUN_BACKGROUND=false`, el
+    worker con el mismo `HEALTHCHECK` y un `stop_grace_period` mayor que `SRI_TIMEOUT_MS` (S8.1). Si
+    se mata antes, sus facturas esperan a que venza el lease (2 minutos por defecto).
+  - La cola atiende por `next_attempt_at`, sin reparto entre empresas: una con muchas facturas
+    vencidas retrasa a las demás. Repartir por empresa si el volumen lo pide.
+  - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
+    squash-merge del core: cambió el README de `invoices` v1, no su esquema.
+  - Volver a la versión anterior de faclab-invoicing: antes, dejar que el worker publique los
+    resultados pendientes (`status IN ('authorized', 'rejected') AND result_published_at IS NULL`),
+    porque la versión anterior no los publica; su migración `down` quita las columnas de la cola.
+  - La API con `RUN_BACKGROUND=false` no se conecta a Kafka, pero la configuración de producción
+    todavía exige `KAFKA_BROKERS`. Relajarlo con S8.1 si estorba.
 
 ## 2. Dependencias
 
