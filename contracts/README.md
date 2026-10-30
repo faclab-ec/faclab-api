@@ -187,8 +187,8 @@ sincronizar con el commit de `master` antes de integrar el PR de invoicing.
   anterior y la nueva. Cada PR que toque un contrato dice en qué orden se despliega.
 - **Mensajes sin `schema_version`** (anteriores a v1, todavía en el outbox o en el topic): se tratan
   como v1.
-- **Versión desconocida**: faclab-invoicing la rechaza al validar y el mensaje va a su cola de
-  mensajes fallidos (DLQ); faclab-core la registra (`invoice_message_unsupported_version`) y la
+- **Versión desconocida**: faclab-invoicing la rechaza al validar y el mensaje queda en su tabla de
+  mensajes fallidos (`dead_letters`, S4.3); faclab-core la registra (`invoice_message_unsupported_version`) y la
   descarta.
 
 ### Cambiar un contrato

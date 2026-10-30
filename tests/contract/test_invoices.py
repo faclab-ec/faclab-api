@@ -8,8 +8,14 @@ import pytest
 
 from src.invoicing.infra import invoice_messages
 from src.invoicing.infra.invoice_messages import handle_invoice_message
-from src.sales.app.commands.invoice_sale import InvoiceSaleCommand
-from src.sales.app.commands.reject_invoice import RejectSaleInvoiceCommand
+from src.sales.app.commands.invoice_sale import (
+    InvoiceSaleCommand,
+    InvoiceSaleCommandHandler,
+)
+from src.sales.app.commands.reject_invoice import (
+    RejectSaleInvoiceCommand,
+    RejectSaleInvoiceCommandHandler,
+)
 from tests.contract.contracts import errors, examples, validator
 
 SCHEMA = validator("invoices")
@@ -18,10 +24,12 @@ EXAMPLES = examples("invoices")
 
 @pytest.fixture
 def command_handler(monkeypatch, in_tenant) -> MagicMock:
-    """Runs in the message's tenant, as the consumer sets it from the header"""
+    """Runs in the message's tenant, as the consumer sets it from the header.
+    The sale's commands share this mock; the reconciliation's get their own"""
     handler = MagicMock()
+    sale_handlers = (InvoiceSaleCommandHandler, RejectSaleInvoiceCommandHandler)
     scope = MagicMock()
-    scope.get.return_value = handler
+    scope.get.side_effect = lambda cls: handler if cls in sale_handlers else MagicMock()
 
     @contextmanager
     def fake_scope(tenant=None):

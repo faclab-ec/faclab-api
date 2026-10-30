@@ -19,11 +19,14 @@ prorrateado (ver `invoice_lines`). faclab-invoicing los usa tal cual.
 
 `SaleInvoicingRequested` (reenvío manual) produce el mismo mensaje con un
 `event_id` nuevo. faclab-invoicing deduplica por `event_id` y, en un reenvío,
-lo ignora si la venta ya tiene una factura que no está rechazada.
+lo ignora si la venta ya tiene una factura en curso; si ya la autorizó, vuelve a
+publicar el resultado.
 
 Con el mensaje en el outbox la factura de la venta queda pendiente
-(`invoice_status = PENDING`): la venta no se cancela hasta que el SRI responda
-(`INVOICE_IN_PROGRESS`, ver `invoice_messages.py`).
+(`invoice_status = PENDING`, desde `invoice_requested_at`): la venta no se
+cancela hasta que el SRI responda (`INVOICE_IN_PROGRESS`, ver
+`invoice_messages.py`). Su discrepancia `confirmed_without_result`, si la tenía,
+se resuelve en la misma transacción (ver `reconciliation.py`).
 """
 
 from dataclasses import dataclass
@@ -33,6 +36,10 @@ from uuid import UUID
 
 from src.catalog.product.app.repositories import ProductRepository
 from src.customers.app.repositories import CustomerRepository
+from src.invoicing.app.commands.discrepancies import (
+    ResolveInvoiceDiscrepancyCommand,
+    ResolveInvoiceDiscrepancyCommandHandler,
+)
 from src.invoicing.domain.exceptions import InvoicingDisabledError
 from src.organization.app.repositories import BranchRepository, EmissionPointRepository
 from src.sales.app.repositories import SaleRepository
@@ -198,6 +205,10 @@ def _enqueue(event: SaleConfirmed | SaleInvoicingRequested, session: Any) -> Non
             raise NotFoundError(f"Sale with id {event.sale_id} not found")
         sale.await_invoice()
         sales.update(sale)
+        # Sent again: it no longer waits since before the threshold
+        scope.get(ResolveInvoiceDiscrepancyCommandHandler).handle(
+            ResolveInvoiceDiscrepancyCommand(sale_id=event.sale_id)
+        )
 
 
 @event_handler(SaleConfirmed)

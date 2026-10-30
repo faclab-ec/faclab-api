@@ -441,6 +441,12 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/sales/{{sale_id}}/items": Route(path=("sale",)),
     f"GET {ADMIN}/sales/{{sale_id}}/payments": Route(path=("sale",)),
     f"POST {ADMIN}/sales/{{sale_id}}/request-invoice": Route(path=("sale",)),
+    f"GET {ADMIN}/invoice-discrepancies": Route(
+        query=lambda ids: {"saleId": ids["sale"]}, refs=("sale",)
+    ),
+    f"POST {ADMIN}/invoice-discrepancies/{{discrepancy_id}}/review": Route(
+        path=("invoice_discrepancy",), body=lambda ids: {"note": f"{ids['marker']}"}
+    ),
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
     f"GET {ADMIN}/audit-log": Route(),

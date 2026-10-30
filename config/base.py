@@ -97,6 +97,16 @@ class BaseConfig:
     WORKER_PURGE_INTERVAL_SECONDS = env.float("WORKER_PURGE_INTERVAL_SECONDS", 3600.0)
     # Last successful cycle of each task, read by the container's health check
     WORKER_HEALTH_FILE = env.str("WORKER_HEALTH_FILE", "/tmp/faclab-worker-health.json")
+    # Reconciliation with faclab-invoicing (S4.3, only with KAFKA_ENABLED): every
+    # INTERVAL it opens a discrepancy for each confirmed sale still without an
+    # invoice result PENDING_MINUTES after it was sent. ENABLED=false turns it off
+    INVOICE_RECONCILIATION_ENABLED = env.bool("INVOICE_RECONCILIATION_ENABLED", True)
+    INVOICE_RECONCILIATION_INTERVAL_SECONDS = env.float(
+        "INVOICE_RECONCILIATION_INTERVAL_SECONDS", 300.0
+    )
+    INVOICE_RECONCILIATION_PENDING_MINUTES = env.int(
+        "INVOICE_RECONCILIATION_PENDING_MINUTES", 30
+    )
 
     #
     # Auth / JWT config
@@ -489,6 +499,15 @@ All errors follow a consistent structure with one or more error entries:
             "name": "Sales",
             "description": "Read-only access to all sales data for back-office reporting and auditing.",
         },
+        {
+            "name": "Invoice Discrepancies",
+            "description": (
+                "Sales that don't square with faclab-invoicing: confirmed without an "
+                "invoice result after the threshold, or with an invoice the SRI "
+                "authorized after the sale was cancelled. The worker's reconciliation "
+                "opens and resolves them; users resend the sale or mark them reviewed."
+            ),
+        },
         # Admin — Reports
         {
             "name": "Dashboard",
@@ -617,7 +636,7 @@ All errors follow a consistent structure with one or more error entries:
         },
         {
             "name": "Sales",
-            "tags": ["Sales"],
+            "tags": ["Sales", "Invoice Discrepancies"],
         },
         {
             "name": "Reports",

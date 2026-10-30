@@ -213,8 +213,8 @@
     `make reprocess-dead-letter`) que deja el autor en la fila y en el log. Los endpoints HTTP y su
     registro en la bitácora de auditoría llegan con el rol de plataforma (S8.5): S3.5 lo dejó fuera
     porque cruzan empresas y una dead letter puede no tener empresa.
-  - faclab-web no muestra todavía `invoiceStatus`, `invoiceId` ni `invoiceRejectionReason` de la venta
-    (la vista "requiere atención" es de S4.3).
+  - ~~faclab-web no muestra todavía `invoiceStatus`, `invoiceId` ni `invoiceRejectionReason` de la
+    venta~~: hecho en S4.3 (columna, filtro, insignia y la vista "Requieren atención").
   - El worker revisa el outbox cada segundo, porque el `wake()` tras el commit solo llega al relay del
     mismo proceso. Si llega a pesar, cambiar a LISTEN/NOTIFY.
   - Las dead letters reprocesadas no se purgan.
@@ -249,7 +249,7 @@
   - Probar la leyenda `CONTRIBUYENTE NEGOCIO POPULAR - RÉGIMEN RIMPE` con un emisor de ese régimen en
     el SRI de pruebas: el XSD publicado no la tiene y se agregó desde la ficha.
   - Número y fecha de autorización hacia el core: `InvoiceAuthorized` (invoices v1) solo lleva el id
-    de la factura. Con S4.3 o S4.4, si la web los necesita.
+    de la factura. S4.3 no los necesitó (la web los lee de facturación); con S4.4 si hacen falta.
   - Servicio compatible con S3 del VPS (S8.1) y copia de los XML autorizados fuera del servidor, con
     su retención (S8.3).
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
@@ -269,6 +269,28 @@
     porque la versión anterior no los publica; su migración `down` quita las columnas de la cola.
   - La API con `RUN_BACKGROUND=false` no se conecta a Kafka, pero la configuración de producción
     todavía exige `KAFKA_BROKERS`. Relajarlo con S8.1 si estorba.
+- **Conciliación y mensajes fallidos, lo que quedó de S4.3** (2026-10-30):
+  - Diferencias de totales entre la venta y su factura (decisión del usuario: fuera de S4.3). Hoy el
+    `importeTotal` de la factura es el `total` que manda el core, así que compararlos no aporta. Si
+    faclab-invoicing llega a calcular su propio total, sumar `total` opcional a `InvoiceAuthorized`
+    (invoices v1) y una discrepancia `total_mismatch`.
+  - Quitar el tópico `dlq` de `faclab-infra/scripts/create-topics.sh` (y del stack de S8.1) después
+    de desplegar faclab-invoicing: ya nadie lo escribe. Lo que quede en él se puede ignorar: era un
+    tópico sin lector.
+  - Las dead letters reprocesadas de faclab-invoicing no se purgan (igual que las del core).
+  - El reproceso de dead letters de facturación es un CLI sobre el código compilado (`npm run build`
+    y `npm run cli`, o la imagen). Los endpoints de plataforma y su entrada en la bitácora llegan con
+    S8.5, como los del core.
+  - La alerta sobre `faclab.reconciliation.discrepancies` (discrepancias abiertas durante 30 minutos)
+    es de S7.5; la cifra de discrepancias en el resumen de inicio, si se quiere, con S7.x. El
+    `uninvoicedSales` del dashboard sigue contando todas las ventas `CONFIRMED`.
+  - Una venta confirmada sin resultado se marca a los 30 minutos aunque facturación la esté
+    reintentando sola (SRI caído). La vista muestra el estado en facturación para decidir; si el
+    ruido molesta, subir `INVOICE_RECONCILIATION_PENDING_MINUTES` o distinguir con datos de
+    facturación (consulta con token de servicio, descartada por ahora).
+  - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
+    squash-merge del core: cambió el README de los contratos (la versión desconocida va a
+    `dead_letters`), no un esquema.
 
 ## 2. Dependencias
 

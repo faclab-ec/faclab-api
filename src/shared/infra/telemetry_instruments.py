@@ -47,3 +47,8 @@ kafka_consume_errors = _meter.create_counter(
     "kafka.consume_errors",
     description="Number of Kafka messages whose handler failed (retried)",
 )
+
+reconciliation_discrepancies = _meter.create_gauge(
+    "faclab.reconciliation.discrepancies",
+    description="Open invoice discrepancies of every tenant, by kind (S4.3)",
+)

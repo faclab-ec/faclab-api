@@ -92,7 +92,7 @@ class SaleRouter:
         query_params: SaleQueryParams = Depends(),
         meta: Meta = Depends(get_meta),
     ) -> PaginatedDataResponse[SaleResponse]:
-        """List all sales with optional filtering by customer or status. Supports pagination."""
+        """List all sales with optional filtering by customer, status or invoice status. Supports pagination."""
         result = handler.handle(
             GetAllSalesQuery(**query_params.model_dump(exclude_none=True))
         )
@@ -147,7 +147,9 @@ class SaleRouter:
     ) -> DataResponse[SaleResponse]:
         """Send a CONFIRMED sale to faclab-invoicing again, for when its invoice never
         arrived or the SRI rejected it. Invoicing ignores the request while the sale
-        has an invoice that isn't rejected. 400 `INVALID_SALE_STATUS` for any other
-        status, 400 `INVOICING_DISABLED` when Kafka is off."""
+        has an invoice in progress, and publishes the result again when it already
+        authorized it. Resolves the sale's reconciliation discrepancy and is
+        recorded in the audit log. 400 `INVALID_SALE_STATUS` for any other status,
+        400 `INVOICING_DISABLED` when Kafka is off."""
         result = handler.handle(RequestSaleInvoicingCommand(sale_id=sale_id))
         return DataResponse(data=SaleResponse.model_validate(result), meta=meta)

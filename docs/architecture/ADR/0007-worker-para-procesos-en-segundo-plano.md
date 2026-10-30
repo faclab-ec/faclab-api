@@ -70,3 +70,20 @@ despliegue, la mensajería se detiene. En facturación, el consumidor también e
   comandos. Su `service.name` es `<OTEL_SERVICE_NAME>-worker`.
 - El servicio `invoicing-worker` del stack de producción, con un periodo de gracia mayor que el
   timeout del SRI, queda para S8.1.
+
+## Conciliación con facturación (S4.3, 2026-10-30)
+
+- **Tarea `invoice_reconciliation`** (`src/invoicing/infra/reconciliation.py`):
+  - Corre solo con `KAFKA_ENABLED`, cada `INVOICE_RECONCILIATION_INTERVAL_SECONDS` (300); se apaga
+    con `INVOICE_RECONCILIATION_ENABLED=false`.
+  - Busca como faclab_worker las empresas con ventas confirmadas sin resultado de facturación desde
+    hace `INVOICE_RECONCILIATION_PENDING_MINUTES` (30), o con discrepancias de ese tipo sin resolver.
+  - Concilia cada empresa en su propio contexto (`TenantSource.TASK`, faclab_app bajo RLS), por
+    lotes.
+- **Concurrencia**: no toma lock. El índice único parcial de `invoice_discrepancies` y un
+  `INSERT … ON CONFLICT DO NOTHING` hacen que dos workers solo repitan trabajo.
+- **Fallos y salud**: una empresa que falla se registra (`invoice_reconciliation_failed`) y las demás
+  siguen; la tarea falla al final y su salud lo refleja.
+- **Métrica**: fija el gauge `faclab.reconciliation.discrepancies` (abiertas por tipo).
+- **Facturación**: su CLI de plataforma (`npm run cli`) reprocesa la tabla `dead_letters` que ahora
+  llena su consumidor, sin Kafka: usa los mismos handlers que el consumidor.

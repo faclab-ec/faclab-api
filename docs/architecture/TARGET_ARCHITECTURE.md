@@ -138,7 +138,9 @@ desventajas, impacto, complejidad, y prioridad con dependencias.
 - **Estado actual:** outbox y consumidor sin límites (G-24, G-25); hilos dentro del API (G-35);
   llamadas al SRI dentro del consumidor (G-13). *S3.4 resolvió los tres primeros en el core* (estado
   `failed`, `dead_letters`, proceso `worker`); *S4.2 resolvió G-13 en facturación* (cola en
-  PostgreSQL con `SKIP LOCKED` y lease, `worker.ts`, `invoices` solo con los resultados).
+  PostgreSQL con `SKIP LOCKED` y lease, `worker.ts`, `invoices` solo con los resultados); *S4.3* llevó
+  los mensajes fallidos de facturación a su propia tabla `dead_letters` con reproceso y sumó la
+  conciliación del core.
 - **Problema:** un mensaje dañado detiene la facturación; un SRI lento frena las ventas entrantes.
 - **Recomendación:** límites de intentos y estado `failed`, tabla de mensajes fallidos con reproceso,
   clave por empresa, `worker` separado, y en facturación una cola en PostgreSQL para el trabajo con el
@@ -252,7 +254,8 @@ stateDiagram-v2
   nota de crédito.
 - **Mecanismos:** outbox, consumidores idempotentes, mensajes fallidos con reproceso, conciliación
   periódica (ventas confirmadas sin resultado después de X minutos y facturas autorizadas de ventas
-  anuladas) y alertas sobre esa conciliación.
+  anuladas) y alertas sobre esa conciliación. *S4.3:* la conciliación usa el estado que el core ya
+  recibió (30 minutos por defecto); la alerta sobre su métrica es de S7.5.
 - **Cancelar una venta con factura en curso:** se bloquea mientras la factura no tenga resultado. Si ya
   está autorizada, la anulación exige nota de crédito (S3.3, S4.5).
 

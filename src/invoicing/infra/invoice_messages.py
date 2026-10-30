@@ -11,12 +11,22 @@ La forma del mensaje es el contrato `contracts/events/invoices/v1.schema.json`.
 La venta se busca en la empresa del mensaje (header `faclab-tenant-id`, que
 faclab-invoicing copia de la factura desde S2.8), que el consumidor fija antes de
 llamar al handler. Un mensaje sin empresa no se puede aplicar y se descarta.
+
+Conciliación (S4.3): un resultado aplicado resuelve la discrepancia
+`confirmed_without_result` de la venta, y una factura autorizada de una venta
+anulada abre `authorized_on_cancelled` (se anula con nota de crédito, S4.5).
 """
 
 from typing import Any
 
 import structlog
 
+from src.invoicing.app.commands.discrepancies import (
+    OpenInvoiceDiscrepancyCommand,
+    OpenInvoiceDiscrepancyCommandHandler,
+    ResolveInvoiceDiscrepancyCommand,
+    ResolveInvoiceDiscrepancyCommandHandler,
+)
 from src.sales.app.commands.invoice_sale import (
     InvoiceSaleCommand,
     InvoiceSaleCommandHandler,
@@ -25,6 +35,7 @@ from src.sales.app.commands.reject_invoice import (
     RejectSaleInvoiceCommand,
     RejectSaleInvoiceCommandHandler,
 )
+from src.sales.domain.entities import InvoiceStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import current_tenant
@@ -86,7 +97,7 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
                     "invoice_rejected", sale_id=sale_id, invoice_id=invoice_id
                 )
                 reason = message.get("reason")
-                scope.get(RejectSaleInvoiceCommandHandler).handle(
+                sale = scope.get(RejectSaleInvoiceCommandHandler).handle(
                     RejectSaleInvoiceCommand(
                         sale_id=sale_id,
                         invoice_id=invoice_id,
@@ -94,8 +105,14 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
                     )
                 )
             else:
-                scope.get(InvoiceSaleCommandHandler).handle(
+                sale = scope.get(InvoiceSaleCommandHandler).handle(
                     InvoiceSaleCommand(sale_id=sale_id, invoice_id=invoice_id)
+                )
+            # A repeated rejection after a resend leaves the sale PENDING: it
+            # still waits for the new invoice's result
+            if sale["invoice_status"] != InvoiceStatus.PENDING:
+                scope.get(ResolveInvoiceDiscrepancyCommandHandler).handle(
+                    ResolveInvoiceDiscrepancyCommand(sale_id=sale_id)
                 )
     except (NotFoundError, InvalidSaleStatusError) as exc:
         # P. ej. la venta se anuló antes de que el SRI autorizara su factura:
@@ -106,3 +123,11 @@ def handle_invoice_message(message: dict[str, Any]) -> None:
             invoice_id=invoice_id,
             error=exc.message,
         )
+        if event_type == INVOICE_AUTHORIZED and isinstance(exc, InvalidSaleStatusError):
+            # In its own transaction: the one above was rolled back
+            with create_sync_scope() as scope:
+                scope.get(OpenInvoiceDiscrepancyCommandHandler).handle(
+                    OpenInvoiceDiscrepancyCommand(
+                        sale_id=sale_id, invoice_id=invoice_id
+                    )
+                )

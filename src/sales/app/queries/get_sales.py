@@ -14,6 +14,7 @@ class GetAllSalesQuery(Query):
 
     customer_id: int | None = None
     status: str | None = None
+    invoice_status: str | None = None
     limit: int | None = None
     offset: int | None = None
 
@@ -33,6 +34,8 @@ class GetAllSalesQueryHandler(QueryHandler[GetAllSalesQuery, dict]):
             filters["customer_id"] = query.customer_id
         if query.status is not None:
             filters["status"] = query.status
+        if query.invoice_status is not None:
+            filters["invoice_status"] = query.invoice_status
         result = self.repo.paginate(limit=query.limit, offset=query.offset, **filters)
 
         customer_names = {

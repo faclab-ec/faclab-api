@@ -95,3 +95,35 @@ Se conserva Kafka (KRaft, un nodo en el VPS) con estas reglas:
   motivo, y un rechazo repetido de una factura ya rechazada no deshace un reenvío.
 - **Pendiente**: el reproceso de la `dlq` de facturación y la conciliación (S4.3), y LISTEN/NOTIFY si
   el poll de 1 s del worker llega a pesar.
+
+## Implementación (S4.3, 2026-10-30)
+
+- **Conciliación**: la hace el core con el estado que ya recibió, sin consultar a facturación ni
+  token de servicio (decisión del usuario).
+  - La tarea `invoice_reconciliation` del worker abre una discrepancia por cada venta confirmada
+    que sigue sin resultado 30 minutos después de enviarse (`sales.invoice_requested_at`), o que
+    nunca se envió (`confirmed_without_result`).
+  - El consumidor de `invoices` abre otra cuando el SRI autoriza la factura de una venta anulada
+    (`authorized_on_cancelled`).
+  - El reenvío y el resultado de la factura las resuelven; los usuarios las marcan revisadas
+    (bitácora). Tabla `invoice_discrepancies` con RLS.
+  - Una por venta y tipo sin resolver (índice único parcial e `INSERT … ON CONFLICT DO NOTHING`):
+    dos workers no la duplican.
+  - La web muestra, para cada discrepancia, lo que facturación tiene de la venta
+    (`GET /api/invoices/by-sale/:saleId`, con el token del usuario).
+- **Reenvío que repara**: un reenvío de una venta cuya factura ya está autorizada hace que
+  facturación vuelva a publicar `InvoiceAuthorized`. Antes lo ignoraba y un resultado perdido
+  dejaba la venta `PENDING` para siempre.
+- **Mensajes fallidos de facturación**: se reevaluó la unificación que esta ADR dejó para después de
+  S2.7 y se adoptó.
+  - El consumidor de facturación guarda en su tabla `dead_letters` (PostgreSQL, como el core) el
+    mensaje que agota sus reintentos o no se puede procesar, y solo entonces confirma el offset.
+  - Si no puede guardarlo, no lo confirma: una caída de la base ya no manda ventas a un tópico que
+    nadie leía.
+  - El CLI `npm run cli -- dead-letters` / `dead-letter-reprocess (--id N | --all) --by NOMBRE` lo
+    reprocesa con el mismo handler y deja el autor en la fila y en el log.
+  - El tópico `dlq` queda sin uso: quitarlo de `faclab-infra/scripts/create-topics.sh` después de
+    desplegar.
+- **Pendiente**: comparar totales entre la venta y la factura. Hoy el `importeTotal` es el `total`
+  que manda el core, así que no aporta; se retoma si facturación calcula el suyo. Endpoints de
+  plataforma para los dos reprocesos (S8.5).
