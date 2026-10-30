@@ -93,7 +93,9 @@ def reconcile() -> dict[str, int]:
     open_now = open_by_kind(worker_session_maker())
     for kind, count in open_now.items():
         reconciliation_discrepancies.set(count, {"kind": kind})
-    logger.info(
+    # A pass that changed nothing only shows in DEBUG (OBSERVABILITY.md 4.5)
+    log = logger.info if opened or resolved or failed else logger.debug
+    log(
         "invoice_reconciliation_done",
         opened=opened,
         resolved=resolved,
