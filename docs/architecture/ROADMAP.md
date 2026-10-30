@@ -248,8 +248,8 @@
     consumidor final (fuentes secundarias citan USD 200).
   - Probar la leyenda `CONTRIBUYENTE NEGOCIO POPULAR - RÉGIMEN RIMPE` con un emisor de ese régimen en
     el SRI de pruebas: el XSD publicado no la tiene y se agregó desde la ficha.
-  - Número y fecha de autorización hacia el core: `InvoiceAuthorized` (invoices v1) solo lleva el id
-    de la factura. S4.3 no los necesitó (la web los lee de facturación); con S4.4 si hacen falta.
+  - ~~Número y fecha de autorización hacia el core~~: S4.4 tampoco los necesitó; la web los lee de
+    facturación (`authorizationNumber`, `authorizedAt`) para descargar y reenviar.
   - Servicio compatible con S3 del VPS (S8.1) y copia de los XML autorizados fuera del servidor, con
     su retención (S8.3).
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
@@ -291,6 +291,21 @@
   - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
     squash-merge del core: cambió el README de los contratos (la versión desconocida va a
     `dead_letters`), no un esquema.
+- **RIDE y correo, lo que quedó de S4.4** (2026-10-30):
+  - Rebotes que llegan después (DSN o webhooks del proveedor): hoy solo se registran los síncronos
+    (5xx). Con el proveedor elegido (S8.1).
+  - Proveedor SMTP de producción, `INVOICE_EMAIL_FROM` del dominio de la plataforma con SPF y DKIM, y
+    las variables `SMTP_*` en el stack (S8.1). Sin ellas, producción no arranca salvo con
+    `INVOICE_EMAIL_ENABLED=false`.
+  - Métricas de entregas (pendientes, enviadas, rebotadas, fallidas) y su alerta: S7.2 y S7.5.
+  - Límite de reenvíos por factura o por usuario; hoy solo se evita un segundo pendiente.
+  - Reenvío a un correo corregido después de la venta: hoy va siempre al de la venta (el riesgo de la
+    ficha). Requeriría que el core mande el correo actual o una corrección auditada.
+  - RIDE de la nota de crédito (S4.5) y de los documentos de D-8.
+  - Timeout explícito en las llamadas a S3 (hoy el del SDK); un almacenamiento colgado podría pasar
+    el lease.
+  - `INVOICE_LOCK_TIMEOUT_MS` debe ser al menos tres veces `SMTP_TIMEOUT_MS`, y las ranuras de los dos
+    workers no pasan de 8: un despliegue con 7 u 8 ranuras de facturas debe bajarlas.
 
 ## 2. Dependencias
 

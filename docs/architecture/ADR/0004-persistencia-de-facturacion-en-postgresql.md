@@ -126,5 +126,21 @@ mismo comportamiento (S2.7); después se vuelve multiempresa (S2.8).
 - **Configuración:** `OBJECT_STORAGE_ENDPOINT` (vacío: AWS), `OBJECT_STORAGE_REGION`,
   `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`
   (obligatorias en producción) y `OBJECT_STORAGE_FORCE_PATH_STYLE`.
-- El RIDE (S4.4) usará el mismo puerto `DocumentStorage`.
+- El RIDE (S4.4) usa el mismo puerto `DocumentStorage`.
+
+## RIDE y logo en el almacenamiento (S4.4, 2026-10-30)
+
+- `DocumentStorage` guarda binarios (`put` con `string | Buffer`, `getBytes`, `delete`); `get` sigue
+  devolviendo texto para el XML.
+- **RIDE:** `tenants/{tenant_id}/invoices/{año de emisión}/{clave de acceso}.pdf`, junto a su XML. Se
+  genera una vez (`RideService.ensure`) desde el XML firmado y la autorización (nunca desde el
+  perfil actual) con pdfkit y bwip-js (código de barras Code 128 de la clave de acceso); no hay
+  columna: si existe se responde lo guardado. La entrega de cada factura autorizada lo genera y
+  `GET /api/invoices/:id/ride` genera el de las autorizadas antes de S4.4.
+- **Logo del emisor:** `tenants/{tenant_id}/issuer/logo`, uno por empresa; `issuers.logo_key` y
+  `logo_content_type` (migración `1793400000000_issuer-email-and-logo`). Se valida al subirlo y
+  antes de dibujarlo: PNG sin entrelazado o JPEG, 300 KB y 2000 × 2000 píxeles como máximo, y el PNG
+  se descomprime completo (pdfkit decodifica los PNG con transparencia en un callback, donde una
+  imagen corrupta tumbaría el proceso).
+- Una falla del almacenamiento en las rutas nuevas responde 503 `STORAGE_UNAVAILABLE`.
 

@@ -71,6 +71,28 @@ despliegue, la mensajería se detiene. En facturación, el consumidor también e
 - El servicio `invoicing-worker` del stack de producción, con un periodo de gracia mayor que el
   timeout del SRI, queda para S8.1.
 
+## Entregas al comprador en faclab-invoicing (S4.4, 2026-10-30)
+
+- **Segunda cola en PostgreSQL:** `invoice_deliveries`, con el mismo esquema que `invoices`
+  (`next_attempt_at`, `locked_until`/`locked_by`, `FOR UPDATE SKIP LOCKED`). La autorización crea su
+  entrega en la misma transacción que guarda la factura autorizada (`saveAuthorized`), así que
+  ninguna queda sin entrega; los índices únicos parciales impiden una segunda entrega por
+  autorización y dos pendientes de la misma factura.
+- **Worker genérico:** `QueueWorker<J>` (`src/shared/infra/queue-worker.ts`) se extrajo del worker
+  de facturas, que pasa a ser una subclase sin cambiar su comportamiento ni su span
+  (`process invoice`). El de entregas corre `INVOICE_DELIVERY_CONCURRENCY` ranuras (span
+  `deliver invoice`, hijo de la traza de la autorización); entre los dos, como máximo 8 ranuras por
+  el pool de 10 conexiones.
+- **Salud combinada:** `allHealthy(facturas, entregas)`: el worker está `stalled` si cualquiera de
+  los dos deja de completar ciclos.
+- **Correo (D-3):** SMTP genérico con nodemailer; el proveedor se elige al desplegar (S8.1). Un 5xx
+  al sobre o al mensaje es un rebote (`bounced`, sin reintento); lo demás se reintenta con los plazos
+  de las facturas (1, 5, 15 y 60 minutos, 10 intentos) y termina `failed`.
+  `INVOICE_EMAIL_ENABLED=false` es el interruptor de rollback. Entrega al menos una vez: si el
+  proceso cae entre la aceptación del servidor y el guardado, el correo sale dos veces.
+- **Apagado:** consumidor → worker de facturas → worker de entregas → mailer → recuperación →
+  productor.
+
 ## Conciliación con facturación (S4.3, 2026-10-30)
 
 - **Tarea `invoice_reconciliation`** (`src/invoicing/infra/reconciliation.py`):

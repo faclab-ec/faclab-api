@@ -139,12 +139,16 @@ nunca puede tener más permisos que el plan de la empresa permite.
 | `POST /api/v1/sales/{id}/cancel` | `sales:write` | core | Según reglas: antes de facturar o con nota de crédito |
 | `GET /api/v1/invoices` | `invoices:read` | invoicing | Filtros `saleId`, `status`, `from`, `to`, `branchId` |
 | `GET /api/v1/invoices/{id}` | `invoices:read` | invoicing | Número, clave de acceso, autorización |
-| `GET /api/v1/invoices/{id}/xml`, `/ride` | `invoices:read` | invoicing | XML autorizado y PDF |
+| `GET /api/v1/invoices/{id}/xml`, `/ride` | `invoices:read` | invoicing | XML autorizado y PDF. Ya existen en la API interna (S4.1 y S4.4): `GET /api/invoices/{id}/authorized-xml` y `GET /api/invoices/{id}/ride`, adjuntos con la clave de acceso como nombre, 404 hasta que la factura esté autorizada; v1 los expone con otro prefijo y el scope |
 | `GET/POST/DELETE /api/v1/webhook-endpoints` | `webhooks:manage` | core | |
 | `POST /api/v1/webhook-endpoints/{id}/test` | `webhooks:manage` | core | Envía un evento de prueba |
 | `GET /api/v1/webhook-endpoints/{id}/deliveries` | `webhooks:manage` | core | Últimos 30 días; reenvío con `POST .../{deliveryId}/retry` |
 
 Caddy enruta `/api/v1/invoices*` a invoicing y el resto a core, bajo un solo dominio y un solo token.
+
+El RIDE se genera desde el XML autorizado la primera vez que se pide o cuando la factura se entrega
+al comprador, y se guarda junto al XML (S4.4). El reenvío por correo (`POST /api/invoices/{id}/email`)
+queda en la API interna: un cliente de integración no elige a quién se envía.
 
 ## 6. Ejemplos de contrato
 
