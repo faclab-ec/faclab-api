@@ -47,13 +47,15 @@ class InvoiceStatus(StrEnum):
     """Factura de la venta en faclab-invoicing; sin valor, no se envió.
 
     PENDING desde que su `sales.confirmed` llega al outbox (al confirmar o
-    reenviar), REJECTED cuando el SRI la rechaza (con el motivo) y AUTHORIZED
-    cuando la autoriza (la venta pasa a INVOICED).
+    reenviar), REJECTED cuando el SRI la rechaza (con el motivo), AUTHORIZED
+    cuando la autoriza (la venta pasa a INVOICED) y CREDITED cuando sus notas de
+    crédito la acreditan por completo (S4.5).
     """
 
     PENDING = "PENDING"
     AUTHORIZED = "AUTHORIZED"
     REJECTED = "REJECTED"
+    CREDITED = "CREDITED"
 
 
 class PaymentMethod(StrEnum):
@@ -168,6 +170,22 @@ class Sale(Entity):
         """Confirmada, facturada o no (ver `COMPLETED_SALE_STATUSES`)"""
         return self.status in COMPLETED_SALE_STATUSES
 
+    @property
+    def has_invoice(self) -> bool:
+        """Tiene factura autorizada o en camino: una devolución suya lleva nota
+        de crédito"""
+        return (
+            self.status == SaleStatus.INVOICED
+            or self.invoice_status == InvoiceStatus.PENDING
+        )
+
+    @property
+    def invoiced_to_final_consumer(self) -> bool:
+        """Su factura, autorizada o en camino, es a consumidor final: no se anula
+        ni admite nota de crédito (NAC-DGERCGC25-00000014, art. 3, desde el
+        01/01/2026)"""
+        return self.customer_id is None and self.has_invoice
+
     def await_invoice(self) -> None:
         """La venta se envió a faclab-invoicing (al confirmarla o reenviarla).
         Conserva el id de la factura rechazada: así se reconoce un rechazo
@@ -202,6 +220,14 @@ class Sale(Entity):
         if invoice_id is not None:
             self.invoice_id = invoice_id
         self.invoice_rejection_reason = None
+
+    def credit_invoice(self, invoice_id: str | None = None) -> None:
+        """Sus notas de crédito acreditan toda la factura. La venta sigue como
+        está: cajas y reportes cuentan lo que devolvieron sus devoluciones. Sin
+        devoluciones (una venta anulada) dice cuál es la factura."""
+        self.invoice_status = InvoiceStatus.CREDITED
+        if invoice_id is not None:
+            self.invoice_id = invoice_id
 
     def park(self, reason: str | None = None) -> None:
         """Aparca la venta para retomarla después (solo si está en DRAFT)"""

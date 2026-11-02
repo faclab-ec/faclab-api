@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.sales.app.repositories import SaleRepository
@@ -26,9 +27,15 @@ class InvoiceSaleCommandHandler(CommandHandler[InvoiceSaleCommand, dict]):
     facturada no hace nada.
     """
 
-    def __init__(self, sale_repo: SaleRepository, event_publisher: EventPublisher):
+    def __init__(
+        self,
+        sale_repo: SaleRepository,
+        event_publisher: EventPublisher,
+        session: Session,
+    ):
         self.sale_repo = sale_repo
         self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: InvoiceSaleCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -48,7 +55,9 @@ class InvoiceSaleCommandHandler(CommandHandler[InvoiceSaleCommand, dict]):
                 customer_id=sale.customer_id,
                 invoice_id=command.invoice_id,
                 total=sale.total,
-            )
+            ),
+            # The credit notes of its refunds go to the outbox in this transaction
+            session=self.session,
         )
 
         return sale.dict()

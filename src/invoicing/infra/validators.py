@@ -3,9 +3,53 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from src.invoicing.domain.entities import DiscrepancyKind, DiscrepancyStatus
+from src.invoicing.domain.entities import (
+    CreditNoteStatus,
+    DiscrepancyKind,
+    DiscrepancyStatus,
+)
 from src.sales.domain.entities import InvoiceStatus, SaleStatus
 from src.shared.infra.validators import DecimalNumber, QueryParams
+
+
+class CreditNoteResponse(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
+
+    id: int = Field(description="Credit note ID")
+    status: CreditNoteStatus = Field(
+        description="PENDING until faclab-invoicing reports the SRI's answer"
+    )
+    sale_id: int = Field(description="Sale whose invoice it modifies")
+    refund_id: int | None = Field(
+        None, description="Refund it backs; null for the invoice of a cancelled sale"
+    )
+    invoice_id: str = Field(description="Invoice it modifies, in faclab-invoicing")
+    document_id: str | None = Field(
+        None,
+        description="Its last document with a result in faclab-invoicing: "
+        "its XML and RIDE are downloaded with this id",
+    )
+    number: str | None = Field(
+        None, description="Number of the document (001-001-000000012)"
+    )
+    access_code: str | None = Field(None, description="Access code of the document")
+    reason: str = Field(description="Reason it carries (motivo)")
+    total: DecimalNumber = Field(description="Amount it credits")
+    authorized_at: datetime | None = Field(None, description="When the SRI authorized")
+    rejection_reason: str | None = Field(None, description="Why it was rejected")
+    requested_at: datetime | None = Field(None, description="When it was last asked")
+
+
+class RequestCancelledSaleCreditNoteRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    reason: str = Field(
+        min_length=1,
+        max_length=300,
+        description="Reason of the credit note (motivo, required by the SRI)",
+    )
 
 
 class DiscrepancySaleResponse(BaseModel):
@@ -16,6 +60,11 @@ class DiscrepancySaleResponse(BaseModel):
     status: SaleStatus = Field(description="Sale status")
     total: DecimalNumber = Field(description="Sale total")
     branch_id: int | None = Field(None, description="Branch of the sale")
+    customer_id: int | None = Field(
+        None,
+        description="Its customer; null is the final consumer, whose invoice "
+        "admits no credit note",
+    )
     sale_date: datetime | None = Field(None, description="When it was confirmed")
     invoice_status: InvoiceStatus | None = Field(
         None, description="Status of its invoice; null if it was never sent"
@@ -50,6 +99,10 @@ class InvoiceDiscrepancyResponse(BaseModel):
     review_note: str | None = Field(None, description="Note of the review")
     sale: DiscrepancySaleResponse | None = Field(
         None, description="The sale, as it is now"
+    )
+    credit_note: CreditNoteResponse | None = Field(
+        None,
+        description="The credit note of the invoice of a cancelled sale, once asked",
     )
 
 

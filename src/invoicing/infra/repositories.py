@@ -1,17 +1,22 @@
+from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.invoicing.app.repositories import InvoiceDiscrepancyRepository
+from src.invoicing.app.repositories import (
+    CreditNoteRepository,
+    InvoiceDiscrepancyRepository,
+)
 from src.invoicing.domain.entities import (
+    CreditNote,
     DiscrepancyKind,
     DiscrepancyStatus,
     InvoiceDiscrepancy,
 )
-from src.invoicing.infra.mappers import InvoiceDiscrepancyMapper
-from src.invoicing.infra.models import InvoiceDiscrepancyModel
+from src.invoicing.infra.mappers import CreditNoteMapper, InvoiceDiscrepancyMapper
+from src.invoicing.infra.models import CreditNoteModel, InvoiceDiscrepancyModel
 from src.shared.domain.tenant import require_tenant
 from src.shared.infra.repositories import SqlAlchemyRepository
 
@@ -71,3 +76,28 @@ class SqlAlchemyInvoiceDiscrepancyRepository(
         if sale_id is not None:
             criteria.append(InvoiceDiscrepancyModel.sale_id == sale_id)
         return self.filter(criteria=criteria, order_by="id")
+
+
+@injectable(lifetime="scoped", as_type=CreditNoteRepository)
+class SqlAlchemyCreditNoteRepository(
+    SqlAlchemyRepository[CreditNote], CreditNoteRepository
+):
+    __model__ = CreditNoteModel
+
+    def __init__(self, session: Session, mapper: CreditNoteMapper):
+        super().__init__(session, mapper)
+
+    def of_refunds(self, refund_ids: Iterable[int]) -> list[CreditNote]:
+        ids = list(refund_ids)
+        if not ids:
+            return []
+        return self.filter(criteria=[CreditNoteModel.refund_id.in_(ids)])
+
+    def of_cancelled_sale(self, sale_id: int) -> CreditNote | None:
+        notes = self.filter(
+            criteria=[
+                CreditNoteModel.sale_id == sale_id,
+                CreditNoteModel.refund_id.is_(None),
+            ]
+        )
+        return notes[0] if notes else None

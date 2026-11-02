@@ -16,7 +16,11 @@ def _handler(
     sale_repo = MagicMock()
     sale_repo.get_by_id.return_value = sale
     publisher = MagicMock()
-    return InvoiceSaleCommandHandler(sale_repo, publisher), sale_repo, publisher
+    return (
+        InvoiceSaleCommandHandler(sale_repo, publisher, MagicMock()),
+        sale_repo,
+        publisher,
+    )
 
 
 def _command() -> InvoiceSaleCommand:

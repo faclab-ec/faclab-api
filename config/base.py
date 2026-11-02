@@ -97,6 +97,13 @@ class BaseConfig:
     WORKER_PURGE_INTERVAL_SECONDS = env.float("WORKER_PURGE_INTERVAL_SECONDS", 3600.0)
     # Last successful cycle of each task, read by the container's health check
     WORKER_HEALTH_FILE = env.str("WORKER_HEALTH_FILE", "/tmp/faclab-worker-health.json")
+    # Credit notes (S4.5, only with KAFKA_ENABLED): false stops asking for them, the
+    # ones issued are kept (the rollback switch). An invoice to the final consumer
+    # admits none (NAC-DGERCGC25-00000014, art. 3), so such a refund is refused;
+    # true lets it through, as an internal refund without a credit note (D-4).
+    CREDIT_NOTES_ENABLED = env.bool("CREDIT_NOTES_ENABLED", True)
+    FINAL_CONSUMER_REFUNDS_ALLOWED = env.bool("FINAL_CONSUMER_REFUNDS_ALLOWED", False)
+
     # Reconciliation with faclab-invoicing (S4.3, only with KAFKA_ENABLED): every
     # INTERVAL it opens a discrepancy for each confirmed sale still without an
     # invoice result PENDING_MINUTES after it was sent. ENABLED=false turns it off

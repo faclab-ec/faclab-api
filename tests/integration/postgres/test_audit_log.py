@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, select, text
@@ -16,14 +16,17 @@ from sqlalchemy.orm import Session
 from config import config
 from src.audit.infra.models import AuditLogModel
 from src.auth.domain.entities import Role
+from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.invoicing.infra.reconciliation import reconcile
 from src.shared.app.audit import AuditAction
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.shared.infra.database import create_session_maker
+from src.shared.infra.tenant import tenant_scope
 from tests.integration.postgres.api import (
     Api,
     at_terminal,
     make_branch,
+    make_customer,
     make_location,
     make_movement,
     make_product,
@@ -51,6 +54,7 @@ class World:
     shelf: dict
     backroom: dict
     terminal: dict
+    tenant: UUID
     # The audited call: who made it and its X-Request-Id
     actor: Actor | None = None
     request_id: str | None = None
@@ -72,7 +76,7 @@ def _user_id(engine: Engine, username: str) -> int:
 
 
 @pytest.fixture
-def world(client, auth_headers, pg_engine) -> World:
+def world(client, auth_headers, pg_engine, tenant) -> World:
     def actor(role: Role, name: str, username: str, terminal=None) -> Actor:
         headers = auth_headers(role, full_name=name, username=username)
         if terminal is not None:
@@ -92,6 +96,7 @@ def world(client, auth_headers, pg_engine) -> World:
         shelf=shelf,
         backroom=backroom,
         terminal=terminal,
+        tenant=tenant,
     )
 
 
@@ -337,6 +342,62 @@ def _invoice_discrepancy_reviewed(w):
     return discrepancy["id"]
 
 
+def _invoice_result(w: World, sale_id: int, event_type: str, status: str) -> None:
+    """As the consumer does: in the tenant of its `faclab-tenant-id` header"""
+    with tenant_scope(TenantContext(w.tenant, TenantSource.MESSAGE)):
+        handle_invoice_message(
+            {
+                "type": event_type,
+                "invoiceId": "3f6c1a52-invoice",
+                "saleId": str(sale_id),
+                "status": status,
+                "occurredAt": "2026-10-08T15:00:00.000Z",
+            }
+        )
+
+
+def _discrepancy_of_cancelled_sale(w: World) -> dict:
+    """A sale cancelled after a rejection, whose invoice the SRI authorized later"""
+    _shift(w)
+    product = _product(w)
+    sale = w.cashier.api.post(
+        "/api/pos/sales/quick",
+        {
+            "customerId": make_customer(w.admin.api)["id"],
+            "items": [{"productId": product["id"], "quantity": 1}],
+            "payments": [{"amount": "11.50", "paymentMethod": "CASH"}],
+        },
+    )
+    _invoice_result(w, sale["id"], "InvoiceRejected", "rejected")
+    w.cashier.api.post(f"/api/pos/sales/{sale['id']}/cancel", {"reason": "Error"})
+    _invoice_result(w, sale["id"], "InvoiceAuthorized", "authorized")
+    [discrepancy] = w.admin.api.get(
+        "/api/admin/invoice-discrepancies", params={"kind": "authorized_on_cancelled"}
+    )
+    return discrepancy
+
+
+def _credit_note_requested(w):
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "KAFKA_ENABLED", True)
+        discrepancy = _discrepancy_of_cancelled_sale(w)
+        path = f"/api/admin/invoice-discrepancies/{discrepancy['id']}/credit-note"
+        return w.send(w.manager, "POST", path, {"reason": "Venta anulada"})["id"]
+
+
+def _credit_note_requested_again(w):
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "KAFKA_ENABLED", True)
+        discrepancy = _discrepancy_of_cancelled_sale(w)
+        note = w.admin.api.post(
+            f"/api/admin/invoice-discrepancies/{discrepancy['id']}/credit-note",
+            {"reason": "Venta anulada"},
+        )
+        path = f"/api/admin/credit-notes/{note['id']}/request-again"
+        w.send(w.manager, "POST", path)
+    return note["id"]
+
+
 def _refund_processed(w):
     refund = _refund(w)
     w.send(
@@ -517,6 +578,8 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.SALE_DISCOUNT_APPLIED: _sale_discount_applied,
     AuditAction.SALE_INVOICE_REQUESTED: _sale_invoice_requested,
     AuditAction.INVOICE_DISCREPANCY_REVIEWED: _invoice_discrepancy_reviewed,
+    AuditAction.CREDIT_NOTE_REQUESTED: _credit_note_requested,
+    AuditAction.CREDIT_NOTE_REQUESTED_AGAIN: _credit_note_requested_again,
     AuditAction.REFUND_PROCESSED: _refund_processed,
     AuditAction.REFUND_CANCELLED: _refund_cancelled,
     AuditAction.CASH_MOVEMENT_REGISTERED: _cash_movement_registered,

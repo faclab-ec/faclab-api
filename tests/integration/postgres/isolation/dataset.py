@@ -6,11 +6,15 @@ seed, so a response of A that shows any of B's markers is a leak."""
 
 from datetime import date, timedelta
 from typing import Any
+from uuid import UUID
 
 import pytest
 
 from config import config
+from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.invoicing.infra.reconciliation import reconcile
+from src.shared.domain.tenant import TenantContext, TenantSource
+from src.shared.infra.tenant import tenant_scope
 from tests.integration.postgres.api import (
     Api,
     make_branch,
@@ -38,7 +42,7 @@ def supplier_tax_id(seed: int) -> str:
     return national_id(seed * 10 + 2) + "001"
 
 
-def build_tenant(api: Api, marker: str, seed: int) -> Ids:
+def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     """Every kind of row a route can reach, with the state its routes need: a
     draft and a partly received order, a draft adjustment and transfer, an open
     shift with a draft and a confirmed sale and a pending refund"""
@@ -237,7 +241,46 @@ def build_tenant(api: Api, marker: str, seed: int) -> Ids:
         "/api/admin/invoice-discrepancies", params={"saleId": ids["sale"]}
     )
     ids["invoice_discrepancy"] = discrepancy["id"]
+    ids["credit_note"] = _credit_note(api, ids, tenant_id)
     return ids
+
+
+def _credit_note(api: Api, ids: Ids, tenant_id: UUID) -> int:
+    """The credit note of a refund of another sale, which the SRI invoiced"""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(config, "KAFKA_ENABLED", True)
+        sale = api.post(
+            "/api/pos/sales/quick",
+            {
+                "customerId": ids["customer"],
+                "items": [{"productId": ids["product"], "quantity": 1}],
+                "payments": [{"amount": "11.50", "paymentMethod": "CASH"}],
+            },
+        )
+        with tenant_scope(TenantContext(tenant_id, TenantSource.MESSAGE)):
+            handle_invoice_message(
+                {
+                    "type": "InvoiceAuthorized",
+                    "invoiceId": f"{ids['marker']}-invoice",
+                    "saleId": str(sale["id"]),
+                    "status": "authorized",
+                    "occurredAt": "2026-10-08T15:00:00.000Z",
+                }
+            )
+        [item] = api.get(f"/api/pos/sales/{sale['id']}/items")
+        refund = api.post(
+            "/api/pos/refunds",
+            {
+                "originalSaleId": sale["id"],
+                "items": [{"saleItemId": item["id"], "quantity": 1}],
+                "reason": f"{ids['marker']} nota de crédito",
+            },
+        )
+        processed = api.post(
+            f"/api/pos/refunds/{refund['id']}/process",
+            {"payments": [{"amount": "11.50", "paymentMethod": "CASH"}]},
+        )
+    return processed["creditNote"]["id"]
 
 
 def _order(api: Api, ids: Ids) -> tuple[int, int]:

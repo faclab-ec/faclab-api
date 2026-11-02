@@ -36,6 +36,10 @@ class AuditAction(StrEnum):
     SALE_INVOICE_REQUESTED = "sale.invoice_requested"
     # Conciliación con faclab-invoicing (S4.3)
     INVOICE_DISCREPANCY_REVIEWED = "invoice_discrepancy.reviewed"
+    # Nota de crédito pedida a mano (S4.5): la factura de una venta anulada, o
+    # volver a pedirla. La de una devolución la audita la devolución
+    CREDIT_NOTE_REQUESTED = "credit_note.requested"
+    CREDIT_NOTE_REQUESTED_AGAIN = "credit_note.requested_again"
     REFUND_PROCESSED = "refund.processed"
     REFUND_CANCELLED = "refund.cancelled"
     CASH_MOVEMENT_REGISTERED = "cash_movement.registered"

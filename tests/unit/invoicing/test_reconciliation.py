@@ -31,8 +31,8 @@ from src.invoicing.domain.entities import (
     InvoiceDiscrepancy,
 )
 from src.invoicing.domain.exceptions import DiscrepancyNotOpenError
-from src.invoicing.infra.mappers import InvoiceDiscrepancyMapper
-from src.invoicing.infra.models import InvoiceDiscrepancyModel
+from src.invoicing.infra.mappers import CreditNoteMapper, InvoiceDiscrepancyMapper
+from src.invoicing.infra.models import CreditNoteModel, InvoiceDiscrepancyModel
 from src.invoicing.infra.repositories import SqlAlchemyInvoiceDiscrepancyRepository
 from src.sales.domain.entities import InvoiceStatus, Sale, SaleStatus
 from src.sales.domain.specifications import SalesAwaitingInvoice
@@ -55,7 +55,7 @@ WITHOUT_RESULT = DiscrepancyKind.CONFIRMED_WITHOUT_RESULT
 
 @pytest.fixture
 def session(in_tenant) -> Iterator[Session]:
-    db = sqlite_session([SaleModel, InvoiceDiscrepancyModel])
+    db = sqlite_session([SaleModel, InvoiceDiscrepancyModel, CreditNoteModel])
     yield db
     db.close()
 
@@ -376,7 +376,7 @@ def test_the_list_shows_the_open_ones_with_their_sale(session, sales, reconcile)
     [_, second] = _unresolved(discrepancies)
     second.review(7, "Ana Pérez")
     discrepancies.update(second)
-    handler = ListInvoiceDiscrepanciesQueryHandler(session)
+    handler = ListInvoiceDiscrepanciesQueryHandler(session, CreditNoteMapper())
 
     result = handler.handle(ListInvoiceDiscrepanciesQuery())
 
@@ -406,8 +406,8 @@ def test_the_list_only_shows_the_tenants_discrepancies(session, sales, reconcile
     session.commit()
 
     with use_tenant(TenantContext(other, TenantSource.TASK)):
-        result = ListInvoiceDiscrepanciesQueryHandler(session).handle(
-            ListInvoiceDiscrepanciesQuery()
-        )
+        result = ListInvoiceDiscrepanciesQueryHandler(
+            session, CreditNoteMapper()
+        ).handle(ListInvoiceDiscrepanciesQuery())
 
     assert result["total"] == 0
