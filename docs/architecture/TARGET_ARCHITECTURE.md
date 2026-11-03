@@ -247,8 +247,12 @@ stateDiagram-v2
     CONFIRMED --> INVOICE_REJECTED: InvoiceRejected
     INVOICE_REJECTED --> CONFIRMED: corregir datos y reenviar
     CONFIRMED --> CANCELLED: anulación antes de facturar
-    INVOICED --> CREDITED: nota de crédito autorizada
+    INVOICED --> INVOICED: devolución con nota de crédito
 ```
+
+*S4.5:* `CREDITED` no es un estado de la venta sino de su factura (`invoice_status`). Una venta facturada
+se anula con una devolución total y sigue `INVOICED`, para que cajas y reportes cuenten una sola vez lo
+que devolvió su devolución. La factura pasa a `CREDITED` cuando todo está devuelto y cada nota autorizada.
 
 - **Garantía:** toda venta confirmada termina facturada, rechazada con motivo visible o anulada con su
   nota de crédito.
@@ -257,7 +261,8 @@ stateDiagram-v2
   anuladas) y alertas sobre esa conciliación. *S4.3:* la conciliación usa el estado que el core ya
   recibió (30 minutos por defecto); la alerta sobre su métrica es de S7.5.
 - **Cancelar una venta con factura en curso:** se bloquea mientras la factura no tenga resultado. Si ya
-  está autorizada, la anulación exige nota de crédito (S3.3, S4.5).
+  está autorizada, la anulación exige nota de crédito (S3.3, S4.5). La factura a consumidor final no se
+  anula ni admite nota (Res. NAC-DGERCGC25-00000014, art. 3): esa devolución se rechaza.
 
 ## 6. Configuración y secretos
 

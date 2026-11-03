@@ -353,6 +353,15 @@ consumidor de `invoices` otra cuando el SRI autoriza la factura de una venta anu
 `POST .../{id}/review` las marca revisadas; el reenvio (`POST /api/admin/sales/{id}/request-invoice`)
 y el resultado de la factura las resuelven. Detalle en [sales-spec.md](sales-spec.md) (2.6).
 
+**Nota de credito (S4.5, `src/invoicing/`):** una devolucion completada de una venta facturada pide su
+nota (codDoc 04) en la misma transaccion, por el outbox (`credit_notes.requested`); la de una venta aun
+sin autorizar, cuando se autoriza. El resultado llega por `credit_notes.results` y queda en la tabla
+`credit_notes`, que muestran la devolucion y la discrepancia. Anular una venta facturada es una
+devolucion total; cuando todo esta devuelto y acreditado, su factura pasa a `CREDITED` y la venta sigue
+`INVOICED`. La factura a consumidor final no admite nota (Res. NAC-DGERCGC25-00000014, art. 3): esa
+devolucion se rechaza. Detalle en [pos-api-spec.md](pos-api-spec.md) (3) y
+[sales-spec.md](sales-spec.md) (2.6).
+
 ---
 
 ## POS (Punto de Venta) — En desarrollo

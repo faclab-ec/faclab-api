@@ -164,7 +164,7 @@
   administración del POS todavía no ofrecen esos filtros ni muestran la caja de cada turno.
 - **Devolución por número de venta** (detectado en S2.9). El recibo y las listas muestran el número de
   la sucursal (`V-001-000123`), pero el diálogo de devolución del POS busca la venta por su id interno:
-  falta buscarla por número en el core y en la web (encaja con S4.5; S3.3 no lo tocó).
+  falta buscarla por número en el core y en la web (S3.3 y S4.5 no lo tocaron).
 - **Publicadores sin la sesión de la petición** (detectado en S3.3). Un handler de eventos corre en
   la transacción de la petición solo si quien publica pasa `session=self.session`; si no, abre su
   propio scope y confirma aparte. Desde S3.3 lo pasan todos los publicadores de eventos con
@@ -175,7 +175,7 @@
 - **Pagos de devolución por encima del total** (detectado en S3.3). `ProcessRefundCommandHandler`
   solo exige que los pagos cubran la devolución: lo que la supera se guarda como pagado y cuenta en
   `cashRefunds`. Conviene aplicarles la misma regla que a los pagos de venta (sin vuelto, o con él
-  aparte); encaja con S4.5 o S5.9.
+  aparte); encaja con S5.9 (S4.5 no lo tocó).
 - **Ventas confirmadas antes de S3.3 sin cobertura** (detectado en S3.3). Al reenviarlas a facturación
   responden `INSUFFICIENT_PAYMENT`: hay que registrar el pago que falta antes del reenvío. En la base
   de desarrollo hay 3 (datos del seed). Su `invoice_status` es nulo, así que también se pueden cancelar
@@ -301,7 +301,7 @@
   - Límite de reenvíos por factura o por usuario; hoy solo se evita un segundo pendiente.
   - Reenvío a un correo corregido después de la venta: hoy va siempre al de la venta (el riesgo de la
     ficha). Requeriría que el core mande el correo actual o una corrección auditada.
-  - RIDE de la nota de crédito (S4.5) y de los documentos de D-8.
+  - RIDE de los documentos de D-8 (el de la nota de crédito entró en S4.5).
   - Timeout explícito en las llamadas a S3 (hoy el del SDK); un almacenamiento colgado podría pasar
     el lease.
   - `INVOICE_LOCK_TIMEOUT_MS` debe ser al menos tres veces `SMTP_TIMEOUT_MS`, y las ranuras de los dos
@@ -396,7 +396,7 @@ flowchart LR
 | [S4.2](sessions/S4.2-sri-desacoplado.md) | SRI desacoplado | Cola en PostgreSQL y worker para firmar y enviar | S2.7 | invoicing | G-13, G-14 | M |
 | [S4.3](sessions/S4.3-conciliacion-y-reproceso.md) | Conciliación y reproceso | Detección de discrepancias y herramientas de reproceso | S3.4, S4.2 | core, invoicing, web | G-21 | M |
 | [S4.4](sessions/S4.4-ride-y-correo.md) | RIDE y correo | PDF del comprobante y envío al cliente | S4.1 | invoicing, web | G-12 | M |
-| [S4.5](sessions/S4.5-nota-de-credito.md) | Nota de crédito | Emisión desde devoluciones y anulaciones | S4.1, S4.2, S3.3 | invoicing, core, web | G-11, G-20, G-22, F-04 | L |
+| [S4.5](sessions/S4.5-nota-de-credito.md) | Nota de crédito | Emisión desde devoluciones y anulaciones | S4.1, S4.2, S3.3 | invoicing, core, web, infra | G-11, G-20, G-22, F-04 | L |
 | [S4.6](sessions/S4.6-materiales-de-construccion.md) | Materiales de construcción | Código de subcategoría del Anexo 23 en `codigoAuxiliar` | S4.1 | core, invoicing, web | G-79 | M |
 | [S5.1](sessions/S5.1-cantidades-decimales.md) | Cantidades decimales | Cantidades con precisión configurable en todo el flujo | S3.3 | core, web, invoicing | F-01 | L |
 | [S5.2](sessions/S5.2-unidades-y-presentaciones.md) | Unidades y presentaciones | Conversiones, presentaciones y códigos de barras | S5.1 | core, web | F-02, F-03 | L |

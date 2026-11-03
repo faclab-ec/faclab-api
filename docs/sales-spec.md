@@ -43,7 +43,7 @@ GET /api/admin/sales?customerId=1&status=DRAFT&limit=20&offset=0
 |-------------|--------|---------|---------------|
 | customerId  | int    | null    | >= 1          |
 | status      | string | null    | SaleStatus    |
-| invoiceStatus | string | null  | InvoiceStatus (`PENDING`, `AUTHORIZED`, `REJECTED`) |
+| invoiceStatus | string | null  | InvoiceStatus (`PENDING`, `AUTHORIZED`, `REJECTED`, `CREDITED`) |
 | limit       | int    | 100     | 1–1000        |
 | offset      | int    | 0       | >= 0          |
 
@@ -250,7 +250,31 @@ Qué hacer con cada una (vista "Requieren atención" de faclab-web):
 - Facturación no tiene la venta (el mensaje se perdió) o se la rechazó: **reenviar** (2.5).
 - Facturación la tiene en curso con un problema (SRI caído, configuración incompleta): reintentarla en facturación, o marcarla revisada mientras se resuelve.
 - Facturación ya la autorizó pero la venta sigue `PENDING` (se perdió el resultado): reenviar, y facturación vuelve a publicarlo.
-- `authorized_on_cancelled`: nota de crédito (S4.5) y marcarla revisada.
+- `authorized_on_cancelled`: **pedir su nota de crédito** (abajo). Se resuelve sola cuando el SRI la
+  autoriza. A consumidor final no se puede (`FINAL_CONSUMER_CREDIT_NOTE_NOT_ALLOWED`): se revisa a mano
+  con el contador.
+
+#### Nota de crédito de una venta anulada (S4.5)
+
+`POST /api/admin/invoice-discrepancies/{id}/credit-note` (`sale:write`, auditada
+`credit_note.requested`). Cuerpo: `{ "reason": "..." }`, obligatorio, hasta 300 caracteres. Acredita
+toda la factura: el stock y el dinero ya volvieron al anular la venta. Responde `201` con la nota
+(`CreditNote` de `docs/pos-api-spec.md`). La discrepancia la muestra en `creditNote`, y `sale.customerId`
+nulo dice que es a consumidor final.
+
+| Error | HTTP | Cuándo |
+|---|---|---|
+| `CREDIT_NOTE_NOT_APPLICABLE` | 409 | Otro tipo de discrepancia, resuelta o sin factura |
+| `FINAL_CONSUMER_CREDIT_NOTE_NOT_ALLOWED` | 409 | Factura a consumidor final |
+| `CREDIT_NOTE_ALREADY_REQUESTED` | 409 | Ya tiene la suya: se vuelve a pedir esa |
+| `INVOICING_DISABLED`, `CREDIT_NOTES_DISABLED` | 400 | Kafka o las notas de crédito apagados |
+
+#### Volver a pedir una nota de crédito (S4.5)
+
+`POST /api/admin/credit-notes/{id}/request-again` (`sale:write`, auditada
+`credit_note.requested_again`), sin cuerpo. Para una `REJECTED` (faclab-invoicing emite otra, con otro
+número) o una `PENDING` cuyo resultado no llega (si ya la autorizó, vuelve a publicarlo). Una autorizada
+responde `409 CREDIT_NOTE_ALREADY_AUTHORIZED`.
 
 #### Listar discrepancias
 
@@ -565,6 +589,9 @@ vuelto   = entregado - aplicado
   - `REJECTED` cuando faclab-invoicing informa `InvoiceRejected`, con `invoiceRejectionReason` (los
     mensajes del SRI, campo `reason` de `invoices` v1) e `invoiceId`.
   - `AUTHORIZED` cuando informa `InvoiceAuthorized`: la venta pasa a `INVOICED`.
+  - `CREDITED` cuando sus notas de crédito acreditan toda la factura (S4.5): se devolvió todo y cada
+    nota está autorizada, o la factura de una venta anulada tiene la suya. La venta no cambia de
+    estado, así que cajas y reportes siguen contando lo que devolvieron sus devoluciones.
   - `null` si nunca se envió (Kafka apagado, o ventas anteriores a S3.3). Las facturadas antes de S3.4
     quedaron en `AUTHORIZED` con la migración.
 - Reenviar una venta rechazada la deja en `PENDING` otra vez y borra el motivo, pero conserva
@@ -572,7 +599,8 @@ vuelto   = entregado - aplicado
   como rechazada la factura nueva.
 - Una venta `CONFIRMED` con la factura pendiente no se cancela: `400 INVOICE_IN_PROGRESS`. Con la
   factura rechazada, o sin enviar (Kafka apagado o ventas anteriores a S3.3), se cancela como antes.
-- Una venta `INVOICED` no se cancela: `400 CREDIT_NOTE_REQUIRED`. Se anula con nota de crédito (S4.5).
+- Una venta `INVOICED` no se cancela: `400 CREDIT_NOTE_REQUIRED`. Se anula con una devolución total
+  en el POS (`docs/pos-api-spec.md`, 3), que genera la nota de crédito (S4.5).
 
 ### Montos
 

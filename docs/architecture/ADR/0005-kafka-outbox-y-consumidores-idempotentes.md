@@ -81,7 +81,7 @@ Se conserva Kafka (KRaft, un nodo en el VPS) con estas reglas:
   duplicados, pero dos relays en paralelo podían desordenar los mensajes de una empresa.
 - **Retención**: los publicados se purgan a los `OUTBOX_RETENTION_DAYS` (14) desde el worker; los
   `failed` y `pending` nunca.
-- **Tópicos**: `faclab-infra/scripts/create-topics.sh` crea `sales.confirmed`, `invoices` y `dlq` con
+- **Tópicos**: `faclab-infra/scripts/create-topics.sh` crea `sales.confirmed`, `invoices`, `credit_notes.requested`, `credit_notes.results` (S4.5) y `dlq` con
   `KAFKA_TOPIC_PARTITIONS` (6), y Kafka ya no los crea por su cuenta.
 - **Consumidor del core**: backoff con `KAFKA_CONSUMER_MAX_ATTEMPTS` (5) y
   `KAFKA_CONSUMER_RETRY_BASE_SECONDS` (2, tope de un minuto). Al agotarse, el mensaje va a la tabla
