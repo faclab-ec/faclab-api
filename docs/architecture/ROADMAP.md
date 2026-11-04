@@ -172,6 +172,9 @@
   facturación). Antes, el mensaje `sales.confirmed` de las ventas del POS se guardaba en otra
   transacción. Para que no se repita con un suscriptor nuevo, conviene que `EventBusPublisher` tome la
   sesión de la petición por defecto (scoped) en lugar de depender de cada publicador.
+- **Salud del consumidor de faclab-invoicing** (detectado en S4.5). Tras una suspensión de la máquina el
+  grupo quedó sin miembros activos con el proceso vivo y `/health` en 200: conviene cubrirlo en la salud
+  del worker y alertar por lag (S7.x). No se identificó la causa.
 - **Pagos de devolución por encima del total** (detectado en S3.3). `ProcessRefundCommandHandler`
   solo exige que los pagos cubran la devolución: lo que la supera se guarda como pagado y cuenta en
   `cashRefunds`. Conviene aplicarles la misma regla que a los pagos de venta (sin vuelto, o con él
