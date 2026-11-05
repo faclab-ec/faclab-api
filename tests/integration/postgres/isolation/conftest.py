@@ -45,7 +45,7 @@ def world(pg_engine: Engine) -> World:
         Api(client, issue_headers(pg_engine, tenant_id=a_id, username="admin-a")),
         {},
     )
-    a.ids.update(build_tenant(a.api, MARKER_A, 1))
+    a.ids.update(build_tenant(a.api, MARKER_A, 1, a_id))
     listings = {
         key: a.call(key, ROUTES[key], a.ids, query=False) for key in keys("listing")
     }
@@ -56,5 +56,5 @@ def world(pg_engine: Engine) -> World:
         Api(client, issue_headers(pg_engine, tenant_id=b_id, username="admin-b")),
         {},
     )
-    b.ids.update(build_tenant(b.api, MARKER_B, 2))
+    b.ids.update(build_tenant(b.api, MARKER_B, 2, b_id))
     return World(a, b, listings, tenant_rows(pg_engine, b_id))

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.inventory.stock.domain.entities import Stock
+from src.invoicing.domain.entities import CreditNote
 from src.pos.refund.app.commands.cancel_refund import (
     CancelRefundCommand,
     CancelRefundCommandHandler,
@@ -21,15 +22,17 @@ from src.pos.refund.app.commands.process_refund import (
 from src.pos.refund.domain.entities import Refund, RefundItem, RefundStatus
 from src.pos.refund.domain.exceptions import (
     ExceedsOriginalQuantityError,
+    FinalConsumerRefundNotAllowedError,
     InvalidRefundStatusError,
     RefundItemNotInSaleError,
     RefundOutsideBranchError,
+    RefundReasonRequiredError,
     SaleNotConfirmedError,
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
-from src.sales.domain.entities import Sale, SaleItem, SaleStatus
+from src.sales.domain.entities import InvoiceStatus, Sale, SaleItem, SaleStatus
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
@@ -267,6 +270,122 @@ class TestCreateRefund:
                 terminal=AT_TERMINAL,
                 original_sale_id=1,
                 items=[{"sale_item_id": 10, "quantity": 1}],
+                reason="Producto defectuoso",
+            )
+        )
+
+        refund_repo.create.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "sale",
+        [
+            {"status": SaleStatus.INVOICED},
+            {"status": SaleStatus.CONFIRMED, "invoice_status": InvoiceStatus.PENDING},
+        ],
+    )
+    @pytest.mark.parametrize("reason", [None, "", "   "])
+    def test_a_sale_with_an_invoice_needs_a_reason(self, sale, reason):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(**sale),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        with pytest.raises(RefundReasonRequiredError):
+            handler.handle(
+                CreateRefundCommand(
+                    terminal=AT_TERMINAL,
+                    original_sale_id=1,
+                    items=[{"sale_item_id": 10, "quantity": 1}],
+                    reason=reason,
+                )
+            )
+
+        refund_repo.create.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "invoice_status", [None, InvoiceStatus.REJECTED], ids=["never-sent", "rejected"]
+    )
+    def test_a_sale_without_a_valid_invoice_needs_no_reason(self, invoice_status):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(invoice_status=invoice_status),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        handler.handle(
+            CreateRefundCommand(
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 1}],
+            )
+        )
+
+        refund_repo.create.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "sale",
+        [
+            {"status": SaleStatus.INVOICED},
+            {"status": SaleStatus.CONFIRMED, "invoice_status": InvoiceStatus.PENDING},
+        ],
+        ids=["invoiced", "invoice-on-its-way"],
+    )
+    def test_a_sale_invoiced_to_the_final_consumer_is_not_refunded(self, sale):
+        """NAC-DGERCGC25-00000014, art. 3: its invoice admits no credit note"""
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(customer_id=None, is_final_consumer=True, **sale),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        with pytest.raises(FinalConsumerRefundNotAllowedError):
+            handler.handle(
+                CreateRefundCommand(
+                    terminal=AT_TERMINAL,
+                    original_sale_id=1,
+                    items=[{"sale_item_id": 10, "quantity": 1}],
+                    reason="Cambio de opinión",
+                )
+            )
+
+        refund_repo.create.assert_not_called()
+
+    def test_the_policy_lets_a_final_consumer_refund_through(self):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(customer_id=None, status=SaleStatus.INVOICED),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        handler.handle(
+            CreateRefundCommand(
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 1}],
+                final_consumer_allowed=True,
+            )
+        )
+
+        refund_repo.create.assert_called_once()
+
+    @pytest.mark.parametrize(
+        "invoice_status", [None, InvoiceStatus.REJECTED], ids=["never-sent", "rejected"]
+    )
+    def test_a_final_consumer_sale_without_a_valid_invoice_is_refunded(
+        self, invoice_status
+    ):
+        handler, refund_repo, _ = self._make_handler(
+            sale=_make_sale(customer_id=None, invoice_status=invoice_status),
+            sale_items=[_make_sale_item()],
+            shift=_make_shift(),
+        )
+
+        handler.handle(
+            CreateRefundCommand(
+                terminal=AT_TERMINAL,
+                original_sale_id=1,
+                items=[{"sale_item_id": 10, "quantity": 1}],
             )
         )
 
@@ -387,7 +506,7 @@ class TestCreateRefund:
 
 
 class TestProcessRefund:
-    def _make_handler(self, refund=None, refund_items=None):
+    def _make_handler(self, refund=None, refund_items=None, sale=None, notes=None):
         refund_repo = _mock_repo(refund)
         refund_item_repo = MagicMock()
         refund_item_repo.filter_by.return_value = refund_items or []
@@ -402,16 +521,26 @@ class TestProcessRefund:
 
         terminal_repo = MagicMock()
         terminal_repo.get_by_id.return_value = TERMINAL
+        sale_repo = MagicMock()
+        sale_repo.get_by_id.return_value = sale or _make_sale(
+            status=SaleStatus.INVOICED
+        )
+        credit_notes = MagicMock()
+        credit_notes.of_refunds.return_value = notes or []
+        session = MagicMock()
 
         handler = ProcessRefundCommandHandler(
             refund_repo,
             refund_item_repo,
             refund_payment_repo,
+            sale_repo,
+            credit_notes,
             TerminalStock(stock_repo, movement_repo),
             terminal_repo,
             numbering("D-001-000001"),
             event_publisher,
             FakeAuditTrail(),
+            session,
         )
         return handler, movement_repo, stock_repo, event_publisher
 
@@ -437,6 +566,63 @@ class TestProcessRefund:
         stock_repo.update.assert_called_once()
         assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()
+        assert result["credit_note"] is None
+
+    def test_publishes_in_the_transaction_of_the_refund_and_answers_its_credit_note(
+        self,
+    ):
+        """The credit note goes to the outbox with the refund, or not at all"""
+        note = CreditNote(id=7, sale_id=1, refund_id=1, invoice_id="inv", reason="x")
+        handler, _, _, event_publisher = self._make_handler(
+            refund=_make_refund(), refund_items=[_make_refund_item()], notes=[note]
+        )
+
+        result = handler.handle(
+            ProcessRefundCommand(
+                refund_id=1, payments=[{"amount": "46.00", "payment_method": "CASH"}]
+            )
+        )
+
+        assert event_publisher.publish.call_args.kwargs["session"] is handler.session
+        assert result["credit_note"]["id"] == 7
+
+    def test_a_cancelled_sale_is_not_refunded(self):
+        """A pending refund of a sale cancelled since: its stock already went back"""
+        handler, movement_repo, _, event_publisher = self._make_handler(
+            refund=_make_refund(),
+            refund_items=[_make_refund_item()],
+            sale=_make_sale(status=SaleStatus.CANCELLED),
+        )
+
+        with pytest.raises(SaleNotConfirmedError):
+            handler.handle(
+                ProcessRefundCommand(
+                    refund_id=1,
+                    payments=[{"amount": "46.00", "payment_method": "CASH"}],
+                )
+            )
+
+        movement_repo.create.assert_not_called()
+        event_publisher.publish.assert_not_called()
+
+    def test_a_sale_invoiced_to_the_final_consumer_since_is_not_refunded(self):
+        """The refund was created while its invoice was rejected, then it was sent
+        again and authorized"""
+        handler, movement_repo, _, _ = self._make_handler(
+            refund=_make_refund(),
+            refund_items=[_make_refund_item()],
+            sale=_make_sale(customer_id=None, status=SaleStatus.INVOICED),
+        )
+
+        with pytest.raises(FinalConsumerRefundNotAllowedError):
+            handler.handle(
+                ProcessRefundCommand(
+                    refund_id=1,
+                    payments=[{"amount": "46.00", "payment_method": "CASH"}],
+                )
+            )
+
+        movement_repo.create.assert_not_called()
 
     def test_puts_back_in_the_terminal_location_and_numbers_the_refund(self):
         refund = _make_refund(branch_id=1, terminal_id=TERMINAL.id)

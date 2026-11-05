@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.invoicing.domain.entities import DiscrepancyStatus
-from src.invoicing.infra.models import InvoiceDiscrepancyModel
+from src.invoicing.infra.mappers import CreditNoteMapper
+from src.invoicing.infra.models import CreditNoteModel, InvoiceDiscrepancyModel
 from src.sales.infra.models import SaleModel
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.infra.tenant import tenant_criteria
@@ -26,8 +27,9 @@ class ListInvoiceDiscrepanciesQueryHandler(
     """Las discrepancias de la empresa, las más antiguas primero, con lo que la
     vista necesita de su venta para decidir qué hacer"""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, credit_note_mapper: CreditNoteMapper):
         self.session = session
+        self.credit_note_mapper = credit_note_mapper
 
     def _handle(self, query: ListInvoiceDiscrepanciesQuery) -> dict:
         q = (
@@ -49,6 +51,15 @@ class ListInvoiceDiscrepanciesQueryHandler(
             .limit(query.limit)
             .all()
         )
+        # The credit note of the invoice of a cancelled sale
+        notes = {
+            model.sale_id: self.credit_note_mapper.to_entity(model).dict()
+            for model in self.session.query(CreditNoteModel).filter(
+                *tenant_criteria(CreditNoteModel),
+                CreditNoteModel.refund_id.is_(None),
+                CreditNoteModel.sale_id.in_([sale.id for _, sale in rows]),
+            )
+        }
         return {
             "total": total,
             "limit": query.limit,
@@ -71,10 +82,12 @@ class ListInvoiceDiscrepanciesQueryHandler(
                         "status": sale.status,
                         "total": sale.total,
                         "branch_id": sale.branch_id,
+                        "customer_id": sale.customer_id,
                         "sale_date": sale.sale_date,
                         "invoice_status": sale.invoice_status,
                         "invoice_requested_at": sale.invoice_requested_at,
                     },
+                    "credit_note": notes.get(sale.id),
                 }
                 for discrepancy, sale in rows
             ],

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
+from src.invoicing.app.repositories import CreditNoteRepository
 from src.pos.refund.app.repositories import (
     RefundItemRepository,
     RefundPaymentRepository,
@@ -33,10 +34,12 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
         refund_repo: RefundRepository,
         refund_item_repo: RefundItemRepository,
         refund_payment_repo: RefundPaymentRepository,
+        credit_notes: CreditNoteRepository,
     ):
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
+        self.credit_notes = credit_notes
 
     def _handle(self, query: GetRefundByIdQuery) -> dict:
         refund = self.refund_repo.get_by_id(query.refund_id)
@@ -49,6 +52,8 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
         result = refund.dict()
         result["items"] = [{**item.dict(), "subtotal": item.subtotal} for item in items]
         result["payments"] = [p.dict() for p in payments]
+        notes = self.credit_notes.of_refunds([refund.require_id()])
+        result["credit_note"] = notes[0].dict() if notes else None
         return result
 
 
@@ -66,8 +71,11 @@ class GetRefundsQuery(Query):
 
 @injectable(lifetime="scoped")
 class GetRefundsQueryHandler(QueryHandler[GetRefundsQuery, dict]):
-    def __init__(self, refund_repo: RefundRepository):
+    def __init__(
+        self, refund_repo: RefundRepository, credit_notes: CreditNoteRepository
+    ):
         self.refund_repo = refund_repo
+        self.credit_notes = credit_notes
 
     def _handle(self, query: GetRefundsQuery) -> dict:
         specs: list[Specification] = []
@@ -81,10 +89,21 @@ class GetRefundsQueryHandler(QueryHandler[GetRefundsQuery, dict]):
         if scope is not None:
             specs.append(RefundsInBranches(scope))
         # Newest first: this is the refund history
-        return self.refund_repo.paginate_by_spec(
+        page = self.refund_repo.paginate_by_spec(
             all_of(specs),
             limit=query.limit,
             offset=query.offset,
             order_by="id",
             desc_order=True,
         )
+        notes = {
+            note.refund_id: note.dict()
+            for note in self.credit_notes.of_refunds(
+                refund["id"] for refund in page["items"]
+            )
+        }
+        page["items"] = [
+            {**refund, "credit_note": notes.get(refund["id"])}
+            for refund in page["items"]
+        ]
+        return page

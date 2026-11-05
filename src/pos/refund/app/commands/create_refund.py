@@ -6,8 +6,10 @@ from src.pos.refund.app.repositories import RefundItemRepository, RefundReposito
 from src.pos.refund.domain.entities import Refund, RefundItem, RefundStatus
 from src.pos.refund.domain.exceptions import (
     ExceedsOriginalQuantityError,
+    FinalConsumerRefundNotAllowedError,
     RefundItemNotInSaleError,
     RefundOutsideBranchError,
+    RefundReasonRequiredError,
     SaleNotConfirmedError,
 )
 from src.pos.shift.app.repositories import ShiftRepository
@@ -26,6 +28,8 @@ class CreateRefundCommand(Command):
     items: list[dict]
     reason: str | None = None
     refunded_by: str | None = None
+    # FINAL_CONSUMER_REFUNDS_ALLOWED: refund it without a credit note
+    final_consumer_allowed: bool = False
 
 
 @injectable(lifetime="scoped")
@@ -53,6 +57,14 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
 
         if not sale.is_completed:
             raise SaleNotConfirmedError(command.original_sale_id)
+        if sale.invoiced_to_final_consumer and not command.final_consumer_allowed:
+            raise FinalConsumerRefundNotAllowedError(command.original_sale_id)
+        if (
+            sale.has_invoice
+            and not sale.invoiced_to_final_consumer
+            and not (command.reason and command.reason.strip())
+        ):
+            raise RefundReasonRequiredError(command.original_sale_id)
 
         terminal = self.terminals.terminal(command.terminal)
         # Sales from before S2.6 have no branch and are refunded anywhere

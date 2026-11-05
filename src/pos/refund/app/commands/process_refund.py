@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.invoicing.app.repositories import CreditNoteRepository
 from src.organization.app.numbering import DocumentNumbering
 from src.organization.app.repositories import PosTerminalRepository
 from src.organization.domain.numbering import DocumentType
@@ -13,7 +15,12 @@ from src.pos.refund.app.repositories import (
 )
 from src.pos.refund.domain.entities import RefundPayment
 from src.pos.refund.domain.events import RefundCompleted
+from src.pos.refund.domain.exceptions import (
+    FinalConsumerRefundNotAllowedError,
+    SaleNotConfirmedError,
+)
 from src.pos.terminal.app.stock import TerminalStock
+from src.sales.app.repositories import SaleRepository
 from src.sales.domain.entities import PaymentMethod
 from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
@@ -26,6 +33,8 @@ from src.shared.domain.money import round_money
 class ProcessRefundCommand(Command):
     refund_id: int
     payments: list[dict]
+    # FINAL_CONSUMER_REFUNDS_ALLOWED: refund it without a credit note
+    final_consumer_allowed: bool = False
 
 
 @injectable(lifetime="scoped")
@@ -35,20 +44,26 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         refund_repo: RefundRepository,
         refund_item_repo: RefundItemRepository,
         refund_payment_repo: RefundPaymentRepository,
+        sale_repo: SaleRepository,
+        credit_notes: CreditNoteRepository,
         stock: TerminalStock,
         terminal_repo: PosTerminalRepository,
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        session: Session,
     ):
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
+        self.sale_repo = sale_repo
+        self.credit_notes = credit_notes
         self.stock = stock
         self.terminal_repo = terminal_repo
         self.numbering = numbering
         self.event_publisher = event_publisher
         self.audit = audit
+        self.session = session
 
     def _handle(self, command: ProcessRefundCommand) -> dict:
         refund = self.refund_repo.get_by_id(command.refund_id)
@@ -57,6 +72,14 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         refund.ensure_pending("complete")
         before_status = refund.status
+
+        # It may have changed since the refund was created: cancelled, or
+        # invoiced after a resend
+        sale = self.sale_repo.get_by_id(refund.original_sale_id)
+        if sale is None or not sale.is_completed:
+            raise SaleNotConfirmedError(refund.original_sale_id)
+        if sale.invoiced_to_final_consumer and not command.final_consumer_allowed:
+            raise FinalConsumerRefundNotAllowedError(refund.original_sale_id)
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
@@ -144,10 +167,14 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
                 original_sale_id=refund.original_sale_id,
                 items=items_data,
                 total=refund.total,
-            )
+            ),
+            # Its credit note, if it needs one, goes to the outbox in this transaction
+            session=self.session,
         )
 
         result = refund.dict()
+        notes = self.credit_notes.of_refunds([refund.require_id()])
+        result["credit_note"] = notes[0].dict() if notes else None
         result["items"] = [{**item.dict(), "subtotal": item.subtotal} for item in items]
         result["payments"] = [p.dict() for p in created_payments]
         return result

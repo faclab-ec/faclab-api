@@ -163,9 +163,10 @@ def test_sales_confirmed_follows_the_v2_contract(
     ) == (DEFAULT_TENANT_RUC, "001", None, "001", "V-001-000002")
 
 
-def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant):
+def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant, client, admin):
     cashier, _ = pos
-    sale = _checkout(pos, [1, 0, 0])
+    # With a customer: a sale invoiced to the final consumer isn't refunded (S4.5)
+    sale = _checkout(pos, [1, 0, 0], make_customer(Api(client, admin))["id"])
 
     _handle(_authorized(sale["id"]), tenant)
     # Kafka can deliver the same message again
@@ -189,6 +190,7 @@ def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant):
         {
             "originalSaleId": sale["id"],
             "items": [{"saleItemId": item["id"], "quantity": 1}],
+            "reason": "Producto con defecto",
         },
     )
     assert refund["total"] == sale["total"]

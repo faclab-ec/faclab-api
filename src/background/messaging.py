@@ -8,6 +8,10 @@ juntan los handlers de cada topic que consume el core, por eso vive fuera de
 from collections.abc import Callable
 
 from config import config
+from src.invoicing.infra.credit_note_messages import (
+    CREDIT_NOTES_RESULTS_TOPIC,
+    handle_credit_note_message,
+)
 from src.invoicing.infra.invoice_messages import INVOICES_TOPIC, handle_invoice_message
 from src.shared.infra.database import worker_session_maker
 from src.shared.infra.kafka.consumer import KafkaMessageConsumer, MessageHandler
@@ -16,9 +20,12 @@ from src.shared.infra.kafka.producer import KafkaEventProducer
 from src.shared.infra.outbox import relay as outbox_relay
 from src.shared.infra.outbox.relay import OutboxRelay
 
-# Topics core consumes. Marks sales as invoiced (or their invoice as rejected)
-# when faclab-invoicing reports the SRI result
-CONSUMER_HANDLERS: dict[str, MessageHandler] = {INVOICES_TOPIC: handle_invoice_message}
+# Topics core consumes. Marks sales as invoiced (or their invoice as rejected) and
+# credit notes as authorized or rejected when faclab-invoicing reports the SRI result
+CONSUMER_HANDLERS: dict[str, MessageHandler] = {
+    INVOICES_TOPIC: handle_invoice_message,
+    CREDIT_NOTES_RESULTS_TOPIC: handle_credit_note_message,
+}
 
 
 def create_consumer(on_cycle: Callable[[], None] | None = None) -> KafkaMessageConsumer:

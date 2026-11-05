@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from src.invoicing.infra.validators import CreditNoteResponse
 from src.pos.refund.domain.entities import RefundStatus
 from src.sales.domain.entities import PaymentMethod
 from src.shared.domain.tax import TaxCode
@@ -168,6 +169,13 @@ class RefundResponse(BaseModel):
         None,
         validation_alias=AliasChoices("createdAt", "created_at"),
         serialization_alias="createdAt",
+    )
+    credit_note: CreditNoteResponse | None = Field(
+        None,
+        description="Its credit note; null while its sale has no authorized invoice, "
+        "or when it needs none",
+        validation_alias=AliasChoices("creditNote", "credit_note"),
+        serialization_alias="creditNote",
     )
 
 

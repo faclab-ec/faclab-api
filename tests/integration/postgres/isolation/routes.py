@@ -447,6 +447,12 @@ ROUTES: dict[str, Route] = {
     f"POST {ADMIN}/invoice-discrepancies/{{discrepancy_id}}/review": Route(
         path=("invoice_discrepancy",), body=lambda ids: {"note": f"{ids['marker']}"}
     ),
+    f"POST {ADMIN}/invoice-discrepancies/{{discrepancy_id}}/credit-note": Route(
+        path=("invoice_discrepancy",), body=lambda ids: {"reason": f"{ids['marker']}"}
+    ),
+    f"POST {ADMIN}/credit-notes/{{credit_note_id}}/request-again": Route(
+        path=("credit_note",)
+    ),
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
     f"GET {ADMIN}/audit-log": Route(),

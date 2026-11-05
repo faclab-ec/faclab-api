@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from wireup import Injected
 
+from config import config
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
 from src.auth.infra.dependencies import get_current_user, require_permission
@@ -112,6 +113,9 @@ class POSRefundRouter:
         The terminal must be of the sale's branch (`REFUND_OUTSIDE_BRANCH`).
         Specify the items to refund (partial or total). The refund is created in PENDING
         status and must be processed to register payments and restore inventory.
+        A refund of a sale with an invoice needs a `reason` (`REFUND_REASON_REQUIRED`): it
+        generates a credit note. An invoice to the final consumer doesn't admit one, so
+        such a sale is not refunded (`FINAL_CONSUMER_REFUND_NOT_ALLOWED`).
         Requires `Idempotency-Key`: a retry with it gets the refund created the first time.
         """
 
@@ -123,6 +127,7 @@ class POSRefundRouter:
                     items=[item.model_dump() for item in refund_input.items],
                     reason=refund_input.reason,
                     refunded_by=user.display_name,
+                    final_consumer_allowed=config.FINAL_CONSUMER_REFUNDS_ALLOWED,
                 )
             )
             return DataResponse(
@@ -146,7 +151,8 @@ class POSRefundRouter:
 
         The total of all payments must cover the refund amount. Once processed,
         the stock goes back to the location of the refund's terminal and the refund
-        gets its number of the branch.
+        gets its number of the branch. With the sale invoiced it asks for its credit
+        note (`creditNote`); with its invoice still on the way, once it is authorized.
         Requires `Idempotency-Key`: a retry with it gets the first processing.
         """
         guard.refund(refund_id, branch)
@@ -156,6 +162,7 @@ class POSRefundRouter:
                 ProcessRefundCommand(
                     refund_id=refund_id,
                     payments=[p.model_dump() for p in process_input.payments],
+                    final_consumer_allowed=config.FINAL_CONSUMER_REFUNDS_ALLOWED,
                 )
             )
             return DataResponse(

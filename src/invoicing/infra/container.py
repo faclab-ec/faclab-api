@@ -1,3 +1,9 @@
+from src.invoicing.app.commands.credit_notes import (
+    ApplyCreditNoteResultCommandHandler,
+    RequestCancelledSaleCreditNoteCommandHandler,
+    RequestCreditNoteAgainCommandHandler,
+    RequestRefundCreditNotesCommandHandler,
+)
 from src.invoicing.app.commands.discrepancies import (
     OpenInvoiceDiscrepancyCommandHandler,
     ReconcileInvoicesCommandHandler,
@@ -5,8 +11,11 @@ from src.invoicing.app.commands.discrepancies import (
     ReviewInvoiceDiscrepancyCommandHandler,
 )
 from src.invoicing.app.queries.discrepancies import ListInvoiceDiscrepanciesQueryHandler
-from src.invoicing.infra.mappers import InvoiceDiscrepancyMapper
-from src.invoicing.infra.repositories import SqlAlchemyInvoiceDiscrepancyRepository
+from src.invoicing.infra.mappers import CreditNoteMapper, InvoiceDiscrepancyMapper
+from src.invoicing.infra.repositories import (
+    SqlAlchemyCreditNoteRepository,
+    SqlAlchemyInvoiceDiscrepancyRepository,
+)
 
 INJECTABLES = [
     InvoiceDiscrepancyMapper,
@@ -16,4 +25,10 @@ INJECTABLES = [
     ResolveInvoiceDiscrepancyCommandHandler,
     ReviewInvoiceDiscrepancyCommandHandler,
     ListInvoiceDiscrepanciesQueryHandler,
+    CreditNoteMapper,
+    SqlAlchemyCreditNoteRepository,
+    RequestRefundCreditNotesCommandHandler,
+    RequestCancelledSaleCreditNoteCommandHandler,
+    RequestCreditNoteAgainCommandHandler,
+    ApplyCreditNoteResultCommandHandler,
 ]

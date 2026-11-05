@@ -316,7 +316,8 @@ Efectos:
 
 - Una venta CONFIRMED cuya factura espera al SRI (su mensaje a facturación ya salió) no se cancela:
   `INVOICE_IN_PROGRESS`. Con la factura rechazada sí.
-- Una venta INVOICED no se cancela: `CREDIT_NOTE_REQUIRED` (se anula con nota de crédito, S4.5).
+- Una venta INVOICED no se cancela: `CREDIT_NOTE_REQUIRED`. Se anula con una devolución total
+  (`POST /refunds` con lo que quede sin devolver), que genera la nota de crédito (S4.5).
 
 **POST `/sales/{saleId}/park`** — Estacionar venta (pausar)
 
@@ -428,9 +429,10 @@ turno.
 | subtotal | decimal | Base devuelta, neta del descuento global de la venta |
 | tax | decimal | IVA devuelto |
 | total | decimal | Total devuelto (`subtotal + tax`) |
-| reason | string? | Razón |
+| reason | string? | Razón. Obligatoria si la venta tiene factura: va en la nota de crédito (`motivo`) |
 | status | enum | `PENDING` → `COMPLETED` / `CANCELLED` |
 | refundedBy | string? | Usuario autenticado que creó la devolución (no se envía en el cuerpo) |
+| creditNote | object? | Su nota de crédito; `null` mientras la venta no tenga factura autorizada o si no la necesita. Ver abajo |
 
 ### Entidad: RefundItem
 
@@ -459,17 +461,53 @@ turno.
 
 La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA el mismo factor de descuento global que tuvo la venta (`(subtotal - discount) / subtotal`) y redondea por código de IVA, igual que los totales de la venta (ver "Cálculos" en `sales-spec.md`). Devolver todos los items de una venta reintegra su total.
 
+### Entidad: CreditNote (S4.5)
+
+La nota de crédito electrónica (codDoc 04) de una devolución. La emite faclab-invoicing, con el
+comprador, el número y la fecha de la factura que modifica.
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | int | ID en el core |
+| status | enum | `PENDING` → `AUTHORIZED` / `REJECTED` |
+| saleId, refundId | int | Venta y devolución (`refundId` nulo: la factura de una venta anulada) |
+| invoiceId | string | La factura que modifica, en faclab-invoicing |
+| documentId | string? | Su último documento con resultado: con él se descargan XML y RIDE de faclab-invoicing |
+| number | string? | Número del comprobante (`001-001-000000012`), aparte del de las facturas |
+| accessCode | string? | Clave de acceso |
+| reason | string | Motivo |
+| total | decimal | Lo que acredita |
+| authorizedAt, requestedAt | datetime? | Cuándo se autorizó y cuándo se pidió por última vez |
+| rejectionReason | string? | Por qué se rechazó |
+
 ### Flujo de devolución
 
 ```
 1. Crear devolución → POST /refunds  (seleccionar items y cantidades)
 2. Procesar (pagar al cliente) → POST /refunds/{id}/process  (registrar pagos)
    → Inventario restaurado en la ubicación de la terminal (Movement IN) y número asignado
+   → Con la venta facturada, su nota de crédito se pide en la misma transacción (outbox)
+3. El SRI responde → faclab-invoicing publica el resultado → creditNote AUTHORIZED o REJECTED
 ```
+
+**Reglas tributarias** (Res. NAC-DGERCGC25-00000014, reformada por la 00000017; decisiones en
+`docs/architecture/GAP_ANALYSIS.md`, D-4):
+
+- **Consumidor final:** su factura no se anula ni admite nota de crédito (art. 3, desde el
+  01/01/2026), así que esa devolución se rechaza con `FINAL_CONSUMER_REFUND_NOT_ALLOWED`, también si
+  la factura sigue en camino. `FINAL_CONSUMER_REFUNDS_ALLOWED=true` la permite, sin nota. Una venta sin
+  factura válida (rechazada o nunca enviada) se devuelve como siempre.
+- **Sin plazo:** la Res. 17 quitó el límite de 12 meses. La anulación en línea (hasta el día 7 del mes
+  siguiente) se hace a mano en el portal del SRI: el core no se entera.
+- **Factura aún sin autorizar:** la devolución se completa y su nota se pide sola al autorizarse.
+- **Anular una venta facturada** es una devolución total: el stock vuelve, el dinero sale del turno
+  actual y la venta sigue `INVOICED`. Cuando todo está devuelto y todas sus notas autorizadas, su
+  `invoiceStatus` pasa a `CREDITED`. Cajas y reportes no restan dos veces.
 
 ### Endpoints
 
 **POST `/refunds`** — Crear devolución (PENDING). La venta debe estar `CONFIRMED` o `INVOICED`.
+Es lo único que anula una venta facturada: una devolución de todo lo que quede.
 
 ```json
 // Request
@@ -485,7 +523,9 @@ La devolución reintegra lo que se cobró por esos items: aplica a su base e IVA
 
 Validaciones:
 
-- Venta original debe estar CONFIRMED
+- Venta original debe estar `CONFIRMED` o `INVOICED` (`SALE_NOT_CONFIRMED`)
+- Su factura, autorizada o en camino, no puede ser a consumidor final (`FINAL_CONSUMER_REFUND_NOT_ALLOWED`)
+- Con factura, `reason` es obligatorio (`REFUND_REASON_REQUIRED`)
 - La terminal debe ser de la sucursal de la venta (`REFUND_OUTSIDE_BRANCH`)
 - Turno abierto en la terminal requerido
 - Cada item debe pertenecer a la venta
@@ -504,13 +544,17 @@ Response 201 — Refund con items y subtotales.
 }
 ```
 
-Validaciones: total pagos ≥ total devolución.
+Validaciones: total pagos ≥ total devolución. La venta sigue siendo devoluble: una anulada desde que
+se creó responde `SALE_NOT_CONFIRMED`, y una facturada a consumidor final desde entonces
+`FINAL_CONSUMER_REFUND_NOT_ALLOWED`.
 
 Efectos:
 
 - Status → COMPLETED, con el siguiente número de devolución de la sucursal
 - Crea Movement(IN) por cada item en la ubicación de la terminal de la devolución (`referenceType: "refund"`) → Stock incrementado
 - Registra pagos de devolución
+- Con la venta `INVOICED`, pide su nota de crédito en la misma transacción (`creditNote` en la
+  respuesta, `PENDING`). Con la factura en camino, se pide cuando se autorice
 
 **POST `/refunds/{refundId}/cancel`** — Cancelar devolución (solo PENDING)
 
@@ -690,11 +734,13 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 | `PAYMENT_EXCEEDS_BALANCE` | 400 | Un pago que no es en efectivo se pasa de lo que falta, o la venta ya está cubierta |
 | `SALE_NOT_PAYABLE` | 400 | Pago en una venta cancelada o facturada |
 | `INVOICE_IN_PROGRESS` | 400 | Cancelar una venta cuya factura espera al SRI |
-| `CREDIT_NOTE_REQUIRED` | 400 | Cancelar una venta facturada: se anula con nota de crédito |
+| `CREDIT_NOTE_REQUIRED` | 400 | Cancelar una venta facturada: se anula con una devolución total, que genera la nota de crédito |
+| `FINAL_CONSUMER_REFUND_NOT_ALLOWED` | 400 | Devolver una venta facturada a consumidor final: su factura no admite nota de crédito |
+| `REFUND_REASON_REQUIRED` | 400 | Devolver una venta con factura sin motivo |
 | `INSUFFICIENT_STOCK` | 400 | La ubicación de la terminal no tiene disponible (sin lo reservado por transferencias) la suma de las líneas de un producto; `detail` dice `requested` y `available` |
 | `INVALID_REFUND_STATUS` | 400 | Estado inválido para la operación |
 | `EXCEEDS_ORIGINAL_QUANTITY` | 400 | Cantidad devuelta excede disponible |
-| `SALE_NOT_CONFIRMED` | 400 | Venta no confirmada (para devolución) |
+| `SALE_NOT_CONFIRMED` | 400 | Venta no confirmada, o anulada desde que se creó la devolución |
 | `REFUND_ITEM_NOT_IN_SALE` | 400 | Item no pertenece a la venta |
 | `INVALID_CASH_MOVEMENT_AMOUNT` | 400 | Monto debe ser > 0 |
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |

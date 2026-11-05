@@ -69,3 +69,12 @@ establecimiento y punto de emisión en la Etapa 2.
   desarrollo: en producción hay que revertir el par.
 - La clave de los mensajes es el `tenant_id` (ADR-0005). `invoices` sigue en v1: la empresa viaja en
   el header `faclab-tenant-id` y en la clave, no en el cuerpo cerrado.
+
+## Implementación de las notas de crédito (S4.5, 2026-11-02)
+
+- `credit_notes.requested` v1 y `credit_notes.results` v1 son los primeros mensajes que nacen con el
+  envelope completo del punto 1, en ambas direcciones.
+- El resultado de una nota tiene tópico propio en lugar de una v2 de `invoices`: `invoices` sigue en v1 y
+  sin envelope, y un `InvoiceAuthorized` de una nota marcaría la venta como facturada.
+- El pedido no lleva comprador, número ni fecha de la factura: facturación es dueña de esos datos y los
+  toma de su documento (`invoice_id`). Así el receptor de la nota siempre es el de la factura.
