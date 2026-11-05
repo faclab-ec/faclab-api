@@ -5,7 +5,7 @@ applies each example of the results."""
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -31,7 +31,7 @@ from src.invoicing.infra.event_handlers import (
 from src.pos.refund.domain.entities import Refund, RefundItem
 from src.sales.domain.entities import SaleItem
 from src.sales.domain.services import discount_factor
-from src.shared.domain.tax import TaxCode
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.shared.infra.database import Base
 from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.writer import OutboxWriter
@@ -151,7 +151,12 @@ def test_examples_match_the_contract(name):
 
 
 def test_the_examples_cover_a_refund_and_a_cancelled_sale():
-    assert set(EXAMPLES) == {"refund", "cancelled-sale", "branch-without-address"}
+    assert set(EXAMPLES) == {
+        "refund",
+        "cancelled-sale",
+        "branch-without-address",
+        "construction-material",
+    }
 
 
 def test_a_refund_written_to_the_outbox_matches_the_contract(session):
@@ -234,6 +239,44 @@ def test_products_gone_travel_as_null(session):
     assert errors(SCHEMA, message) == []
     first = message["payload"]["items"][0]
     assert (first["sku"], first["product_name"]) == (None, None)
+
+
+def test_a_construction_material_travels_with_its_code(session):
+    items = _two_rates()
+    refund, note = _refund_with_note(items)
+    products = [
+        Product(
+            id=10,
+            sku="CEM-GU-50",
+            name="Cemento gris 50 kg",
+            tax_code=TaxCode.VAT_5,
+            construction_material_code=ConstructionMaterialCode.CEMENT,
+        ),
+        PRODUCTS[1],
+    ]
+
+    message = _written(session, _build(note, refund, items, products=products))
+
+    assert errors(SCHEMA, message) == []
+    assert [i["construction_material_code"] for i in message["payload"]["items"]] == [
+        "F010401",
+        None,
+    ]
+
+
+def test_the_contract_lists_the_codes_of_the_catalog():
+    schema = cast("dict[str, Any]", SCHEMA.schema)
+    item = schema["$defs"]["item"]["properties"]["construction_material_code"]
+
+    assert set(item["enum"]) == {code.value for code in ConstructionMaterialCode} | {
+        None
+    }
+
+
+def test_a_message_without_the_material_code_is_still_valid():
+    """Messages written before S4.6, still in the outbox or the topic"""
+    assert "construction_material_code" not in EXAMPLES["refund"]["payload"]["items"][0]
+    assert errors(SCHEMA, EXAMPLES["refund"]) == []
 
 
 @pytest.mark.parametrize(

@@ -17,7 +17,9 @@ from src.catalog.product.app.commands.update_product import (
 )
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductUpdated
+from src.catalog.product.domain.exceptions import ConstructionMaterialTaxMismatchError
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from tests.audit import FakeAuditTrail
 
 # --- Helpers ---
@@ -326,3 +328,127 @@ def test_update_product_with_unit_of_measure():
     )
 
     assert result["unit_of_measure_id"] == 5
+
+
+# --- Construction materials (Anexo 23, Res. NAC-DGERCGC24-00000013) ---
+
+
+def _create_handler() -> tuple[CreateProductCommandHandler, MagicMock]:
+    repo = MagicMock()
+    repo.create.side_effect = lambda product: replace(product, id=1)
+    return CreateProductCommandHandler(repo, MagicMock(), Mock()), repo
+
+
+def _update_handler(**existing) -> tuple[UpdateProductCommandHandler, MagicMock]:
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_product(**existing)
+    repo.update.side_effect = lambda product: product
+    return UpdateProductCommandHandler(repo, MagicMock(), Mock()), repo
+
+
+def test_create_product_with_a_material_code_at_its_rate():
+    handler, _ = _create_handler()
+
+    result = handler.handle(
+        CreateProductCommand(
+            sku="CEM-50",
+            name="Cemento 50 kg",
+            tax_code=TaxCode.VAT_5,
+            construction_material_code=ConstructionMaterialCode.CEMENT,
+        )
+    )
+
+    assert result["construction_material_code"] == ConstructionMaterialCode.CEMENT
+
+
+@pytest.mark.parametrize("tax_code", [c for c in TaxCode if c != TaxCode.VAT_5])
+def test_create_product_rejects_a_material_code_at_another_rate(tax_code):
+    handler, repo = _create_handler()
+
+    with pytest.raises(ConstructionMaterialTaxMismatchError) as error:
+        handler.handle(
+            CreateProductCommand(
+                sku="CEM-50",
+                name="Cemento 50 kg",
+                tax_code=tax_code,
+                construction_material_code=ConstructionMaterialCode.CEMENT,
+            )
+        )
+
+    assert error.value.error_code == "CONSTRUCTION_MATERIAL_TAX_MISMATCH"
+    repo.create.assert_not_called()
+
+
+def test_update_product_rejects_a_material_code_at_another_rate():
+    handler, repo = _update_handler(tax_code=TaxCode.VAT_15)
+
+    with pytest.raises(ConstructionMaterialTaxMismatchError):
+        handler.handle(
+            UpdateProductCommand(
+                product_id=1,
+                sku="SKU-001",
+                name="Test Product",
+                tax_code=TaxCode.VAT_15,
+                construction_material_code=ConstructionMaterialCode.CEMENT,
+            )
+        )
+
+    repo.update.assert_not_called()
+
+
+def test_update_product_cant_change_the_rate_of_a_material():
+    handler, repo = _update_handler(
+        tax_code=TaxCode.VAT_5,
+        construction_material_code=ConstructionMaterialCode.CEMENT,
+    )
+
+    with pytest.raises(ConstructionMaterialTaxMismatchError):
+        handler.handle(
+            UpdateProductCommand(
+                product_id=1,
+                sku="SKU-001",
+                name="Test Product",
+                tax_code=TaxCode.VAT_15,
+                construction_material_code=ConstructionMaterialCode.CEMENT,
+            )
+        )
+
+    repo.update.assert_not_called()
+
+
+def test_a_put_without_the_material_code_clears_it():
+    """A PUT replaces the product, as with its other optional fields"""
+    handler, _ = _update_handler(
+        tax_code=TaxCode.VAT_5,
+        construction_material_code=ConstructionMaterialCode.CEMENT,
+    )
+
+    result = handler.handle(
+        UpdateProductCommand(
+            product_id=1, sku="SKU-001", name="Test Product", tax_code=TaxCode.VAT_5
+        )
+    )
+
+    assert result["construction_material_code"] is None
+
+
+def test_a_product_at_5_percent_needs_no_code():
+    """Nothing says every product at 5% is on the SRI's list"""
+    handler, _ = _create_handler()
+
+    result = handler.handle(
+        CreateProductCommand(sku="X", name="X", tax_code=TaxCode.VAT_5)
+    )
+
+    assert result["tax_code"] == TaxCode.VAT_5
+    assert result["construction_material_code"] is None
+
+
+def test_a_row_of_a_former_rate_still_loads():
+    """Only writes check the rate: a change of the law must not break reads"""
+    product = _make_product(
+        tax_code=TaxCode.VAT_15,
+        construction_material_code=ConstructionMaterialCode.CEMENT,
+    )
+
+    assert product.construction_material_code == ConstructionMaterialCode.CEMENT

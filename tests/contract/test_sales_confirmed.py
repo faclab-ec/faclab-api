@@ -6,7 +6,7 @@ consumer keeps accepting them during the transition."""
 import copy
 from collections.abc import Callable, Iterator
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 from uuid import UUID
 
@@ -28,7 +28,7 @@ from src.sales.domain.events import (
     sale_items_data,
     sale_payments_data,
 )
-from src.shared.domain.tax import TaxCode, TaxType
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode, TaxType
 from src.shared.infra.database import Base
 from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.writer import OutboxWriter
@@ -66,6 +66,17 @@ WITHOUT_CONTACT = Customer(
 PRODUCTS = [
     Product(id=10, sku="MART-16OZ", name="Martillo de uña 16 oz"),
     Product(id=11, sku="ABON-5KG", name="Abono orgánico 5 kg"),
+]
+# Cement of the SRI's list (Anexo 23), next to a product that isn't a material
+WITH_MATERIAL = [
+    Product(
+        id=10,
+        sku="CEM-GU-50",
+        name="Cemento gris 50 kg",
+        tax_code=TaxCode.VAT_5,
+        construction_material_code=ConstructionMaterialCode.CEMENT,
+    ),
+    PRODUCTS[1],
 ]
 
 
@@ -163,6 +174,7 @@ def _written(
         (_event(7, SaleInvoicingRequested, source="admin"), CUSTOMER, PRODUCTS),
         # A sale confirmed before S2.6 has no number
         (_event(7, number=None), CUSTOMER, PRODUCTS),
+        (_event(7), CUSTOMER, WITH_MATERIAL),
     ],
     ids=[
         "full-customer",
@@ -172,6 +184,7 @@ def _written(
         "products-gone",
         "resend",
         "sale-without-number",
+        "construction-material",
     ],
 )
 def test_written_messages_match_the_contract(session, event, customer, products):
@@ -232,6 +245,37 @@ def test_missing_contact_data_and_products_travel_as_null(session):
     assert (item["sku"], item["product_name"]) == (None, None)
 
 
+def test_a_construction_material_travels_with_its_code(session):
+    items = _written(session, _event(7), CUSTOMER, WITH_MATERIAL)["payload"]["items"]
+
+    assert [item["construction_material_code"] for item in items] == ["F010401", None]
+    assert items[0]["sku"] == "CEM-GU-50"
+
+
+def test_a_product_gone_has_no_material_code(session):
+    message = _written(session, _event(7), CUSTOMER, [])
+
+    assert message["payload"]["items"][0]["construction_material_code"] is None
+
+
+def test_the_contract_lists_the_codes_of_the_catalog():
+    """The SRI's Table 31 lives in the enum: a new code goes in both"""
+    schema = cast("dict[str, Any]", SCHEMA.schema)
+    item = schema["$defs"]["item"]["properties"]["construction_material_code"]
+
+    assert set(item["enum"]) == {code.value for code in ConstructionMaterialCode} | {
+        None
+    }
+
+
+def test_a_message_without_the_material_code_is_still_valid():
+    """Messages written before S4.6, still in the outbox or the topic"""
+    item = EXAMPLES["full-customer"]["payload"]["items"][0]
+
+    assert "construction_material_code" not in item
+    assert errors(SCHEMA, EXAMPLES["full-customer"]) == []
+
+
 def test_the_payments_add_up_to_the_total(session):
     """Only what the payments applied reaches the invoice's `pagos`, never the
     cash handed over in excess (G-16)"""
@@ -257,6 +301,7 @@ def test_the_edge_cases_have_examples():
         "final-consumer",
         "product-without-sku",
         "branch-without-address",
+        "construction-material",
     }
 
 
@@ -292,6 +337,13 @@ def _drop(path: str) -> Callable[[dict], None]:
     return change
 
 
+def _material_code(value: str) -> Callable[[dict], None]:
+    def change(message: dict) -> None:
+        message["payload"]["items"][0]["construction_material_code"] = value
+
+    return change
+
+
 def _rename_customer(message: dict) -> None:
     message["payload"]["client"] = message["payload"].pop("customer")
 
@@ -314,6 +366,7 @@ def _rename_customer(message: dict) -> None:
         _set("payload.customer.tax_type", 2),
         _set("payload.source", "web"),
         _set("payload.undocumented", True),
+        _material_code("CEMENTO"),
     ],
     ids=[
         "no-version",
@@ -331,6 +384,7 @@ def _rename_customer(message: dict) -> None:
         "enum-as-code",
         "unknown-source",
         "undocumented-field",
+        "unknown-material-code",
     ],
 )
 def test_incompatible_changes_break_the_contract(change):

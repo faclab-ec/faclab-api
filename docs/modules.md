@@ -81,7 +81,11 @@ Gestion del catalogo de productos con categorias.
 - `id`, `sku`, `name`, `description`
 - `category_id`, `uom_id`
 - `price`, `cost`
+- `tax_code`: IVA del producto; cada linea de venta lo copia al agregarse
+- `construction_material_code` (opcional): subcategoria de material de construccion
 - `is_active`, `created_at`
+
+**Materiales de construccion (S4.6):** los materiales de la Res. NAC-DGERCGC24-00000013 llevan su codigo de la Tabla 31 del Anexo 23 de la ficha tecnica offline (version 2.34). `constructionMaterialCode` es opcional y solo acepta los 18 codigos de `ConstructionMaterialCode`. Con un codigo, el producto debe tener la tarifa de `CONSTRUCTION_MATERIAL_TAX_CODE` (IVA 5%, en `src/shared/domain/tax.py`); otra tarifa responde 400 `CONSTRUCTION_MATERIAL_TAX_MISMATCH`, al crear y al editar. Un producto con IVA 5% sin codigo sigue permitido. Como un PUT reemplaza el producto, enviarlo sin el codigo lo borra. El codigo viaja en `sales.confirmed` y `credit_notes.requested`, y faclab-invoicing lo escribe en `codigoAuxiliar` de la factura y en `codigoAdicional` de la nota de credito, en lugar del SKU. Los productos existentes no se reclasifican: cada empresa elige el codigo y la tarifa de sus materiales.
 
 **Comandos:** `CreateCategory`, `UpdateCategory`, `DeleteCategory`, `CreateProduct`, `UpdateProduct`, `DeleteProduct`
 
@@ -420,7 +424,7 @@ del primer admin (fuera de toda empresa) no deja entrada.
 
 | Recurso | Acciones | Campos |
 |---|---|---|
-| Producto | `product.created`, `product.updated`, `product.price_changed` (cambio de costo, precio de venta o IVA), `product.deleted` | sku, nombre, costo, precio, IVA, activo; en una edicion, solo los que cambiaron (un PUT sin cambios no deja entrada) |
+| Producto | `product.created`, `product.updated`, `product.price_changed` (cambio de costo, precio de venta o IVA), `product.deleted` | sku, nombre, costo, precio, IVA, codigo de material de construccion, activo; en una edicion, solo los que cambiaron (un PUT sin cambios no deja entrada) |
 | Movimiento | `movement.created` (solo el manual de `POST /movements`) | producto, ubicacion, tipo, cantidad, motivo |
 | Ajuste | `adjustment.confirmed`, `adjustment.cancelled` | estado, bodega, motivo, items con diferencia |
 | Transferencia | `transfer.confirmed`, `transfer.received`, `transfer.cancelled` | estado, origen, destino, items |

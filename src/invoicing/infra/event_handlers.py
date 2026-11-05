@@ -187,6 +187,9 @@ def build_sale_confirmed_message(
             {
                 "product_id": item["product_id"],
                 "sku": product.sku if product else None,
+                "construction_material_code": (
+                    product.construction_material_code if product else None
+                ),
                 "product_name": product.name if product else None,
                 "quantity": item["quantity"],
                 "unit_price": item["unit_price"],
@@ -319,6 +322,9 @@ def build_credit_note_message(
             {
                 "product_id": item.product_id,
                 "sku": product.sku if product else None,
+                "construction_material_code": (
+                    product.construction_material_code if product else None
+                ),
                 "product_name": product.name if product else None,
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,

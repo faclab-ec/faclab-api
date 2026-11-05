@@ -66,6 +66,7 @@ class ProductModel(TenantScoped, Base):
     purchase_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     sale_price: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     tax_code: Mapped[str] = mapped_column(String(16), nullable=False, default="VAT_15")
+    construction_material_code: Mapped[str | None] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_service: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     min_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

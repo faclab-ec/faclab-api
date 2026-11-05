@@ -224,3 +224,54 @@ def test_status_errors_carry_a_specific_code_and_detail(api, client):
 
     assert error["code"] == "INVALID_PURCHASE_ORDER_STATUS"
     assert error["detail"] == "current_status=cancelled, operation=send"
+
+
+def test_a_construction_material_keeps_its_code_at_its_rate(api):
+    """Anexo 23: the code of the SRI's Table 31, only at the materials' rate"""
+    path = "/api/admin/products"
+    body = {"name": "Cemento 50 kg", "sku": "CEM-50", "salePrice": "8.50"}
+
+    error = api.error(
+        "POST",
+        path,
+        400,
+        json={**body, "taxCode": "VAT_15", "constructionMaterialCode": "F010401"},
+    )
+    assert error["code"] == "CONSTRUCTION_MATERIAL_TAX_MISMATCH"
+
+    product = make_product(
+        api, "CEM-50", taxCode="VAT_5", constructionMaterialCode="F010401"
+    )
+    assert product["constructionMaterialCode"] == "F010401"
+    item = f"{path}/{product['id']}"
+    assert api.get(item)["constructionMaterialCode"] == "F010401"
+
+    error = api.error(
+        "PUT",
+        item,
+        400,
+        json={**body, "taxCode": "VAT_15", "constructionMaterialCode": "F010401"},
+    )
+    assert error["code"] == "CONSTRUCTION_MATERIAL_TAX_MISMATCH"
+    assert api.get(item)["taxCode"] == "VAT_5"
+
+    # A PUT replaces the product: without the code it stops being a material
+    updated = api.put(item, {**body, "taxCode": "VAT_15"})
+    assert updated["constructionMaterialCode"] is None
+    assert api.get(item)["constructionMaterialCode"] is None
+
+
+def test_a_code_outside_the_catalog_is_refused(api):
+    error = api.error(
+        "POST",
+        "/api/admin/products",
+        422,
+        json={
+            "name": "Cemento 50 kg",
+            "sku": "CEM-50",
+            "taxCode": "VAT_5",
+            "constructionMaterialCode": "CEMENTO",
+        },
+    )
+
+    assert error["code"] == "VALIDATION_ERROR"
