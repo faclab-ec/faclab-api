@@ -234,10 +234,13 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Materiales de construcción, lo que quedó de S4.6** (2026-11-05):
+  - Antes de facturar en el piloto, la ferretería tiene que editar sus materiales y ponerles código e
+    IVA 5%: los productos existentes no se reclasifican.
+  - Confirmar con el contador que la nota de crédito lleve el código en `codigoAdicional`.
+  - Si la ley cambia la tarifa de los materiales: agregar el código de IVA nuevo donde corresponda,
+    cambiar `CONSTRUCTION_MATERIAL_TAX_CODE` (core y web) y migrar los productos con código.
 - **Facturación, lo que quedó de S4.1** (2026-10-29):
-  - Códigos de materiales de construcción en `codigoAuxiliar` (Anexo 23 de la ficha técnica, G-79):
-    sesión nueva [S4.6](sessions/S4.6-materiales-de-construccion.md), necesaria para el piloto con
-    una ferretería.
   - Leyenda "Gran Contribuyente" con su resolución (Anexo 24, G-80): un campo más del perfil fiscal y
     un `campoAdicional`. Sin sesión: hacerlo cuando un cliente lo sea.
   - Fijar `INVOICING_PROVIDER_RUC` en producción (Anexo 26, G-81) y leer la Res.
