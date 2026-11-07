@@ -75,7 +75,16 @@ def test_quantity_number_reads_numbers_and_strings(value):
 
 
 def test_quantity_number_is_a_json_number():
-    assert _Line(quantity=Decimal("2.500000")).model_dump_json() == '{"quantity":2.5}'
+    line = _Line(quantity=Decimal("2.500000"))
+
+    assert line.model_dump_json() == '{"quantity":2.5}'
+    assert line.model_dump(mode="json") == {"quantity": 2.5}
+
+
+def test_a_route_hands_the_command_a_decimal():
+    """Routes build commands from model_dump(): a float would break the exact
+    arithmetic of the stock (Decimal + float)"""
+    assert _Line(quantity=2.5).model_dump() == {"quantity": Decimal("2.5")}
 
 
 @pytest.mark.parametrize("value", ["1.1234567", "1234567890123", 0])

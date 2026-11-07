@@ -30,7 +30,7 @@ from tests.integration.postgres.api import (
     make_warehouse,
 )
 
-SCHEMA = validator("credit_notes.requested")
+SCHEMA = validator("credit_notes.requested", 2)
 INVOICE_ID = "3f6c1a52-0000-5000-8000-000000000001"
 DOCUMENT_ID = "2f3a4b5c-6d7e-5f80-9a1b-2c3d4e5f6a7b"
 ACCESS_CODE = "0211202604179999999000110010020000000121234567811"
@@ -180,7 +180,7 @@ def test_a_refund_of_an_invoiced_sale_asks_for_its_credit_note(
     [item] = payload["items"]
     assert (item["product_id"], item["quantity"], item["tax_code"]) == (
         pos.product["id"],
-        1,
+        "1.000000",
         "VAT_15",
     )
     assert (item["invoice_base"], item["invoice_tax"]) == ("10.00", "1.50")

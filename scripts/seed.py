@@ -181,20 +181,24 @@ def seed_categories(session: Session) -> list[CategoryModel]:
 
 
 def seed_uoms(session: Session) -> list[UnitOfMeasureModel]:
+    # The last value is how many decimals a quantity takes (S5.1): meters and
+    # liters to the centimeter and the centiliter, kilograms to the gram
     data = [
-        ("Unidad", "und", "Unidad individual"),
-        ("Kilogramo", "kg", "Peso en kilogramos"),
-        ("Litro", "lt", "Volumen en litros"),
-        ("Metro", "m", "Longitud en metros"),
-        ("Caja", "caja", "Caja de productos"),
-        ("Par", "par", "Par de unidades"),
-        ("Rollo", "rollo", "Rollo de material"),
-        ("Galón", "gal", "Volumen en galones"),
-        ("Paquete", "paq", "Paquete de productos"),
+        ("Unidad", "und", "Unidad individual", 0),
+        ("Kilogramo", "kg", "Peso en kilogramos", 3),
+        ("Litro", "lt", "Volumen en litros", 2),
+        ("Metro", "m", "Longitud en metros", 2),
+        ("Caja", "caja", "Caja de productos", 0),
+        ("Par", "par", "Par de unidades", 0),
+        ("Rollo", "rollo", "Rollo de material", 0),
+        ("Galón", "gal", "Volumen en galones", 2),
+        ("Paquete", "paq", "Paquete de productos", 0),
     ]
     models = [
-        UnitOfMeasureModel(name=name, symbol=symbol, description=desc)
-        for name, symbol, desc in data
+        UnitOfMeasureModel(
+            name=name, symbol=symbol, description=desc, decimals=decimals
+        )
+        for name, symbol, desc, decimals in data
     ]
     session.add_all(models)
     session.flush()
@@ -931,7 +935,7 @@ def seed_movements_and_stocks(
     sku_map = {p.sku: p for p in products}
 
     # Stock ledger to track quantities
-    ledger: dict[tuple[int, int], int] = {}
+    ledger: dict[tuple[int, int], Decimal] = {}
     movements = []
     lot_items = []
     now = datetime.now()
@@ -957,7 +961,7 @@ def seed_movements_and_stocks(
         )
         movements.append(m)
         key = (product_id, location_id)
-        ledger[key] = ledger.get(key, 0) + quantity
+        ledger[key] = ledger.get(key, Decimal(0)) + Decimal(quantity)
         return m
 
     # Initial stock IN for all products at BOD-UIO-A1
@@ -1060,6 +1064,8 @@ def seed_movements_and_stocks(
         ("FERR-005", 10, uio_a1.id),
         ("ELEC-002", 3, uio_a1.id),
         ("ELEC-005", 5, uio_a1.id),
+        # Cable sold by the meter (sale 2)
+        ("ELEC-001", Decimal("12.5"), uio_a1.id),
         ("SEGU-001", 10, uio_a1.id),
         ("SEGU-003", 15, uio_a1.id),
         ("SEGU-005", 5, uio_a1.id),
@@ -1453,6 +1459,7 @@ def seed_sales(
     s2_items_data = [
         ("ELEC-002", 3, Decimal("32.00"), Decimal("0")),
         ("ELEC-005", 5, Decimal("7.00"), Decimal("0")),
+        ("ELEC-001", Decimal("12.5"), Decimal("0.85"), Decimal("0")),
     ]
     s2_subtotal = sum(
         qty * price * (1 - disc / 100) for _, qty, price, disc in s2_items_data
@@ -1484,7 +1491,7 @@ def seed_sales(
             discount=disc,
         )
         items.append(si)
-    session.add_all(items[-2:])
+    session.add_all(items[-3:])
     session.flush()
 
     pay2 = PaymentModel(

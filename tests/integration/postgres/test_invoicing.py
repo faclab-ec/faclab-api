@@ -144,7 +144,7 @@ def test_sales_confirmed_follows_the_v2_contract(
     final_consumer, without_contact = db_session.scalars(
         select(OutboxMessageModel).order_by(OutboxMessageModel.id)
     )
-    schema = validator("sales.confirmed", 2)
+    schema = validator("sales.confirmed", 3)
     assert errors(schema, final_consumer.payload) == []
     assert errors(schema, without_contact.payload) == []
     assert final_consumer.payload["payload"]["customer"] is None
@@ -184,7 +184,7 @@ def test_a_construction_material_reaches_the_message_with_its_code(
     _checkout((cashier, [plain, material]), [1, 1])
 
     [message] = db_session.scalars(select(OutboxMessageModel))
-    assert errors(validator("sales.confirmed", 2), message.payload) == []
+    assert errors(validator("sales.confirmed", 3), message.payload) == []
     assert [
         (item["sku"], item["construction_material_code"])
         for item in message.payload["payload"]["items"]
