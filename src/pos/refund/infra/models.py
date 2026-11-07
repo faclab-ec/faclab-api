@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn, PercentageColumn
+from src.shared.infra.precision import MoneyColumn, PercentageColumn, QuantityColumn
 
 
 class RefundModel(TenantScoped, Base):
@@ -89,7 +89,7 @@ class RefundItemModel(TenantScoped, Base):
     product_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("products.id"), nullable=False
     )
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     discount: Mapped[Decimal] = mapped_column(
         PercentageColumn, nullable=False, default=Decimal("0")

@@ -4,8 +4,19 @@ from typing import Annotated, Generic, TypeVar
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 from pydantic.alias_generators import to_camel
 
+from src.shared.infra.precision import QUANTITY_PRECISION, QUANTITY_SCALE
+
 DecimalNumber = Annotated[
     Decimal,
+    PlainSerializer(lambda v: float(v), return_type=float),
+]
+
+# A quantity (S5.1): a JSON number like money, read from a number or a string,
+# with at most the six decimals the database and the SRI keep. The unit of
+# measure of each product narrows it further (`ProductQuantities`)
+QuantityNumber = Annotated[
+    Decimal,
+    Field(max_digits=QUANTITY_PRECISION, decimal_places=QUANTITY_SCALE),
     PlainSerializer(lambda v: float(v), return_type=float),
 ]
 

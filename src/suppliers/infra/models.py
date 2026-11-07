@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn
 
 
 class SupplierModel(TenantScoped, Base):
@@ -95,7 +95,9 @@ class SupplierProductModel(TenantScoped, Base):
     product_id: Mapped[int] = mapped_column(nullable=False, index=True)
     purchase_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     supplier_sku: Mapped[str | None] = mapped_column(String(64))
-    min_order_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    min_order_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=1
+    )
     lead_time_days: Mapped[int | None] = mapped_column(Integer)
     is_preferred: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

@@ -16,3 +16,11 @@ MoneyColumn = Numeric(MONEY_PRECISION, MONEY_SCALE)
 PERCENTAGE_PRECISION = 5
 PERCENTAGE_SCALE = 2
 PercentageColumn = Numeric(PERCENTAGE_PRECISION, PERCENTAGE_SCALE)
+
+# Quantities: stock, movements and the lines of every document (S5.1)
+# Precision 18, scale 6 = what the SRI's XML 1.1.0 admits in `cantidad`
+# (totalDigits 18, fractionDigits 6). Each unit of measure narrows the
+# decimals it accepts (`units_of_measure.decimals`, 0 to 6)
+QUANTITY_PRECISION = 18
+QUANTITY_SCALE = 6
+QuantityColumn = Numeric(QUANTITY_PRECISION, QUANTITY_SCALE)

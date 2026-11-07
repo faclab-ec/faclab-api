@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, SmallInteger, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base, TenantScoped
@@ -12,6 +12,9 @@ class UnitOfMeasureModel(TenantScoped, Base):
         ),
         # Target of the composite foreign key from products
         UniqueConstraint("tenant_id", "id", name="uq_units_of_measure_tenant_id_id"),
+        CheckConstraint(
+            "decimals >= 0 AND decimals <= 6", name="ck_units_of_measure_decimals"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -19,3 +22,6 @@ class UnitOfMeasureModel(TenantScoped, Base):
     symbol: Mapped[str] = mapped_column(String(16), nullable=False)
     description: Mapped[str | None] = mapped_column(String(128))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    decimals: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default="0"
+    )

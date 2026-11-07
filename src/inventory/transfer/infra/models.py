@@ -1,9 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import ForeignKey, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base, TenantScoped
+from src.shared.infra.precision import QuantityColumn
 
 
 class StockTransferModel(TenantScoped, Base):
@@ -55,6 +57,6 @@ class StockTransferItemModel(TenantScoped, Base):
         ForeignKey("stock_transfers.id", ondelete="CASCADE"), index=True
     )
     product_id: Mapped[int]
-    quantity: Mapped[int]
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn)
     lot_id: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None]

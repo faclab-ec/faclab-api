@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn
 
 if TYPE_CHECKING:
     from src.inventory.movement.infra.models import MovementModel
@@ -69,9 +69,13 @@ class ProductModel(TenantScoped, Base):
     construction_material_code: Mapped[str | None] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_service: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    min_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    max_stock: Mapped[int | None] = mapped_column(Integer)
-    reorder_point: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    min_stock: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=0
+    )
+    max_stock: Mapped[Decimal | None] = mapped_column(QuantityColumn)
+    reorder_point: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=0
+    )
     lead_time_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now

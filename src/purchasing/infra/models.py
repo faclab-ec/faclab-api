@@ -6,7 +6,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -14,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn
 
 
 class PurchaseOrderModel(TenantScoped, Base):
@@ -73,8 +72,10 @@ class PurchaseOrderItemModel(TenantScoped, Base):
         ForeignKey("purchase_orders.id", ondelete="CASCADE"), nullable=False, index=True
     )
     product_id: Mapped[int] = mapped_column(nullable=False, index=True)
-    quantity_ordered: Mapped[int] = mapped_column(Integer, nullable=False)
-    quantity_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quantity_ordered: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
+    quantity_received: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=0
+    )
     unit_cost: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
 
     purchase_order: Mapped["PurchaseOrderModel"] = relationship(back_populates="items")
@@ -126,7 +127,7 @@ class PurchaseReceiptItemModel(TenantScoped, Base):
     product_id: Mapped[int] = mapped_column(
         ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
     )
-    quantity_received: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_received: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
     location_id: Mapped[int | None]
     lot_number: Mapped[str | None] = mapped_column(String(64))
     serial_numbers: Mapped[list[str] | None] = mapped_column(JSON)

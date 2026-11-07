@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKeyConstraint, Index, String
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.inventory.movement.domain.constants import MovementType
 from src.shared.infra.database import Base, TenantScoped
+from src.shared.infra.precision import QuantityColumn
 
 if TYPE_CHECKING:
     from src.catalog.product.infra.models import ProductModel
@@ -36,7 +38,7 @@ class MovementModel(TenantScoped, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(index=True)
-    quantity: Mapped[int]
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn)
     type: Mapped[MovementType]
     location_id: Mapped[int | None] = mapped_column(index=True)
     source_location_id: Mapped[int | None]

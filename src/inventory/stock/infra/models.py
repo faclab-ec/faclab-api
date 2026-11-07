@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -10,6 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
+from src.shared.infra.precision import QuantityColumn
 
 if TYPE_CHECKING:
     from src.catalog.product.infra.models import ProductModel
@@ -51,8 +53,8 @@ class StockModel(TenantScoped, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(nullable=False)
-    quantity: Mapped[int] = mapped_column(nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
     location_id: Mapped[int | None] = mapped_column(index=True)
-    reserved_quantity: Mapped[int] = mapped_column(default=0)
+    reserved_quantity: Mapped[Decimal] = mapped_column(QuantityColumn, default=0)
 
     product: Mapped["ProductModel"] = relationship(back_populates="stocks")
