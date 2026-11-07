@@ -1,6 +1,7 @@
 # ADR-0006: Contratos de eventos versionados y pruebas de contrato
 
-- **Estado:** aceptado (2026-10-15, implementado en S1.6; `sales.confirmed` v2 con empresa en S2.8)
+- **Estado:** aceptado (2026-10-15, implementado en S1.6; `sales.confirmed` v2 con empresa en S2.8;
+  v3 y `credit_notes.requested` v2 con cantidades decimales en S5.1)
 - **Relacionado:** [ADR-0005](0005-kafka-outbox-y-consumidores-idempotentes.md), [ADR-0009](0009-webhooks-firmados.md)
 
 ## Contexto
@@ -78,3 +79,15 @@ establecimiento y punto de emisión en la Etapa 2.
   sin envelope, y un `InvoiceAuthorized` de una nota marcaría la venta como facturada.
 - El pedido no lleva comprador, número ni fecha de la factura: facturación es dueña de esos datos y los
   toma de su documento (`invoice_id`). Así el receptor de la nota siempre es el de la factura.
+
+## Implementación de las cantidades decimales (S5.1, 2026-11-07)
+
+- `items[].quantity` pasa de entero JSON a texto decimal con hasta seis decimales (`"2.500000"`), como
+  los montos: es un cambio de tipo, así que hay versiones nuevas, `sales.confirmed` v3 y
+  `credit_notes.requested` v2. Seis decimales es lo que admite `cantidad` en el XML 1.1.0 del SRI.
+- Facturación acepta v3, v2 y v1 de `sales.confirmed` y v2 y v1 de `credit_notes.requested`. Las
+  facturas que ya guardó conservan la cantidad numérica; las dos formas se escriben en el XML con
+  `formatDecimal6`, como texto y sin pasar por un float.
+- Despliegue: facturación, después el core (que publica las versiones nuevas), después la web. Volver
+  el core atrás publica de nuevo v2 y v1, que facturación sigue aceptando, siempre que el downgrade de
+  la base no encuentre cantidades fraccionarias.

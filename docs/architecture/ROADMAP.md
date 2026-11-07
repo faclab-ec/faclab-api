@@ -234,6 +234,16 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Cantidades decimales, lo que quedó de S5.1** (2026-11-07):
+  - La factura no lleva `unidadMedida` en el detalle (es opcional en el XSD) y las líneas de venta, el
+    recibo y la devolución no muestran el símbolo de la unidad: necesita la unidad en el contrato. Con
+    las presentaciones (S5.2).
+  - Ninguna regla relaciona la cantidad de números de serie con la cantidad recibida, y con
+    cantidades fraccionarias la regla sería más difícil de definir. Revisarlo si un cliente usa series.
+  - Bajar los decimales de una unidad con stock fraccionario se permite: el stock y los documentos
+    anteriores se conservan y las cantidades nuevas respetan la unidad.
+  - Después del squash-merge del core, volver a sincronizar los contratos de faclab-invoicing con el
+    commit de `master` antes de integrar su PR.
 - **Materiales de construcción, lo que quedó de S4.6** (2026-11-05):
   - Antes de facturar en el piloto, la ferretería tiene que editar sus materiales y ponerles código e
     IVA 5%: los productos existentes no se reclasifican.
