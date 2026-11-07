@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from src.shared.infra.validators import QueryParams
+from src.shared.infra.validators import QuantityNumber, QueryParams
 
 
 class LotRequest(BaseModel):
@@ -20,10 +20,11 @@ class LotRequest(BaseModel):
         validation_alias=AliasChoices("lotNumber", "lot_number"),
         serialization_alias="lotNumber",
     )
-    initial_quantity: int = Field(
+    initial_quantity: QuantityNumber = Field(
         ...,
-        ge=1,
-        description="Initial quantity in this lot",
+        gt=0,
+        description="Initial quantity in this lot, with the decimals of the "
+        "product's unit",
         validation_alias=AliasChoices("initialQuantity", "initial_quantity"),
         serialization_alias="initialQuantity",
     )
@@ -43,7 +44,7 @@ class LotRequest(BaseModel):
 
 
 class LotUpdateRequest(BaseModel):
-    current_quantity: int | None = Field(
+    current_quantity: QuantityNumber | None = Field(
         None,
         ge=0,
         description="Current quantity in this lot",
@@ -86,11 +87,11 @@ class LotResponse(BaseModel):
         validation_alias=AliasChoices("expirationDate", "expiration_date"),
         serialization_alias="expirationDate",
     )
-    initial_quantity: int = Field(
+    initial_quantity: QuantityNumber = Field(
         validation_alias=AliasChoices("initialQuantity", "initial_quantity"),
         serialization_alias="initialQuantity",
     )
-    current_quantity: int = Field(
+    current_quantity: QuantityNumber = Field(
         validation_alias=AliasChoices("currentQuantity", "current_quantity"),
         serialization_alias="currentQuantity",
     )

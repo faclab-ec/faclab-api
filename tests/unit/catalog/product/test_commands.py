@@ -19,6 +19,7 @@ from src.catalog.product.app.commands import (
 from src.catalog.product.domain.entities import Category, Product
 from src.catalog.product.domain.events import CategoryCreated, ProductCreated
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 
 
 # Product Command Tests
@@ -28,7 +29,9 @@ def test_create_product_command_handler():
     created_product = Product(id=1, sku="TEST-001", name="Test Product", category_id=1)
     mock_repo.create.return_value = created_product
 
-    handler = CreateProductCommandHandler(mock_repo, MagicMock(), FakeAuditTrail())
+    handler = CreateProductCommandHandler(
+        mock_repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+    )
     command = CreateProductCommand(sku="TEST-001", name="Test Product", category_id=1)
 
     result = handler.handle(command)
@@ -46,7 +49,9 @@ def test_create_product_publishes_event():
     mock_repo.create.return_value = created_product
 
     event_publisher = MagicMock()
-    handler = CreateProductCommandHandler(mock_repo, event_publisher, FakeAuditTrail())
+    handler = CreateProductCommandHandler(
+        mock_repo, event_publisher, FakeAuditTrail(), FakeProductQuantities()
+    )
     handler.handle(CreateProductCommand(sku="TEST-001", name="Test Product"))
 
     event_publisher.publish.assert_called_once()
@@ -64,7 +69,9 @@ def test_update_product_command_handler():
     mock_repo.get_by_id.return_value = existing_product
     mock_repo.update.return_value = updated_product
 
-    handler = UpdateProductCommandHandler(mock_repo, MagicMock(), FakeAuditTrail())
+    handler = UpdateProductCommandHandler(
+        mock_repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+    )
     command = UpdateProductCommand(product_id=1, sku="NEW-001", name="New Name")
 
     result = handler.handle(command)

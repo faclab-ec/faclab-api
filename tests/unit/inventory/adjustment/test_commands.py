@@ -1,5 +1,6 @@
 """Unit tests for inventory adjustment command handlers"""
 
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -31,7 +32,9 @@ from src.inventory.adjustment.domain.entities import (
 )
 from src.inventory.stock.domain.entities import Stock
 from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.quantity import QuantityPrecisionError
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 
 
 def _make_adjustment(**overrides) -> InventoryAdjustment:
@@ -164,7 +167,7 @@ def _confirm_handler(
             id=product_id,
             product_id=product_id,
             location_id=location_id,
-            quantity=stock[(product_id, location_id)],
+            quantity=Decimal(stock[(product_id, location_id)]),
         )
         if (product_id, location_id) in stock
         else None
@@ -346,10 +349,12 @@ def test_add_adjustment_item_success_auto_reads_stock():
     stock_repo = MagicMock()
     stock_repo.first.return_value = stock
 
-    handler = AddAdjustmentItemCommandHandler(repo, item_repo, stock_repo)
+    handler = AddAdjustmentItemCommandHandler(
+        repo, item_repo, stock_repo, FakeProductQuantities()
+    )
     result = handler.handle(
         AddAdjustmentItemCommand(
-            adjustment_id=1, product_id=5, location_id=3, actual_quantity=60
+            adjustment_id=1, product_id=5, location_id=3, actual_quantity=Decimal(60)
         )
     )
 
@@ -372,10 +377,12 @@ def test_add_adjustment_item_uses_zero_expected_if_no_stock():
     stock_repo = MagicMock()
     stock_repo.first.return_value = None  # no stock record
 
-    handler = AddAdjustmentItemCommandHandler(repo, item_repo, stock_repo)
+    handler = AddAdjustmentItemCommandHandler(
+        repo, item_repo, stock_repo, FakeProductQuantities()
+    )
     handler.handle(
         AddAdjustmentItemCommand(
-            adjustment_id=1, product_id=5, location_id=3, actual_quantity=30
+            adjustment_id=1, product_id=5, location_id=3, actual_quantity=Decimal(30)
         )
     )
 
@@ -391,12 +398,17 @@ def test_add_adjustment_item_raises_if_adjustment_not_draft():
     item_repo = MagicMock()
     stock_repo = MagicMock()
 
-    handler = AddAdjustmentItemCommandHandler(repo, item_repo, stock_repo)
+    handler = AddAdjustmentItemCommandHandler(
+        repo, item_repo, stock_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(DomainError):
         handler.handle(
             AddAdjustmentItemCommand(
-                adjustment_id=1, product_id=5, location_id=3, actual_quantity=60
+                adjustment_id=1,
+                product_id=5,
+                location_id=3,
+                actual_quantity=Decimal(60),
             )
         )
 
@@ -416,8 +428,12 @@ def test_update_adjustment_item_success():
     item_repo.get_by_id.return_value = item
     item_repo.update.return_value = updated_item
 
-    handler = UpdateAdjustmentItemCommandHandler(_draft_parent_repo(), item_repo)
-    result = handler.handle(UpdateAdjustmentItemCommand(id=1, actual_quantity=95))
+    handler = UpdateAdjustmentItemCommandHandler(
+        _draft_parent_repo(), item_repo, FakeProductQuantities()
+    )
+    result = handler.handle(
+        UpdateAdjustmentItemCommand(id=1, actual_quantity=Decimal(95))
+    )
 
     item_repo.update.assert_called_once()
     assert result["actual_quantity"] == 95
@@ -427,10 +443,12 @@ def test_update_adjustment_item_not_found_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = None
 
-    handler = UpdateAdjustmentItemCommandHandler(_draft_parent_repo(), item_repo)
+    handler = UpdateAdjustmentItemCommandHandler(
+        _draft_parent_repo(), item_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(NotFoundError):
-        handler.handle(UpdateAdjustmentItemCommand(id=99, actual_quantity=50))
+        handler.handle(UpdateAdjustmentItemCommand(id=99, actual_quantity=Decimal(50)))
 
 
 # ---------------------------------------------------------------------------
@@ -464,10 +482,12 @@ def test_update_item_requires_draft_parent(status):
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = _make_item()
 
-    handler = UpdateAdjustmentItemCommandHandler(repo, item_repo)
+    handler = UpdateAdjustmentItemCommandHandler(
+        repo, item_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(DomainError):
-        handler.handle(UpdateAdjustmentItemCommand(id=1, actual_quantity=95))
+        handler.handle(UpdateAdjustmentItemCommand(id=1, actual_quantity=Decimal(95)))
     item_repo.update.assert_not_called()
 
 
@@ -485,3 +505,23 @@ def test_remove_item_requires_draft_parent(status):
     with pytest.raises(DomainError):
         handler.handle(RemoveAdjustmentItemCommand(id=1))
     item_repo.delete.assert_not_called()
+
+
+def test_a_count_takes_the_decimals_of_the_product_unit():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_adjustment(status=AdjustmentStatus.DRAFT)
+    item_repo = MagicMock()
+    handler = AddAdjustmentItemCommandHandler(
+        repo, item_repo, MagicMock(), FakeProductQuantities(decimals={5: 0})
+    )
+
+    with pytest.raises(QuantityPrecisionError):
+        handler.handle(
+            AddAdjustmentItemCommand(
+                adjustment_id=1,
+                product_id=5,
+                location_id=3,
+                actual_quantity=Decimal("1.5"),
+            )
+        )
+    item_repo.create.assert_not_called()

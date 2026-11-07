@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.inventory.adjustment.app.repositories import (
     AdjustmentItemRepository,
     InventoryAdjustmentRepository,
@@ -67,7 +69,7 @@ class AddAdjustmentItemCommand(Command):
     adjustment_id: int = 0
     product_id: int = 0
     location_id: int = 0
-    actual_quantity: int = 0
+    actual_quantity: Decimal = Decimal(0)
     lot_id: int | None = None
     notes: str | None = None
 
@@ -75,7 +77,7 @@ class AddAdjustmentItemCommand(Command):
 @dataclass
 class UpdateAdjustmentItemCommand(Command):
     id: int = 0
-    actual_quantity: int | None = None
+    actual_quantity: Decimal | None = None
     notes: str | None = None
 
 
@@ -170,7 +172,7 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
             stock = self.stock_repo.first_for_update(
                 product_id=item.product_id, location_id=item.location_id
             )
-            item.compare_with(stock.quantity if stock else 0)
+            item.compare_with(stock.quantity if stock else Decimal(0))
             self.item_repo.update(item)
             diff = item.difference
             if diff == 0:
@@ -250,21 +252,24 @@ class AddAdjustmentItemCommandHandler(CommandHandler[AddAdjustmentItemCommand, d
         repo: InventoryAdjustmentRepository,
         item_repo: AdjustmentItemRepository,
         stock_repo: StockRepository,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
+        self.quantities = quantities
 
     def _handle(self, command: AddAdjustmentItemCommand) -> dict:
         adjustment = self.repo.get_by_id(command.adjustment_id)
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {command.adjustment_id} not found")
         adjustment.ensure_draft("agregar ítems a")
+        self.quantities.ensure([(command.product_id, command.actual_quantity)])
 
         stock = self.stock_repo.first(
             product_id=command.product_id, location_id=command.location_id
         )
-        expected = stock.quantity if stock else 0
+        expected = stock.quantity if stock else Decimal(0)
 
         item = AdjustmentItem(
             adjustment_id=command.adjustment_id,
@@ -284,10 +289,14 @@ class UpdateAdjustmentItemCommandHandler(
     CommandHandler[UpdateAdjustmentItemCommand, dict]
 ):
     def __init__(
-        self, repo: InventoryAdjustmentRepository, item_repo: AdjustmentItemRepository
+        self,
+        repo: InventoryAdjustmentRepository,
+        item_repo: AdjustmentItemRepository,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
         self.item_repo = item_repo
+        self.quantities = quantities
 
     def _handle(self, command: UpdateAdjustmentItemCommand) -> dict:
         item = self.item_repo.get_by_id(command.id)
@@ -297,6 +306,8 @@ class UpdateAdjustmentItemCommandHandler(
         if adjustment is None:
             raise NotFoundError(f"Adjustment with id {item.adjustment_id} not found")
         adjustment.ensure_draft("modificar ítems de")
+        if command.actual_quantity is not None:
+            self.quantities.ensure([(item.product_id, command.actual_quantity)])
 
         item.update(actual_quantity=command.actual_quantity, notes=command.notes)
         saved = self.item_repo.update(item)

@@ -1,5 +1,6 @@
 """Unit tests for stock transfer command handlers"""
 
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -32,7 +33,9 @@ from src.inventory.transfer.domain.entities import (
     TransferStatus,
 )
 from src.shared.domain.exceptions import DomainError, NotFoundError
+from src.shared.domain.quantity import QuantityPrecisionError
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 
 
 def _make_transfer(**overrides) -> StockTransfer:
@@ -518,9 +521,9 @@ def test_add_transfer_item_success():
     item_repo = MagicMock()
     item_repo.create.return_value = item
 
-    handler = AddTransferItemCommandHandler(repo, item_repo)
+    handler = AddTransferItemCommandHandler(repo, item_repo, FakeProductQuantities())
     result = handler.handle(
-        AddTransferItemCommand(transfer_id=1, product_id=5, quantity=10)
+        AddTransferItemCommand(transfer_id=1, product_id=5, quantity=Decimal(10))
     )
 
     item_repo.create.assert_called_once()
@@ -534,10 +537,12 @@ def test_add_transfer_item_raises_if_not_draft():
 
     item_repo = MagicMock()
 
-    handler = AddTransferItemCommandHandler(repo, item_repo)
+    handler = AddTransferItemCommandHandler(repo, item_repo, FakeProductQuantities())
 
     with pytest.raises(DomainError):
-        handler.handle(AddTransferItemCommand(transfer_id=1, product_id=5, quantity=10))
+        handler.handle(
+            AddTransferItemCommand(transfer_id=1, product_id=5, quantity=Decimal(10))
+        )
 
     item_repo.create.assert_not_called()
 
@@ -549,10 +554,12 @@ def test_add_transfer_item_raises_if_zero_quantity():
 
     item_repo = MagicMock()
 
-    handler = AddTransferItemCommandHandler(repo, item_repo)
+    handler = AddTransferItemCommandHandler(repo, item_repo, FakeProductQuantities())
 
     with pytest.raises(DomainError):
-        handler.handle(AddTransferItemCommand(transfer_id=1, product_id=5, quantity=0))
+        handler.handle(
+            AddTransferItemCommand(transfer_id=1, product_id=5, quantity=Decimal(0))
+        )
 
 
 def test_add_transfer_item_raises_if_transfer_not_found():
@@ -560,11 +567,11 @@ def test_add_transfer_item_raises_if_transfer_not_found():
     repo.get_by_id.return_value = None
     item_repo = MagicMock()
 
-    handler = AddTransferItemCommandHandler(repo, item_repo)
+    handler = AddTransferItemCommandHandler(repo, item_repo, FakeProductQuantities())
 
     with pytest.raises(NotFoundError):
         handler.handle(
-            AddTransferItemCommand(transfer_id=99, product_id=5, quantity=10)
+            AddTransferItemCommand(transfer_id=99, product_id=5, quantity=Decimal(10))
         )
 
 
@@ -581,8 +588,10 @@ def test_update_transfer_item_success():
     item_repo.get_by_id.return_value = item
     item_repo.update.return_value = updated_item
 
-    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
-    result = handler.handle(UpdateTransferItemCommand(id=1, quantity=20))
+    handler = UpdateTransferItemCommandHandler(
+        _draft_parent_repo(), item_repo, FakeProductQuantities()
+    )
+    result = handler.handle(UpdateTransferItemCommand(id=1, quantity=Decimal(20)))
 
     item_repo.update.assert_called_once()
     assert result["quantity"] == 20
@@ -592,10 +601,12 @@ def test_update_transfer_item_not_found_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = None
 
-    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
+    handler = UpdateTransferItemCommandHandler(
+        _draft_parent_repo(), item_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(NotFoundError):
-        handler.handle(UpdateTransferItemCommand(id=99, quantity=5))
+        handler.handle(UpdateTransferItemCommand(id=99, quantity=Decimal(5)))
 
 
 def test_update_transfer_item_zero_quantity_raises():
@@ -603,10 +614,12 @@ def test_update_transfer_item_zero_quantity_raises():
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = item
 
-    handler = UpdateTransferItemCommandHandler(_draft_parent_repo(), item_repo)
+    handler = UpdateTransferItemCommandHandler(
+        _draft_parent_repo(), item_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(DomainError):
-        handler.handle(UpdateTransferItemCommand(id=1, quantity=0))
+        handler.handle(UpdateTransferItemCommand(id=1, quantity=Decimal(0)))
 
 
 # ---------------------------------------------------------------------------
@@ -648,10 +661,10 @@ def test_update_item_requires_draft_parent(status):
     item_repo = MagicMock()
     item_repo.get_by_id.return_value = _make_item()
 
-    handler = UpdateTransferItemCommandHandler(repo, item_repo)
+    handler = UpdateTransferItemCommandHandler(repo, item_repo, FakeProductQuantities())
 
     with pytest.raises(DomainError):
-        handler.handle(UpdateTransferItemCommand(id=1, quantity=20))
+        handler.handle(UpdateTransferItemCommand(id=1, quantity=Decimal(20)))
     item_repo.update.assert_not_called()
 
 
@@ -667,3 +680,25 @@ def test_remove_item_requires_draft_parent(status):
     with pytest.raises(DomainError):
         handler.handle(RemoveTransferItemCommand(id=1))
     item_repo.delete.assert_not_called()
+
+
+def test_a_transfer_item_takes_the_decimals_of_the_product_unit():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_transfer(status=TransferStatus.DRAFT)
+    item_repo = MagicMock()
+    item_repo.create.side_effect = lambda item: item
+    handler = AddTransferItemCommandHandler(
+        repo, item_repo, FakeProductQuantities(decimals={5: 2})
+    )
+
+    result = handler.handle(
+        AddTransferItemCommand(transfer_id=1, product_id=5, quantity=Decimal("2.5"))
+    )
+    assert result["quantity"] == Decimal("2.5")
+
+    with pytest.raises(QuantityPrecisionError):
+        handler.handle(
+            AddTransferItemCommand(
+                transfer_id=1, product_id=5, quantity=Decimal("2.505")
+            )
+        )

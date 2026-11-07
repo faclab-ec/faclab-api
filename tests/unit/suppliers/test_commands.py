@@ -35,6 +35,7 @@ from src.suppliers.app.commands.supplier_product import (
     UpdateSupplierProductCommandHandler,
 )
 from src.suppliers.domain.entities import Supplier, SupplierContact, SupplierProduct
+from tests.quantities import FakeProductQuantities
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -308,7 +309,7 @@ def test_create_supplier_product_command_handler():
     sp = _make_supplier_product()
     repo = MagicMock()
     repo.create.return_value = sp
-    handler = CreateSupplierProductCommandHandler(repo)
+    handler = CreateSupplierProductCommandHandler(repo, FakeProductQuantities())
 
     result = handler.handle(
         CreateSupplierProductCommand(
@@ -328,7 +329,7 @@ def test_update_supplier_product_command_handler():
     repo = MagicMock()
     repo.get_by_id.return_value = _make_supplier_product(supplier_id=4)
     repo.update.side_effect = lambda sp: sp
-    handler = UpdateSupplierProductCommandHandler(repo)
+    handler = UpdateSupplierProductCommandHandler(repo, FakeProductQuantities())
 
     result = handler.handle(
         UpdateSupplierProductCommand(
@@ -346,7 +347,7 @@ def test_update_supplier_product_command_handler():
 def test_update_supplier_product_not_found():
     repo = MagicMock()
     repo.get_by_id.return_value = None
-    handler = UpdateSupplierProductCommandHandler(repo)
+    handler = UpdateSupplierProductCommandHandler(repo, FakeProductQuantities())
 
     with pytest.raises(NotFoundError):
         handler.handle(UpdateSupplierProductCommand(id=99, product_id=10))

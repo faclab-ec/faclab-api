@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from src.shared.domain.events import DomainEvent
@@ -8,7 +9,7 @@ from src.shared.domain.events import DomainEvent
 class StockCreated(DomainEvent):
     aggregate_id: int = 0  # stock_id
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
     location_id: int | None = None
 
     def _payload(self) -> dict[str, Any]:
@@ -24,8 +25,8 @@ class StockCreated(DomainEvent):
 class StockUpdated(DomainEvent):
     aggregate_id: int = 0  # stock_id
     product_id: int = 0
-    old_quantity: int = 0
-    new_quantity: int = 0
+    old_quantity: Decimal = Decimal(0)
+    new_quantity: Decimal = Decimal(0)
     location_id: int | None = None
 
     def _payload(self) -> dict[str, Any]:

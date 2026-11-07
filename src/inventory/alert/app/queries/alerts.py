@@ -1,5 +1,6 @@
 import dataclasses
 from dataclasses import dataclass
+from decimal import Decimal
 
 from wireup import injectable
 
@@ -84,8 +85,8 @@ class GetOutOfStockAlertsQueryHandler(
                 product_id=product.require_id(),
                 product_name=product.name,
                 sku=product.sku,
-                current_quantity=0,
-                threshold=0,
+                current_quantity=Decimal(0),
+                threshold=Decimal(0),
                 warehouse_id=query.warehouse_id,
             )
             alerts.append(dataclasses.asdict(alert))
@@ -163,7 +164,7 @@ class GetExpiringLotsAlertsQueryHandler(
                 product_name=product.name,
                 sku=product.sku,
                 current_quantity=lot.current_quantity,
-                threshold=0,
+                threshold=Decimal(0),
                 lot_id=lot.id,
                 days_to_expiry=lot.days_to_expiry,
             )

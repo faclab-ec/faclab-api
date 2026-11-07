@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.inventory.adjustment.domain.entities import AdjustmentReason, AdjustmentStatus
-from src.shared.infra.validators import QueryParams
+from src.shared.infra.validators import QuantityNumber, QueryParams
 
 
 class CreateAdjustmentRequest(BaseModel):
@@ -26,7 +26,7 @@ class AddAdjustmentItemRequest(BaseModel):
 
     product_id: int = Field(description="Product ID to adjust")
     location_id: int = Field(description="Storage location ID")
-    actual_quantity: int = Field(description="Actual counted quantity")
+    actual_quantity: QuantityNumber = Field(description="Actual counted quantity")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
 
@@ -34,7 +34,9 @@ class AddAdjustmentItemRequest(BaseModel):
 class UpdateAdjustmentItemRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    actual_quantity: int | None = Field(None, description="Corrected actual quantity")
+    actual_quantity: QuantityNumber | None = Field(
+        None, description="Corrected actual quantity"
+    )
     notes: str | None = Field(None, description="Updated notes")
 
 
@@ -62,11 +64,11 @@ class AdjustmentItemResponse(BaseModel):
     product_name: str | None = Field(None, description="Product name")
     product_sku: str | None = Field(None, description="Product SKU")
     location_id: int = Field(description="Storage location ID")
-    expected_quantity: int = Field(
+    expected_quantity: QuantityNumber = Field(
         description="System-recorded quantity before adjustment"
     )
-    actual_quantity: int = Field(description="Actual counted quantity")
-    difference: int = Field(description="Difference (actual - expected)")
+    actual_quantity: QuantityNumber = Field(description="Actual counted quantity")
+    difference: QuantityNumber = Field(description="Difference (actual - expected)")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
 

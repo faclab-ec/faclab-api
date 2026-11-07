@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
@@ -121,8 +122,8 @@ def test_associates_lot_id_when_lot_number_provided(mock_create_scope):
         id=3,
         product_id=5,
         lot_number="LOT-001",
-        initial_quantity=10,
-        current_quantity=10,
+        initial_quantity=Decimal(10),
+        current_quantity=Decimal(10),
     )
     serial = SerialNumber(
         id=1,

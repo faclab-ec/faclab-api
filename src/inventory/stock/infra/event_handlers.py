@@ -3,6 +3,7 @@ Event handlers para Stock que reaccionan a eventos de otros módulos.
 Este handler desacopla Movement de Stock mediante eventos.
 """
 
+from decimal import Decimal
 from typing import Any
 
 import structlog
@@ -55,7 +56,7 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
                 )
                 stock = Stock(
                     product_id=event.product_id,
-                    quantity=0,
+                    quantity=Decimal(0),
                     location_id=event.location_id,
                 )
                 # An OUT where there is no stock fails here instead of

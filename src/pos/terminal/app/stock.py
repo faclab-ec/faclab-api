@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Iterable
+from decimal import Decimal
 from typing import Protocol
 
 from wireup import injectable
@@ -16,7 +17,7 @@ class StockLine(Protocol):
     """A sale or refund item: what moves and how much"""
 
     product_id: int
-    quantity: int
+    quantity: Decimal
 
 
 @injectable(lifetime="scoped")
@@ -49,11 +50,11 @@ class TerminalStock:
 
         for product_id in sorted(by_product):
             product_lines = by_product[product_id]
-            total = sum(abs(line.quantity) for line in product_lines)
+            total = sum((abs(line.quantity) for line in product_lines), Decimal(0))
             stock = self.stock_repo.first_for_update(
                 product_id=product_id, location_id=location_id
             )
-            available = stock.available_quantity if stock else 0
+            available = stock.available_quantity if stock else Decimal(0)
             if stock is None or available < total:
                 raise InsufficientStockError(product_id, total, available)
             for line in product_lines:

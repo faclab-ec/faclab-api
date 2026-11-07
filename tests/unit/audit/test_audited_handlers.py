@@ -39,6 +39,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 
 TENANT = UUID("00000000-0000-4000-8000-00000000000a")
 
@@ -75,9 +76,9 @@ def _update_product(**changes: Any) -> FakeAuditTrail:
         purchase_price=existing.purchase_price,
         sale_price=existing.sale_price,
     )
-    UpdateProductCommandHandler(_echo(existing), MagicMock(), audit).handle(
-        replace(command, **changes)
-    )
+    UpdateProductCommandHandler(
+        _echo(existing), MagicMock(), audit, FakeProductQuantities()
+    ).handle(replace(command, **changes))
     return audit
 
 
@@ -99,7 +100,9 @@ def test_another_change_is_an_update():
 def test_a_new_material_code_is_an_update_with_only_what_changed():
     audit = FakeAuditTrail()
     existing = _product(tax_code=TaxCode.VAT_5)
-    UpdateProductCommandHandler(_echo(existing), MagicMock(), audit).handle(
+    UpdateProductCommandHandler(
+        _echo(existing), MagicMock(), audit, FakeProductQuantities()
+    ).handle(
         UpdateProductCommand(
             product_id=1,
             sku=existing.sku,
@@ -129,11 +132,13 @@ def test_a_put_that_changes_nothing_leaves_no_entry():
 @pytest.mark.parametrize(("manual", "entries"), [(True, 1), (False, 0)])
 def test_only_the_manual_movement_is_audited(manual, entries):
     audit = FakeAuditTrail()
-    handler = CreateMovementCommandHandler(_echo(), MagicMock(), Mock(), audit)
+    handler = CreateMovementCommandHandler(
+        _echo(), MagicMock(), Mock(), audit, FakeProductQuantities()
+    )
 
     handler.handle(
         CreateMovementCommand(
-            product_id=3, quantity=5, type="IN", location_id=2, manual=manual
+            product_id=3, quantity=Decimal(5), type="IN", location_id=2, manual=manual
         )
     )
 

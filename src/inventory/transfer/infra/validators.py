@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.inventory.transfer.domain.entities import TransferStatus
-from src.shared.infra.validators import QueryParams
+from src.shared.infra.validators import QuantityNumber, QueryParams
 
 
 class CreateTransferRequest(BaseModel):
@@ -25,7 +25,10 @@ class AddTransferItemRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     product_id: int = Field(description="Product ID to transfer")
-    quantity: int = Field(gt=0, description="Quantity to transfer")
+    quantity: QuantityNumber = Field(
+        gt=0,
+        description="Quantity to transfer, with the decimals of the product's unit",
+    )
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
 
@@ -33,7 +36,7 @@ class AddTransferItemRequest(BaseModel):
 class UpdateTransferItemRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-    quantity: int | None = Field(None, gt=0, description="Updated quantity")
+    quantity: QuantityNumber | None = Field(None, gt=0, description="Updated quantity")
     notes: str | None = Field(None, description="Updated notes")
 
 
@@ -60,7 +63,7 @@ class TransferItemResponse(BaseModel):
     product_id: int = Field(description="Product ID")
     product_name: str | None = Field(None, description="Product name")
     product_sku: str | None = Field(None, description="Product SKU")
-    quantity: int = Field(description="Quantity to transfer")
+    quantity: QuantityNumber = Field(description="Quantity to transfer")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
 

@@ -392,7 +392,7 @@ class TestPOSCancelSaleCommandHandler:
         handler.movement_repo.filter_by.return_value = [
             Movement(
                 product_id=100,
-                quantity=-5,
+                quantity=Decimal(-5),
                 type=MovementType.OUT,
                 location_id=4,
                 reference_type="sale",

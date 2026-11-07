@@ -19,6 +19,7 @@ from src.sales.domain.events import SaleCancelled, SaleConfirmed
 from src.shared.infra.events.event_bus import EventBus
 from src.shared.infra.events.event_bus_publisher import EventBusPublisher
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +56,7 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
     # Setup: No existing stock
     mock_stock_repo.first_for_update.return_value = None
 
-    new_stock = Stock(id=1, product_id=10, quantity=10)
+    new_stock = Stock(id=1, product_id=10, quantity=Decimal(10))
     mock_stock_repo.create.return_value = new_stock
 
     # Mock the scope context manager
@@ -67,7 +68,7 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
     created_movement = Movement(
         id=1,
         product_id=10,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN,
         reason="Initial stock",
     )
@@ -87,10 +88,11 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
         EventBusPublisher(),
         Mock(),
         FakeAuditTrail(),
+        FakeProductQuantities(),
     )
     command = CreateMovementCommand(
         product_id=10,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN.value,
         reason="Initial stock",
     )
@@ -128,17 +130,17 @@ def test_sale_confirmed_creates_movement_and_updates_stock(
     mock_stock_repo = Mock()
 
     # Existing stock
-    existing_stock = Stock(id=1, product_id=10, quantity=100)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(100))
     mock_stock_repo.first_for_update.return_value = existing_stock
 
-    updated_stock = Stock(id=1, product_id=10, quantity=95)
+    updated_stock = Stock(id=1, product_id=10, quantity=Decimal(95))
     mock_stock_repo.update.return_value = updated_stock
 
     # Movement created by sale confirmation
     created_movement = Movement(
         id=1,
         product_id=10,
-        quantity=-5,
+        quantity=Decimal(-5),
         type=MovementType.OUT,
         reason="Sale #123 confirmed",
     )
@@ -224,18 +226,18 @@ def test_sale_cancelled_reverts_stock_via_event(mock_inv_scope, mock_stock_scope
     mock_stock_repo = Mock()
 
     # Stock after sale was confirmed (reduced by 5)
-    existing_stock = Stock(id=1, product_id=10, quantity=95)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(95))
     mock_stock_repo.first_for_update.return_value = existing_stock
 
     # Stock after reversal
-    restored_stock = Stock(id=1, product_id=10, quantity=100)
+    restored_stock = Stock(id=1, product_id=10, quantity=Decimal(100))
     mock_stock_repo.update.return_value = restored_stock
 
     # Reversal movement
     reversal_movement = Movement(
         id=2,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN,
         reason="Sale #123 cancelled - reversal",
     )
@@ -353,15 +355,21 @@ def test_multiple_movements_accumulate_stock(mock_stock_scope):
         if call_count[0] == 1:
             return None  # First call: no stock
         elif call_count[0] == 2:
-            return Stock(id=1, product_id=10, quantity=10)  # After first movement
+            return Stock(
+                id=1, product_id=10, quantity=Decimal(10)
+            )  # After first movement
         elif call_count[0] == 3:
-            return Stock(id=1, product_id=10, quantity=20)  # After second movement
+            return Stock(
+                id=1, product_id=10, quantity=Decimal(20)
+            )  # After second movement
 
     mock_stock_repo.first_for_update.side_effect = mock_first
-    mock_stock_repo.create.return_value = Stock(id=1, product_id=10, quantity=10)
+    mock_stock_repo.create.return_value = Stock(
+        id=1, product_id=10, quantity=Decimal(10)
+    )
     mock_stock_repo.update.side_effect = [
-        Stock(id=1, product_id=10, quantity=20),
-        Stock(id=1, product_id=10, quantity=15),
+        Stock(id=1, product_id=10, quantity=Decimal(20)),
+        Stock(id=1, product_id=10, quantity=Decimal(15)),
     ]
 
     # Mock the scope context manager
@@ -374,32 +382,33 @@ def test_multiple_movements_accumulate_stock(mock_stock_scope):
         EventBusPublisher(),
         Mock(),
         FakeAuditTrail(),
+        FakeProductQuantities(),
     )
 
     # Movement 1: +10
     mock_movement_repo.create.return_value = Movement(
-        id=1, product_id=10, quantity=10, type=MovementType.IN
+        id=1, product_id=10, quantity=Decimal(10), type=MovementType.IN
     )
     command1 = CreateMovementCommand(
-        product_id=10, quantity=10, type=MovementType.IN.value
+        product_id=10, quantity=Decimal(10), type=MovementType.IN.value
     )
     handler.handle(command1)
 
     # Movement 2: +10 (total 20)
     mock_movement_repo.create.return_value = Movement(
-        id=2, product_id=10, quantity=10, type=MovementType.IN
+        id=2, product_id=10, quantity=Decimal(10), type=MovementType.IN
     )
     command2 = CreateMovementCommand(
-        product_id=10, quantity=10, type=MovementType.IN.value
+        product_id=10, quantity=Decimal(10), type=MovementType.IN.value
     )
     handler.handle(command2)
 
     # Movement 3: -5 (total 15)
     mock_movement_repo.create.return_value = Movement(
-        id=3, product_id=10, quantity=-5, type=MovementType.OUT
+        id=3, product_id=10, quantity=Decimal(-5), type=MovementType.OUT
     )
     command3 = CreateMovementCommand(
-        product_id=10, quantity=-5, type=MovementType.OUT.value
+        product_id=10, quantity=Decimal(-5), type=MovementType.OUT.value
     )
     handler.handle(command3)
 

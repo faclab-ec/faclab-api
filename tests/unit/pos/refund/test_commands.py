@@ -36,6 +36,7 @@ from src.sales.domain.entities import InvoiceStatus, Sale, SaleItem, SaleStatus
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 from tests.unit.pos.terminals import (
     AT_TERMINAL,
     LOCATION_ID,
@@ -160,6 +161,7 @@ class TestCreateRefund:
             refund_item_repo,
             shift_repo,
             terminal_resolver(),
+            FakeProductQuantities(),
         )
         return handler, refund_repo, refund_item_repo
 
@@ -515,7 +517,7 @@ class TestProcessRefund:
         movement_repo = MagicMock()
         stock_repo = MagicMock()
         stock_repo.first_for_update.return_value = Stock(
-            id=1, product_id=100, quantity=10
+            id=1, product_id=100, quantity=Decimal(10)
         )
         event_publisher = MagicMock()
 

@@ -8,6 +8,7 @@ from src.catalog.product.app.queries.get_products import (
 )
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.specifications import ProductBySearchTerm
+from tests.quantities import FakeProductQuantities
 
 
 # Specification tests
@@ -68,7 +69,7 @@ def test_search_products_handler():
     ]
     mock_repo.filter_by_spec.return_value = products
 
-    handler = SearchProductsQueryHandler(mock_repo)
+    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
     result = handler.handle(SearchProductsQuery(search_term="SKU-001"))
 
     assert len(result) == 1
@@ -81,7 +82,7 @@ def test_search_products_handler_empty_results():
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = []
 
-    handler = SearchProductsQueryHandler(mock_repo)
+    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
     result = handler.handle(SearchProductsQuery(search_term="nonexistent"))
 
     assert result == []
@@ -92,7 +93,7 @@ def test_search_products_handler_respects_limit():
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = []
 
-    handler = SearchProductsQueryHandler(mock_repo)
+    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
     handler.handle(SearchProductsQuery(search_term="test", limit=5))
 
     _, kwargs = mock_repo.filter_by_spec.call_args

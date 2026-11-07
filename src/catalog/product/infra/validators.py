@@ -1,8 +1,10 @@
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 # Requests
@@ -48,13 +50,18 @@ class ProductRequest(BaseModel):
     is_service: bool = Field(
         False, description="True if this is a service (no inventory tracking)"
     )
-    min_stock: int = Field(
-        0, ge=0, description="Minimum stock level — triggers low-stock alert"
+    min_stock: QuantityNumber = Field(
+        Decimal(0),
+        ge=0,
+        description="Minimum stock level — triggers low-stock alert. Takes the "
+        "decimals of the product's unit of measure",
     )
-    max_stock: int | None = Field(
+    max_stock: QuantityNumber | None = Field(
         None, ge=0, description="Maximum recommended stock level"
     )
-    reorder_point: int = Field(0, ge=0, description="Stock level at which to reorder")
+    reorder_point: QuantityNumber = Field(
+        Decimal(0), ge=0, description="Stock level at which to reorder"
+    )
     lead_time_days: int | None = Field(
         None, ge=0, description="Supplier lead time in days"
     )
@@ -93,6 +100,13 @@ class CategoryResponse(CategoryRequest):
 
 class ProductResponse(ProductRequest):
     id: int = Field(ge=1, description="Product ID")
+    unit_symbol: str | None = Field(
+        description="Symbol of the product's unit of measure (null without one)"
+    )
+    quantity_decimals: int = Field(
+        description="Decimals a quantity of this product takes: those of its unit "
+        "of measure, 0 without one"
+    )
 
 
 # Query Params

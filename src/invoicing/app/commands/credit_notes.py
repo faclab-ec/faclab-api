@@ -10,6 +10,7 @@ art. 3): el POS bloquea esa devolución antes de llegar aquí.
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 import structlog
 from sqlalchemy.orm import Session
@@ -372,11 +373,13 @@ class ApplyCreditNoteResultCommandHandler(
         if any(refund.id not in authorized for refund in refunds):
             return False
 
-        refunded: dict[int, int] = {}
+        refunded: dict[int, Decimal] = {}
         for refund in refunds:
             for item in self.refund_items.filter_by(refund_id=refund.require_id()):
                 sold_item = item.original_sale_item_id
-                refunded[sold_item] = refunded.get(sold_item, 0) + item.quantity
+                refunded[sold_item] = (
+                    refunded.get(sold_item, Decimal(0)) + item.quantity
+                )
         return all(
             refunded.get(item.require_id(), 0) >= item.quantity
             for item in self.sale_items.filter_by(sale_id=sale_id)

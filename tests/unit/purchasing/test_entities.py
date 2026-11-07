@@ -199,7 +199,7 @@ def test_purchase_receipt_item_creation():
         purchase_receipt_id=1,
         purchase_order_item_id=1,
         product_id=5,
-        quantity_received=3,
+        quantity_received=Decimal(3),
         location_id=2,
     )
     assert ri.quantity_received == 3
@@ -208,12 +208,12 @@ def test_purchase_receipt_item_creation():
 
 def test_item_receive_adds_to_received_quantity():
     item = _make_item(quantity_ordered=10, quantity_received=4)
-    item.receive(6)
+    item.receive(Decimal(6))
     assert (item.quantity_received, item.quantity_pending) == (10, 0)
 
 
 def test_item_cannot_receive_more_than_pending():
     item = _make_item(quantity_ordered=10, quantity_received=4)
     with pytest.raises(ExceedsPendingQuantityError, match="Only 6 units are pending"):
-        item.receive(7)
+        item.receive(Decimal(7))
     assert item.quantity_received == 4

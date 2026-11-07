@@ -18,6 +18,7 @@ from src.catalog.product.app.queries import (
 )
 from src.catalog.product.domain.entities import Category, Product
 from src.shared.domain.exceptions import NotFoundError
+from tests.quantities import FakeProductQuantities
 
 
 # Product Query Tests
@@ -35,7 +36,7 @@ def test_get_all_products_query_handler():
         "items": [p.dict() for p in products],
     }
 
-    handler = GetAllProductsQueryHandler(mock_repo)
+    handler = GetAllProductsQueryHandler(mock_repo, FakeProductQuantities())
     query = GetAllProductsQuery()
 
     result = handler.handle(query)
@@ -51,7 +52,7 @@ def test_get_all_products_with_search_and_category():
     mock_repo = Mock()
     mock_repo.paginate_by_spec.return_value = {"total": 0, "items": []}
 
-    GetAllProductsQueryHandler(mock_repo).handle(
+    GetAllProductsQueryHandler(mock_repo, FakeProductQuantities()).handle(
         GetAllProductsQuery(category_id=3, search="lap")
     )
 
@@ -73,7 +74,7 @@ def test_get_all_products_with_category_filter():
         "items": [p.dict() for p in products],
     }
 
-    handler = GetAllProductsQueryHandler(mock_repo)
+    handler = GetAllProductsQueryHandler(mock_repo, FakeProductQuantities())
     query = GetAllProductsQuery(category_id=1)
 
     result = handler.handle(query)
@@ -90,7 +91,7 @@ def test_get_product_by_id_handler():
     product = Product(id=1, sku="SKU-001", name="Product 1")
     mock_repo.get_by_id.return_value = product
 
-    handler = GetProductByIdQueryHandler(mock_repo)
+    handler = GetProductByIdQueryHandler(mock_repo, FakeProductQuantities())
     query = GetProductByIdQuery(product_id=1)
 
     result = handler.handle(query)
@@ -105,7 +106,7 @@ def test_get_product_by_id_not_found_raises():
     mock_repo = Mock()
     mock_repo.get_by_id.return_value = None
 
-    handler = GetProductByIdQueryHandler(mock_repo)
+    handler = GetProductByIdQueryHandler(mock_repo, FakeProductQuantities())
     query = GetProductByIdQuery(product_id=999)
 
     with pytest.raises(NotFoundError):
@@ -121,7 +122,7 @@ def test_search_products_query_handler():
     ]
     mock_repo.filter_by_spec.return_value = products
 
-    handler = SearchProductsQueryHandler(mock_repo)
+    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
     query = SearchProductsQuery(search_term="Computer")
 
     result = handler.handle(query)

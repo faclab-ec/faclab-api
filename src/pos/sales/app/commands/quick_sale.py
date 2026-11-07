@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.organization.app.numbering import DocumentNumbering
 from src.organization.domain.numbering import DocumentType
@@ -58,7 +59,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         event_publisher: EventPublisher,
         session: Session,
         audit: AuditTrail,
+        quantities: ProductQuantities,
     ):
+        self.quantities = quantities
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
@@ -105,6 +108,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 raise NotFoundError(
                     f"Product with id {item_data['product_id']} not found"
                 )
+            quantity = Decimal(str(item_data["quantity"]))
+            self.quantities.ensure_for_product(product, quantity)
 
             unit_price = Decimal(str(item_data.get("unit_price") or product.sale_price))
             # Selling at another price is recorded like POST .../price: with
@@ -119,7 +124,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             sale_item = SaleItem(
                 sale_id=sale.require_id(),
                 product_id=product.require_id(),
-                quantity=item_data["quantity"],
+                quantity=quantity,
                 unit_price=unit_price,
                 discount=Decimal(str(item_data.get("discount", 0))),
                 tax_code=product.tax_code,

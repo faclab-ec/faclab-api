@@ -117,7 +117,7 @@ def test_a_sale_without_emission_point_cannot_be_invoiced(in_tenant):
 def test_the_message_carries_the_tenant_issuer_and_emission_point():
     message = _build(_make_event())
 
-    assert message["schema_version"] == 2
+    assert message["schema_version"] == 3
     assert message["tenant_id"] == str(POINT.tenant_id)
     payload = message["payload"]
     assert payload["sale_number"] == "V-001-000009"

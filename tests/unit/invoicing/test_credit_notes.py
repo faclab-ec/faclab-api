@@ -497,7 +497,11 @@ class TestApplyingTheResult:
 
     def _item(self, id: int = 10, quantity: int = 2) -> SaleItem:
         return SaleItem(
-            id=id, sale_id=1, product_id=7, quantity=quantity, unit_price=Decimal("10")
+            id=id,
+            sale_id=1,
+            product_id=7,
+            quantity=Decimal(quantity),
+            unit_price=Decimal("10"),
         )
 
     def _refunded(self, refund_id: int, quantity: int) -> RefundItem:
@@ -505,7 +509,7 @@ class TestApplyingTheResult:
             refund_id=refund_id,
             original_sale_item_id=10,
             product_id=7,
-            quantity=quantity,
+            quantity=Decimal(quantity),
             unit_price=Decimal("10"),
         )
 

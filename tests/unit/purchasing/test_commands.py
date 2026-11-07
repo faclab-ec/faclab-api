@@ -42,6 +42,7 @@ from src.purchasing.domain.exceptions import (
     InvalidPurchaseOrderStatusError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.quantities import FakeProductQuantities
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -304,13 +305,15 @@ def test_add_item_to_draft_po():
     item_repo.create.return_value = item
     item_repo.filter_by.return_value = [item]
     po_repo.update.return_value = po
-    handler = AddPurchaseOrderItemCommandHandler(item_repo, po_repo)
+    handler = AddPurchaseOrderItemCommandHandler(
+        item_repo, po_repo, FakeProductQuantities()
+    )
 
     result = handler.handle(
         AddPurchaseOrderItemCommand(
             purchase_order_id=1,
             product_id=5,
-            quantity_ordered=10,
+            quantity_ordered=Decimal(10),
             unit_cost=Decimal("25.00"),
         )
     )
@@ -325,14 +328,16 @@ def test_add_item_to_non_draft_po_raises():
     po_repo = MagicMock()
     item_repo = MagicMock()
     po_repo.get_by_id.return_value = po
-    handler = AddPurchaseOrderItemCommandHandler(item_repo, po_repo)
+    handler = AddPurchaseOrderItemCommandHandler(
+        item_repo, po_repo, FakeProductQuantities()
+    )
 
     with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot add items"):
         handler.handle(
             AddPurchaseOrderItemCommand(
                 purchase_order_id=1,
                 product_id=5,
-                quantity_ordered=10,
+                quantity_ordered=Decimal(10),
                 unit_cost=Decimal("10.00"),
             )
         )
@@ -354,11 +359,13 @@ def test_update_item():
     item_repo.update.return_value = updated_item
     item_repo.filter_by.return_value = [updated_item]
     po_repo.update.return_value = po
-    handler = UpdatePurchaseOrderItemCommandHandler(item_repo, po_repo)
+    handler = UpdatePurchaseOrderItemCommandHandler(
+        item_repo, po_repo, FakeProductQuantities()
+    )
 
     result = handler.handle(
         UpdatePurchaseOrderItemCommand(
-            id=1, quantity_ordered=20, unit_cost=Decimal("30.00")
+            id=1, quantity_ordered=Decimal(20), unit_cost=Decimal("30.00")
         )
     )
     item_repo.update.assert_called_once()
@@ -404,6 +411,7 @@ def _make_receipt_handler():
             receipt_item_repo,
             event_publisher,
             MagicMock(),
+            FakeProductQuantities(),
         ),
         po_repo,
         item_repo,
@@ -431,7 +439,11 @@ def test_receive_complete():
     result = handler.handle(
         CreatePurchaseReceiptCommand(
             purchase_order_id=1,
-            items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=10)],
+            items=[
+                ReceiveItemInput(
+                    purchase_order_item_id=1, quantity_received=Decimal(10)
+                )
+            ],
         )
     )
 
@@ -459,7 +471,9 @@ def test_receive_partial():
     handler.handle(
         CreatePurchaseReceiptCommand(
             purchase_order_id=1,
-            items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
+            items=[
+                ReceiveItemInput(purchase_order_item_id=1, quantity_received=Decimal(5))
+            ],
         )
     )
 
@@ -482,7 +496,9 @@ def test_receive_excess_quantity_raises():
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
                 items=[
-                    ReceiveItemInput(purchase_order_item_id=1, quantity_received=10)
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=Decimal(10)
+                    )
                 ],
             )
         )
@@ -499,7 +515,11 @@ def test_receive_cancelled_po_raises():
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
-                items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
+                items=[
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=Decimal(5)
+                    )
+                ],
             )
         )
 
@@ -515,7 +535,11 @@ def test_receive_already_received_po_raises():
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
-                items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
+                items=[
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=Decimal(5)
+                    )
+                ],
             )
         )
 
@@ -530,7 +554,11 @@ def test_receive_draft_po_raises():
         handler.handle(
             CreatePurchaseReceiptCommand(
                 purchase_order_id=1,
-                items=[ReceiveItemInput(purchase_order_item_id=1, quantity_received=5)],
+                items=[
+                    ReceiveItemInput(
+                        purchase_order_item_id=1, quantity_received=Decimal(5)
+                    )
+                ],
             )
         )
     receipt_repo.create.assert_not_called()
@@ -554,10 +582,14 @@ def test_receive_repeated_item_lines_cannot_exceed_pending():
                 purchase_order_id=1,
                 items=[
                     ReceiveItemInput(
-                        purchase_order_item_id=1, quantity_received=6, lot_number="A"
+                        purchase_order_item_id=1,
+                        quantity_received=Decimal(6),
+                        lot_number="A",
                     ),
                     ReceiveItemInput(
-                        purchase_order_item_id=1, quantity_received=6, lot_number="B"
+                        purchase_order_item_id=1,
+                        quantity_received=Decimal(6),
+                        lot_number="B",
                     ),
                 ],
             )
@@ -583,10 +615,14 @@ def test_receive_item_split_across_lines_completes_order():
             purchase_order_id=1,
             items=[
                 ReceiveItemInput(
-                    purchase_order_item_id=1, quantity_received=4, lot_number="A"
+                    purchase_order_item_id=1,
+                    quantity_received=Decimal(4),
+                    lot_number="A",
                 ),
                 ReceiveItemInput(
-                    purchase_order_item_id=1, quantity_received=6, lot_number="B"
+                    purchase_order_item_id=1,
+                    quantity_received=Decimal(6),
+                    lot_number="B",
                 ),
             ],
         )

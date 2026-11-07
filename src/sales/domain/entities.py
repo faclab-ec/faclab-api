@@ -74,7 +74,7 @@ class SaleItem(Entity):
 
     sale_id: int
     product_id: int
-    quantity: int
+    quantity: Decimal
     unit_price: Decimal
     discount: Decimal = Decimal("0")
     tax_code: TaxCode = TaxCode.VAT_15

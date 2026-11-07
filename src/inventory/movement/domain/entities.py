@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from src.shared.domain.entities import Entity
 
@@ -10,7 +11,7 @@ from .exceptions import InvalidMovementTypeError
 @dataclass
 class Movement(Entity):
     product_id: int
-    quantity: int
+    quantity: Decimal
     type: MovementType
     id: int | None = None
     location_id: int | None = None

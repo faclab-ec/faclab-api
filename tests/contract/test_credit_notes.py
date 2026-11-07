@@ -1,7 +1,9 @@
-"""credit_notes.requested v1 and credit_notes.results v1: what core writes to the
+"""credit_notes.requested v2 and credit_notes.results v1: what core writes to the
 outbox matches the contract, with its amounts adding up to what it credits, and core
-applies each example of the results."""
+applies each example of the results. The v1 examples of the request still match v1:
+faclab-invoicing keeps accepting them during the transition."""
 
+import copy
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
@@ -37,8 +39,10 @@ from src.shared.infra.outbox.models import OutboxMessageModel
 from src.shared.infra.outbox.writer import OutboxWriter
 from tests.contract.contracts import errors, examples, validator
 
-SCHEMA = validator("credit_notes.requested")
-EXAMPLES = examples("credit_notes.requested")
+SCHEMA = validator("credit_notes.requested", 2)
+EXAMPLES = examples("credit_notes.requested", 2)
+V1_SCHEMA = validator("credit_notes.requested", 1)
+V1_EXAMPLES = examples("credit_notes.requested", 1)
 RESULTS_SCHEMA = validator("credit_notes.results")
 RESULTS = examples("credit_notes.results")
 
@@ -66,13 +70,13 @@ def session(in_tenant) -> Iterator[Session]:
 
 
 def _refund_item(
-    product_id: int, quantity: int, price: str, tax_code: TaxCode, **kw
+    product_id: int, quantity: int | str, price: str, tax_code: TaxCode, **kw
 ) -> RefundItem:
     item = RefundItem(
         refund_id=45,
         original_sale_item_id=product_id,
         product_id=product_id,
-        quantity=quantity,
+        quantity=Decimal(quantity),
         unit_price=Decimal(price),
         tax_code=tax_code,
         **kw,
@@ -156,7 +160,13 @@ def test_the_examples_cover_a_refund_and_a_cancelled_sale():
         "cancelled-sale",
         "branch-without-address",
         "construction-material",
+        "decimal-quantity",
     }
+
+
+@pytest.mark.parametrize("name", sorted(V1_EXAMPLES))
+def test_v1_examples_still_match_v1(name):
+    assert errors(V1_SCHEMA, V1_EXAMPLES[name]) == []
 
 
 def test_a_refund_written_to_the_outbox_matches_the_contract(session):
@@ -166,7 +176,7 @@ def test_a_refund_written_to_the_outbox_matches_the_contract(session):
     message = _written(session, _build(note, refund, items))
 
     assert errors(SCHEMA, message) == []
-    assert message["schema_version"] == 1
+    assert message["schema_version"] == 2
     assert message["tenant_id"] == str(POINT.tenant_id)
     assert message["aggregate_id"] == 31
     payload = message["payload"]
@@ -183,7 +193,7 @@ def test_the_invoice_of_a_cancelled_sale_matches_the_contract(session):
         SaleItem(
             sale_id=1,
             product_id=10,
-            quantity=2,
+            quantity=Decimal(2),
             unit_price=Decimal("8.5"),
             tax_code=TaxCode.VAT_15,
         )
@@ -327,6 +337,24 @@ def test_a_missing_field_breaks_the_contract(field):
     del payload[field]
 
     assert errors(SCHEMA, {**EXAMPLES["refund"], "payload": payload}) != []
+
+
+@pytest.mark.parametrize("quantity", [1, "1.0000001", "-1", "2,5"])
+def test_a_quantity_is_decimal_text_with_six_decimals_at_most(quantity):
+    payload = copy.deepcopy(EXAMPLES["refund"]["payload"])
+    payload["items"][0]["quantity"] = quantity
+
+    assert errors(SCHEMA, {**EXAMPLES["refund"], "payload": payload}) != []
+
+
+def test_a_decimal_refund_travels_as_text(session):
+    items = [_refund_item(10, "1.25", "0.850000", TaxCode.VAT_15)]
+    refund, note = _refund_with_note(items)
+
+    message = _written(session, _build(note, refund, items))
+
+    assert errors(SCHEMA, message) == []
+    assert Decimal(message["payload"]["items"][0]["quantity"]) == Decimal("1.25")
 
 
 def test_an_empty_reason_breaks_the_contract():

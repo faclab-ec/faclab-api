@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from src.inventory.adjustment.domain.exceptions import InvalidAdjustmentStatusError
@@ -59,24 +60,24 @@ class AdjustmentItem(Entity):
     adjustment_id: int
     product_id: int
     location_id: int
-    expected_quantity: int
-    actual_quantity: int
+    expected_quantity: Decimal
+    actual_quantity: Decimal
     id: int | None = None
     lot_id: int | None = None
     notes: str | None = None
 
     @property
-    def difference(self) -> int:
+    def difference(self) -> Decimal:
         return self.actual_quantity - self.expected_quantity
 
-    def compare_with(self, stock_quantity: int) -> None:
+    def compare_with(self, stock_quantity: Decimal) -> None:
         """Compara el conteo con el stock del sistema. Al confirmar es el
         stock de ese momento: lo que se mueve lleva el stock al valor contado,
         aunque haya cambiado desde que se agregó el ítem"""
         self.expected_quantity = stock_quantity
 
     def update(
-        self, actual_quantity: int | None = None, notes: str | None = None
+        self, actual_quantity: Decimal | None = None, notes: str | None = None
     ) -> None:
         if actual_quantity is not None:
             self.actual_quantity = actual_quantity

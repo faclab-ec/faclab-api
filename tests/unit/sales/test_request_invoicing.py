@@ -37,7 +37,7 @@ def _handler(
             id=3,
             sale_id=1,
             product_id=10,
-            quantity=2,
+            quantity=Decimal(2),
             unit_price=Decimal("10"),
             tax_code=TaxCode.VAT_15,
             tax_amount=Decimal("3"),

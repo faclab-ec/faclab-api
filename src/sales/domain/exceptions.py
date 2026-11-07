@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 from src.shared.domain.exceptions import DomainError
+from src.shared.domain.quantity import format_quantity
 
 
 class SalesError(DomainError):
@@ -56,16 +57,23 @@ class InsufficientStockError(SalesError):
 
     error_code = "INSUFFICIENT_STOCK"
 
-    def __init__(self, product_id: int, requested: int, available: int):
+    def __init__(
+        self, product_id: int, requested: Decimal | int, available: Decimal | int
+    ):
         self.product_id = product_id
         self.requested = requested
         self.available = available
+        requested_text = format_quantity(requested)
+        available_text = format_quantity(available)
         super().__init__(
             message=(
                 f"Insufficient stock for product {product_id}. "
-                f"Requested: {requested}, Available: {available}"
+                f"Requested: {requested_text}, Available: {available_text}"
             ),
-            detail=f"product_id={product_id}, requested={requested}, available={available}",
+            detail=(
+                f"product_id={product_id}, requested={requested_text}, "
+                f"available={available_text}"
+            ),
         )
 
 

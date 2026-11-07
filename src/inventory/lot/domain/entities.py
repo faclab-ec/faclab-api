@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 
 from src.shared.domain.entities import Entity
 from src.shared.domain.exceptions import ValidationError
@@ -12,8 +13,8 @@ class Lot(Entity):
     id: int | None = None
     manufacture_date: date | None = None
     expiration_date: date | None = None
-    initial_quantity: int = 0
-    current_quantity: int = 0
+    initial_quantity: Decimal = Decimal(0)
+    current_quantity: Decimal = Decimal(0)
     notes: str | None = None
     created_at: datetime | None = None
 
@@ -29,14 +30,14 @@ class Lot(Entity):
             return None
         return (self.expiration_date - date.today()).days
 
-    def receive(self, quantity: int) -> None:
+    def receive(self, quantity: Decimal) -> None:
         """Suma unidades recibidas (p. ej. otra recepción del mismo lote)"""
         self.initial_quantity += quantity
         self.current_quantity += quantity
 
     def update_details(
         self,
-        current_quantity: int | None = None,
+        current_quantity: Decimal | None = None,
         manufacture_date: date | None = None,
         expiration_date: date | None = None,
         notes: str | None = None,
@@ -66,5 +67,5 @@ class Lot(Entity):
 class MovementLotItem(Entity):
     movement_id: int
     lot_id: int
-    quantity: int
+    quantity: Decimal
     id: int | None = None

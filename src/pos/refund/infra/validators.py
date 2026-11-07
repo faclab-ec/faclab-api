@@ -7,7 +7,7 @@ from src.invoicing.infra.validators import CreditNoteResponse
 from src.pos.refund.domain.entities import RefundStatus
 from src.sales.domain.entities import PaymentMethod
 from src.shared.domain.tax import TaxCode
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 class CreateRefundItemInput(BaseModel):
@@ -18,7 +18,11 @@ class CreateRefundItemInput(BaseModel):
         validation_alias=AliasChoices("saleItemId", "sale_item_id"),
         serialization_alias="saleItemId",
     )
-    quantity: int = Field(..., gt=0, description="Quantity to refund")
+    quantity: QuantityNumber = Field(
+        ...,
+        gt=0,
+        description="Quantity to refund, with the decimals of the product's unit",
+    )
 
 
 class CreateRefundRequest(BaseModel):
@@ -75,7 +79,7 @@ class RefundItemResponse(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity: int
+    quantity: QuantityNumber
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),

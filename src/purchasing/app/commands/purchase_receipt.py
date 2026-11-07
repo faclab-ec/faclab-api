@@ -1,9 +1,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.purchasing.app.repositories import (
     PurchaseOrderItemRepository,
     PurchaseOrderRepository,
@@ -25,7 +27,7 @@ from src.shared.domain.exceptions import NotFoundError
 @dataclass
 class ReceiveItemInput:
     purchase_order_item_id: int
-    quantity_received: int
+    quantity_received: Decimal
     location_id: int | None = None
     lot_number: str | None = None
     serial_numbers: list[str] | None = None
@@ -55,7 +57,9 @@ class CreatePurchaseReceiptCommandHandler(
         receipt_item_repo: PurchaseReceiptItemRepository,
         event_publisher: EventPublisher,
         session: Session,
+        quantities: ProductQuantities,
     ):
+        self.quantities = quantities
         self.po_repo = po_repo
         self.item_repo = item_repo
         self.receipt_repo = receipt_repo
@@ -88,6 +92,13 @@ class CreatePurchaseReceiptCommandHandler(
             if po_item is None:
                 raise NotFoundError(f"Purchase order item with id {item_id} not found")
             po_item.receive(receive_item.quantity_received)
+        self.quantities.ensure(
+            (
+                po_items_by_id[line.purchase_order_item_id].product_id,
+                line.quantity_received,
+            )
+            for line in command.items
+        )
 
         # Create the receipt
         receipt = PurchaseReceipt(

@@ -8,7 +8,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from src.sales.domain.entities import PaymentMethod, SaleStatus
 from src.shared.domain.tax import TaxCode
-from src.shared.infra.validators import DecimalNumber
+from src.shared.infra.validators import DecimalNumber, QuantityNumber
 
 
 class ParkSaleRequest(BaseModel):
@@ -78,7 +78,11 @@ class QuickSaleItemInput(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity: int = Field(..., gt=0, description="Quantity to sell")
+    quantity: QuantityNumber = Field(
+        ...,
+        gt=0,
+        description="Quantity to sell, with the decimals of the product's unit",
+    )
     unit_price: Decimal | None = Field(
         None,
         gt=0,
@@ -164,7 +168,7 @@ class ReceiptItemResponse(BaseModel):
         validation_alias=AliasChoices("productName", "product_name"),
         serialization_alias="productName",
     )
-    quantity: int
+    quantity: QuantityNumber
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),

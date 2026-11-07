@@ -80,12 +80,13 @@ from src.shared.infra.outbox.writer import OutboxWriter
 from src.tenancy.app.repositories import TenantRepository
 
 SALES_CONFIRMED_TOPIC = "sales.confirmed"
-# Versión del esquema en contracts/events/sales.confirmed/ (ver contracts/README.md)
-SALES_CONFIRMED_SCHEMA_VERSION = 2
+# Versión del esquema en contracts/events/sales.confirmed/ (ver contracts/README.md):
+# v3 desde S5.1, con la cantidad como texto decimal
+SALES_CONFIRMED_SCHEMA_VERSION = 3
 
 CREDIT_NOTES_REQUESTED_TOPIC = "credit_notes.requested"
-# Versión del esquema en contracts/events/credit_notes.requested/
-CREDIT_NOTES_REQUESTED_SCHEMA_VERSION = 1
+# Versión del esquema en contracts/events/credit_notes.requested/: v2 desde S5.1
+CREDIT_NOTES_REQUESTED_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)

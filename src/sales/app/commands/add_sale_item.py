@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import SaleItem
@@ -18,7 +19,7 @@ class AddSaleItemCommand(Command):
 
     sale_id: int
     product_id: int
-    quantity: int
+    quantity: Decimal
     unit_price: Decimal
     discount: Decimal = Decimal("0")
 
@@ -33,11 +34,13 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         sale_item_repo: SaleItemRepository,
         product_repo: ProductRepository,
         event_publisher: EventPublisher,
+        quantities: ProductQuantities,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
         self.event_publisher = event_publisher
+        self.quantities = quantities
 
     def _handle(self, command: AddSaleItemCommand) -> dict:
         """Agrega un item a la venta y recalcula los totales"""
@@ -53,12 +56,13 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         product = self.product_repo.get_by_id(command.product_id)
         if not product:
             raise NotFoundError(f"Product with id {command.product_id} not found")
+        self.quantities.ensure_for_product(product, command.quantity)
 
         # Crear el item con el IVA de su producto
         sale_item = SaleItem(
             sale_id=command.sale_id,
             product_id=command.product_id,
-            quantity=command.quantity,
+            quantity=Decimal(command.quantity),
             unit_price=Decimal(str(command.unit_price)),
             discount=Decimal(str(command.discount)),
             tax_code=product.tax_code,

@@ -29,7 +29,7 @@ def test_sale_item_subtotal_calculation():
     item = SaleItem(
         sale_id=1,
         product_id=1,
-        quantity=10,
+        quantity=Decimal(10),
         unit_price=Decimal("100.00"),
         discount=Decimal("10"),  # 10%
     )
@@ -42,7 +42,7 @@ def test_sale_item_subtotal_no_discount():
     item = SaleItem(
         sale_id=1,
         product_id=1,
-        quantity=5,
+        quantity=Decimal(5),
         unit_price=Decimal("50.00"),
         discount=Decimal("0"),
     )

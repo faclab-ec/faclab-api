@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
@@ -172,7 +173,7 @@ def test_creates_movement_lot_item_when_movement_exists(mock_create_scope):
     movement = Movement(
         id=10,
         product_id=5,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN,
         reference_type="purchase_order",
         reference_id=1,
@@ -195,7 +196,7 @@ def test_creates_movement_lot_item_when_movement_exists(mock_create_scope):
 
     movement_lot_item_repo = MagicMock()
     movement_lot_item_repo.create.return_value = MovementLotItem(
-        id=1, movement_id=10, lot_id=1, quantity=10
+        id=1, movement_id=10, lot_id=1, quantity=Decimal(10)
     )
 
     movement_repo = MagicMock()
@@ -234,7 +235,7 @@ def test_does_not_reuse_movement_for_duplicate_product_items(mock_create_scope):
     movement1 = Movement(
         id=10,
         product_id=5,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN,
         reference_type="purchase_order",
         reference_id=1,
@@ -242,7 +243,7 @@ def test_does_not_reuse_movement_for_duplicate_product_items(mock_create_scope):
     movement2 = Movement(
         id=11,
         product_id=5,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN,
         reference_type="purchase_order",
         reference_id=1,
@@ -272,7 +273,7 @@ def test_does_not_reuse_movement_for_duplicate_product_items(mock_create_scope):
 
     movement_lot_item_repo = MagicMock()
     movement_lot_item_repo.create.return_value = MovementLotItem(
-        id=1, movement_id=10, lot_id=1, quantity=10
+        id=1, movement_id=10, lot_id=1, quantity=Decimal(10)
     )
 
     movement_repo = MagicMock()
@@ -305,7 +306,7 @@ def test_links_movement_from_current_receipt_not_earlier_partial(mock_create_sco
         return Movement(
             id=movement_id,
             product_id=5,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
             reference_type="purchase_order",
             reference_id=1,
