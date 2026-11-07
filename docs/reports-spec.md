@@ -115,7 +115,7 @@ GET /valuation
 | `productId`   | `int`     | ID del producto                         |
 | `productName` | `string`  | Nombre del producto                     |
 | `sku`         | `string`  | Código SKU                              |
-| `quantity`    | `int`     | Cantidad en stock                       |
+| `quantity`    | `decimal` | Cantidad en stock                       |
 | `averageCost` | `number`  | Precio de compra (purchase_price)       |
 | `totalValue`  | `number`  | quantity × averageCost                  |
 
@@ -256,7 +256,7 @@ GET /movements
 | `productId`        | `int`            | ID del producto                                       |
 | `productName`      | `string`         | Nombre del producto                                   |
 | `sku`              | `string`         | Código SKU                                            |
-| `quantity`         | `int`            | Cantidad movida                                       |
+| `quantity`         | `decimal`        | Cantidad movida                                       |
 | `type`             | `string`         | `"in"` (entrada) o `"out"` (salida)                   |
 | `locationId`       | `int \| null`    | Ubicación destino                                     |
 | `sourceLocationId` | `int \| null`    | Ubicación origen (para transferencias)                |
@@ -316,9 +316,9 @@ GET /summary
 | `warehouseName`     | `string` | Nombre del almacén                                |
 | `warehouseCode`     | `string` | Código del almacén                                |
 | `totalProducts`     | `int`    | Cantidad de productos distintos con stock          |
-| `totalQuantity`     | `int`    | Suma de todas las cantidades en stock              |
-| `reservedQuantity`  | `int`    | Suma de cantidades reservadas                     |
-| `availableQuantity` | `int`    | `totalQuantity - reservedQuantity`                |
+| `totalQuantity`     | `decimal` | Suma de todas las cantidades en stock              |
+| `reservedQuantity`  | `decimal` | Suma de cantidades reservadas                     |
+| `availableQuantity` | `decimal` | `totalQuantity - reservedQuantity`                |
 | `totalValue`        | `number` | Suma de `quantity × purchasePrice` por producto   |
 
 ### Lógica de negocio

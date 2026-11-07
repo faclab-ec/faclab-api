@@ -57,7 +57,7 @@ DRAFT ──confirm──▶ CONFIRMED ──receive──▶ RECEIVED
 | `transferId` | `int`           | Sí        | ID de la transferencia padre    |
 | `productId`  | `int`           | Sí        | ID del producto                 |
 | `productName`, `productSku` | `string \| null` | Auto | Nombre y SKU del producto (solo en el listado de items) |
-| `quantity`   | `int`           | Sí        | Cantidad a transferir (> 0)     |
+| `quantity`   | `decimal`       | Sí        | Cantidad a transferir (> 0)     |
 | `lotId`      | `int \| null`    | No        | ID del lote (opcional)          |
 | `notes`      | `string \| null` | No        | Notas del ítem                  |
 
@@ -292,7 +292,7 @@ POST /transfers/{id}/items
 | Campo       | Tipo            | Requerido | Validación |
 | ----------- | --------------- | --------- | ---------- |
 | `productId` | `int`           | Sí        |            |
-| `quantity`   | `int`           | Sí        | > 0        |
+| `quantity`   | `decimal`       | Sí        | > 0        |
 | `lotId`     | `int \| null`    | No        |            |
 | `notes`     | `string \| null` | No        |            |
 
@@ -354,7 +354,7 @@ PUT /transfer-items/{id}
 
 | Campo      | Tipo            | Requerido | Validación |
 | ---------- | --------------- | --------- | ---------- |
-| `quantity` | `int \| null`    | No        | > 0        |
+| `quantity` | `decimal \| null`  | No        | > 0        |
 | `notes`    | `string \| null` | No        |            |
 
 **Response** `200`: Ítem actualizado.

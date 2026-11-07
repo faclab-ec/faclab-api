@@ -80,8 +80,8 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `purchaseOrderId` | `int`    | sí        | —       | ID de la orden de compra             |
 | `productId`       | `int`    | sí        | —       | ID del producto                      |
 | `productName`, `productSku` | `string?` | auto | — | Nombre y SKU del producto (solo en `GET /purchase-orders/{id}/items`) |
-| `quantityOrdered` | `int`    | sí        | —       | Cantidad pedida                      |
-| `quantityReceived`| `int`    | auto      | `0`     | Cantidad recibida acumulada          |
+| `quantityOrdered` | `decimal` | sí        | —       | Cantidad pedida                      |
+| `quantityReceived`| `decimal` | auto      | `0`     | Cantidad recibida acumulada          |
 | `unitCost`        | `number` | sí        | —       | Costo unitario                       |
 
 **Campos calculados (no vienen del API, calcular en frontend):**
@@ -109,7 +109,7 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `purchaseReceiptId`   | `int`             | auto      | —       | ID del recibo                            |
 | `purchaseOrderItemId` | `int`             | sí        | —       | ID del ítem de la orden                  |
 | `productId`           | `int`             | sí        | —       | ID del producto                          |
-| `quantityReceived`    | `int`             | sí        | —       | Cantidad recibida en esta entrega        |
+| `quantityReceived`    | `decimal`         | sí        | —       | Cantidad recibida en esta entrega        |
 | `locationId`          | `int \| null`     | no        | `null`  | Ubicación de destino en almacén          |
 | `lotNumber`           | `string \| null`  | no        | `null`  | Número de lote para trazabilidad         |
 | `serialNumbers`       | `string[] \| null`| no        | `null`  | Números de serie individuales            |
@@ -380,7 +380,7 @@ Registra la recepción de mercancía. Puede ser parcial o total.
 | ---------------------------- | ----------------- | --------- | ---------------- |
 | `items`                      | `array`           | sí        | mínimo 1 ítem    |
 | `items[].purchaseOrderItemId`| `int`             | sí        | `>= 1`           |
-| `items[].quantityReceived`   | `int`             | sí        | `>= 1`           |
+| `items[].quantityReceived`   | `decimal`         | sí        | `> 0`             |
 | `items[].locationId`         | `int \| null`     | no        | `>= 1`           |
 | `items[].lotNumber`          | `string \| null`  | no        | max 64 chars     |
 | `items[].serialNumbers`      | `string[] \| null`| no        | —                |
@@ -492,7 +492,7 @@ Agrega un ítem a una orden de compra. Solo permitido cuando la orden está en e
 | ----------------- | --------- | --------- | ---------- |
 | `purchaseOrderId` | `int`     | sí        | `>= 1`    |
 | `productId`       | `int`     | sí        | `>= 1`    |
-| `quantityOrdered` | `int`     | sí        | `>= 1`    |
+| `quantityOrdered` | `decimal` | sí        | `> 0`      |
 | `unitCost`        | `number`  | sí        | `>= 0`    |
 
 **Response (201):**
@@ -535,7 +535,7 @@ Actualiza un ítem de orden de compra. Solo permitido cuando la orden está en e
 
 | Campo             | Tipo      | Requerido | Validación |
 | ----------------- | --------- | --------- | ---------- |
-| `quantityOrdered` | `int`     | sí        | `>= 1`    |
+| `quantityOrdered` | `decimal` | sí        | `> 0`      |
 | `unitCost`        | `number`  | sí        | `>= 0`    |
 
 **Response (200):** Objeto `PurchaseOrderItem` actualizado.
