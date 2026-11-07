@@ -9,7 +9,7 @@ from src.catalog.product.domain.events import ProductCreated
 from src.shared.app.audit import AuditAction, AuditTrail, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
-from src.shared.domain.tax import TaxCode
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 
 # What the audit log keeps of a product that is created or deleted
 AUDITED_FIELDS = (
@@ -18,6 +18,7 @@ AUDITED_FIELDS = (
     "purchase_price",
     "sale_price",
     "tax_code",
+    "construction_material_code",
     "is_active",
 )
 
@@ -33,6 +34,7 @@ class CreateProductCommand(Command):
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
     tax_code: TaxCode = TaxCode.VAT_15
+    construction_material_code: ConstructionMaterialCode | None = None
     is_active: bool = True
     is_service: bool = False
     min_stock: int = 0
@@ -64,6 +66,7 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
             purchase_price=command.purchase_price,
             sale_price=command.sale_price,
             tax_code=command.tax_code,
+            construction_material_code=command.construction_material_code,
             is_active=command.is_active,
             is_service=command.is_service,
             min_stock=command.min_stock,
@@ -71,6 +74,7 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
             reorder_point=command.reorder_point,
             lead_time_days=command.lead_time_days,
         )
+        product.ensure_material_tax()
         product = self.repo.create(product)
         self.audit.record(
             AuditAction.PRODUCT_CREATED,

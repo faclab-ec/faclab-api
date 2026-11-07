@@ -163,6 +163,34 @@ def test_sales_confirmed_follows_the_v2_contract(
     ) == (DEFAULT_TENANT_RUC, "001", None, "001", "V-001-000002")
 
 
+def test_a_construction_material_reaches_the_message_with_its_code(
+    pos, client, admin, db_session: Session, monkeypatch
+):
+    """Anexo 23: faclab-invoicing writes it in codigoAuxiliar, instead of the SKU"""
+    monkeypatch.setattr(config, "KAFKA_ENABLED", True)
+    cashier, products = pos
+    [plain, material, *_] = products
+    Api(client, admin).put(
+        f"/api/admin/products/{material[0]}",
+        {
+            "name": "Cemento 50 kg",
+            "sku": "B",
+            "salePrice": material[1],
+            "taxCode": "VAT_5",
+            "constructionMaterialCode": "F010401",
+        },
+    )
+
+    _checkout((cashier, [plain, material]), [1, 1])
+
+    [message] = db_session.scalars(select(OutboxMessageModel))
+    assert errors(validator("sales.confirmed", 2), message.payload) == []
+    assert [
+        (item["sku"], item["construction_material_code"])
+        for item in message.payload["payload"]["items"]
+    ] == [("A", None), ("B", "F010401")]
+
+
 def test_authorized_invoice_marks_the_sale_invoiced(pos, tenant, client, admin):
     cashier, _ = pos
     # With a customer: a sale invoiced to the final consumer isn't refunded (S4.5)

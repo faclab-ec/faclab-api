@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
-from src.shared.domain.tax import TaxCode
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.shared.infra.validators import DecimalNumber, QueryParams
 
 
@@ -36,6 +36,13 @@ class ProductRequest(BaseModel):
     )
     tax_code: TaxCode = Field(
         TaxCode.VAT_15, description="Semantic VAT code (see TaxCode enum)"
+    )
+    construction_material_code: ConstructionMaterialCode | None = Field(
+        None,
+        description=(
+            "SRI subcategory of a construction material (Table 31 of the technical "
+            "sheet), written in the invoice's codigoAuxiliar. Requires taxCode VAT_5"
+        ),
     )
     is_active: bool = Field(True, description="Whether the product is active")
     is_service: bool = Field(

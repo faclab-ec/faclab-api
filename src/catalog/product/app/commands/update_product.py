@@ -10,7 +10,7 @@ from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
-from src.shared.domain.tax import TaxCode
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 
 # A change of any of them is audited as a price change
 PRICE_FIELDS = frozenset({"purchase_price", "sale_price", "tax_code"})
@@ -28,6 +28,7 @@ class UpdateProductCommand(Command):
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
     tax_code: TaxCode = TaxCode.VAT_15
+    construction_material_code: ConstructionMaterialCode | None = None
     is_active: bool = True
     is_service: bool = False
     min_stock: int = 0
@@ -64,6 +65,7 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             purchase_price=command.purchase_price,
             sale_price=command.sale_price,
             tax_code=command.tax_code,
+            construction_material_code=command.construction_material_code,
             is_active=command.is_active,
             is_service=command.is_service,
             min_stock=command.min_stock,
@@ -71,6 +73,7 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             reorder_point=command.reorder_point,
             lead_time_days=command.lead_time_days,
         )
+        product.ensure_material_tax()
         product = self.repo.update(product)
 
         changes = {}
@@ -84,6 +87,7 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             "purchase_price",
             "sale_price",
             "tax_code",
+            "construction_material_code",
             "is_active",
             "is_service",
             "min_stock",

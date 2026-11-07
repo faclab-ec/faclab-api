@@ -36,6 +36,7 @@ from src.organization.app.commands.branch import (
 )
 from src.organization.domain.entities import Branch
 from src.shared.app.audit import AuditAction
+from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
 
@@ -93,6 +94,29 @@ def test_another_change_is_an_update():
     audit = _update_product(name="Taladro 600W")
 
     assert audit.actions == [AuditAction.PRODUCT_UPDATED]
+
+
+def test_a_new_material_code_is_an_update_with_only_what_changed():
+    audit = FakeAuditTrail()
+    existing = _product(tax_code=TaxCode.VAT_5)
+    UpdateProductCommandHandler(_echo(existing), MagicMock(), audit).handle(
+        UpdateProductCommand(
+            product_id=1,
+            sku=existing.sku,
+            name=existing.name,
+            purchase_price=existing.purchase_price,
+            sale_price=existing.sale_price,
+            tax_code=TaxCode.VAT_5,
+            construction_material_code=ConstructionMaterialCode.CEMENT,
+        )
+    )
+
+    (entry,) = audit.entries
+    assert entry.action == AuditAction.PRODUCT_UPDATED
+    assert entry.before == {"construction_material_code": None}
+    assert entry.after == {
+        "construction_material_code": ConstructionMaterialCode.CEMENT
+    }
 
 
 def test_a_put_that_changes_nothing_leaves_no_entry():

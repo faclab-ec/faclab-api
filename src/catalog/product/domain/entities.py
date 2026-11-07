@@ -2,8 +2,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
+from src.catalog.product.domain.exceptions import ConstructionMaterialTaxMismatchError
 from src.shared.domain.entities import Entity
-from src.shared.domain.tax import TaxCode
+from src.shared.domain.tax import (
+    CONSTRUCTION_MATERIAL_TAX_CODE,
+    ConstructionMaterialCode,
+    TaxCode,
+)
 
 
 @dataclass
@@ -31,4 +36,14 @@ class Product(Entity):
     max_stock: int | None = None
     reorder_point: int = 0
     lead_time_days: int | None = None
+    construction_material_code: ConstructionMaterialCode | None = None
     created_at: datetime | None = None
+
+    def ensure_material_tax(self) -> None:
+        """A material of the SRI's list carries its rate. Not on every load: a row
+        written under a former rate must stay readable when the law changes."""
+        if (
+            self.construction_material_code is not None
+            and self.tax_code != CONSTRUCTION_MATERIAL_TAX_CODE
+        ):
+            raise ConstructionMaterialTaxMismatchError()

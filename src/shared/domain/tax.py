@@ -39,6 +39,35 @@ _RATES = {
 }
 
 
+class ConstructionMaterialCode(StrEnum):
+    """Subcategoría de material de construcción: Tabla 31 del Anexo 23 de la ficha
+    técnica offline (versión 2.34), para los materiales de la Res.
+    NAC-DGERCGC24-00000013. Va exacto en `codigoAuxiliar` de la factura."""
+
+    REBAR = "F010101"
+    CLAY = "F010201"
+    SAND = "F010202"
+    LIME = "F010203"
+    LIMESTONE = "F010204"
+    AGGREGATES = "F010205"
+    READY_MIX_CONCRETE = "F010301"
+    CEMENT = "F010401"
+    CEMENT_RESIDUE = "F010402"
+    FERROUS_SCRAP = "F010501"
+    MORTAR = "F010601"
+    CLINKER = "F010701"
+    POZZOLAN = "F010702"
+    GYPSUM = "F010703"
+    PAVER = "F010801"
+    BLOCKS = "F010802"
+    BRICKS = "F010803"
+    PRECAST_CONCRETE = "F010804"
+
+
+# La tarifa de la venta local de esos materiales (Res. NAC-DGERCGC24-00000013, art. 1)
+CONSTRUCTION_MATERIAL_TAX_CODE = TaxCode.VAT_5
+
+
 class TaxType(IntEnum):
     """Tipo de identificación tributaria de un cliente o proveedor"""
 
