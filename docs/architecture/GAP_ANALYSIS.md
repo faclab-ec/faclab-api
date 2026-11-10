@@ -152,8 +152,8 @@
 | ID | Capacidad | Estado | Primer cliente | Sesión |
 |---|---|---|---|---|
 | F-01 | Cantidades decimales (metros de cable, kilos de clavos) | Existe (S5.1): `numeric(18,6)`, decimales por unidad de medida (0 a 6) | **Imprescindible** | S5.1 |
-| F-02 | Unidades con conversión y presentaciones (unidad, paquete, caja, rollo; compra en caja, venta por unidad) | No existe (una unidad sin conversión por producto) | **Imprescindible** | S5.2 |
-| F-03 | Código de barras por presentación | Uno por producto | Imprescindible | S5.2 |
+| F-02 | Unidades con conversión y presentaciones (unidad, paquete, caja, rollo; compra en caja, venta por unidad) | Existe (S5.2): unidad base obligatoria y presentaciones con factor decimal y precio propio; las líneas de venta, devolución y compra guardan la presentación y el factor, y el stock va en unidades base | **Imprescindible** | S5.2 |
+| F-03 | Código de barras por presentación | Existe (S5.2): uno por presentación, único en la empresa; escanear la caja la vende como caja con su precio | Imprescindible | S5.2 |
 | F-04 | Nota de crédito electrónica para devoluciones | Existe (S4.5) | **Imprescindible** | S4.5 |
 | F-05 | Importación masiva de productos, clientes, proveedores y saldos iniciales | No existe | **Imprescindible** (catálogos de miles de artículos) | S5.8 |
 | F-06 | Listas de precios minorista y mayorista, precio por volumen | Un solo `sale_price` | Muy recomendable | S5.3 |

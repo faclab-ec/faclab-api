@@ -234,10 +234,22 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Presentaciones, lo que quedó de S5.2** (2026-11-10):
+  - La factura y la nota de crédito nombran la presentación en la descripción de la línea, pero no
+    llevan `unidadMedida` (opcional en el XSD): necesita un campo nuevo en `sales.confirmed` y
+    `credit_notes.requested` y el cambio en faclab-invoicing. La copia de los contratos en
+    faclab-invoicing solo difiere en la descripción de `product_name`: resincronizarla cuando convenga.
+  - Los productos de proveedor (`supplier_products`) siguen con precio y mínimo de pedido por unidad
+    base: no tienen presentación.
+  - Las listas de precios por presentación quedan para S5.3. `POST /api/pos/sales/{id}/items` sigue
+    recibiendo el `unitPrice` del cliente (la web envía el de la presentación).
+  - Ajustes, transferencias y movimientos manuales siguen solo en unidades base, y ninguna regla
+    relaciona la cantidad de números de serie con la cantidad base recibida.
+  - Una presentación que alguna línea usa no se borra (409) y su factor puede cambiar: las líneas
+    guardan el suyo. Bajar los decimales de la unidad no valida otra vez los factores existentes.
 - **Cantidades decimales, lo que quedó de S5.1** (2026-11-07):
-  - La factura no lleva `unidadMedida` en el detalle (es opcional en el XSD) y las líneas de venta, el
-    recibo y la devolución no muestran el símbolo de la unidad: necesita la unidad en el contrato. Con
-    las presentaciones (S5.2).
+  - La factura no lleva `unidadMedida` en el detalle (es opcional en el XSD). S5.2 nombra la
+    presentación en la descripción de la línea; `unidadMedida` sigue pendiente (ver S5.2).
   - Ninguna regla relaciona la cantidad de números de serie con la cantidad recibida, y con
     cantidades fraccionarias la regla sería más difícil de definir. Revisarlo si un cliente usa series.
   - Bajar los decimales de una unidad con stock fraccionario se permite: el stock y los documentos
