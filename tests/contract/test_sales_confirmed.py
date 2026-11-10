@@ -1,7 +1,7 @@
-"""sales.confirmed v2: what core really writes to the outbox matches
-contracts/events/sales.confirmed/v2.schema.json, and so do the examples that
-faclab-invoicing tests its consumer with. The v1 examples still match v1: the
-consumer keeps accepting them during the transition."""
+"""sales.confirmed v3: what core really writes to the outbox matches
+contracts/events/sales.confirmed/v3.schema.json, and so do the examples that
+faclab-invoicing tests its consumer with. The v2 and v1 examples still match
+their versions: the consumer keeps accepting them during the transition."""
 
 import copy
 from collections.abc import Callable, Iterator
@@ -37,8 +37,10 @@ from tests.contract.contracts import errors, examples, validator
 # The outbox only writes inside a tenant context
 pytestmark = pytest.mark.usefixtures("in_tenant")
 
-SCHEMA = validator("sales.confirmed", 2)
-EXAMPLES = examples("sales.confirmed", 2)
+SCHEMA = validator("sales.confirmed", 3)
+EXAMPLES = examples("sales.confirmed", 3)
+V2_SCHEMA = validator("sales.confirmed", 2)
+V2_EXAMPLES = examples("sales.confirmed", 2)
 V1_SCHEMA = validator("sales.confirmed", 1)
 V1_EXAMPLES = examples("sales.confirmed", 1)
 
@@ -90,11 +92,11 @@ def session() -> Iterator[Session]:
         yield session
 
 
-def _item(product_id: int, quantity: int, price: str, tax_code: TaxCode, **kw):
+def _item(product_id: int, quantity: int | str, price: str, tax_code: TaxCode, **kw):
     item = SaleItem(
         sale_id=1,
         product_id=product_id,
-        quantity=quantity,
+        quantity=Decimal(quantity),
         unit_price=Decimal(price),
         tax_code=tax_code,
         **kw,
@@ -191,7 +193,7 @@ def test_written_messages_match_the_contract(session, event, customer, products)
     message = _written(session, event, customer, products)
 
     assert errors(SCHEMA, message) == []
-    assert message["schema_version"] == 2
+    assert message["schema_version"] == 3
 
 
 def test_the_message_says_who_issues_and_from_where(session):
@@ -302,12 +304,18 @@ def test_the_edge_cases_have_examples():
         "product-without-sku",
         "branch-without-address",
         "construction-material",
+        "decimal-quantity",
     }
 
 
 @pytest.mark.parametrize("name", sorted(EXAMPLES))
 def test_examples_match_the_contract(name):
     assert errors(SCHEMA, EXAMPLES[name]) == []
+
+
+@pytest.mark.parametrize("name", sorted(V2_EXAMPLES))
+def test_v2_examples_still_match_v2(name):
+    assert errors(V2_SCHEMA, V2_EXAMPLES[name]) == []
 
 
 @pytest.mark.parametrize("name", sorted(V1_EXAMPLES))
@@ -344,6 +352,13 @@ def _material_code(value: str) -> Callable[[dict], None]:
     return change
 
 
+def _quantity(value: Any) -> Callable[[dict], None]:
+    def change(message: dict) -> None:
+        message["payload"]["items"][0]["quantity"] = value
+
+    return change
+
+
 def _rename_customer(message: dict) -> None:
     message["payload"]["client"] = message["payload"].pop("customer")
 
@@ -367,6 +382,9 @@ def _rename_customer(message: dict) -> None:
         _set("payload.source", "web"),
         _set("payload.undocumented", True),
         _material_code("CEMENTO"),
+        _quantity(2),
+        _quantity("2.5000001"),
+        _quantity("-1"),
     ],
     ids=[
         "no-version",
@@ -385,6 +403,9 @@ def _rename_customer(message: dict) -> None:
         "unknown-source",
         "undocumented-field",
         "unknown-material-code",
+        "quantity-as-number",
+        "quantity-with-seven-decimals",
+        "negative-quantity",
     ],
 )
 def test_incompatible_changes_break_the_contract(change):
@@ -393,3 +414,42 @@ def test_incompatible_changes_break_the_contract(change):
     change(message)
 
     assert errors(SCHEMA, message)
+
+
+def test_a_decimal_quantity_travels_as_text(session):
+    """2.5 m of cable (S5.1): the quantity is a decimal string, like the amounts,
+    and the invoice amounts are still those of the sale"""
+    items = [
+        _item(10, "2.5", "0.850000", TaxCode.VAT_15),
+        _item(11, "1.25", "3.400000", TaxCode.VAT_15),
+    ]
+    sale = Sale(id=1, customer_id=7)
+    sale.recalculate_totals(items)
+    payments = [
+        Payment(sale_id=1, amount=sale.total, payment_method=PaymentMethod.CASH)
+    ]
+    sale.settle(payments)
+    event = SaleConfirmed(
+        aggregate_id=1,
+        sale_id=1,
+        customer_id=7,
+        items=sale_items_data(items),
+        subtotal=sale.subtotal,
+        total_discount=sale.discount,
+        total=sale.total,
+        payments=sale_payments_data(payments),
+        source="pos",
+        branch_id=2,
+        emission_point_id=3,
+        number="V-002-000018",
+    )
+
+    message = _written(session, event, CUSTOMER, PRODUCTS)
+
+    assert errors(SCHEMA, message) == []
+    lines = message["payload"]["items"]
+    assert [Decimal(line["quantity"]) for line in lines] == [
+        Decimal("2.5"),
+        Decimal("1.25"),
+    ]
+    assert sum(Decimal(line["invoice_base"]) for line in lines) == sale.subtotal

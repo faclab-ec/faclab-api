@@ -1,5 +1,6 @@
 """Unit tests for Stock query handlers"""
 
+from decimal import Decimal
 from unittest.mock import Mock
 
 import pytest
@@ -36,8 +37,8 @@ def _list_handler(stock_repo) -> GetAllStocksQueryHandler:
 def test_get_all_stocks_query_handler(mock_stock_repo):
     """Test getting all stocks"""
     stocks = [
-        Stock(id=1, product_id=1, quantity=100),
-        Stock(id=2, product_id=2, quantity=50),
+        Stock(id=1, product_id=1, quantity=Decimal(100)),
+        Stock(id=2, product_id=2, quantity=Decimal(50)),
     ]
     mock_stock_repo.paginate.return_value = {
         "total": 2,
@@ -63,7 +64,7 @@ def test_get_all_stocks_query_handler(mock_stock_repo):
 def test_get_all_stocks_with_product_filter(mock_stock_repo):
     """Test getting stocks filtered by product_id"""
     stocks = [
-        Stock(id=1, product_id=1, quantity=100),
+        Stock(id=1, product_id=1, quantity=Decimal(100)),
     ]
     mock_stock_repo.paginate.return_value = {
         "total": 1,
@@ -108,8 +109,8 @@ def test_get_all_stocks_empty(mock_stock_repo):
 def test_get_all_stocks_with_pagination(mock_stock_repo):
     """Test getting stocks with pagination"""
     stocks = [
-        Stock(id=1, product_id=1, quantity=100),
-        Stock(id=2, product_id=2, quantity=50),
+        Stock(id=1, product_id=1, quantity=Decimal(100)),
+        Stock(id=2, product_id=2, quantity=Decimal(50)),
     ]
     mock_stock_repo.paginate.return_value = {
         "total": 2,
@@ -130,8 +131,8 @@ def test_get_all_stocks_with_pagination(mock_stock_repo):
 
 def test_get_all_stocks_adds_product_and_location_names(mock_stock_repo):
     stocks = [
-        Stock(id=1, product_id=1, quantity=100, location_id=5),
-        Stock(id=2, product_id=2, quantity=50),
+        Stock(id=1, product_id=1, quantity=Decimal(100), location_id=5),
+        Stock(id=2, product_id=2, quantity=Decimal(50)),
     ]
     mock_stock_repo.paginate.return_value = {
         "total": 2,
@@ -163,7 +164,7 @@ def test_get_all_stocks_adds_product_and_location_names(mock_stock_repo):
 
 def test_get_stock_by_id_handler(mock_stock_repo):
     """Test getting a stock by ID"""
-    stock = Stock(id=1, product_id=1, quantity=100, location_id=5)
+    stock = Stock(id=1, product_id=1, quantity=Decimal(100), location_id=5)
     mock_stock_repo.get_by_id.return_value = stock
 
     query = GetStockByIdQuery(id=1)
@@ -193,7 +194,7 @@ def test_get_stock_by_id_not_found_raises(mock_stock_repo):
 
 def test_get_stock_by_product_handler(mock_stock_repo):
     """Test getting stock by product_id"""
-    stock = Stock(id=1, product_id=1, quantity=100)
+    stock = Stock(id=1, product_id=1, quantity=Decimal(100))
     mock_stock_repo.first.return_value = stock
 
     query = GetStockByProductQuery(product_id=1)

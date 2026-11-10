@@ -1,5 +1,6 @@
 """Unit tests for Stock entity domain logic."""
 
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -50,28 +51,28 @@ def test_available_quantity_with_location():
 
 def test_update_quantity_positive_delta_increases():
     stock = _make_stock(quantity=50)
-    stock.update_quantity(30)
+    stock.update_quantity(Decimal(30))
 
     assert stock.quantity == 80
 
 
 def test_update_quantity_negative_delta_decreases():
     stock = _make_stock(quantity=100)
-    stock.update_quantity(-25)
+    stock.update_quantity(Decimal(-25))
 
     assert stock.quantity == 75
 
 
 def test_update_quantity_to_zero_is_allowed():
     stock = _make_stock(quantity=50)
-    stock.update_quantity(-50)
+    stock.update_quantity(Decimal(-50))
 
     assert stock.quantity == 0
 
 
 def test_update_quantity_preserves_other_fields():
     stock = _make_stock(quantity=100, location_id=5, reserved_quantity=10)
-    stock.update_quantity(20)
+    stock.update_quantity(Decimal(20))
 
     assert (stock.id, stock.product_id) == (1, 10)
     assert stock.location_id == 5
@@ -82,14 +83,14 @@ def test_update_quantity_below_zero_raises_insufficient_stock():
     stock = _make_stock(quantity=10)
 
     with pytest.raises(InsufficientStockError):
-        stock.update_quantity(-15)
+        stock.update_quantity(Decimal(-15))
 
 
 def test_update_quantity_does_not_mutate_on_error():
     stock = _make_stock(quantity=5)
 
     with pytest.raises(InsufficientStockError):
-        stock.update_quantity(-10)
+        stock.update_quantity(Decimal(-10))
 
     assert stock.quantity == 5  # Unchanged
 
@@ -98,7 +99,7 @@ def test_update_quantity_error_references_product_id():
     stock = _make_stock(product_id=42, quantity=3)
 
     with pytest.raises(InsufficientStockError) as exc_info:
-        stock.update_quantity(-5)
+        stock.update_quantity(Decimal(-5))
 
     assert exc_info.value.data["product_id"] == 42
 
@@ -107,16 +108,16 @@ def test_update_quantity_out_cannot_take_reserved_units():
     stock = _make_stock(quantity=10, reserved_quantity=4)
 
     with pytest.raises(InsufficientStockError):
-        stock.update_quantity(-7)
+        stock.update_quantity(Decimal(-7))
 
     assert stock.quantity == 10
-    stock.update_quantity(-6)
+    stock.update_quantity(Decimal(-6))
     assert (stock.quantity, stock.available_quantity) == (4, 0)
 
 
 def test_update_quantity_in_is_allowed_with_reservations():
     stock = _make_stock(quantity=4, reserved_quantity=4)
-    stock.update_quantity(3)
+    stock.update_quantity(Decimal(3))
 
     assert (stock.quantity, stock.available_quantity) == (7, 3)
 
@@ -138,7 +139,7 @@ def test_stock_without_location_id():
 
 
 def test_stock_default_reserved_quantity_is_zero():
-    stock = Stock(product_id=1, quantity=100)
+    stock = Stock(product_id=1, quantity=Decimal(100))
     assert stock.reserved_quantity == 0
 
 
@@ -152,7 +153,7 @@ def test_stock_with_reserved_quantity():
 
 def test_reserve_takes_from_available_quantity():
     stock = _make_stock(quantity=10, reserved_quantity=2)
-    stock.reserve(5)
+    stock.reserve(Decimal(5))
 
     assert stock.reserved_quantity == 7
     assert stock.available_quantity == 3
@@ -162,20 +163,20 @@ def test_reserve_more_than_available_raises():
     stock = _make_stock(quantity=10, reserved_quantity=6)
 
     with pytest.raises(InsufficientStockError):
-        stock.reserve(5)
+        stock.reserve(Decimal(5))
 
     assert stock.reserved_quantity == 6
 
 
 def test_release_returns_reserved_units():
     stock = _make_stock(quantity=10, reserved_quantity=7)
-    stock.release(5)
+    stock.release(Decimal(5))
 
     assert stock.reserved_quantity == 2
 
 
 def test_release_never_goes_below_zero():
     stock = _make_stock(quantity=10, reserved_quantity=3)
-    stock.release(5)
+    stock.release(Decimal(5))
 
     assert stock.reserved_quantity == 0

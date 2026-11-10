@@ -59,7 +59,7 @@ def test_refund_item_subtotal_no_discount():
         refund_id=1,
         original_sale_item_id=1,
         product_id=1,
-        quantity=3,
+        quantity=Decimal(3),
         unit_price=Decimal("10.00"),
     )
     assert item.subtotal == Decimal("30.00")
@@ -70,7 +70,7 @@ def test_refund_item_subtotal_with_discount():
         refund_id=1,
         original_sale_item_id=1,
         product_id=1,
-        quantity=2,
+        quantity=Decimal(2),
         unit_price=Decimal("100.00"),
         discount=Decimal("10"),
     )

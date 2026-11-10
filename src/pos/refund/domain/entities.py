@@ -72,7 +72,7 @@ class RefundItem(Entity):
     refund_id: int
     original_sale_item_id: int
     product_id: int
-    quantity: int
+    quantity: Decimal
     unit_price: Decimal
     discount: Decimal = Decimal("0")
     tax_code: TaxCode = TaxCode.VAT_15

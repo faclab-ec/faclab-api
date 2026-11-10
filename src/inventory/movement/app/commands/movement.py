@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.inventory.movement.app.repositories import MovementRepository
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
@@ -16,7 +18,7 @@ from src.shared.app.events import EventPublisher
 @dataclass
 class CreateMovementCommand(Command):
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
     type: str = ""  # "in" or "out" string value
     location_id: int | None = None
     source_location_id: int | None = None
@@ -42,14 +44,19 @@ class CreateMovementCommandHandler(CommandHandler[CreateMovementCommand, dict]):
         event_publisher: EventPublisher,
         session: Session,
         audit: AuditTrail,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
         self.event_publisher = event_publisher
         self.session = session
         self.audit = audit
+        self.quantities = quantities
 
     def _handle(self, command: CreateMovementCommand) -> dict:
         movement_type = MovementType(command.type)
+        if command.manual:
+            # A document's movements carry quantities it already checked
+            self.quantities.ensure([(command.product_id, command.quantity)])
 
         movement = Movement(
             product_id=command.product_id,

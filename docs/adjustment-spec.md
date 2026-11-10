@@ -54,9 +54,9 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `productId`        | int            | Si        | -       | FK a Product                       |
 | `productName`, `productSku` | string? | Auto     | -       | Nombre y SKU del producto (solo en el listado de items) |
 | `locationId`       | int            | Si        | -       | FK a Location                      |
-| `expectedQuantity` | int            | Auto      | -       | Cantidad en sistema: la del momento de agregar el item, y al confirmar la del momento de confirmar |
-| `actualQuantity`   | int            | Si        | -       | Cantidad contada/real              |
-| `difference`       | int            | Calculado | -       | `actualQuantity - expectedQuantity` |
+| `expectedQuantity` | decimal        | Auto      | -       | Cantidad en sistema: la del momento de agregar el item, y al confirmar la del momento de confirmar |
+| `actualQuantity`   | decimal        | Si        | -       | Cantidad contada/real              |
+| `difference`       | decimal        | Calculado | -       | `actualQuantity - expectedQuantity` |
 | `lotId`            | int \| null    | No        | null    | FK a Lot (opcional)                |
 | `notes`            | string \| null | No        | null    | Observaciones del item             |
 
@@ -147,7 +147,7 @@ Base URL: `/api/admin`
 |------------------|----------------|-----------|
 | `productId`      | int            | Si        |
 | `locationId`     | int            | Si        |
-| `actualQuantity` | int            | Si        |
+| `actualQuantity` | decimal        | Si        |
 | `lotId`          | int \| null    | No        |
 | `notes`          | string \| null | No        |
 
@@ -164,7 +164,7 @@ Base URL: `/api/admin`
 
 | Campo            | Tipo           | Requerido |
 |------------------|----------------|-----------|
-| `actualQuantity` | int \| null    | No        |
+| `actualQuantity` | decimal \| null | No        |
 | `notes`          | string \| null | No        |
 
 ### AdjustmentResponse

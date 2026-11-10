@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 
 
@@ -16,8 +17,8 @@ class StockAlert:
     product_id: int
     product_name: str
     sku: str
-    current_quantity: int
-    threshold: int
+    current_quantity: Decimal
+    threshold: Decimal
     warehouse_id: int | None = None
     lot_id: int | None = None
     days_to_expiry: int | None = None

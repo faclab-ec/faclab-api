@@ -24,6 +24,7 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.quantities import FakeProductQuantities
 
 
 def _make_sale(**overrides) -> Sale:
@@ -131,13 +132,13 @@ def test_add_sale_item_command_handler():
     product_repo = _mock_repo(entity=product)
     event_publisher = MagicMock()
     handler = AddSaleItemCommandHandler(
-        sale_repo, item_repo, product_repo, event_publisher
+        sale_repo, item_repo, product_repo, event_publisher, FakeProductQuantities()
     )
 
     command = AddSaleItemCommand(
         sale_id=1,
         product_id=100,
-        quantity=10,
+        quantity=Decimal(10),
         unit_price=Decimal("100.0"),
         discount=Decimal("0.0"),
     )
@@ -157,10 +158,12 @@ def test_add_sale_item_only_draft():
     sale_repo = _mock_repo(entity=sale)
     item_repo = _mock_repo(entity=sale_item)
     product_repo = _mock_repo(entity=product)
-    handler = AddSaleItemCommandHandler(sale_repo, item_repo, product_repo, MagicMock())
+    handler = AddSaleItemCommandHandler(
+        sale_repo, item_repo, product_repo, MagicMock(), FakeProductQuantities()
+    )
 
     command = AddSaleItemCommand(
-        sale_id=1, product_id=100, quantity=10, unit_price=Decimal("100.0")
+        sale_id=1, product_id=100, quantity=Decimal(10), unit_price=Decimal("100.0")
     )
 
     with pytest.raises(InvalidSaleStatusError):
@@ -173,10 +176,12 @@ def test_add_sale_item_sale_not_found():
     sale_repo.get_by_id.return_value = None
     item_repo = _mock_repo()
     product_repo = _mock_repo()
-    handler = AddSaleItemCommandHandler(sale_repo, item_repo, product_repo, MagicMock())
+    handler = AddSaleItemCommandHandler(
+        sale_repo, item_repo, product_repo, MagicMock(), FakeProductQuantities()
+    )
 
     command = AddSaleItemCommand(
-        sale_id=999, product_id=100, quantity=10, unit_price=Decimal("100.0")
+        sale_id=999, product_id=100, quantity=Decimal(10), unit_price=Decimal("100.0")
     )
 
     with pytest.raises(NotFoundError):

@@ -79,24 +79,24 @@ class PurchaseOrder(Entity):
 class PurchaseOrderItem(Entity):
     purchase_order_id: int
     product_id: int
-    quantity_ordered: int
+    quantity_ordered: Decimal
     unit_cost: Decimal
     id: int | None = None
-    quantity_received: int = 0
+    quantity_received: Decimal = Decimal(0)
 
     @property
-    def quantity_pending(self) -> int:
+    def quantity_pending(self) -> Decimal:
         return self.quantity_ordered - self.quantity_received
 
     @property
     def subtotal(self) -> Decimal:
         return self.unit_cost * self.quantity_ordered
 
-    def update(self, quantity_ordered: int, unit_cost: Decimal) -> None:
+    def update(self, quantity_ordered: Decimal, unit_cost: Decimal) -> None:
         self.quantity_ordered = quantity_ordered
         self.unit_cost = unit_cost
 
-    def receive(self, quantity: int) -> None:
+    def receive(self, quantity: Decimal) -> None:
         """Registra unidades recibidas sin superar lo pendiente"""
         if quantity > self.quantity_pending:
             raise ExceedsPendingQuantityError(
@@ -119,7 +119,7 @@ class PurchaseReceiptItem(Entity):
     purchase_receipt_id: int
     purchase_order_item_id: int
     product_id: int
-    quantity_received: int
+    quantity_received: Decimal
     id: int | None = None
     location_id: int | None = None
     lot_number: str | None = None

@@ -10,6 +10,7 @@ from src.catalog.product.app.commands.update_category import (
     UpdateCategoryCommandHandler,
 )
 from src.catalog.product.app.commands.update_product import UpdateProductCommandHandler
+from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.queries.get_categories import (
     GetAllCategoriesQueryHandler,
     GetCategoryByIdQueryHandler,
@@ -26,6 +27,7 @@ from src.catalog.product.infra.repositories import (
 )
 
 INJECTABLES = [
+    ProductQuantities,
     CategoryMapper,
     ProductMapper,
     SqlAlchemyCategoryRepository,

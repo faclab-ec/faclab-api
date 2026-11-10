@@ -119,7 +119,7 @@ def test_sale_item_added_event_to_dict():
         sale_id=1,
         sale_item_id=1,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         unit_price=Decimal("100.0"),
     )
     event_dict = event.to_dict()
@@ -136,7 +136,7 @@ def test_sale_item_removed_event_to_dict():
         sale_id=1,
         sale_item_id=1,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
     )
     event_dict = event.to_dict()
 

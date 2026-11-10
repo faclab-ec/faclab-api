@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.inventory.lot.app.repositories import LotRepository
 from src.inventory.lot.domain.entities import Lot
 from src.inventory.lot.domain.exceptions import LotAlreadyExistsError
@@ -14,7 +16,7 @@ from src.shared.domain.exceptions import NotFoundError
 class CreateLotCommand(Command):
     product_id: int = 0
     lot_number: str = ""
-    initial_quantity: int = 0
+    initial_quantity: Decimal = Decimal(0)
     manufacture_date: date | None = None
     expiration_date: date | None = None
     notes: str | None = None
@@ -23,7 +25,7 @@ class CreateLotCommand(Command):
 @dataclass
 class UpdateLotCommand(Command):
     id: int = 0
-    current_quantity: int | None = None
+    current_quantity: Decimal | None = None
     manufacture_date: date | None = None
     expiration_date: date | None = None
     notes: str | None = None
@@ -31,8 +33,9 @@ class UpdateLotCommand(Command):
 
 @injectable(lifetime="scoped")
 class CreateLotCommandHandler(CommandHandler[CreateLotCommand, dict]):
-    def __init__(self, repo: LotRepository):
+    def __init__(self, repo: LotRepository, quantities: ProductQuantities):
         self.repo = repo
+        self.quantities = quantities
 
     def _handle(self, command: CreateLotCommand) -> dict:
         existing = self.repo.first(
@@ -40,6 +43,7 @@ class CreateLotCommandHandler(CommandHandler[CreateLotCommand, dict]):
         )
         if existing is not None:
             raise LotAlreadyExistsError(command.lot_number, command.product_id)
+        self.quantities.ensure([(command.product_id, command.initial_quantity)])
 
         lot = Lot(
             product_id=command.product_id,
@@ -56,13 +60,16 @@ class CreateLotCommandHandler(CommandHandler[CreateLotCommand, dict]):
 
 @injectable(lifetime="scoped")
 class UpdateLotCommandHandler(CommandHandler[UpdateLotCommand, dict]):
-    def __init__(self, repo: LotRepository):
+    def __init__(self, repo: LotRepository, quantities: ProductQuantities):
         self.repo = repo
+        self.quantities = quantities
 
     def _handle(self, command: UpdateLotCommand) -> dict:
         lot = self.repo.get_by_id(command.id)
         if lot is None:
             raise NotFoundError(f"Lot with id {command.id} not found")
+        if command.current_quantity is not None:
+            self.quantities.ensure([(lot.product_id, command.current_quantity)])
 
         lot.update_details(
             current_quantity=command.current_quantity,

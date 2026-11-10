@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductCreated
@@ -37,9 +38,9 @@ class CreateProductCommand(Command):
     construction_material_code: ConstructionMaterialCode | None = None
     is_active: bool = True
     is_service: bool = False
-    min_stock: int = 0
-    max_stock: int | None = None
-    reorder_point: int = 0
+    min_stock: Decimal = Decimal(0)
+    max_stock: Decimal | None = None
+    reorder_point: Decimal = Decimal(0)
     lead_time_days: int | None = None
 
 
@@ -50,8 +51,10 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
         repo: ProductRepository,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
+        self.quantities = quantities
         self.event_publisher = event_publisher
         self.audit = audit
 
@@ -75,6 +78,10 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
             lead_time_days=command.lead_time_days,
         )
         product.ensure_material_tax()
+        self.quantities.ensure_for_unit(
+            product.unit_of_measure_id,
+            (product.min_stock, product.max_stock, product.reorder_point),
+        )
         product = self.repo.create(product)
         self.audit.record(
             AuditAction.PRODUCT_CREATED,
@@ -92,4 +99,4 @@ class CreateProductCommandHandler(CommandHandler[CreateProductCommand, dict]):
             )
         )
 
-        return product.dict()
+        return self.quantities.describe([product.dict()])[0]

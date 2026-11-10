@@ -3,7 +3,7 @@ import datetime as dt
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from src.shared.infra.validators import DecimalNumber
+from src.shared.infra.validators import DecimalNumber, QuantityNumber
 
 # ---------------------------------------------------------------------------
 # Shared sub-models
@@ -23,7 +23,7 @@ class ItemSoldDetail(BaseModel):
 
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    quantity: int = Field(description="Total quantity sold")
+    quantity: QuantityNumber = Field(description="Total quantity sold")
     total: DecimalNumber = Field(description="Total revenue for this product")
 
 

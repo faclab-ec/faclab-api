@@ -1,11 +1,11 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
+from src.shared.infra.precision import QuantityColumn
 
 
 class LotModel(TenantScoped, Base):
@@ -36,8 +37,12 @@ class LotModel(TenantScoped, Base):
     lot_number: Mapped[str] = mapped_column(String(64), nullable=False)
     manufacture_date: Mapped[date | None] = mapped_column(Date)
     expiration_date: Mapped[date | None] = mapped_column(Date)
-    initial_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    current_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    initial_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=0
+    )
+    current_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=0
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
@@ -58,6 +63,6 @@ class MovementLotItemModel(TenantScoped, Base):
     lot_id: Mapped[int] = mapped_column(
         ForeignKey("lots.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
 
     lot: Mapped["LotModel"] = relationship(back_populates="movement_lot_items")

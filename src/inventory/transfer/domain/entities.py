@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 
 from src.inventory.transfer.domain.exceptions import (
@@ -62,7 +63,7 @@ class StockTransfer(Entity):
 class StockTransferItem(Entity):
     transfer_id: int
     product_id: int
-    quantity: int
+    quantity: Decimal
     id: int | None = None
     lot_id: int | None = None
     notes: str | None = None
@@ -70,7 +71,7 @@ class StockTransferItem(Entity):
     def __post_init__(self):
         _ensure_positive(self.quantity)
 
-    def update(self, quantity: int | None = None, notes: str | None = None) -> None:
+    def update(self, quantity: Decimal | None = None, notes: str | None = None) -> None:
         if quantity is not None:
             _ensure_positive(quantity)
             self.quantity = quantity
@@ -78,6 +79,6 @@ class StockTransferItem(Entity):
             self.notes = notes
 
 
-def _ensure_positive(quantity: int) -> None:
+def _ensure_positive(quantity: Decimal) -> None:
     if quantity <= 0:
         raise ValidationError("La cantidad debe ser mayor a cero")

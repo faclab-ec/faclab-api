@@ -15,6 +15,7 @@ class UpdateUnitOfMeasureCommand(Command):
     symbol: str
     description: str | None = None
     is_active: bool = True
+    decimals: int = 0
 
 
 @injectable(lifetime="scoped")
@@ -34,6 +35,7 @@ class UpdateUnitOfMeasureCommandHandler(
             symbol=command.symbol,
             description=command.description,
             is_active=command.is_active,
+            decimals=command.decimals,
         )
         uom = self.repo.update(uom)
         return uom.dict()

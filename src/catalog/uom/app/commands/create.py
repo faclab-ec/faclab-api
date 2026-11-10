@@ -13,6 +13,7 @@ class CreateUnitOfMeasureCommand(Command):
     symbol: str
     description: str | None = None
     is_active: bool = True
+    decimals: int = 0
 
 
 @injectable(lifetime="scoped")
@@ -28,6 +29,7 @@ class CreateUnitOfMeasureCommandHandler(
             symbol=command.symbol,
             description=command.description,
             is_active=command.is_active,
+            decimals=command.decimals,
         )
         uom = self.repo.create(uom)
         return uom.dict()

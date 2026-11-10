@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.purchasing.app.repositories import (
     PurchaseOrderItemRepository,
     PurchaseOrderRepository,
@@ -16,7 +17,7 @@ from src.shared.domain.exceptions import NotFoundError
 class AddPurchaseOrderItemCommand(Command):
     purchase_order_id: int = 0
     product_id: int = 0
-    quantity_ordered: int = 1
+    quantity_ordered: Decimal = Decimal(1)
     unit_cost: Decimal = Decimal("0.00")
 
 
@@ -28,9 +29,11 @@ class AddPurchaseOrderItemCommandHandler(
         self,
         item_repo: PurchaseOrderItemRepository,
         po_repo: PurchaseOrderRepository,
+        quantities: ProductQuantities,
     ):
         self.item_repo = item_repo
         self.po_repo = po_repo
+        self.quantities = quantities
 
     def _handle(self, command: AddPurchaseOrderItemCommand) -> dict:
         purchase_order = self.po_repo.get_by_id(command.purchase_order_id)
@@ -39,6 +42,7 @@ class AddPurchaseOrderItemCommandHandler(
                 f"Purchase order with id {command.purchase_order_id} not found"
             )
         purchase_order.ensure_draft("add items to")
+        self.quantities.ensure([(command.product_id, command.quantity_ordered)])
 
         item = PurchaseOrderItem(
             purchase_order_id=command.purchase_order_id,
@@ -60,7 +64,7 @@ class AddPurchaseOrderItemCommandHandler(
 @dataclass
 class UpdatePurchaseOrderItemCommand(Command):
     id: int = 0
-    quantity_ordered: int = 1
+    quantity_ordered: Decimal = Decimal(1)
     unit_cost: Decimal = Decimal("0.00")
 
 
@@ -72,9 +76,11 @@ class UpdatePurchaseOrderItemCommandHandler(
         self,
         item_repo: PurchaseOrderItemRepository,
         po_repo: PurchaseOrderRepository,
+        quantities: ProductQuantities,
     ):
         self.item_repo = item_repo
         self.po_repo = po_repo
+        self.quantities = quantities
 
     def _handle(self, command: UpdatePurchaseOrderItemCommand) -> dict:
         item = self.item_repo.get_by_id(command.id)
@@ -87,6 +93,7 @@ class UpdatePurchaseOrderItemCommandHandler(
                 f"Purchase order with id {item.purchase_order_id} not found"
             )
         purchase_order.ensure_draft("update items of")
+        self.quantities.ensure([(item.product_id, command.quantity_ordered)])
 
         item.update(
             quantity_ordered=command.quantity_ordered, unit_cost=command.unit_cost

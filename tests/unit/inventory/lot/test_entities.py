@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -108,7 +109,7 @@ def test_lot_dict_no_expiration_date():
 
 
 def test_movement_lot_item_creation():
-    item = MovementLotItem(id=1, movement_id=10, lot_id=3, quantity=50)
+    item = MovementLotItem(id=1, movement_id=10, lot_id=3, quantity=Decimal(50))
     assert item.movement_id == 10
     assert item.lot_id == 3
     assert item.quantity == 50
@@ -116,18 +117,18 @@ def test_movement_lot_item_creation():
 
 def test_lot_receive_adds_to_initial_and_current_quantity():
     lot = _make_lot(initial_quantity=10, current_quantity=4)
-    lot.receive(5)
+    lot.receive(Decimal(5))
     assert (lot.initial_quantity, lot.current_quantity) == (15, 9)
 
 
 def test_lot_update_details_changes_only_given_fields():
     lot = _make_lot(current_quantity=4, notes="n")
-    lot.update_details(current_quantity=0)
+    lot.update_details(current_quantity=Decimal(0))
     assert (lot.current_quantity, lot.notes) == (0, "n")
 
 
 def test_lot_current_quantity_cannot_be_negative():
     lot = _make_lot(current_quantity=4)
     with pytest.raises(ValidationError):
-        lot.update_details(current_quantity=-1)
+        lot.update_details(current_quantity=Decimal(-1))
     assert lot.current_quantity == 4

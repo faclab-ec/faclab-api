@@ -1,9 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import ForeignKey, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base, TenantScoped
+from src.shared.infra.precision import QuantityColumn
 
 
 class InventoryAdjustmentModel(TenantScoped, Base):
@@ -56,7 +58,7 @@ class AdjustmentItemModel(TenantScoped, Base):
     )
     product_id: Mapped[int]
     location_id: Mapped[int]
-    expected_quantity: Mapped[int]
-    actual_quantity: Mapped[int]
+    expected_quantity: Mapped[Decimal] = mapped_column(QuantityColumn)
+    actual_quantity: Mapped[Decimal] = mapped_column(QuantityColumn)
     lot_id: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None]

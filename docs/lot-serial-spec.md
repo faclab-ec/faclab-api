@@ -15,8 +15,8 @@ Modulos de trazabilidad de inventario. **Lot** agrupa unidades por lote (fecha d
 | `lotNumber`       | string(64)     | si        | Unico por producto                             |
 | `manufactureDate` | date \| null   | no        | Fecha de fabricacion                           |
 | `expirationDate`  | date \| null   | no        | Fecha de vencimiento                           |
-| `initialQuantity` | int            | si        | Cantidad inicial, >= 1 en creacion             |
-| `currentQuantity` | int            | si        | Cantidad actual, >= 0                          |
+| `initialQuantity` | decimal        | si        | Cantidad inicial, > 0 en creacion             |
+| `currentQuantity` | decimal        | si        | Cantidad actual, >= 0                          |
 | `notes`           | string \| null | no        | Max 1024 chars                                 |
 | `createdAt`       | datetime       | auto      | Timestamp de creacion                          |
 | `isExpired`       | bool           | computed  | `true` si `expirationDate < hoy`               |

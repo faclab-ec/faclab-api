@@ -4,7 +4,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator, model_vali
 
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.exceptions import InvalidMovementTypeError
-from src.shared.infra.validators import QueryParams
+from src.shared.infra.validators import QuantityNumber, QueryParams
 
 
 class MovementBase(BaseModel):
@@ -15,7 +15,11 @@ class MovementBase(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity: int = Field(..., description="Quantity")
+    quantity: QuantityNumber = Field(
+        ...,
+        description="Quantity: positive for IN, negative for OUT. Takes the "
+        "decimals of the product's unit of measure",
+    )
     type: MovementType
     location_id: int | None = Field(
         None,

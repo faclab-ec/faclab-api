@@ -179,7 +179,7 @@ def make_product(api: Api, sku: str = "SKU-1", **overrides) -> dict:
 
 
 def make_movement(
-    api: Api, product_id: int, quantity: int, location_id: int | None, **extra
+    api: Api, product_id: int, quantity: float, location_id: int | None, **extra
 ) -> dict:
     payload = {
         "productId": product_id,

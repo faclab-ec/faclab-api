@@ -3,7 +3,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 # ---------------------------------------------------------------------------
 # Valuation
@@ -16,7 +16,7 @@ class ValuationItemResponse(BaseModel):
     product_id: int = Field(description="Product ID")
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    quantity: int = Field(description="Current stock quantity")
+    quantity: QuantityNumber = Field(description="Current stock quantity")
     average_cost: DecimalNumber = Field(description="Weighted average cost per unit")
     total_value: DecimalNumber = Field(
         description="Total inventory value (quantity x average cost)"
@@ -53,9 +53,11 @@ class ProductRotationResponse(BaseModel):
     product_id: int = Field(description="Product ID")
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    total_in: int = Field(description="Total units received in the period")
-    total_out: int = Field(description="Total units sold/consumed in the period")
-    current_stock: int = Field(description="Current stock quantity")
+    total_in: QuantityNumber = Field(description="Total units received in the period")
+    total_out: QuantityNumber = Field(
+        description="Total units sold/consumed in the period"
+    )
+    current_stock: QuantityNumber = Field(description="Current stock quantity")
     turnover_rate: DecimalNumber = Field(
         description="Inventory turnover rate for the period"
     )
@@ -88,7 +90,7 @@ class MovementHistoryItemResponse(BaseModel):
     product_id: int = Field(description="Product ID")
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    quantity: int = Field(
+    quantity: QuantityNumber = Field(
         description="Movement quantity (positive = IN, negative = OUT)"
     )
     type: str = Field(description="Movement type (IN or OUT)")
@@ -128,9 +130,13 @@ class WarehouseSummaryResponse(BaseModel):
     warehouse_name: str = Field(description="Warehouse name")
     warehouse_code: str = Field(description="Warehouse code")
     total_products: int = Field(description="Number of distinct products stored")
-    total_quantity: int = Field(description="Total stock quantity across all products")
-    reserved_quantity: int = Field(description="Total reserved quantity")
-    available_quantity: int = Field(description="Available quantity (total - reserved)")
+    total_quantity: QuantityNumber = Field(
+        description="Total stock quantity across all products"
+    )
+    reserved_quantity: QuantityNumber = Field(description="Total reserved quantity")
+    available_quantity: QuantityNumber = Field(
+        description="Available quantity (total - reserved)"
+    )
     total_value: DecimalNumber = Field(description="Total inventory value")
 
 

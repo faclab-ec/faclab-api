@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.exceptions import SaleItemNotInSaleError
 from src.shared.app.commands import Command, CommandHandler
@@ -15,7 +16,7 @@ class UpdateSaleItemCommand(Command):
 
     sale_id: int
     sale_item_id: int
-    quantity: int | None = None
+    quantity: Decimal | None = None
     discount: Decimal | None = None
 
 
@@ -27,9 +28,11 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
         self,
         sale_repo: SaleRepository,
         sale_item_repo: SaleItemRepository,
+        quantities: ProductQuantities,
     ):
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
+        self.quantities = quantities
 
     def _handle(self, command: UpdateSaleItemCommand) -> dict:
         """Actualiza un item de la venta y recalcula los totales"""
@@ -47,6 +50,7 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
             raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         if command.quantity is not None:
+            self.quantities.ensure([(sale_item.product_id, command.quantity)])
             sale_item.quantity = command.quantity
         if command.discount is not None:
             sale_item.discount = command.discount

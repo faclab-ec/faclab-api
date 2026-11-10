@@ -4,7 +4,7 @@ from decimal import Decimal
 from pydantic import AliasChoices, BaseModel, Field
 
 from src.purchasing.domain.entities import PurchaseOrderStatus
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 # PurchaseOrder
@@ -80,10 +80,10 @@ class PurchaseOrderItemRequest(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity_ordered: int = Field(
+    quantity_ordered: QuantityNumber = Field(
         ...,
-        ge=1,
-        description="Quantity ordered",
+        gt=0,
+        description="Quantity ordered, with the decimals of the product's unit",
         validation_alias=AliasChoices("quantityOrdered", "quantity_ordered"),
         serialization_alias="quantityOrdered",
     )
@@ -97,10 +97,10 @@ class PurchaseOrderItemRequest(BaseModel):
 
 
 class PurchaseOrderItemUpdateRequest(BaseModel):
-    quantity_ordered: int = Field(
+    quantity_ordered: QuantityNumber = Field(
         ...,
-        ge=1,
-        description="Quantity ordered",
+        gt=0,
+        description="Quantity ordered, with the decimals of the product's unit",
         validation_alias=AliasChoices("quantityOrdered", "quantity_ordered"),
         serialization_alias="quantityOrdered",
     )
@@ -137,11 +137,11 @@ class PurchaseOrderItemResponse(BaseModel):
         validation_alias=AliasChoices("productSku", "product_sku"),
         serialization_alias="productSku",
     )
-    quantity_ordered: int = Field(
+    quantity_ordered: QuantityNumber = Field(
         validation_alias=AliasChoices("quantityOrdered", "quantity_ordered"),
         serialization_alias="quantityOrdered",
     )
-    quantity_received: int = Field(
+    quantity_received: QuantityNumber = Field(
         validation_alias=AliasChoices("quantityReceived", "quantity_received"),
         serialization_alias="quantityReceived",
     )
@@ -160,10 +160,10 @@ class ReceiveItemRequest(BaseModel):
         validation_alias=AliasChoices("purchaseOrderItemId", "purchase_order_item_id"),
         serialization_alias="purchaseOrderItemId",
     )
-    quantity_received: int = Field(
+    quantity_received: QuantityNumber = Field(
         ...,
-        ge=1,
-        description="Quantity received",
+        gt=0,
+        description="Quantity received, with the decimals of the product's unit",
         validation_alias=AliasChoices("quantityReceived", "quantity_received"),
         serialization_alias="quantityReceived",
     )

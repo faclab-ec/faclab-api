@@ -59,7 +59,7 @@ class SupplierProduct(Entity):
     purchase_price: Decimal
     id: int | None = None
     supplier_sku: str | None = None
-    min_order_quantity: int = 1
+    min_order_quantity: Decimal = Decimal(1)
     lead_time_days: int | None = None
     is_preferred: bool = False
 
@@ -68,7 +68,7 @@ class SupplierProduct(Entity):
         product_id: int,
         purchase_price: Decimal,
         supplier_sku: str | None = None,
-        min_order_quantity: int = 1,
+        min_order_quantity: Decimal = Decimal(1),
         lead_time_days: int | None = None,
         is_preferred: bool = False,
     ) -> None:

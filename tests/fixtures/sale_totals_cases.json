@@ -1,0 +1,269 @@
+{
+  "description": "Totales de una venta con cantidades decimales, calculados igual en faclab-core (Sale.recalculate_totals) y en faclab-web (getCartSubtotal/Discount/Tax/Total). Las dos copias de este archivo deben ser idénticas: faclab-core/tests/fixtures/sale_totals_cases.json y faclab-web/src/features/pos/model/__tests__/sale-totals.cases.json.",
+  "cases": [
+    {
+      "name": "whole quantities, lines exact and the sale rounded to cents",
+      "items": [
+        {
+          "quantity": "3",
+          "unitPrice": "0.15",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "0.45",
+        "discount": "0",
+        "tax": "0.07",
+        "total": "0.52"
+      }
+    },
+    {
+      "name": "a percentage discount rounded, and the VAT after it",
+      "items": [
+        {
+          "quantity": "1",
+          "unitPrice": "10",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": {
+        "type": "PERCENTAGE",
+        "value": "3.33"
+      },
+      "expected": {
+        "subtotal": "10.00",
+        "discount": "0.33",
+        "tax": "1.45",
+        "total": "11.12"
+      }
+    },
+    {
+      "name": "VAT rounded per tax code",
+      "items": [
+        {
+          "quantity": "1",
+          "unitPrice": "0.1",
+          "discount": "0",
+          "taxCode": "VAT_5"
+        },
+        {
+          "quantity": "1",
+          "unitPrice": "0.1",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "0.20",
+        "discount": "0",
+        "tax": "0.03",
+        "total": "0.23"
+      }
+    },
+    {
+      "name": "an amount discount capped at the subtotal",
+      "items": [
+        {
+          "quantity": "1",
+          "unitPrice": "100",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": {
+        "type": "AMOUNT",
+        "value": "500"
+      },
+      "expected": {
+        "subtotal": "100.00",
+        "discount": "100.00",
+        "tax": "0.00",
+        "total": "0.00"
+      }
+    },
+    {
+      "name": "2.5 m of cable at a six-decimal price",
+      "items": [
+        {
+          "quantity": "2.5",
+          "unitPrice": "3.456789",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "8.64",
+        "discount": "0",
+        "tax": "1.30",
+        "total": "9.94"
+      }
+    },
+    {
+      "name": "1.5 kg at 0.33: half a cent goes up",
+      "items": [
+        {
+          "quantity": "1.5",
+          "unitPrice": "0.33",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "0.50",
+        "discount": "0",
+        "tax": "0.07",
+        "total": "0.57"
+      }
+    },
+    {
+      "name": "0.125 kg at 7.99",
+      "items": [
+        {
+          "quantity": "0.125",
+          "unitPrice": "7.99",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "1.00",
+        "discount": "0",
+        "tax": "0.15",
+        "total": "1.15"
+      }
+    },
+    {
+      "name": "3.75 m with a 10% line discount",
+      "items": [
+        {
+          "quantity": "3.75",
+          "unitPrice": "1.10",
+          "discount": "10",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "3.71",
+        "discount": "0",
+        "tax": "0.56",
+        "total": "4.27"
+      }
+    },
+    {
+      "name": "a thousandth of a unit",
+      "items": [
+        {
+          "quantity": "0.001",
+          "unitPrice": "1234.56",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "1.23",
+        "discount": "0",
+        "tax": "0.19",
+        "total": "1.42"
+      }
+    },
+    {
+      "name": "three tax codes with fractions and a 5% sale discount",
+      "items": [
+        {
+          "quantity": "2.5",
+          "unitPrice": "0.85",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        },
+        {
+          "quantity": "1.25",
+          "unitPrice": "3.40",
+          "discount": "0",
+          "taxCode": "VAT_5"
+        },
+        {
+          "quantity": "0.75",
+          "unitPrice": "6",
+          "discount": "0",
+          "taxCode": "VAT_0"
+        }
+      ],
+      "discount": {
+        "type": "PERCENTAGE",
+        "value": "5"
+      },
+      "expected": {
+        "subtotal": "10.88",
+        "discount": "0.54",
+        "tax": "0.50",
+        "total": "10.84"
+      }
+    },
+    {
+      "name": "fractions with an amount discount",
+      "items": [
+        {
+          "quantity": "12.5",
+          "unitPrice": "0.42",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        },
+        {
+          "quantity": "0.333",
+          "unitPrice": "9.99",
+          "discount": "2.5",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": {
+        "type": "AMOUNT",
+        "value": "1.00"
+      },
+      "expected": {
+        "subtotal": "8.49",
+        "discount": "1.00",
+        "tax": "1.12",
+        "total": "8.61"
+      }
+    },
+    {
+      "name": "many small fractional lines",
+      "items": [
+        {
+          "quantity": "0.333",
+          "unitPrice": "0.30",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        },
+        {
+          "quantity": "0.333",
+          "unitPrice": "0.30",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        },
+        {
+          "quantity": "0.334",
+          "unitPrice": "0.30",
+          "discount": "0",
+          "taxCode": "VAT_15"
+        }
+      ],
+      "discount": null,
+      "expected": {
+        "subtotal": "0.30",
+        "discount": "0",
+        "tax": "0.05",
+        "total": "0.35"
+      }
+    }
+  ]
+}

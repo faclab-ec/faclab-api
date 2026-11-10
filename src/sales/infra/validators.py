@@ -13,7 +13,7 @@ from src.sales.domain.entities import (
     SaleStatus,
 )
 from src.shared.domain.tax import TaxCode
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 class SaleItemRequest(BaseModel):
@@ -26,7 +26,11 @@ class SaleItemRequest(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity: int = Field(..., gt=0, description="Quantity to sell")
+    quantity: QuantityNumber = Field(
+        ...,
+        gt=0,
+        description="Quantity to sell, with the decimals of the product's unit",
+    )
     unit_price: Decimal = Field(
         ...,
         gt=0,
@@ -42,7 +46,7 @@ class SaleItemRequest(BaseModel):
 class SaleItemUpdateRequest(BaseModel):
     """Update an existing sale line item."""
 
-    quantity: int | None = Field(None, gt=0, description="New quantity")
+    quantity: QuantityNumber | None = Field(None, gt=0, description="New quantity")
     discount: Decimal | None = Field(
         None, ge=0, le=100, description="New discount percentage (0-100)"
     )
@@ -125,7 +129,7 @@ class SaleItemResponse(BaseModel):
         validation_alias=AliasChoices("productSku", "product_sku"),
         serialization_alias="productSku",
     )
-    quantity: int
+    quantity: QuantityNumber
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),

@@ -151,7 +151,7 @@
 
 | ID | Capacidad | Estado | Primer cliente | Sesión |
 |---|---|---|---|---|
-| F-01 | Cantidades decimales (metros de cable, kilos de clavos) | No existe (enteros en todas las tablas) | **Imprescindible** | S5.1 |
+| F-01 | Cantidades decimales (metros de cable, kilos de clavos) | Existe (S5.1): `numeric(18,6)`, decimales por unidad de medida (0 a 6) | **Imprescindible** | S5.1 |
 | F-02 | Unidades con conversión y presentaciones (unidad, paquete, caja, rollo; compra en caja, venta por unidad) | No existe (una unidad sin conversión por producto) | **Imprescindible** | S5.2 |
 | F-03 | Código de barras por presentación | Uno por producto | Imprescindible | S5.2 |
 | F-04 | Nota de crédito electrónica para devoluciones | Existe (S4.5) | **Imprescindible** | S4.5 |

@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from src.shared.domain.exceptions import DomainError
+from src.shared.domain.quantity import format_quantity
 
 
 class RefundError(DomainError):
@@ -20,18 +23,22 @@ class InvalidRefundStatusError(RefundError):
 class ExceedsOriginalQuantityError(RefundError):
     error_code = "EXCEEDS_ORIGINAL_QUANTITY"
 
-    def __init__(self, sale_item_id: int, requested: int, available: int):
+    def __init__(
+        self, sale_item_id: int, requested: Decimal | int, available: Decimal | int
+    ):
         self.sale_item_id = sale_item_id
         self.requested = requested
         self.available = available
+        requested_text = format_quantity(requested)
+        available_text = format_quantity(available)
         super().__init__(
             message=(
-                f"Refund quantity {requested} exceeds remaining quantity "
-                f"{available} for sale item {sale_item_id}"
+                f"Refund quantity {requested_text} exceeds remaining quantity "
+                f"{available_text} for sale item {sale_item_id}"
             ),
             detail=(
                 f"sale_item_id={sale_item_id}, "
-                f"requested={requested}, available={available}"
+                f"requested={requested_text}, available={available_text}"
             ),
         )
 

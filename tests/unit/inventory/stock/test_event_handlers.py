@@ -1,5 +1,6 @@
 """Unit tests for Stock event handlers"""
 
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
 import pytest
@@ -27,7 +28,7 @@ def test_handle_movement_created_creates_new_stock(mock_create_scope):
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = None
 
-    new_stock = Stock(id=1, product_id=10, quantity=5)
+    new_stock = Stock(id=1, product_id=10, quantity=Decimal(5))
     mock_repo.create.return_value = new_stock
 
     mock_scope = Mock()
@@ -44,7 +45,7 @@ def test_handle_movement_created_creates_new_stock(mock_create_scope):
     event = MovementCreated(
         aggregate_id=1,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN.value,
         reason="Initial stock",
     )
@@ -69,11 +70,11 @@ def test_handle_movement_created_creates_new_stock(mock_create_scope):
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_updates_existing_stock(mock_create_scope):
     """Test that MovementCreated event updates existing stock"""
-    existing_stock = Stock(id=1, product_id=10, quantity=100)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(100))
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = existing_stock
 
-    updated_stock = Stock(id=1, product_id=10, quantity=105)
+    updated_stock = Stock(id=1, product_id=10, quantity=Decimal(105))
     mock_repo.update.return_value = updated_stock
 
     mock_scope = Mock()
@@ -90,7 +91,7 @@ def test_handle_movement_created_updates_existing_stock(mock_create_scope):
     event = MovementCreated(
         aggregate_id=2,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN.value,
     )
 
@@ -114,11 +115,11 @@ def test_handle_movement_created_updates_existing_stock(mock_create_scope):
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_decreases_stock_on_out(mock_create_scope):
     """Test that OUT movement decreases stock"""
-    existing_stock = Stock(id=1, product_id=10, quantity=100)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(100))
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = existing_stock
 
-    updated_stock = Stock(id=1, product_id=10, quantity=95)
+    updated_stock = Stock(id=1, product_id=10, quantity=Decimal(95))
     mock_repo.update.return_value = updated_stock
 
     mock_scope = Mock()
@@ -128,7 +129,7 @@ def test_handle_movement_created_decreases_stock_on_out(mock_create_scope):
     event = MovementCreated(
         aggregate_id=3,
         product_id=10,
-        quantity=-5,
+        quantity=Decimal(-5),
         type=MovementType.OUT.value,
     )
 
@@ -144,7 +145,7 @@ def test_handle_movement_created_decreases_stock_on_out(mock_create_scope):
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_insufficient_stock_raises(mock_create_scope):
     """Test that insufficient stock raises exception"""
-    existing_stock = Stock(id=1, product_id=10, quantity=3)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(3))
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = existing_stock
 
@@ -155,7 +156,7 @@ def test_handle_movement_created_insufficient_stock_raises(mock_create_scope):
     event = MovementCreated(
         aggregate_id=4,
         product_id=10,
-        quantity=-5,
+        quantity=Decimal(-5),
         type=MovementType.OUT.value,
     )
 
@@ -180,7 +181,7 @@ def test_handle_movement_created_out_without_stock_raises(mock_create_scope):
     event = MovementCreated(
         aggregate_id=5,
         product_id=10,
-        quantity=-5,
+        quantity=Decimal(-5),
         type=MovementType.OUT.value,
         location_id=3,
     )
@@ -194,7 +195,9 @@ def test_handle_movement_created_out_without_stock_raises(mock_create_scope):
 
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_out_cannot_take_reserved_units(mock_create_scope):
-    existing_stock = Stock(id=1, product_id=10, quantity=10, reserved_quantity=8)
+    existing_stock = Stock(
+        id=1, product_id=10, quantity=Decimal(10), reserved_quantity=Decimal(8)
+    )
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = existing_stock
 
@@ -205,7 +208,7 @@ def test_handle_movement_created_out_cannot_take_reserved_units(mock_create_scop
     event = MovementCreated(
         aggregate_id=6,
         product_id=10,
-        quantity=-3,
+        quantity=Decimal(-3),
         type=MovementType.OUT.value,
     )
 
@@ -221,7 +224,7 @@ def test_handle_movement_created_publishes_stock_created_event(mock_create_scope
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = None
 
-    new_stock = Stock(id=1, product_id=10, quantity=5)
+    new_stock = Stock(id=1, product_id=10, quantity=Decimal(5))
     mock_repo.create.return_value = new_stock
 
     mock_scope = Mock()
@@ -238,7 +241,7 @@ def test_handle_movement_created_publishes_stock_created_event(mock_create_scope
     event = MovementCreated(
         aggregate_id=1,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN.value,
     )
 
@@ -255,11 +258,11 @@ def test_handle_movement_created_publishes_stock_created_event(mock_create_scope
 @patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
 def test_handle_movement_created_publishes_stock_updated_event(mock_create_scope):
     """Test that StockUpdated event is published when updating stock"""
-    existing_stock = Stock(id=1, product_id=10, quantity=100)
+    existing_stock = Stock(id=1, product_id=10, quantity=Decimal(100))
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = existing_stock
 
-    updated_stock = Stock(id=1, product_id=10, quantity=105)
+    updated_stock = Stock(id=1, product_id=10, quantity=Decimal(105))
     mock_repo.update.return_value = updated_stock
 
     mock_scope = Mock()
@@ -276,7 +279,7 @@ def test_handle_movement_created_publishes_stock_updated_event(mock_create_scope
     event = MovementCreated(
         aggregate_id=2,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN.value,
     )
 
@@ -296,7 +299,7 @@ def test_handle_movement_created_with_location(mock_create_scope):
     mock_repo = Mock()
     mock_repo.first_for_update.return_value = None
 
-    new_stock = Stock(id=1, product_id=10, quantity=5, location_id=42)
+    new_stock = Stock(id=1, product_id=10, quantity=Decimal(5), location_id=42)
     mock_repo.create.return_value = new_stock
 
     mock_scope = Mock()
@@ -306,7 +309,7 @@ def test_handle_movement_created_with_location(mock_create_scope):
     event = MovementCreated(
         aggregate_id=1,
         product_id=10,
-        quantity=5,
+        quantity=Decimal(5),
         type=MovementType.IN.value,
     )
 

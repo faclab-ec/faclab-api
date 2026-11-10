@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.inventory.alert.domain.types import AlertType
+from src.shared.infra.validators import QuantityNumber
 
 
 class StockAlertResponse(BaseModel):
@@ -11,8 +12,8 @@ class StockAlertResponse(BaseModel):
     product_id: int = Field(description="Product ID")
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    current_quantity: int = Field(description="Current stock quantity")
-    threshold: int = Field(description="Alert threshold that was breached")
+    current_quantity: QuantityNumber = Field(description="Current stock quantity")
+    threshold: QuantityNumber = Field(description="Alert threshold that was breached")
     warehouse_id: int | None = Field(
         None, description="Warehouse ID (if location-specific)"
     )

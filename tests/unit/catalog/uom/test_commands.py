@@ -18,7 +18,7 @@ from src.catalog.uom.app.commands.update import (
     UpdateUnitOfMeasureCommandHandler,
 )
 from src.catalog.uom.domain.entities import UnitOfMeasure
-from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.exceptions import InvalidValueError, NotFoundError
 
 # --- Helpers ---
 
@@ -179,3 +179,36 @@ def test_delete_uom_does_not_delete_when_not_found():
         handler.handle(DeleteUnitOfMeasureCommand(uom_id=999))
 
     repo.delete.assert_not_called()
+
+
+# --- Decimals (S5.1) ---
+
+
+def test_create_uom_keeps_its_decimals():
+    repo = Mock()
+    repo.create.side_effect = lambda uom: uom
+    handler = CreateUnitOfMeasureCommandHandler(repo)
+
+    result = handler.handle(
+        CreateUnitOfMeasureCommand(name="Metro", symbol="m", decimals=2)
+    )
+
+    assert result["decimals"] == 2
+
+
+def test_update_uom_changes_its_decimals():
+    repo = _mock_repo(uom=_make_uom())
+    repo.update.side_effect = lambda uom: uom
+    handler = UpdateUnitOfMeasureCommandHandler(repo)
+
+    result = handler.handle(
+        UpdateUnitOfMeasureCommand(uom_id=1, name="Kilogram", symbol="kg", decimals=3)
+    )
+
+    assert result["decimals"] == 3
+
+
+@pytest.mark.parametrize("decimals", [-1, 7])
+def test_uom_decimals_go_from_zero_to_six(decimals):
+    with pytest.raises(InvalidValueError, match="from 0 to 6 decimals"):
+        _make_uom(decimals=decimals)

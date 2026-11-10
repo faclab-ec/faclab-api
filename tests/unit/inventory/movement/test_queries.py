@@ -1,6 +1,7 @@
 """Unit tests for Movement query handlers"""
 
 from datetime import datetime
+from decimal import Decimal
 from unittest.mock import ANY, Mock
 
 import pytest
@@ -21,7 +22,7 @@ def _movement(
     type: MovementType = MovementType.IN,
     date: datetime | None = None,
 ) -> Movement:
-    quantity = 1 if type == MovementType.IN else -1
+    quantity = Decimal(1 if type == MovementType.IN else -1)
     return Movement(product_id=product_id, quantity=quantity, type=type, date=date)
 
 
@@ -44,14 +45,14 @@ def test_get_all_movements_query_handler(mock_movement_repo):
         Movement(
             id=1,
             product_id=1,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
             reason="Purchase",
         ),
         Movement(
             id=2,
             product_id=2,
-            quantity=-5,
+            quantity=Decimal(-5),
             type=MovementType.OUT,
             reason="Sale",
         ),
@@ -83,7 +84,7 @@ def test_get_all_movements_with_product_filter(mock_movement_repo):
         Movement(
             id=1,
             product_id=1,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
         ),
     ]
@@ -115,7 +116,7 @@ def test_get_all_movements_with_type_filter(mock_movement_repo):
         Movement(
             id=1,
             product_id=1,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
         ),
     ]
@@ -146,7 +147,7 @@ def test_get_all_movements_with_multiple_filters(mock_movement_repo):
         Movement(
             id=1,
             product_id=1,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
         ),
     ]
@@ -225,13 +226,13 @@ def test_get_all_movements_with_pagination(mock_movement_repo):
         Movement(
             id=1,
             product_id=1,
-            quantity=10,
+            quantity=Decimal(10),
             type=MovementType.IN,
         ),
         Movement(
             id=2,
             product_id=2,
-            quantity=-5,
+            quantity=Decimal(-5),
             type=MovementType.OUT,
         ),
     ]
@@ -257,7 +258,7 @@ def test_get_movement_by_id_handler(mock_movement_repo):
     movement = Movement(
         id=1,
         product_id=1,
-        quantity=10,
+        quantity=Decimal(10),
         type=MovementType.IN,
         reason="Test",
         date=datetime.now(),

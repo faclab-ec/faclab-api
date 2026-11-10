@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.pos.refund.app.repositories import RefundItemRepository, RefundRepository
 from src.pos.refund.domain.entities import Refund, RefundItem, RefundStatus
 from src.pos.refund.domain.exceptions import (
@@ -42,7 +44,9 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         refund_item_repo: RefundItemRepository,
         shift_repo: ShiftRepository,
         terminals: TerminalResolver,
+        quantities: ProductQuantities,
     ):
+        self.quantities = quantities
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.refund_repo = refund_repo
@@ -81,14 +85,14 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         previous_refunds = self.refund_repo.filter_by(
             original_sale_id=command.original_sale_id
         )
-        already_refunded: dict[int, int] = {}
+        already_refunded: dict[int, Decimal] = {}
         for prev_refund in previous_refunds:
             if prev_refund.status == RefundStatus.CANCELLED:
                 continue
             prev_items = self.refund_item_repo.filter_by(refund_id=prev_refund.id)
             for prev_item in prev_items:
                 already_refunded[prev_item.original_sale_item_id] = (
-                    already_refunded.get(prev_item.original_sale_item_id, 0)
+                    already_refunded.get(prev_item.original_sale_item_id, Decimal(0))
                     + prev_item.quantity
                 )
 
@@ -98,14 +102,22 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
                 raise RefundItemNotInSaleError(sale_item_id, command.original_sale_id)
 
             original_item = sale_item_lookup[sale_item_id]
-            requested_qty = item_data["quantity"]
-            already_qty = already_refunded.get(sale_item_id, 0)
+            requested_qty = Decimal(str(item_data["quantity"]))
+            already_qty = already_refunded.get(sale_item_id, Decimal(0))
             remaining = original_item.quantity - already_qty
 
             if requested_qty > remaining:
                 raise ExceedsOriginalQuantityError(
                     sale_item_id, requested_qty, remaining
                 )
+
+        self.quantities.ensure(
+            (
+                sale_item_lookup[item_data["sale_item_id"]].product_id,
+                Decimal(str(item_data["quantity"])),
+            )
+            for item_data in command.items
+        )
 
         refund = Refund(
             original_sale_id=command.original_sale_id,
@@ -124,7 +136,7 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
                 refund_id=refund.require_id(),
                 original_sale_item_id=sale_item.require_id(),
                 product_id=sale_item.product_id,
-                quantity=item_data["quantity"],
+                quantity=Decimal(str(item_data["quantity"])),
                 unit_price=sale_item.unit_price,
                 discount=sale_item.discount,
                 tax_code=sale_item.tax_code,

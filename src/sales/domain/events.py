@@ -196,7 +196,7 @@ class SaleItemAdded(DomainEvent):
     sale_id: int = 0
     sale_item_id: int = 0
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
     unit_price: Decimal = Decimal("0")
 
     def _payload(self) -> dict[str, Any]:
@@ -216,7 +216,7 @@ class SaleItemRemoved(DomainEvent):
     sale_id: int = 0
     sale_item_id: int = 0
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
 
     def _payload(self) -> dict[str, Any]:
         return {

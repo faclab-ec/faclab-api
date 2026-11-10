@@ -177,7 +177,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | id | int | ID |
 | saleId | int | Venta asociada |
 | productId | int | Producto |
-| quantity | int | Cantidad |
+| quantity | decimal | Cantidad |
 | unitPrice | decimal | Precio unitario |
 | discount | decimal | Descuento % (0-100) |
 | taxCode | string | Código semántico de IVA (ej: VAT_15) |
@@ -442,7 +442,7 @@ turno.
 | refundId | int | Devolución |
 | originalSaleItemId | int | Item original de la venta |
 | productId | int | Producto |
-| quantity | int | Cantidad devuelta |
+| quantity | decimal | Cantidad devuelta |
 | unitPrice | decimal | Precio (copiado del original) |
 | discount | decimal | Descuento % (copiado) |
 | taxCode | string | Código de IVA (copiado del original) |

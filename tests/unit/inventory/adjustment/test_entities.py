@@ -1,5 +1,6 @@
 """Unit tests for InventoryAdjustment and AdjustmentItem entities"""
 
+from decimal import Decimal
 from typing import Any
 
 import pytest
@@ -121,5 +122,5 @@ def test_adjustment_item_difference_zero():
 
 def test_adjustment_item_update_changes_only_given_fields():
     item = _make_item(actual_quantity=110, notes="n")
-    item.update(actual_quantity=90)
+    item.update(actual_quantity=Decimal(90))
     assert (item.actual_quantity, item.notes) == (90, "n")

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.quantities import ProductQuantities
 from src.inventory.movement.app.commands.movement import (
     CreateMovementCommand,
     CreateMovementCommandHandler,
@@ -77,7 +79,7 @@ class CancelStockTransferCommand(Command):
 class AddTransferItemCommand(Command):
     transfer_id: int = 0
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
     lot_id: int | None = None
     notes: str | None = None
 
@@ -85,7 +87,7 @@ class AddTransferItemCommand(Command):
 @dataclass
 class UpdateTransferItemCommand(Command):
     id: int = 0
-    quantity: int | None = None
+    quantity: Decimal | None = None
     notes: str | None = None
 
 
@@ -360,9 +362,11 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
         self,
         repo: StockTransferRepository,
         item_repo: StockTransferItemRepository,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
         self.item_repo = item_repo
+        self.quantities = quantities
 
     def _handle(self, command: AddTransferItemCommand) -> dict:
         transfer = self.repo.get_by_id(command.transfer_id)
@@ -371,6 +375,7 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
                 f"StockTransfer with id {command.transfer_id} not found"
             )
         transfer.ensure_draft("agregar ítems a")
+        self.quantities.ensure([(command.product_id, command.quantity)])
 
         item = StockTransferItem(
             transfer_id=command.transfer_id,
@@ -386,10 +391,14 @@ class AddTransferItemCommandHandler(CommandHandler[AddTransferItemCommand, dict]
 @injectable(lifetime="scoped")
 class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand, dict]):
     def __init__(
-        self, repo: StockTransferRepository, item_repo: StockTransferItemRepository
+        self,
+        repo: StockTransferRepository,
+        item_repo: StockTransferItemRepository,
+        quantities: ProductQuantities,
     ):
         self.repo = repo
         self.item_repo = item_repo
+        self.quantities = quantities
 
     def _handle(self, command: UpdateTransferItemCommand) -> dict:
         item = self.item_repo.get_by_id(command.id)
@@ -399,6 +408,8 @@ class UpdateTransferItemCommandHandler(CommandHandler[UpdateTransferItemCommand,
         if transfer is None:
             raise NotFoundError(f"StockTransfer with id {item.transfer_id} not found")
         transfer.ensure_draft("modificar ítems de")
+        if command.quantity is not None:
+            self.quantities.ensure([(item.product_id, command.quantity)])
 
         item.update(quantity=command.quantity, notes=command.notes)
         saved = self.item_repo.update(item)

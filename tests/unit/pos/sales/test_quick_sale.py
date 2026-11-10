@@ -24,6 +24,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
+from tests.quantities import FakeProductQuantities
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 
 
@@ -46,7 +47,7 @@ def _make_product(**overrides):
     return product
 
 
-def _make_stock(quantity=100):
+def _make_stock(quantity=Decimal(100)):
     return Stock(id=1, product_id=1, quantity=quantity)
 
 
@@ -131,6 +132,7 @@ def _build_handler(
         event_publisher=event_publisher or MagicMock(),
         session=MagicMock(),
         audit=audit or FakeAuditTrail(),
+        quantities=FakeProductQuantities(),
     )
 
 

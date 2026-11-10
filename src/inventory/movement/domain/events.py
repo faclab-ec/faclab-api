@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from src.shared.domain.events import DomainEvent
@@ -14,7 +15,7 @@ class MovementCreated(DomainEvent):
 
     aggregate_id: int = 0  # movement_id
     product_id: int = 0
-    quantity: int = 0
+    quantity: Decimal = Decimal(0)
     type: str = ""  # "in" or "out"
     location_id: int | None = None
     reason: str | None = None

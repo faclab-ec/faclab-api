@@ -32,9 +32,9 @@ class Product(Entity):
     is_active: bool = True
     tax_code: TaxCode = TaxCode.VAT_15
     is_service: bool = False
-    min_stock: int = 0
-    max_stock: int | None = None
-    reorder_point: int = 0
+    min_stock: Decimal = Decimal(0)
+    max_stock: Decimal | None = None
+    reorder_point: Decimal = Decimal(0)
     lead_time_days: int | None = None
     construction_material_code: ConstructionMaterialCode | None = None
     created_at: datetime | None = None

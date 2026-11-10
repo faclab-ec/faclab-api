@@ -67,7 +67,7 @@ def _mock_repo(entity=None, entities=None):
 
 
 def _make_stock() -> Stock:
-    return Stock(id=1, product_id=100, quantity=100)
+    return Stock(id=1, product_id=100, quantity=Decimal(100))
 
 
 def _paid_in_full():

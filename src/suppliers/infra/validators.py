@@ -1,6 +1,8 @@
+from decimal import Decimal
+
 from pydantic import AliasChoices, BaseModel, Field
 
-from src.shared.infra.validators import DecimalNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 # Supplier Requests
@@ -95,10 +97,10 @@ class SupplierProductRequest(BaseModel):
         validation_alias=AliasChoices("supplierSku", "supplier_sku"),
         serialization_alias="supplierSku",
     )
-    min_order_quantity: int = Field(
-        1,
-        ge=1,
-        description="Minimum order quantity",
+    min_order_quantity: QuantityNumber = Field(
+        Decimal(1),
+        gt=0,
+        description="Minimum order quantity, with the decimals of the product's unit",
         validation_alias=AliasChoices("minOrderQuantity", "min_order_quantity"),
         serialization_alias="minOrderQuantity",
     )

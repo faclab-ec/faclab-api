@@ -39,13 +39,13 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
 
         results = []
         for row in movement_rows:
-            current_stock = stock_by_product.get(row.product_id, 0) or 0
-            total_out = row.total_out or 0
-            total_in = row.total_in or 0
+            current_stock = stock_by_product.get(row.product_id) or Decimal(0)
+            total_out = Decimal(str(row.total_out or 0))
+            total_in = Decimal(str(row.total_in or 0))
 
             turnover_rate = Decimal("0")
             if current_stock > 0 and total_out > 0:
-                turnover_rate = Decimal(str(total_out)) / Decimal(str(current_stock))
+                turnover_rate = total_out / current_stock
 
             days_of_stock = None
             if total_out > 0 and current_stock > 0:
@@ -112,7 +112,7 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
             MovementModel.product_id, ProductModel.name, ProductModel.sku
         ).all()
 
-    def _fetch_current_stocks(self, warehouse_id: int | None) -> dict[int, int]:
+    def _fetch_current_stocks(self, warehouse_id: int | None) -> dict[int, Decimal]:
         q = self.session.query(
             StockModel.product_id,
             func.sum(StockModel.quantity).label("current_stock"),
@@ -125,4 +125,4 @@ class GetProductRotationQueryHandler(QueryHandler[GetProductRotationQuery, list[
                 *tenant_criteria(LocationModel),
             )
         rows = q.group_by(StockModel.product_id).all()
-        return {row.product_id: row.current_stock or 0 for row in rows}
+        return {row.product_id: Decimal(str(row.current_stock or 0)) for row in rows}

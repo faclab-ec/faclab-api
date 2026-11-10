@@ -101,7 +101,16 @@ Registro de unidades de medida vinculadas a productos.
 
 **Entidades:** `UnitOfMeasure`
 
-**Campos:** `id`, `name`, `abbreviation`
+**Campos:** `id`, `name`, `symbol`, `description`, `is_active`, `decimals`
+
+**Decimales (S5.1):** `decimals` (0 a 6, 0 por defecto) dice cuántos decimales admite una cantidad en
+esa unidad: 0 para unidades enteras, 2 para metros, 3 para kilos. Las cantidades se guardan como
+`numeric(18, 6)` (lo que admite `cantidad` en el XML 1.1.0 del SRI) y la API las envía como número
+JSON. Cada comando que recibe una cantidad escrita por el usuario la valida con `ProductQuantities`
+(`src/catalog/product/app/quantities.py`) contra la unidad de su producto; un producto sin unidad solo
+acepta enteros, y una cantidad con más decimales responde 422 `QUANTITY_PRECISION_EXCEEDED`. Los
+movimientos que crean los documentos no se validan otra vez. Las respuestas de producto llevan
+`unitSymbol` y `quantityDecimals`.
 
 **Comandos:** `CreateUnitOfMeasure`, `UpdateUnitOfMeasure`, `DeleteUnitOfMeasure`
 
