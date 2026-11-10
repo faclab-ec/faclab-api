@@ -11,6 +11,8 @@ from src.sales.app.commands.update_sale_item import (
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import InvalidSaleStatusError
 from src.shared.domain.exceptions import DomainError, NotFoundError
+from tests.presentations import FakeProductPresentations
+from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
 
 
@@ -52,15 +54,29 @@ def _mock_repo(entity=None, entities=None):
     return repo
 
 
+def _handler(sale_repo, sale_item_repo, product=None, prices=None):
+    products = MagicMock()
+    products.get_by_id.return_value = product
+    presentation_repo = MagicMock()
+    presentation_repo.get_by_id.return_value = None
+    return UpdateSaleItemCommandHandler(
+        sale_repo,
+        sale_item_repo,
+        FakeProductQuantities(),
+        products,
+        presentation_repo,
+        FakeProductPresentations(),
+        prices or price_resolver(),
+    )
+
+
 def test_update_sale_item_quantity():
     """Test actualizar cantidad de un item"""
     sale = _make_sale()
     item = _make_sale_item()
     sale_repo = _mock_repo(entity=sale)
     sale_item_repo = _mock_repo(entity=item, entities=[item])
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     command = UpdateSaleItemCommand(sale_id=1, sale_item_id=1, quantity=Decimal(5))
     result = handler.handle(command)
@@ -77,9 +93,7 @@ def test_update_sale_item_discount():
     item = _make_sale_item()
     sale_repo = _mock_repo(entity=sale)
     sale_item_repo = _mock_repo(entity=item, entities=[item])
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     command = UpdateSaleItemCommand(sale_id=1, sale_item_id=1, discount=Decimal("10"))
     result = handler.handle(command)
@@ -94,9 +108,7 @@ def test_update_sale_item_sale_not_found():
     sale_repo = _mock_repo()
     sale_repo.get_by_id.return_value = None
     sale_item_repo = _mock_repo()
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     with pytest.raises(NotFoundError):
         handler.handle(UpdateSaleItemCommand(sale_id=999, sale_item_id=1))
@@ -108,9 +120,7 @@ def test_update_sale_item_item_not_found():
     sale_repo = _mock_repo(entity=sale)
     sale_item_repo = _mock_repo()
     sale_item_repo.get_by_id.return_value = None
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     with pytest.raises(NotFoundError):
         handler.handle(UpdateSaleItemCommand(sale_id=1, sale_item_id=999))
@@ -121,9 +131,7 @@ def test_update_sale_item_not_draft():
     sale = _make_sale(status=SaleStatus.CONFIRMED)
     sale_repo = _mock_repo(entity=sale)
     sale_item_repo = _mock_repo()
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     with pytest.raises(InvalidSaleStatusError):
         handler.handle(
@@ -137,9 +145,7 @@ def test_update_sale_item_wrong_sale():
     item = _make_sale_item(sale_id=999)
     sale_repo = _mock_repo(entity=sale)
     sale_item_repo = _mock_repo(entity=item)
-    handler = UpdateSaleItemCommandHandler(
-        sale_repo, sale_item_repo, FakeProductQuantities()
-    )
+    handler = _handler(sale_repo, sale_item_repo)
 
     with pytest.raises(DomainError):
         handler.handle(

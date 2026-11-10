@@ -24,7 +24,9 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.audit import FakeAuditTrail
 from tests.presentations import FakeProductPresentations
+from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
 
 
@@ -139,6 +141,8 @@ def test_add_sale_item_command_handler():
         event_publisher,
         FakeProductQuantities(),
         FakeProductPresentations(),
+        price_resolver(),
+        FakeAuditTrail(),
     )
 
     command = AddSaleItemCommand(
@@ -171,6 +175,8 @@ def test_add_sale_item_only_draft():
         MagicMock(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        price_resolver(),
+        FakeAuditTrail(),
     )
 
     command = AddSaleItemCommand(
@@ -194,6 +200,8 @@ def test_add_sale_item_sale_not_found():
         MagicMock(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        price_resolver(),
+        FakeAuditTrail(),
     )
 
     command = AddSaleItemCommand(

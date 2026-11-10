@@ -10,11 +10,12 @@ from src.catalog.product.app.repositories import ProductRepository
 from src.organization.app.numbering import DocumentNumbering
 from src.organization.domain.numbering import DocumentType
 from src.pos.sales.app.commands.apply_discount import audit_discount
-from src.pos.sales.app.commands.override_price import audit_price_override
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
 from src.pos.terminal.app.stock import TerminalStock
+from src.pricing.app.resolver import PriceResolver
+from src.sales.app.price_override import audit_price_override
 from src.sales.app.repositories import (
     PaymentRepository,
     SaleItemRepository,
@@ -22,7 +23,7 @@ from src.sales.app.repositories import (
 )
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem
 from src.sales.domain.events import SaleConfirmed, sale_items_data, sale_payments_data
-from src.sales.domain.exceptions import OverrideReasonRequiredError
+from src.sales.domain.pricing import line_price
 from src.shared.app.audit import AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -62,9 +63,11 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         audit: AuditTrail,
         quantities: ProductQuantities,
         presentations: ProductPresentations,
+        prices: PriceResolver,
     ):
         self.quantities = quantities
         self.presentations = presentations
+        self.prices = prices
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
@@ -103,7 +106,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             sale.apply_discount(command.discount_type, command.discount_value)
         sale = self.sale_repo.create(sale)
 
-        # 4. Crear items
+        # 4. Crear items, cada uno con el precio de su lista: la del cliente, la de
+        #    la sucursal o la general (S5.3)
+        chain = self.prices.chain(customer_id, terminal.branch_id)
         created_items = []
         for item_data in command.items:
             product = self.product_repo.get_by_id(item_data["product_id"])
@@ -120,14 +125,15 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 product, presentation.factor, quantity
             )
 
-            list_price = presentation.effective_sale_price(product.sale_price)
-            unit_price = Decimal(str(item_data.get("unit_price") or list_price))
-            # Selling at another price is recorded like POST .../price: with
+            list_price = self.prices.price(
+                chain, product, presentation, quantity
+            ).unit_price
+            # Selling at another price is recorded like PUT .../price: with
             # the new price and why
-            overridden = list_price is not None and unit_price != list_price
             reason = item_data.get("override_reason")
-            if overridden and not reason:
-                raise OverrideReasonRequiredError(product.require_id())
+            unit_price, overridden = line_price(
+                product.require_id(), list_price, item_data.get("unit_price"), reason
+            )
 
             sale_item = SaleItem(
                 sale_id=sale.require_id(),
