@@ -285,6 +285,82 @@ def _product_presentation_deleted(w):
     return product["id"]
 
 
+def _price_list(w: World, name: str = "Mayorista") -> dict:
+    return w.admin.api.post("/api/admin/price-lists", {"name": name})
+
+
+def _price_list_item(w: World, price_list: dict) -> dict:
+    product = _product(w, stock=0)
+    return w.admin.api.post(
+        f"/api/admin/price-lists/{price_list['id']}/items",
+        {"productId": product["id"], "price": "9.00"},
+    )
+
+
+def _price_list_created(w):
+    return w.send(w.admin, "POST", "/api/admin/price-lists", {"name": "Mayorista"})[
+        "id"
+    ]
+
+
+def _price_list_updated(w):
+    price_list = _price_list(w)
+    path = f"/api/admin/price-lists/{price_list['id']}"
+    return w.send(w.admin, "PUT", path, {"name": "Mayorista", "isActive": False})["id"]
+
+
+def _price_list_deleted(w):
+    price_list = _price_list(w)
+    w.send(w.admin, "DELETE", f"/api/admin/price-lists/{price_list['id']}")
+    return price_list["id"]
+
+
+def _price_list_item_created(w):
+    price_list = _price_list(w)
+    product = _product(w, stock=0)
+    w.send(
+        w.admin,
+        "POST",
+        f"/api/admin/price-lists/{price_list['id']}/items",
+        {"productId": product["id"], "price": "9.00"},
+    )
+    return price_list["id"]
+
+
+def _price_list_item_updated(w):
+    price_list = _price_list(w)
+    item = _price_list_item(w, price_list)
+    w.send(
+        w.admin,
+        "PUT",
+        f"/api/admin/price-lists/{price_list['id']}/items/{item['id']}",
+        {"price": "8.50", "minQuantity": 10},
+    )
+    return price_list["id"]
+
+
+def _price_list_item_deleted(w):
+    price_list = _price_list(w)
+    item = _price_list_item(w, price_list)
+    w.send(
+        w.admin,
+        "DELETE",
+        f"/api/admin/price-lists/{price_list['id']}/items/{item['id']}",
+    )
+    return price_list["id"]
+
+
+def _customer_price_list_changed(w):
+    price_list = _price_list(w)
+    customer = make_customer(w.admin.api, seed=41, name="Maestro")
+    return w.send(
+        w.admin,
+        "PUT",
+        f"/api/admin/customers/{customer['id']}/price-list",
+        {"priceListId": price_list["id"]},
+    )["id"]
+
+
 def _movement_created(w):
     product = _product(w, stock=0)
     return w.send(
@@ -609,6 +685,13 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.PRODUCT_PRESENTATION_CREATED: _product_presentation_created,
     AuditAction.PRODUCT_PRESENTATION_UPDATED: _product_presentation_updated,
     AuditAction.PRODUCT_PRESENTATION_DELETED: _product_presentation_deleted,
+    AuditAction.PRICE_LIST_CREATED: _price_list_created,
+    AuditAction.PRICE_LIST_UPDATED: _price_list_updated,
+    AuditAction.PRICE_LIST_DELETED: _price_list_deleted,
+    AuditAction.PRICE_LIST_ITEM_CREATED: _price_list_item_created,
+    AuditAction.PRICE_LIST_ITEM_UPDATED: _price_list_item_updated,
+    AuditAction.PRICE_LIST_ITEM_DELETED: _price_list_item_deleted,
+    AuditAction.CUSTOMER_PRICE_LIST_CHANGED: _customer_price_list_changed,
     AuditAction.MOVEMENT_CREATED: _movement_created,
     AuditAction.ADJUSTMENT_CONFIRMED: _adjustment_confirmed,
     AuditAction.ADJUSTMENT_CANCELLED: _adjustment_cancelled,

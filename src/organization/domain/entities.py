@@ -27,6 +27,8 @@ class Branch(Entity):
     address: str | None = None
     is_main: bool = False
     is_active: bool = True
+    # The price list its sales take when the customer has none (S5.3)
+    price_list_id: int | None = None
     created_at: datetime | None = None
 
     def __post_init__(self):

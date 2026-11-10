@@ -138,6 +138,39 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     ids["customer_contact"] = api.post(
         f"/api/admin/customers/{ids['customer']}/contacts", {"name": f"{m} Contacto"}
     )["id"]
+    # Price lists (S5.3): a builder's list prices the product's unit (its box
+    # takes 10 × it) and the branch's list the other product. The sales below
+    # are of the other customer, at the product's price
+    ids["price_list"] = api.post("/api/admin/price-lists", {"name": f"{m} Mayorista"})[
+        "id"
+    ]
+    ids["price_list_item"] = api.post(
+        f"/api/admin/price-lists/{ids['price_list']}/items",
+        {"productId": ids["product"], "price": "9.00"},
+    )["id"]
+    ids["branch_price_list"] = api.post(
+        "/api/admin/price-lists", {"name": f"{m} Sucursal"}
+    )["id"]
+    api.post(
+        f"/api/admin/price-lists/{ids['branch_price_list']}/items",
+        {"productId": ids["product_out"], "price": "1.00"},
+    )
+    api.put(
+        f"/api/admin/branches/{ids['branch']}",
+        {
+            "establishmentCode": "001",
+            "name": f"{m} Matriz",
+            "priceListId": ids["branch_price_list"],
+        },
+    )
+    ids["wholesale_customer"] = make_customer(api, seed * 10 + 3, name=f"{m} Maestro")[
+        "id"
+    ]
+    api.put(
+        f"/api/admin/customers/{ids['wholesale_customer']}/price-list",
+        {"priceListId": ids["price_list"]},
+    )
+
     ids["supplier"] = make_supplier(api, seed * 10 + 2, name=f"{m} Proveedor")["id"]
     ids["supplier_contact"] = api.post(
         f"/api/admin/suppliers/{ids['supplier']}/contacts", {"name": f"{m} Vendedor"}

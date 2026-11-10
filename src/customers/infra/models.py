@@ -21,6 +21,13 @@ class CustomerModel(TenantScoped, Base):
         UniqueConstraint("tenant_id", "tax_id", name="uq_customers_tenant_tax_id"),
         # Target of the composite foreign keys from sales and contacts
         UniqueConstraint("tenant_id", "id", name="uq_customers_tenant_id_id"),
+        # Composite: the list is of the customer's tenant. Deleting an assigned
+        # list answers RECORD_IN_USE
+        ForeignKeyConstraint(
+            ["tenant_id", "price_list_id"],
+            ["price_lists.tenant_id", "price_lists.id"],
+            name="fk_customers_price_list_tenant",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -36,6 +43,8 @@ class CustomerModel(TenantScoped, Base):
     credit_limit: Mapped[Decimal | None] = mapped_column(MoneyColumn)
     payment_terms: Mapped[int | None] = mapped_column(Integer)  # Days
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # The price list it buys with (S5.3)
+    price_list_id: Mapped[int | None] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

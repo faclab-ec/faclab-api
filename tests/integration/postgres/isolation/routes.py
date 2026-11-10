@@ -145,7 +145,13 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/branches/{{id}}": Route(path=("branch",)),
     f"PUT {ADMIN}/branches/{{id}}": Route(
         path=("branch",),
-        body=lambda ids: {"establishmentCode": "001", "name": f"{ids['marker']} M"},
+        # The dataset's branch as it is: only the list's reference is tried
+        body=lambda ids: {
+            "establishmentCode": "001",
+            "name": f"{ids['marker']} Matriz",
+            "priceListId": ids["branch_price_list"],
+        },
+        refs=("branch_price_list",),
     ),
     f"DELETE {ADMIN}/branches/{{id}}": Route(path=("branch",)),
     f"POST {ADMIN}/emission-points": Route(
@@ -209,6 +215,35 @@ ROUTES: dict[str, Route] = {
     ),
     f"DELETE {ADMIN}/products/{{id}}/presentations/{{presentation_id}}": Route(
         path=("product", "presentation")
+    ),
+    # Price lists (S5.3)
+    f"GET {ADMIN}/price-lists": Route(),
+    f"POST {ADMIN}/price-lists": Route(
+        body=_name("Lista nueva"), created=f"{ADMIN}/price-lists/{{}}"
+    ),
+    f"GET {ADMIN}/price-lists/{{id}}": Route(path=("price_list",)),
+    f"PUT {ADMIN}/price-lists/{{id}}": Route(
+        path=("price_list",), body=_name("Mayorista")
+    ),
+    f"DELETE {ADMIN}/price-lists/{{id}}": Route(path=("price_list",)),
+    f"GET {ADMIN}/price-lists/{{id}}/items": Route(path=("price_list",)),
+    f"POST {ADMIN}/price-lists/{{id}}/items": Route(
+        path=("price_list",),
+        # A tier of the box the dataset doesn't have
+        body=lambda ids: {
+            "productId": ids["product"],
+            "presentationId": ids["presentation"],
+            "minQuantity": 5,
+            "price": "85.00",
+        },
+        refs=("product", "presentation"),
+    ),
+    f"PUT {ADMIN}/price-lists/{{id}}/items/{{item_id}}": Route(
+        path=("price_list", "price_list_item"),
+        body=lambda ids: {"price": "9.00", "minQuantity": 0},
+    ),
+    f"DELETE {ADMIN}/price-lists/{{id}}/items/{{item_id}}": Route(
+        path=("price_list", "price_list_item")
     ),
     # Inventory
     f"POST {ADMIN}/warehouses": Route(
@@ -360,6 +395,12 @@ ROUTES: dict[str, Route] = {
         body=lambda ids: {"name": "Cliente", "taxId": ids["tax_id"], "taxType": 2},
     ),
     f"DELETE {ADMIN}/customers/{{id}}": Route(path=("customer",)),
+    f"PUT {ADMIN}/customers/{{id}}/price-list": Route(
+        # The list the builder already has: only the reference is tried
+        path=("wholesale_customer",),
+        body=lambda ids: {"priceListId": ids["price_list"]},
+        refs=("price_list",),
+    ),
     f"POST {ADMIN}/customers/{{id}}/activate": Route(path=("customer",)),
     f"POST {ADMIN}/customers/{{id}}/deactivate": Route(path=("customer",)),
     f"POST {ADMIN}/customers/{{customer_id}}/contacts": Route(
@@ -634,6 +675,23 @@ ROUTES: dict[str, Route] = {
         needs_query=True,
     ),
     f"GET {POS}/products/{{id}}": Route(path=("product",)),
+    # The builder's box takes its list's unit price × 10 (90.00, not 95.00) and
+    # the other product the branch's list (1.00, not 10.00)
+    f"POST {POS}/prices/resolve": Route(
+        body=lambda ids: {
+            "customerId": ids["wholesale_customer"],
+            "items": [
+                {
+                    "productId": ids["product"],
+                    "presentationId": ids["presentation"],
+                    "quantity": 1,
+                },
+                {"productId": ids["product_out"], "quantity": 1},
+            ],
+        },
+        headers=_in_branch,
+        refs=("wholesale_customer", "product", "presentation", "branch"),
+    ),
     f"POST {POS}/customers": Route(
         body=lambda ids: {
             "name": f"{ids['marker']} Cliente POS",

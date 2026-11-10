@@ -70,6 +70,11 @@ COMPOSITE_FOREIGN_KEYS = {
     ("product_presentations", "product_id"),
     ("sale_items", "presentation_id"),
     ("purchase_order_items", "presentation_id"),
+    ("price_list_items", "price_list_id"),
+    ("price_list_items", "product_id"),
+    ("price_list_items", "presentation_id"),
+    ("customers", "price_list_id"),
+    ("branches", "price_list_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
@@ -119,7 +124,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 40
+    assert len(BUSINESS_TABLES) == 42
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

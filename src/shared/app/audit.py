@@ -26,6 +26,15 @@ class AuditAction(StrEnum):
     PRODUCT_PRESENTATION_CREATED = "product.presentation_created"
     PRODUCT_PRESENTATION_UPDATED = "product.presentation_updated"
     PRODUCT_PRESENTATION_DELETED = "product.presentation_deleted"
+    # Price lists (S5.3): the list, its prices (resource the list) and the list
+    # a customer buys with
+    PRICE_LIST_CREATED = "price_list.created"
+    PRICE_LIST_UPDATED = "price_list.updated"
+    PRICE_LIST_DELETED = "price_list.deleted"
+    PRICE_LIST_ITEM_CREATED = "price_list.item_created"
+    PRICE_LIST_ITEM_UPDATED = "price_list.item_updated"
+    PRICE_LIST_ITEM_DELETED = "price_list.item_deleted"
+    CUSTOMER_PRICE_LIST_CHANGED = "customer.price_list_changed"
     # Solo el movimiento manual: los de un documento los audita el documento
     MOVEMENT_CREATED = "movement.created"
     ADJUSTMENT_CONFIRMED = "adjustment.confirmed"
