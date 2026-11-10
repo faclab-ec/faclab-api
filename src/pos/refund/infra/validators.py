@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
 
 from src.invoicing.infra.validators import CreditNoteResponse
 from src.pos.refund.domain.entities import RefundStatus
@@ -79,7 +79,21 @@ class RefundItemResponse(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
-    quantity: QuantityNumber
+    quantity: QuantityNumber = Field(
+        description="Quantity in the sale item's presentation"
+    )
+    presentation_id: int | None = Field(
+        None,
+        description="The sale item's presentation (null before S5.2)",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
+    )
+    unit_factor: QuantityNumber = Field(
+        Decimal(1),
+        description="Base units in one of its presentation",
+        validation_alias=AliasChoices("unitFactor", "unit_factor"),
+        serialization_alias="unitFactor",
+    )
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),
@@ -97,6 +111,12 @@ class RefundItemResponse(BaseModel):
         serialization_alias="taxAmount",
     )
     subtotal: DecimalNumber
+
+    @computed_field(alias="baseQuantity")
+    @property
+    def base_quantity(self) -> QuantityNumber:
+        """Quantity in base units, the one that goes back to stock"""
+        return self.quantity * self.unit_factor
 
 
 class RefundPaymentResponse(BaseModel):

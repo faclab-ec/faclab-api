@@ -13,8 +13,10 @@ from src.sales.domain.exceptions import InsufficientStockError
 
 @dataclass
 class Line:
+    """What moves, already in base units"""
+
     product_id: int
-    quantity: Decimal
+    base_quantity: Decimal
 
 
 def _stock(

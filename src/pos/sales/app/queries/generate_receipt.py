@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.catalog.product.infra.models import ProductModel
+from src.catalog.product.infra.models import ProductModel, ProductPresentationModel
 from src.customers.infra.models import CustomerModel
 from src.organization.infra.models import BranchModel, PosTerminalModel
 from src.pos.shift.infra.models import ShiftModel
@@ -37,21 +38,35 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
         if not sale:
             raise NotFoundError(f"Sale with id {query.sale_id} not found")
 
-        # Fetch items with product names
+        # Fetch items with product names and the presentation each one was
+        # sold in (S5.2), unless it is the base unit
         item_rows = (
-            self.session.query(SaleItemModel, ProductModel.name)
+            self.session.query(
+                SaleItemModel,
+                ProductModel.name,
+                ProductPresentationModel.name,
+                ProductPresentationModel.is_base,
+            )
             .join(ProductModel, ProductModel.id == SaleItemModel.product_id)
+            .outerjoin(
+                ProductPresentationModel,
+                and_(
+                    ProductPresentationModel.id == SaleItemModel.presentation_id,
+                    *tenant_criteria(ProductPresentationModel),
+                ),
+            )
             .filter(
                 SaleItemModel.sale_id == query.sale_id,
                 *tenant_criteria(SaleItemModel, ProductModel),
             )
+            .order_by(SaleItemModel.id)
             .all()
         )
 
         items = []
         taxed_lines = []
 
-        for item_model, product_name in item_rows:
+        for item_model, product_name, presentation_name, is_base in item_rows:
             base = item_model.unit_price * item_model.quantity
             discount_amount = base * (item_model.discount / Decimal("100"))
             subtotal = base - discount_amount
@@ -59,7 +74,9 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
             items.append(
                 {
                     "product_name": product_name,
+                    "presentation_name": None if is_base else presentation_name,
                     "quantity": item_model.quantity,
+                    "base_quantity": item_model.base_quantity,
                     "unit_price": item_model.unit_price,
                     "discount": item_model.discount,
                     "discount_amount": discount_amount,

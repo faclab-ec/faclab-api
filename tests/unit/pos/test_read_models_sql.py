@@ -10,7 +10,11 @@ from uuid import UUID
 import pytest
 from sqlalchemy.orm import Session
 
-from src.catalog.product.infra.models import CategoryModel, ProductModel
+from src.catalog.product.infra.models import (
+    CategoryModel,
+    ProductModel,
+    ProductPresentationModel,
+)
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerModel
 from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
@@ -44,6 +48,7 @@ _MODELS = (
     CategoryModel,
     UnitOfMeasureModel,
     ProductModel,
+    ProductPresentationModel,
     CustomerModel,
     ShiftModel,
     SaleModel,
@@ -59,7 +64,9 @@ _MODELS = (
 def _sell(session: Session, shift_id: int, sale_id: int, amount: str) -> None:
     """A confirmed cash sale of one unit of product `sale_id`"""
     total = Decimal(amount)
-    session.add(ProductModel(id=sale_id, name="Martillo", sku="MAR-01"))
+    session.add(
+        ProductModel(id=sale_id, name="Martillo", sku="MAR-01", unit_of_measure_id=1)
+    )
     session.add(CustomerModel(id=sale_id, name="Cliente", tax_id="0912345678"))
     session.add(ShiftModel(id=shift_id, cashier_name=f"Caja {shift_id}"))
     session.flush()

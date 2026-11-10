@@ -111,9 +111,11 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
                     sale_item_id, requested_qty, remaining
                 )
 
-        self.quantities.ensure(
+        # In the sale item's presentation: its base units fit the unit
+        self.quantities.ensure_in_presentations(
             (
                 sale_item_lookup[item_data["sale_item_id"]].product_id,
+                sale_item_lookup[item_data["sale_item_id"]].unit_factor,
                 Decimal(str(item_data["quantity"])),
             )
             for item_data in command.items
@@ -140,6 +142,8 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
                 unit_price=sale_item.unit_price,
                 discount=sale_item.discount,
                 tax_code=sale_item.tax_code,
+                presentation_id=sale_item.presentation_id,
+                unit_factor=sale_item.unit_factor,
             )
             refund_item.recalculate_tax()
             refund_item = self.refund_item_repo.create(refund_item)

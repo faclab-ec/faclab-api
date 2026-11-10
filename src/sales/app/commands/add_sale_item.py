@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.presentations import ProductPresentations
 from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
@@ -22,6 +23,8 @@ class AddSaleItemCommand(Command):
     quantity: Decimal
     unit_price: Decimal
     discount: Decimal = Decimal("0")
+    # The presentation it is sold in (S5.2); none: the base unit
+    presentation_id: int | None = None
 
 
 @injectable(lifetime="scoped")
@@ -35,7 +38,9 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         product_repo: ProductRepository,
         event_publisher: EventPublisher,
         quantities: ProductQuantities,
+        presentations: ProductPresentations,
     ):
+        self.presentations = presentations
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
@@ -56,9 +61,12 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
         product = self.product_repo.get_by_id(command.product_id)
         if not product:
             raise NotFoundError(f"Product with id {command.product_id} not found")
-        self.quantities.ensure_for_product(product, command.quantity)
+        presentation = self.presentations.resolve(product, command.presentation_id)
+        self.quantities.ensure_for_presentation(
+            product, presentation.factor, command.quantity
+        )
 
-        # Crear el item con el IVA de su producto
+        # Crear el item con el IVA de su producto, en su presentación
         sale_item = SaleItem(
             sale_id=command.sale_id,
             product_id=command.product_id,
@@ -66,6 +74,8 @@ class AddSaleItemCommandHandler(CommandHandler[AddSaleItemCommand, dict]):
             unit_price=Decimal(str(command.unit_price)),
             discount=Decimal(str(command.discount)),
             tax_code=product.tax_code,
+            presentation_id=presentation.id,
+            unit_factor=presentation.factor,
         )
         sale_item.recalculate_tax()
 

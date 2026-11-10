@@ -29,9 +29,11 @@ from tests.integration.postgres.api import (
     make_customer,
     make_location,
     make_movement,
+    make_presentation,
     make_product,
     make_terminal,
     make_warehouse,
+    unit_id,
 )
 
 INSUFFICIENT_PRIVILEGE = "42501"
@@ -112,6 +114,7 @@ def _product_body(product: dict, **changes) -> dict:
     return {
         "name": product["name"],
         "sku": product["sku"],
+        "unitOfMeasureId": product.get("unitOfMeasureId"),
         "purchasePrice": "6.00",
         "salePrice": "10.00",
         "taxCode": "VAT_15",
@@ -224,7 +227,9 @@ def _product_created(w):
         w.admin,
         "POST",
         "/api/admin/products",
-        _product_body({"name": "Taladro", "sku": "TAL-1"}),
+        _product_body(
+            {"name": "Taladro", "sku": "TAL-1", "unitOfMeasureId": unit_id(w.admin.api)}
+        ),
     )["id"]
 
 
@@ -243,6 +248,40 @@ def _product_price_changed(w):
 def _product_deleted(w):
     product = _product(w, stock=0)
     w.send(w.admin, "DELETE", f"/api/admin/products/{product['id']}")
+    return product["id"]
+
+
+def _product_presentation_created(w):
+    product = _product(w, stock=0)
+    w.send(
+        w.admin,
+        "POST",
+        f"/api/admin/products/{product['id']}/presentations",
+        {"name": "Caja x12", "factor": 12, "barcode": f"BOX-{uuid4().hex[:8]}"},
+    )
+    return product["id"]
+
+
+def _product_presentation_updated(w):
+    product = _product(w, stock=0)
+    box = make_presentation(w.admin.api, product["id"], "Caja x12", 12)
+    w.send(
+        w.admin,
+        "PUT",
+        f"/api/admin/products/{product['id']}/presentations/{box['id']}",
+        {"name": "Caja x12", "factor": 12, "salePrice": "100.00"},
+    )
+    return product["id"]
+
+
+def _product_presentation_deleted(w):
+    product = _product(w, stock=0)
+    box = make_presentation(w.admin.api, product["id"], "Caja x12", 12)
+    w.send(
+        w.admin,
+        "DELETE",
+        f"/api/admin/products/{product['id']}/presentations/{box['id']}",
+    )
     return product["id"]
 
 
@@ -567,6 +606,9 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.PRODUCT_UPDATED: _product_updated,
     AuditAction.PRODUCT_PRICE_CHANGED: _product_price_changed,
     AuditAction.PRODUCT_DELETED: _product_deleted,
+    AuditAction.PRODUCT_PRESENTATION_CREATED: _product_presentation_created,
+    AuditAction.PRODUCT_PRESENTATION_UPDATED: _product_presentation_updated,
+    AuditAction.PRODUCT_PRESENTATION_DELETED: _product_presentation_deleted,
     AuditAction.MOVEMENT_CREATED: _movement_created,
     AuditAction.ADJUSTMENT_CONFIRMED: _adjustment_confirmed,
     AuditAction.ADJUSTMENT_CANCELLED: _adjustment_cancelled,

@@ -23,7 +23,11 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.auth.seed import LOCAL_TENANT_NAME, LOCAL_TENANT_RUC
-from src.catalog.product.infra.models import CategoryModel, ProductModel
+from src.catalog.product.infra.models import (
+    CategoryModel,
+    ProductModel,
+    ProductPresentationModel,
+)
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerContactModel, CustomerModel
 from src.inventory.adjustment.infra.models import (
@@ -100,6 +104,7 @@ TRUNCATE_ORDER = [
     CustomerContactModel,
     CustomerModel,
     LocationModel,
+    ProductPresentationModel,
     ProductModel,
     CategoryModel,
     UnitOfMeasureModel,
@@ -498,6 +503,48 @@ def seed_products(
             is_service=False,
         )
         models.append(p)
+    session.add_all(models)
+    session.flush()
+    return models
+
+
+# Presentations beyond the base unit (S5.2): sku -> (name, factor, barcode,
+# own sale price or None for factor x the product's)
+EXTRA_PRESENTATIONS = {
+    "ELEC-001": ("Rollo 305 m", "305", "7861000003051", "220.00"),
+    "FERR-005": ("Caja x25", "25", "7861000000255", "100.00"),
+    "PLOM-002": ("Paquete x10", "10", "7861000000101", None),
+}
+
+
+def seed_presentations(
+    session: Session,
+    products: list[ProductModel],
+    uoms: list[UnitOfMeasureModel],
+) -> list[ProductPresentationModel]:
+    """Each product's base presentation, named after its unit, and a few boxes
+    and rolls with their own barcode"""
+    unit_names = {u.id: u.name for u in uoms}
+    models = [
+        ProductPresentationModel(
+            product_id=p.id,
+            name=unit_names[p.unit_of_measure_id],
+            factor=Decimal(1),
+            is_base=True,
+        )
+        for p in products
+    ]
+    by_sku = {p.sku: p for p in products}
+    for sku, (name, factor, barcode, price) in EXTRA_PRESENTATIONS.items():
+        models.append(
+            ProductPresentationModel(
+                product_id=by_sku[sku].id,
+                name=name,
+                factor=Decimal(factor),
+                barcode=barcode,
+                sale_price=Decimal(price) if price else None,
+            )
+        )
     session.add_all(models)
     session.flush()
     return models
@@ -1882,6 +1929,9 @@ def seed_tenant(session: Session) -> None:
 
     print("Sembrando productos...")
     products = seed_products(session, categories, uoms)
+
+    print("Sembrando presentaciones...")
+    seed_presentations(session, products, uoms)
 
     print("Sembrando clientes...")
     customers = seed_customers(session)

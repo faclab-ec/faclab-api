@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from wireup import injectable
 
 from src.catalog.product.app.product_names import with_product_names
-from src.catalog.product.app.repositories import ProductRepository
+from src.catalog.product.app.repositories import (
+    ProductPresentationRepository,
+    ProductRepository,
+)
 from src.sales.app.repositories import SaleItemRepository
 from src.shared.app.queries import Query, QueryHandler
 
@@ -19,9 +22,15 @@ class GetSaleItemsQuery(Query):
 class GetSaleItemsQueryHandler(QueryHandler[GetSaleItemsQuery, list[dict]]):
     """Handler para obtener todos los items de una venta"""
 
-    def __init__(self, repo: SaleItemRepository, product_repo: ProductRepository):
+    def __init__(
+        self,
+        repo: SaleItemRepository,
+        product_repo: ProductRepository,
+        presentations: ProductPresentationRepository,
+    ):
         self.repo = repo
         self.product_repo = product_repo
+        self.presentations = presentations
 
     def _handle(self, query: GetSaleItemsQuery) -> list[dict]:
         """Obtiene todos los items de una venta específica"""
@@ -32,4 +41,4 @@ class GetSaleItemsQueryHandler(QueryHandler[GetSaleItemsQuery, list[dict]]):
             item_dict = item.dict()
             item_dict["subtotal"] = item.subtotal
             result.append(item_dict)
-        return with_product_names(result, self.product_repo)
+        return with_product_names(result, self.product_repo, self.presentations)

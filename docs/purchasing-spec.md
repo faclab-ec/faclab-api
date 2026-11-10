@@ -80,9 +80,18 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `purchaseOrderId` | `int`    | sí        | —       | ID de la orden de compra             |
 | `productId`       | `int`    | sí        | —       | ID del producto                      |
 | `productName`, `productSku` | `string?` | auto | — | Nombre y SKU del producto (solo en `GET /purchase-orders/{id}/items`) |
-| `quantityOrdered` | `decimal` | sí        | —       | Cantidad pedida                      |
-| `quantityReceived`| `decimal` | auto      | `0`     | Cantidad recibida acumulada          |
-| `unitCost`        | `number` | sí        | —       | Costo unitario                       |
+| `presentationId`  | `int?`   | no        | base    | Presentación en que se compra (S5.2): caja de 100, rollo de 50 m. Sin ella, la unidad base |
+| `presentationName`| `string?`| auto      | —       | Nombre de la presentación (solo en `GET /purchase-orders/{id}/items`) |
+| `unitFactor`      | `decimal`| auto      | `1`     | Unidades base de una de su presentación, copiado al agregar el ítem |
+| `quantityOrdered` | `decimal` | sí        | —       | Cantidad pedida, en su presentación  |
+| `quantityReceived`| `decimal` | auto      | `0`     | Cantidad recibida acumulada, en su presentación |
+| `unitCost`        | `number` | sí        | —       | Costo de una unidad de su presentación (una caja) |
+
+**Presentaciones (S5.2):** lo pedido, lo recibido, lo pendiente y el costo se cuentan en la
+presentación del ítem (2 cajas a 3,00); al recibir, el stock, los movimientos y los lotes suben
+cantidad × `unitFactor` en unidades base (2 cajas de 100 = 200 unidades). La cantidad admite los
+decimales de la unidad del producto menos los del factor. La web sugiere como costo el de la
+presentación (el propio o factor × el del producto).
 
 **Campos calculados (no vienen del API, calcular en frontend):**
 
@@ -109,7 +118,9 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `purchaseReceiptId`   | `int`             | auto      | —       | ID del recibo                            |
 | `purchaseOrderItemId` | `int`             | sí        | —       | ID del ítem de la orden                  |
 | `productId`           | `int`             | sí        | —       | ID del producto                          |
-| `quantityReceived`    | `decimal`         | sí        | —       | Cantidad recibida en esta entrega        |
+| `quantityReceived`    | `decimal`         | sí        | —       | Cantidad recibida en esta entrega, en la presentación del ítem |
+| `unitFactor`          | `decimal`         | auto      | `1`     | Factor del ítem de la orden (S5.2)       |
+| `baseQuantity`        | `decimal`         | auto      | —       | quantityReceived × unitFactor: lo que entra al stock |
 | `locationId`          | `int \| null`     | no        | `null`  | Ubicación de destino en almacén          |
 | `lotNumber`           | `string \| null`  | no        | `null`  | Número de lote para trazabilidad         |
 | `serialNumbers`       | `string[] \| null`| no        | `null`  | Números de serie individuales            |
@@ -409,9 +420,10 @@ Registra la recepción de mercancía. Puede ser parcial o total.
 | 422    | Datos de validación inválidos                                     |
 
 **Efectos secundarios (automáticos):**
-- Se crean movimientos de inventario tipo `IN` por cada ítem recibido
+- Se crean movimientos de inventario tipo `IN` por cada ítem recibido, en unidades base:
+  `quantityReceived` × el factor de la presentación del ítem (2 cajas de 100 = 200, S5.2)
 - Se actualizan las cantidades de stock en las ubicaciones correspondientes
-- Si se proporciona `lotNumber`, se crea o actualiza el lote
+- Si se proporciona `lotNumber`, se crea o actualiza el lote (también en unidades base)
 - Si se proporcionan `serialNumbers`, se registran los números de serie
 - El estado de la orden cambia a `partial` o `received` según corresponda
 
@@ -483,6 +495,7 @@ Agrega un ítem a una orden de compra. Solo permitido cuando la orden está en e
 {
   "purchaseOrderId": 1,
   "productId": 10,
+  "presentationId": 41,
   "quantityOrdered": 100,
   "unitCost": 15.00
 }
@@ -492,8 +505,9 @@ Agrega un ítem a una orden de compra. Solo permitido cuando la orden está en e
 | ----------------- | --------- | --------- | ---------- |
 | `purchaseOrderId` | `int`     | sí        | `>= 1`    |
 | `productId`       | `int`     | sí        | `>= 1`    |
-| `quantityOrdered` | `decimal` | sí        | `> 0`      |
-| `unitCost`        | `number`  | sí        | `>= 0`    |
+| `presentationId`  | `int`     | no        | `>= 1`, del producto y activa (S5.2); sin ella, la unidad base |
+| `quantityOrdered` | `decimal` | sí        | `> 0`, en la presentación |
+| `unitCost`        | `number`  | sí        | `>= 0`, de una unidad de la presentación |
 
 **Response (201):**
 
@@ -504,7 +518,9 @@ Agrega un ítem a una orden de compra. Solo permitido cuando la orden está en e
   "productId": 10,
   "quantityOrdered": 100,
   "quantityReceived": 0,
-  "unitCost": 15.00
+  "unitCost": 15.00,
+  "presentationId": 41,
+  "unitFactor": 100
 }
 ```
 

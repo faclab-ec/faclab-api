@@ -1,3 +1,5 @@
+from typing import Any
+
 from wireup import injectable
 
 from src.sales.domain.entities import Payment, Sale, SaleItem
@@ -14,6 +16,10 @@ class SaleMapper(Mapper[Sale, SaleModel]):
 @injectable(lifetime="singleton")
 class SaleItemMapper(Mapper[SaleItem, SaleItemModel]):
     __entity__ = SaleItem
+
+    def to_dict(self, entity: SaleItem) -> dict[str, Any]:
+        # The quantity in base units is stored for the reports (S5.2)
+        return {**super().to_dict(entity), "base_quantity": entity.base_quantity}
 
 
 @injectable(lifetime="singleton")

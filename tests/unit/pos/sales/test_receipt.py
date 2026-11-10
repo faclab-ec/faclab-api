@@ -103,8 +103,8 @@ class TestGenerateReceiptQueryHandler:
                 mock.filter.return_value.first.return_value = shift
             else:
                 # SaleItemModel + ProductModel.name join
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (item, "Product A")
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (item, "Product A", None, None)
                 ]
             return mock
 
@@ -157,8 +157,8 @@ class TestGenerateReceiptQueryHandler:
             elif model_name == "ShiftModel":
                 mock.filter.return_value.first.return_value = _make_shift_model()
             else:
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (_make_item_model(), "Product A")
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (_make_item_model(), "Product A", None, None)
                 ]
             return mock
 
@@ -195,8 +195,8 @@ class TestGenerateReceiptQueryHandler:
                     payment
                 ]
             else:
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (item, "Product A")
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (item, "Product A", None, None)
                 ]
             return mock
 
@@ -237,9 +237,9 @@ class TestGenerateReceiptQueryHandler:
                     payment
                 ]
             else:
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (item_0, "Product Zero"),
-                    (item_12, "Product IVA"),
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (item_0, "Product Zero", None, None),
+                    (item_12, "Product IVA", None, None),
                 ]
             return mock
 
@@ -284,9 +284,9 @@ class TestGenerateReceiptQueryHandler:
                     _make_payment_model(amount=Decimal("159"))
                 ]
             else:
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (item_0, "Product Zero"),
-                    (item_12, "Product IVA"),
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (item_0, "Product Zero", None, None),
+                    (item_12, "Product IVA", None, None),
                 ]
             return mock
 
@@ -305,10 +305,10 @@ class TestGenerateReceiptQueryHandler:
         handler = _build_handler()
         sale = _make_sale_model()
         items = [
-            (_make_item_model(tax_code=TaxCode.VAT_15), "P15"),
-            (_make_item_model(tax_code=TaxCode.VAT_5), "P5"),
-            (_make_item_model(tax_code=TaxCode.VAT_0), "P0"),
-            (_make_item_model(tax_code=TaxCode.EXEMPT), "PEX"),
+            (_make_item_model(tax_code=TaxCode.VAT_15), "P15", None, None),
+            (_make_item_model(tax_code=TaxCode.VAT_5), "P5", None, None),
+            (_make_item_model(tax_code=TaxCode.VAT_0), "P0", None, None),
+            (_make_item_model(tax_code=TaxCode.EXEMPT), "PEX", None, None),
         ]
         payment = _make_payment_model()
 
@@ -323,7 +323,7 @@ class TestGenerateReceiptQueryHandler:
                     payment
                 ]
             else:
-                mock.join.return_value.filter.return_value.all.return_value = items
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = items
             return mock
 
         handler.session.query.side_effect = query_side_effect
@@ -363,8 +363,8 @@ class TestGenerateReceiptQueryHandler:
                     payment
                 ]
             else:
-                mock.join.return_value.filter.return_value.all.return_value = [
-                    (item, "Product A")
+                mock.join.return_value.outerjoin.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                    (item, "Product A", None, None)
                 ]
             return mock
 

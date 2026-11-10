@@ -13,6 +13,7 @@ from src.catalog.product.domain.entities import Product
 from src.catalog.uom.domain.entities import UnitOfMeasure
 from src.shared.domain.quantity import QuantityPrecisionError
 from tests.audit import FakeAuditTrail
+from tests.presentations import FakeProductPresentations
 
 METER = UnitOfMeasure(id=2, name="Metro", symbol="m", decimals=2)
 UNIT = UnitOfMeasure(id=1, name="Unidad", symbol="und", decimals=0)
@@ -82,7 +83,7 @@ def _create_handler() -> CreateProductCommandHandler:
     repo = Mock()
     repo.create.side_effect = lambda product: replace(product, id=1)
     return CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), _quantities()
+        repo, MagicMock(), FakeAuditTrail(), _quantities(), FakeProductPresentations()
     )
 
 

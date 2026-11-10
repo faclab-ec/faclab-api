@@ -78,15 +78,25 @@ class QuickSaleItemInput(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
+    presentation_id: int | None = Field(
+        None,
+        gt=0,
+        description="Presentation it is sold in (the box whose barcode was "
+        "scanned); none: the base unit. Stock moves quantity × its factor",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
+    )
     quantity: QuantityNumber = Field(
         ...,
         gt=0,
-        description="Quantity to sell, with the decimals of the product's unit",
+        description="Quantity to sell in its presentation: the decimals of the "
+        "product's unit minus those of the presentation's factor",
     )
     unit_price: Decimal | None = Field(
         None,
         gt=0,
-        description="Unit price override (uses product sale price if omitted)",
+        description="Price of one unit of its presentation; omitted: the "
+        "presentation's price (its own or factor × the product's)",
         validation_alias=AliasChoices("unitPrice", "unit_price"),
         serialization_alias="unitPrice",
     )
@@ -97,7 +107,8 @@ class QuickSaleItemInput(BaseModel):
         None,
         min_length=1,
         max_length=512,
-        description="Why unitPrice differs from the product price (required then)",
+        description="Why unitPrice differs from the presentation's price "
+        "(required then)",
         validation_alias=AliasChoices("overrideReason", "override_reason"),
         serialization_alias="overrideReason",
     )
@@ -168,7 +179,19 @@ class ReceiptItemResponse(BaseModel):
         validation_alias=AliasChoices("productName", "product_name"),
         serialization_alias="productName",
     )
-    quantity: QuantityNumber
+    presentation_name: str | None = Field(
+        None,
+        description="Presentation it was sold in (Caja x100); null in the base unit",
+        validation_alias=AliasChoices("presentationName", "presentation_name"),
+        serialization_alias="presentationName",
+    )
+    quantity: QuantityNumber = Field(description="Quantity in its presentation")
+    base_quantity: QuantityNumber = Field(
+        ...,
+        description="Quantity in base units",
+        validation_alias=AliasChoices("baseQuantity", "base_quantity"),
+        serialization_alias="baseQuantity",
+    )
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),

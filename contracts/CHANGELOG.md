@@ -3,6 +3,18 @@
 Cada versión de un mensaje, qué cambió y en qué orden se desplegó. Las reglas de compatibilidad
 están en [README.md](README.md#versiones-y-compatibilidad).
 
+## `sales.confirmed` v3 y `credit_notes.requested` v2: presentaciones (S5.2, 2026-11)
+
+- **Sin cambio de versión ni de campos**: una línea vendida en una presentación distinta de la unidad
+  del producto (caja de 100, rollo de 50 m) lleva `quantity` y `unit_price` de esa presentación
+  (2 cajas a 4.50) y `product_name` con la presentación entre paréntesis ("Tornillo 1/2 (Caja
+  x100)"), que faclab-invoicing escribe en la `descripcion` del detalle. Solo cambió la descripción
+  del campo en los esquemas.
+- **Despliegue**: solo faclab-core. La copia de los contratos en faclab-invoicing se resincroniza
+  cuando convenga: solo difiere en esa descripción.
+- **Pendiente**: `unidadMedida` en el detalle (opcional en el XSD) necesita un campo nuevo y el
+  cambio en faclab-invoicing.
+
 ## `sales.confirmed` v3 y `credit_notes.requested` v2: cantidades decimales (S5.1, 2026-11)
 
 - **Cambio de tipo, versión nueva**: `items[].quantity` pasa de entero JSON a texto decimal con hasta

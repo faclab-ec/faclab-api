@@ -23,7 +23,9 @@ class ItemSoldDetail(BaseModel):
 
     product_name: str = Field(description="Product name")
     sku: str = Field(description="Product SKU")
-    quantity: QuantityNumber = Field(description="Total quantity sold")
+    quantity: QuantityNumber = Field(
+        description="Total quantity sold, in the product's base unit"
+    )
     total: DecimalNumber = Field(description="Total revenue for this product")
 
 

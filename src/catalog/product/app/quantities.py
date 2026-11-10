@@ -10,6 +10,7 @@ from src.catalog.uom.domain.entities import UnitOfMeasure
 from src.shared.domain.quantity import (
     DEFAULT_QUANTITY_DECIMALS,
     ensure_quantity_decimals,
+    presentation_decimals,
 )
 
 
@@ -18,6 +19,8 @@ class ProductQuantities:
     """Decimales que admite la cantidad de cada producto (S5.1).
 
     Los define su unidad de medida; un producto sin unidad solo acepta enteros.
+    Una cantidad en una presentación (S5.2) admite los de la unidad menos los de
+    su factor, así su equivalente en unidades base siempre cabe en la unidad.
     Se valida cuando alguien escribe una cantidad (una línea de venta, de compra,
     de ajuste, un movimiento manual), no al leer lo ya guardado: bajar los
     decimales de una unidad no invalida el stock ni los documentos anteriores.
@@ -50,11 +53,43 @@ class ProductQuantities:
             if product_id in decimals:
                 ensure_quantity_decimals(quantity, decimals[product_id], product_id)
 
+    def ensure_in_presentations(
+        self, lines: Iterable[tuple[int, Decimal, Decimal | int]]
+    ) -> None:
+        """Cantidades de líneas en su presentación: (producto, factor, cantidad).
+        Un producto que no existe se salta"""
+        lines = list(lines)
+        decimals = self.decimals(product_id for product_id, _, _ in lines)
+        for product_id, factor, quantity in lines:
+            if product_id in decimals:
+                ensure_quantity_decimals(
+                    quantity,
+                    presentation_decimals(decimals[product_id], factor),
+                    product_id,
+                )
+
     def ensure_for_product(self, product: Product, quantity: Decimal | int) -> None:
         """Una cantidad de un producto ya cargado: solo consulta su unidad"""
         self.ensure_for_unit(
             product.unit_of_measure_id, [quantity], product_id=product.id
         )
+
+    def ensure_for_presentation(
+        self, product: Product, factor: Decimal, quantity: Decimal | int
+    ) -> None:
+        """Una cantidad de un producto en una de sus presentaciones"""
+        units = (
+            {
+                u.require_id(): u
+                for u in self.units.get_by_ids([product.unit_of_measure_id])
+            }
+            if product.unit_of_measure_id
+            else {}
+        )
+        decimals = presentation_decimals(
+            _decimals(product.unit_of_measure_id, units), factor
+        )
+        ensure_quantity_decimals(quantity, decimals, product.id)
 
     def ensure_for_unit(
         self,

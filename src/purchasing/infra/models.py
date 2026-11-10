@@ -13,7 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn, QuantityColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn, base_quantity_of
 
 
 class PurchaseOrderModel(TenantScoped, Base):
@@ -65,6 +65,12 @@ class PurchaseOrderItemModel(TenantScoped, Base):
             name="fk_purchase_order_items_product_tenant",
             ondelete="RESTRICT",
         ),
+        # The presentation it is bought in (S5.2); one in use can't be deleted
+        ForeignKeyConstraint(
+            ["tenant_id", "presentation_id"],
+            ["product_presentations.tenant_id", "product_presentations.id"],
+            name="fk_purchase_order_items_presentation_tenant",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -77,6 +83,10 @@ class PurchaseOrderItemModel(TenantScoped, Base):
         QuantityColumn, nullable=False, default=0
     )
     unit_cost: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
+    presentation_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    unit_factor: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(1), server_default="1"
+    )
 
     purchase_order: Mapped["PurchaseOrderModel"] = relationship(back_populates="items")
 
@@ -128,6 +138,13 @@ class PurchaseReceiptItemModel(TenantScoped, Base):
         ForeignKey("products.id", ondelete="RESTRICT"), nullable=False
     )
     quantity_received: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
+    # The order item's factor and what went into stock, in base units (S5.2)
+    unit_factor: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(1), server_default="1"
+    )
+    base_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=base_quantity_of("quantity_received")
+    )
     location_id: Mapped[int | None]
     lot_number: Mapped[str | None] = mapped_column(String(64))
     serial_numbers: Mapped[list[str] | None] = mapped_column(JSON)

@@ -12,7 +12,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn, PercentageColumn, QuantityColumn
+from src.shared.infra.precision import (
+    MoneyColumn,
+    PercentageColumn,
+    QuantityColumn,
+    base_quantity_of,
+)
 
 
 class RefundModel(TenantScoped, Base):
@@ -90,6 +95,20 @@ class RefundItemModel(TenantScoped, Base):
         Integer, ForeignKey("products.id"), nullable=False
     )
     quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
+    # The sale item's presentation and factor, and the quantity in base units
+    # that goes back to stock (S5.2)
+    presentation_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("product_presentations.id", name="fk_pos_refund_items_presentation"),
+        nullable=True,
+        index=True,
+    )
+    unit_factor: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(1), server_default="1"
+    )
+    base_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=base_quantity_of("quantity")
+    )
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     discount: Mapped[Decimal] = mapped_column(
         PercentageColumn, nullable=False, default=Decimal("0")

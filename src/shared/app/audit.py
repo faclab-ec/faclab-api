@@ -22,6 +22,10 @@ class AuditAction(StrEnum):
     # Cambió el costo, el precio de venta o el código de IVA
     PRODUCT_PRICE_CHANGED = "product.price_changed"
     PRODUCT_DELETED = "product.deleted"
+    # A presentation of the product (S5.2): box, roll; its price and cost too
+    PRODUCT_PRESENTATION_CREATED = "product.presentation_created"
+    PRODUCT_PRESENTATION_UPDATED = "product.presentation_updated"
+    PRODUCT_PRESENTATION_DELETED = "product.presentation_deleted"
     # Solo el movimiento manual: los de un documento los audita el documento
     MOVEMENT_CREATED = "movement.created"
     ADJUSTMENT_CONFIRMED = "adjustment.confirmed"

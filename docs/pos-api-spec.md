@@ -177,14 +177,25 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | id | int | ID |
 | saleId | int | Venta asociada |
 | productId | int | Producto |
-| quantity | decimal | Cantidad |
-| unitPrice | decimal | Precio unitario |
+| presentationId | int? | Presentación en que se vende (S5.2); null en líneas anteriores, en unidades base |
+| presentationName | string? | Nombre de la presentación (`Caja x100`, o el de la unidad en la base) |
+| quantity | decimal | Cantidad en su presentación (2 cajas) |
+| unitFactor | decimal | Unidades base de una de su presentación, copiado al agregarla |
+| baseQuantity | decimal | quantity × unitFactor: lo que mueve el stock (200 unidades) |
+| unitPrice | decimal | Precio de una unidad de su presentación (una caja) |
 | discount | decimal | Descuento % (0-100) |
 | taxCode | string | Código semántico de IVA (ej: VAT_15) |
 | taxAmount | decimal | Monto de impuesto calculado |
 | subtotal | decimal | (unitPrice × quantity) × (1 - discount/100) |
 | priceOverride | decimal? | Precio sobrescrito |
 | overrideReason | string? | Razón de sobrescritura |
+
+**Presentaciones (S5.2):** una línea se vende en una presentación del producto (caja de 100, rollo de
+50 m) o, sin `presentationId`, en su unidad base. Cantidad y precio son de la presentación, así que los
+totales se calculan igual; el stock de la terminal baja `baseQuantity`. Una cantidad en una
+presentación admite los decimales de la unidad menos los de su factor (media caja de 100 unidades
+enteras: 422 `QUANTITY_PRECISION_EXCEEDED`). Una presentación de otro producto responde 404 y una
+inactiva 400 `PRESENTATION_INACTIVE`. Ver `docs/modules.md` (Catálogo).
 
 ### Entidad: Payment
 
@@ -238,7 +249,8 @@ POST /sales/quick  →  Crea + Items + Confirma + Pagos en una sola transacción
   "items": [
     { "productId": 1, "quantity": 2, "unitPrice": 10.50, "discount": 0 },
     { "productId": 2, "quantity": 1, "unitPrice": 8.00, "overrideReason": "Empaque dañado" },
-    { "productId": 3, "quantity": 1 }
+    { "productId": 3, "quantity": 1 },
+    { "productId": 4, "presentationId": 41, "quantity": 2 }
   ],
   "payments": [
     { "amount": 25.00, "paymentMethod": "CASH" }
@@ -261,7 +273,10 @@ Validaciones:
   (`INSUFFICIENT_PAYMENT`) y otro medio de pago no puede pasarse de lo que falta
   (`PAYMENT_EXCEEDS_BALANCE`). Se valida antes de tocar el stock
 - `customerId=null` → `isFinalConsumer=true` automáticamente
-- Un `unitPrice` distinto del precio del producto es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
+- `presentationId` (opcional, S5.2): la presentación en que se vende (la caja escaneada); sin él, la
+  unidad base. Sin `unitPrice`, la línea toma el precio de la presentación: el propio o factor × el del
+  producto
+- Un `unitPrice` distinto del precio de la presentación es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
 
 Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
@@ -271,8 +286,9 @@ Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
 ```json
 // Request
-{ "productId": 1, "quantity": 3, "unitPrice": 10.50, "discount": 0 }
-// unitPrice es obligatorio, discount es opcional (default 0, rango 0-100)
+{ "productId": 1, "quantity": 3, "unitPrice": 10.50, "discount": 0, "presentationId": null }
+// unitPrice es obligatorio (el de la presentación), discount es opcional (default 0, rango 0-100)
+// presentationId es opcional (S5.2): sin él, la unidad base
 // Response 201
 ```
 
@@ -379,7 +395,9 @@ Efectos:
     "items": [
       {
         "productName": "Producto X",
+        "presentationName": null,
         "quantity": 2,
+        "baseQuantity": 2,
         "unitPrice": 10.50,
         "discount": 0,
         "discountAmount": 0,
@@ -409,7 +427,8 @@ Efectos:
 ```
 
 `cashier` es el usuario autenticado que hizo la venta (`createdBy`); en ventas anteriores, el cajero del
-turno.
+turno. `presentationName` es la presentación en que se vendió la línea (`Caja x100`); null en la unidad
+base (S5.2).
 
 ---
 
@@ -442,7 +461,10 @@ turno.
 | refundId | int | Devolución |
 | originalSaleItemId | int | Item original de la venta |
 | productId | int | Producto |
-| quantity | decimal | Cantidad devuelta |
+| presentationId | int? | Presentación del item original (S5.2), copiada |
+| quantity | decimal | Cantidad devuelta, en esa presentación |
+| unitFactor | decimal | Factor del item original, copiado |
+| baseQuantity | decimal | quantity × unitFactor: lo que vuelve al stock |
 | unitPrice | decimal | Precio (copiado del original) |
 | discount | decimal | Descuento % (copiado) |
 | taxCode | string | Código de IVA (copiado del original) |
@@ -679,6 +701,9 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 }
 ```
 
+En `itemsSold` (reporte X) y `topProducts` (resumen diario), `quantity` va en la unidad base del
+producto: una caja de 100 y 15 unidades suman 115 (S5.2). `total` suma cantidad × precio de cada línea.
+
 **GET `/reports/by-payment-method?fromDate=2026-03-01&toDate=2026-03-14&branchId=1`** — Por método de pago
 
 ```json
@@ -693,7 +718,27 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 
 **GET `/products`** — Listar todos
 
-**GET `/products/search?term=coca&limit=20`** — Buscar por SKU, código de barras, o nombre
+**GET `/products/search?term=coca&limit=20`** — Buscar por SKU, nombre o el código de barras de
+cualquier presentación activa
+
+**GET `/products/barcode?code=7861000001001`** — Lo que se escaneó (S5.2): el producto activo y la
+presentación activa de ese código, con su precio en `presentation.effectiveSalePrice`; 404 si ninguna lo
+tiene. La caja de 100 escaneada se agrega como caja, con su precio
+
+```json
+{
+  "data": {
+    "product": { "id": 10, "name": "Tornillo 1/2", "salePrice": 0.05, "presentations": [ ... ] },
+    "presentation": {
+      "id": 41, "name": "Caja x100", "factor": 100, "barcode": "7861000001001",
+      "salePrice": 4.50, "effectiveSalePrice": 4.50, "isBase": false, "quantityDecimals": 0
+    }
+  }
+}
+```
+
+Las respuestas de producto llevan sus `presentations` (la base primero, luego por factor), cada una con
+`effectiveSalePrice`, `effectivePurchasePrice` y `quantityDecimals`.
 
 **GET `/products/{id}`** — Obtener por ID
 
@@ -866,6 +911,7 @@ Formato de error estándar:
 |--------|------|-------------|
 | GET | `/` | Listar productos |
 | GET | `/search` | Buscar productos |
+| GET | `/barcode` | Producto y presentación de un código de barras |
 | GET | `/{id}` | Obtener producto |
 
 ### Customers (`/customers`)

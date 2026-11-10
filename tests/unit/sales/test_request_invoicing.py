@@ -89,6 +89,8 @@ def test_confirmed_sale_is_sent_again_without_touching_it():
         {
             "product_id": 10,
             "quantity": 2,
+            "presentation_id": None,
+            "base_quantity": 2,
             "unit_price": Decimal("10"),
             "discount": Decimal("0"),
             "tax_code": TaxCode.VAT_15,

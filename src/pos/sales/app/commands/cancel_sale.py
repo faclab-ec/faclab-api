@@ -59,8 +59,9 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 reference_id=command.sale_id,
             )
 
+            # In base units: what went back to stock
             items_data = [
-                {"product_id": item.product_id, "quantity": item.quantity}
+                {"product_id": item.product_id, "quantity": item.base_quantity}
                 for item in items
             ]
         else:

@@ -67,6 +67,9 @@ COMPOSITE_FOREIGN_KEYS = {
     ("pos_refunds", "branch_id"),
     ("pos_refunds", "terminal_id"),
     ("document_sequences", "branch_id"),
+    ("product_presentations", "product_id"),
+    ("sale_items", "presentation_id"),
+    ("purchase_order_items", "presentation_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
@@ -80,6 +83,7 @@ INTERNAL_FOREIGN_KEYS = {
     ("pos_refund_items", "refund_id"): "the refund being created",
     ("pos_refund_items", "original_sale_item_id"): "an item of the loaded sale",
     ("pos_refund_items", "product_id"): "copied from the sale item",
+    ("pos_refund_items", "presentation_id"): "copied from the sale item",
     ("pos_refund_payments", "refund_id"): "the refund loaded by id",
     ("purchase_order_items", "purchase_order_id"): "the order loaded by id",
     ("purchase_receipts", "purchase_order_id"): "the order loaded by id",
@@ -115,7 +119,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 39
+    assert len(BUSINESS_TABLES) == 40
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

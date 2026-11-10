@@ -15,7 +15,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import MoneyColumn, PercentageColumn, QuantityColumn
+from src.shared.infra.precision import (
+    MoneyColumn,
+    PercentageColumn,
+    QuantityColumn,
+    base_quantity_of,
+)
 
 
 class SaleModel(TenantScoped, Base):
@@ -127,6 +132,12 @@ class SaleItemModel(TenantScoped, Base):
             ["products.tenant_id", "products.id"],
             name="fk_sale_items_product_tenant",
         ),
+        # The presentation it is sold in (S5.2); one in use can't be deleted
+        ForeignKeyConstraint(
+            ["tenant_id", "presentation_id"],
+            ["product_presentations.tenant_id", "product_presentations.id"],
+            name="fk_sale_items_presentation_tenant",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -135,6 +146,14 @@ class SaleItemModel(TenantScoped, Base):
     )
     product_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
+    # Presentation, its factor and the quantity in base units (S5.2)
+    presentation_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
+    unit_factor: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(1), server_default="1"
+    )
+    base_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=base_quantity_of("quantity")
+    )
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     discount: Mapped[Decimal] = mapped_column(
         PercentageColumn, nullable=False, default=Decimal("0")

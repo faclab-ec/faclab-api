@@ -19,6 +19,7 @@ from src.catalog.product.app.commands import (
 from src.catalog.product.domain.entities import Category, Product
 from src.catalog.product.domain.events import CategoryCreated, ProductCreated
 from tests.audit import FakeAuditTrail
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 
@@ -30,9 +31,15 @@ def test_create_product_command_handler():
     mock_repo.create.return_value = created_product
 
     handler = CreateProductCommandHandler(
-        mock_repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        mock_repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
-    command = CreateProductCommand(sku="TEST-001", name="Test Product", category_id=1)
+    command = CreateProductCommand(
+        sku="TEST-001", name="Test Product", category_id=1, unit_of_measure_id=1
+    )
 
     result = handler.handle(command)
 
@@ -50,9 +57,15 @@ def test_create_product_publishes_event():
 
     event_publisher = MagicMock()
     handler = CreateProductCommandHandler(
-        mock_repo, event_publisher, FakeAuditTrail(), FakeProductQuantities()
+        mock_repo,
+        event_publisher,
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
-    handler.handle(CreateProductCommand(sku="TEST-001", name="Test Product"))
+    handler.handle(
+        CreateProductCommand(sku="TEST-001", name="Test Product", unit_of_measure_id=1)
+    )
 
     event_publisher.publish.assert_called_once()
     published_event = event_publisher.publish.call_args[0][0]
@@ -70,9 +83,15 @@ def test_update_product_command_handler():
     mock_repo.update.return_value = updated_product
 
     handler = UpdateProductCommandHandler(
-        mock_repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        mock_repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
-    command = UpdateProductCommand(product_id=1, sku="NEW-001", name="New Name")
+    command = UpdateProductCommand(
+        product_id=1, sku="NEW-001", name="New Name", unit_of_measure_id=1
+    )
 
     result = handler.handle(command)
 

@@ -28,6 +28,7 @@ from tests.integration.postgres.api import (
     make_product,
     make_terminal,
     make_warehouse,
+    unit_id,
 )
 from tests.integration.postgres.tenants import (
     DEFAULT_TENANT_RUC,
@@ -175,6 +176,7 @@ def test_a_construction_material_reaches_the_message_with_its_code(
         {
             "name": "Cemento 50 kg",
             "sku": "B",
+            "unitOfMeasureId": unit_id(Api(client, admin)),
             "salePrice": material[1],
             "taxCode": "VAT_5",
             "constructionMaterialCode": "F010401",

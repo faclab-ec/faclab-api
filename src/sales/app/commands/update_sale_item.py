@@ -50,7 +50,9 @@ class UpdateSaleItemCommandHandler(CommandHandler[UpdateSaleItemCommand, dict]):
             raise SaleItemNotInSaleError(command.sale_item_id, command.sale_id)
 
         if command.quantity is not None:
-            self.quantities.ensure([(sale_item.product_id, command.quantity)])
+            self.quantities.ensure_in_presentations(
+                [(sale_item.product_id, sale_item.unit_factor, command.quantity)]
+            )
             sale_item.quantity = command.quantity
         if command.discount is not None:
             sale_item.discount = command.discount

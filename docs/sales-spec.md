@@ -420,8 +420,12 @@ interface SaleItem {
   productId: number;
   productName: string | null;
   productSku: string | null;
-  quantity: number;
-  unitPrice: number;
+  presentationId: number | null;   // presentación vendida (S5.2); null antes, en unidades base
+  presentationName: string | null; // "Caja x100", o el nombre de la unidad en la base
+  quantity: number;                // en su presentación
+  unitFactor: number;              // unidades base de una de su presentación
+  baseQuantity: number;            // quantity × unitFactor: lo que movió el stock
+  unitPrice: number;               // de una unidad de su presentación
   discount: number;
   subtotal: number;
 }
@@ -520,6 +524,10 @@ item.subtotal = (unitPrice × quantity) × (1 - discount / 100)
 ```
 
 Ejemplo: unitPrice=100, quantity=2, discount=10 → `(100 × 2) × (1 - 0.10) = 180`
+
+Con presentaciones (S5.2) la fórmula no cambia: `quantity` y `unitPrice` son de la presentación (2 cajas
+a 4,50 = 9,00) y el stock baja `baseQuantity` (200 unidades). La factura lleva esa cantidad y ese
+precio, y el nombre de la presentación en la descripción de la línea ("Tornillo 1/2 (Caja x100)").
 
 ### Totales de venta
 

@@ -40,9 +40,10 @@ def handle_sale_confirmed(event: SaleConfirmed, session: Any = None) -> None:
             for item in event.items:
                 handler = scope.get(CreateMovementCommandHandler)
 
+                # In base units (S5.2): a line of 2 boxes of 100 takes 200
                 command = CreateMovementCommand(
                     product_id=item["product_id"],
-                    quantity=-abs(item["quantity"]),
+                    quantity=-abs(item.get("base_quantity", item["quantity"])),
                     type=MovementType.OUT.value,
                     reason=f"Sale #{event.sale_id} confirmed",
                 )

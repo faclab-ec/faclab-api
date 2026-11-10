@@ -8,12 +8,14 @@ from src.auth.infra.dependencies import require_branch, require_permission
 from src.catalog.product.app.queries.get_products import (
     GetAllProductsQuery,
     GetAllProductsQueryHandler,
+    GetProductByBarcodeQuery,
+    GetProductByBarcodeQueryHandler,
     GetProductByIdQuery,
     GetProductByIdQueryHandler,
     SearchProductsQuery,
     SearchProductsQueryHandler,
 )
-from src.catalog.product.infra.validators import ProductResponse
+from src.catalog.product.infra.validators import ProductBarcodeResponse, ProductResponse
 from src.customers.app.commands.customer import (
     CreateCustomerCommand,
     CreateCustomerCommandHandler,
@@ -67,6 +69,13 @@ class POSProductRouter:
             dependencies=_read,
         )(self.search)
         self.router.get(
+            "/barcode",
+            response_model=DataResponse[ProductBarcodeResponse],
+            summary="Find the product and presentation of a barcode",
+            responses=RESPONSES_QUERY,
+            dependencies=_read,
+        )(self.get_by_barcode)
+        self.router.get(
             "/{id}",
             response_model=DataResponse[ProductResponse],
             summary="Get product",
@@ -96,6 +105,22 @@ class POSProductRouter:
         result = handler.handle(SearchProductsQuery(search_term=term, limit=limit))
         return ListResponse(
             data=[ProductResponse.model_validate(p) for p in result], meta=meta
+        )
+
+    def get_by_barcode(
+        self,
+        handler: Injected[GetProductByBarcodeQueryHandler],
+        code: str = Query(
+            ..., min_length=1, max_length=64, description="Scanned barcode"
+        ),
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[ProductBarcodeResponse]:
+        """The active product and the active presentation a scanned barcode
+        belongs to: the box of 100 when the box is scanned, with its price
+        (`presentation.effectiveSalePrice`). 404 when no presentation has it."""
+        result = handler.handle(GetProductByBarcodeQuery(barcode=code))
+        return DataResponse(
+            data=ProductBarcodeResponse.model_validate(result), meta=meta
         )
 
     def get_by_id(

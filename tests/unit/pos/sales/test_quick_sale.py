@@ -24,6 +24,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 
@@ -119,6 +120,7 @@ def _build_handler(
     shift_repo=None,
     event_publisher=None,
     audit=None,
+    presentations=None,
 ):
     return QuickSaleCommandHandler(
         sale_repo=sale_repo or _mock_repo(),
@@ -133,6 +135,7 @@ def _build_handler(
         session=MagicMock(),
         audit=audit or FakeAuditTrail(),
         quantities=FakeProductQuantities(),
+        presentations=presentations or FakeProductPresentations(),
     )
 
 

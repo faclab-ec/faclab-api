@@ -1,3 +1,5 @@
+from typing import Any
+
 from wireup import injectable
 
 from src.purchasing.domain.entities import (
@@ -35,3 +37,7 @@ class PurchaseReceiptMapper(Mapper[PurchaseReceipt, PurchaseReceiptModel]):
 @injectable(lifetime="singleton")
 class PurchaseReceiptItemMapper(Mapper[PurchaseReceiptItem, PurchaseReceiptItemModel]):
     __entity__ = PurchaseReceiptItem
+
+    def to_dict(self, entity: PurchaseReceiptItem) -> dict[str, Any]:
+        # What went into stock, in base units (S5.2)
+        return {**super().to_dict(entity), "base_quantity": entity.base_quantity}

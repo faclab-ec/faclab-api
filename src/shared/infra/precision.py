@@ -1,5 +1,9 @@
 """Centralized numeric precision constants for database columns."""
 
+from collections.abc import Callable
+from decimal import Decimal
+from typing import Any
+
 from sqlalchemy import Numeric
 
 # Monetary values: prices, costs, subtotals, taxes, totals, amounts, credit limits
@@ -24,3 +28,16 @@ PercentageColumn = Numeric(PERCENTAGE_PRECISION, PERCENTAGE_SCALE)
 QUANTITY_PRECISION = 18
 QUANTITY_SCALE = 6
 QuantityColumn = Numeric(QUANTITY_PRECISION, QUANTITY_SCALE)
+
+
+def base_quantity_of(quantity_column: str) -> Callable[[Any], Decimal]:
+    """Default of the `base_quantity` of a line (S5.2) written straight through
+    the ORM (the seed, tests): its quantity in the presentation times its
+    `unit_factor`. The repositories always write it from the entity."""
+
+    def default(context: Any) -> Decimal:
+        params = context.get_current_parameters()
+        factor = params.get("unit_factor") or 1
+        return Decimal(str(params[quantity_column])) * Decimal(str(factor))
+
+    return default

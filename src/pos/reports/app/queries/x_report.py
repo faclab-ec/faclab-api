@@ -85,7 +85,8 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
             self.session.query(
                 ProductModel.name.label("product_name"),
                 ProductModel.sku,
-                func.sum(SaleItemModel.quantity).label("quantity"),
+                # In base units: boxes and units of a product add up (S5.2)
+                func.sum(SaleItemModel.base_quantity).label("quantity"),
                 func.sum(SaleItemModel.quantity * SaleItemModel.unit_price).label(
                     "total"
                 ),

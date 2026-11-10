@@ -75,21 +75,55 @@ establecimiento de la sucursal.
 
 Gestion del catalogo de productos con categorias.
 
-**Entidades:** `Category`, `Product`
+**Entidades:** `Category`, `Product`, `ProductPresentation`
 
 **Campos clave de Product:**
 - `id`, `sku`, `name`, `description`
-- `category_id`, `uom_id`
-- `price`, `cost`
+- `category_id`, `unit_of_measure_id` (obligatoria desde S5.2: la unidad base, en la que se lleva el stock)
+- `sale_price`, `purchase_price`: por unidad base
+- `barcode` (en la API): el de la unidad, guardado en su presentacion base
 - `tax_code`: IVA del producto; cada linea de venta lo copia al agregarse
 - `construction_material_code` (opcional): subcategoria de material de construccion
-- `is_active`, `created_at`
+- `is_active`, `is_service`, `min_stock`, `max_stock`, `reorder_point`, `lead_time_days`, `created_at`
 
 **Materiales de construccion (S4.6):** los materiales de la Res. NAC-DGERCGC24-00000013 llevan su codigo de la Tabla 31 del Anexo 23 de la ficha tecnica offline (version 2.34). `constructionMaterialCode` es opcional y solo acepta los 18 codigos de `ConstructionMaterialCode`. Con un codigo, el producto debe tener la tarifa de `CONSTRUCTION_MATERIAL_TAX_CODE` (IVA 5%, en `src/shared/domain/tax.py`); otra tarifa responde 400 `CONSTRUCTION_MATERIAL_TAX_MISMATCH`, al crear y al editar. Un producto con IVA 5% sin codigo sigue permitido. Como un PUT reemplaza el producto, enviarlo sin el codigo lo borra. El codigo viaja en `sales.confirmed` y `credit_notes.requested`, y faclab-invoicing lo escribe en `codigoAuxiliar` de la factura y en `codigoAdicional` de la nota de credito, en lugar del SKU. Los productos existentes no se reclasifican: cada empresa elige el codigo y la tarifa de sus materiales.
 
-**Comandos:** `CreateCategory`, `UpdateCategory`, `DeleteCategory`, `CreateProduct`, `UpdateProduct`, `DeleteProduct`
+**Presentaciones (S5.2):** una ferreteria compra por caja o rollo y vende por unidad o metro. Cada
+producto tiene presentaciones (`product_presentations`, `ProductPresentation`):
 
-**Queries:** `GetAllCategories`, `GetCategoryById`, `GetAllProducts`, `GetProductById`
+- La **base** (`is_base`), una por producto: su unidad de medida, con factor 1, el nombre de la unidad,
+  el codigo de barras del producto y sus precios (no tiene precios propios). La crean y la mantienen los
+  comandos de producto: si cambia la unidad, se renombra; `barcode` de la API del producto lee y escribe
+  el suyo. No se desactiva ni se borra, y de ella solo cambia el codigo de barras (si no, 400
+  `BASE_PRESENTATION_FIXED`).
+- Las demas (caja de 100, rollo de 50 m): `factor` decimal (cuantas unidades base trae, mayor que cero:
+  422 desde el validador y `ck_product_presentations_factor_positive` en la base), `barcode`,
+  `sale_price` y `purchase_price` opcionales (sin ellos, factor x los del producto: `effectiveSalePrice`
+  y `effectivePurchasePrice` en las respuestas) e `is_active`. El factor debe caber en los decimales de
+  la unidad (una unidad entera no tiene cajas de 2,5).
+- El codigo de barras es unico en la empresa entre todas las presentaciones
+  (`uq_product_presentations_tenant_barcode`, 409 `PRODUCT_BARCODE_ALREADY_EXISTS`); el nombre, unico en
+  su producto (409 `PRODUCT_PRESENTATION_ALREADY_EXISTS`).
+- Una cantidad en una presentacion admite los decimales de la unidad menos los del factor
+  (`presentation_decimals`): caja de 100 en una unidad entera, 0; rollo de 50 m en metros, 2. Asi su
+  equivalente en unidades base siempre cabe en la unidad (`ProductQuantities.ensure_for_presentation` y
+  `ensure_in_presentations`, 422 `QUANTITY_PRECISION_EXCEEDED`). Cada presentacion de las respuestas
+  lleva su `quantityDecimals`.
+- Las lineas de venta, devolucion y compra guardan su `presentation_id`, una copia de su factor
+  (`unit_factor`) y, las que mueven stock, `base_quantity` = cantidad x factor. Cantidad y precio son de
+  la presentacion; el stock, los movimientos, los lotes y las cantidades de los reportes van en unidades
+  base. Una presentacion que alguna linea usa no se borra (409 `RECORD_IN_USE`): se desactiva, y una
+  inactiva no se vende ni se compra (400 `PRESENTATION_INACTIVE`).
+- Rutas: `GET`/`POST /api/admin/products/{id}/presentations`, `PUT`/`DELETE
+  /api/admin/products/{id}/presentations/{presentation_id}` (`product:read`/`product:write`), auditadas
+  como `product.presentation_created`/`updated`/`deleted` (recurso: el producto). Las respuestas de
+  producto listan sus presentaciones (la base primero, luego por factor). La busqueda (`search`, `term`)
+  encuentra un producto por el codigo de barras de cualquiera de sus presentaciones activas, y `GET
+  /api/pos/products/barcode?code=` responde el producto y la presentacion de un codigo escaneado.
+
+**Comandos:** `CreateCategory`, `UpdateCategory`, `DeleteCategory`, `CreateProduct`, `UpdateProduct`, `DeleteProduct`, `CreateProductPresentation`, `UpdateProductPresentation`, `DeleteProductPresentation`
+
+**Queries:** `GetAllCategories`, `GetCategoryById`, `GetAllProducts`, `GetProductById`, `SearchProducts`, `GetProductByBarcode`, `GetProductPresentations`
 
 **Eventos:** `ProductCreated`, `ProductUpdated`
 
@@ -110,7 +144,8 @@ JSON. Cada comando que recibe una cantidad escrita por el usuario la valida con 
 (`src/catalog/product/app/quantities.py`) contra la unidad de su producto; un producto sin unidad solo
 acepta enteros, y una cantidad con más decimales responde 422 `QUANTITY_PRECISION_EXCEEDED`. Los
 movimientos que crean los documentos no se validan otra vez. Las respuestas de producto llevan
-`unitSymbol` y `quantityDecimals`.
+`unitSymbol` y `quantityDecimals`. Desde S5.2 todo producto tiene unidad: la migracion
+`e3b7a91c5d20` dio a los que no tenian la unidad `und` ("Unidad", 0 decimales) de su empresa.
 
 **Comandos:** `CreateUnitOfMeasure`, `UpdateUnitOfMeasure`, `DeleteUnitOfMeasure`
 

@@ -11,6 +11,7 @@ from tests.integration.postgres.api import (
     make_product,
     make_supplier,
     make_warehouse,
+    unit_id,
 )
 
 
@@ -147,6 +148,8 @@ def test_duplicate_unique_values_return_409(api, path, payload, code):
     api.post("/api/admin/units-of-measure", {"name": "Unidad", "symbol": "u"})
     if path == "/api/admin/warehouses":
         payload = {**payload, "branchId": warehouse["branchId"]}
+    if path == "/api/admin/products":
+        payload = {**payload, "unitOfMeasureId": unit_id(api)}
 
     error = api.error("POST", path, 409, json=payload)
 
@@ -229,7 +232,12 @@ def test_status_errors_carry_a_specific_code_and_detail(api, client):
 def test_a_construction_material_keeps_its_code_at_its_rate(api):
     """Anexo 23: the code of the SRI's Table 31, only at the materials' rate"""
     path = "/api/admin/products"
-    body = {"name": "Cemento 50 kg", "sku": "CEM-50", "salePrice": "8.50"}
+    body = {
+        "name": "Cemento 50 kg",
+        "sku": "CEM-50",
+        "salePrice": "8.50",
+        "unitOfMeasureId": unit_id(api),
+    }
 
     error = api.error(
         "POST",

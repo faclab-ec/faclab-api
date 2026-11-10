@@ -166,7 +166,22 @@ def at_terminal(headers: dict[str, str], terminal: dict) -> dict[str, str]:
     }
 
 
+def unit_id(
+    api: Api, symbol: str = "und", name: str = "Unidad", decimals: int = 0
+) -> int:
+    """The caller's tenant's unit of measure with that symbol, created the first
+    time it is needed"""
+    for unit in api.get("/api/admin/units-of-measure", params={"limit": 1000}):
+        if unit["symbol"] == symbol:
+            return unit["id"]
+    return api.post(
+        "/api/admin/units-of-measure",
+        {"name": name, "symbol": symbol, "decimals": decimals},
+    )["id"]
+
+
 def make_product(api: Api, sku: str = "SKU-1", **overrides) -> dict:
+    """A product in units (`und`) unless `unitOfMeasureId` says otherwise"""
     payload = {
         "name": f"Product {sku}",
         "sku": sku,
@@ -175,7 +190,18 @@ def make_product(api: Api, sku: str = "SKU-1", **overrides) -> dict:
         "taxCode": "VAT_15",
         **overrides,
     }
+    payload.setdefault("unitOfMeasureId", unit_id(api))
     return api.post("/api/admin/products", payload)
+
+
+def make_presentation(
+    api: Api, product_id: int, name: str, factor: float | str, **overrides
+) -> dict:
+    """A presentation of the product (S5.2): box of 100, roll of 50 m"""
+    return api.post(
+        f"/api/admin/products/{product_id}/presentations",
+        {"name": name, "factor": factor, **overrides},
+    )
 
 
 def make_movement(

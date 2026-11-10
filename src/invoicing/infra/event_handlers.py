@@ -35,13 +35,17 @@ desde dónde; el comprador, el número y la fecha de la factura los pone
 faclab-invoicing (contrato `contracts/events/credit_notes.requested/v1`).
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from src.catalog.product.app.repositories import ProductRepository
+from src.catalog.product.app.repositories import (
+    ProductPresentationRepository,
+    ProductRepository,
+)
+from src.catalog.product.domain.entities import Product, ProductPresentation
 from src.customers.app.repositories import CustomerRepository
 from src.invoicing.app.commands.credit_notes import (
     RequestRefundCreditNotesCommand,
@@ -143,11 +147,38 @@ def _issuing_point(
     )
 
 
+def _presentations_of(
+    presentation_ids: Iterable[int | None],
+    presentations: ProductPresentationRepository | None,
+) -> dict[int, ProductPresentation]:
+    if presentations is None:
+        return {}
+    return {
+        p.require_id(): p
+        for p in presentations.get_by_ids(i for i in presentation_ids if i is not None)
+    }
+
+
+def line_name(
+    product: Product | None,
+    presentation: ProductPresentation | None,
+) -> str | None:
+    """The description of an invoice or credit note line (S5.2): the product's
+    name and, sold in a presentation other than the base unit, that presentation
+    ("Tornillo 1/2 (Caja x100)"): quantity and price are of the presentation"""
+    if product is None:
+        return None
+    if presentation is None or presentation.is_base:
+        return product.name
+    return f"{product.name} ({presentation.name})"
+
+
 def build_sale_confirmed_message(
     event: SaleConfirmed | SaleInvoicingRequested,
     point: IssuingPoint,
     customer_repo: CustomerRepository,
     product_repo: ProductRepository,
+    presentation_repo: ProductPresentationRepository | None = None,
 ) -> dict[str, Any]:
     customer_data = None
     if event.customer_id:
@@ -167,6 +198,9 @@ def build_sale_confirmed_message(
         p.id: p
         for p in product_repo.get_by_ids(item["product_id"] for item in event.items)
     }
+    presentations = _presentations_of(
+        (item.get("presentation_id") for item in event.items), presentation_repo
+    )
     lines = invoice_lines(
         [
             SaleLine(
@@ -191,7 +225,9 @@ def build_sale_confirmed_message(
                 "construction_material_code": (
                     product.construction_material_code if product else None
                 ),
-                "product_name": product.name if product else None,
+                "product_name": line_name(
+                    product, presentations.get(item.get("presentation_id") or 0)
+                ),
                 "quantity": item["quantity"],
                 "unit_price": item["unit_price"],
                 "discount": item.get("discount", 0),
@@ -238,7 +274,11 @@ def _enqueue(event: SaleConfirmed | SaleInvoicingRequested, session: Any) -> Non
             scope.get(EmissionPointRepository),
         )
         message = build_sale_confirmed_message(
-            event, point, scope.get(CustomerRepository), scope.get(ProductRepository)
+            event,
+            point,
+            scope.get(CustomerRepository),
+            scope.get(ProductRepository),
+            scope.get(ProductPresentationRepository),
         )
         scope.get(OutboxWriter).add(
             SALES_CONFIRMED_TOPIC,
@@ -311,10 +351,14 @@ def build_credit_note_message(
     items: Sequence[RefundItem] | Sequence[SaleItem],
     point: IssuingPoint,
     product_repo: ProductRepository,
+    presentation_repo: ProductPresentationRepository | None = None,
 ) -> dict[str, Any]:
     products = {
         p.id: p for p in product_repo.get_by_ids(item.product_id for item in items)
     }
+    presentations = _presentations_of(
+        (item.presentation_id for item in items), presentation_repo
+    )
     lines = credit_note_lines(note, items)
     message_items = []
     for item, line in zip(items, lines, strict=True):
@@ -326,7 +370,9 @@ def build_credit_note_message(
                 "construction_material_code": (
                     product.construction_material_code if product else None
                 ),
-                "product_name": product.name if product else None,
+                "product_name": line_name(
+                    product, presentations.get(item.presentation_id or 0)
+                ),
                 "quantity": item.quantity,
                 "unit_price": item.unit_price,
                 "tax_code": item.tax_code,
@@ -407,7 +453,13 @@ def enqueue_credit_note(event: CreditNoteRequested, session: Any = None) -> None
             scope.get(EmissionPointRepository),
         )
         message = build_credit_note_message(
-            event, note, refund, items, point, scope.get(ProductRepository)
+            event,
+            note,
+            refund,
+            items,
+            point,
+            scope.get(ProductRepository),
+            scope.get(ProductPresentationRepository),
         )
         scope.get(OutboxWriter).add(
             CREDIT_NOTES_REQUESTED_TOPIC,
