@@ -1,7 +1,11 @@
 from collections.abc import Iterable, Mapping
 
 from src.catalog.product.app.quantities import ProductQuantities
-from src.shared.domain.quantity import MAX_QUANTITY_DECIMALS, ensure_quantity_decimals
+from src.shared.domain.quantity import (
+    MAX_QUANTITY_DECIMALS,
+    ensure_quantity_decimals,
+    presentation_decimals,
+)
 
 
 class FakeProductQuantities(ProductQuantities):
@@ -32,6 +36,12 @@ class FakeProductQuantities(ProductQuantities):
         ensure_quantity_decimals(
             quantity, self._decimals.get(product.id, self._default), product.id
         )
+
+    def ensure_for_presentation(self, product, factor, quantity) -> None:
+        decimals = presentation_decimals(
+            self._decimals.get(product.id, self._default), factor
+        )
+        ensure_quantity_decimals(quantity, decimals, product.id)
 
     def ensure_for_unit(self, unit_of_measure_id, quantities, product_id=None) -> None:
         decimals = (

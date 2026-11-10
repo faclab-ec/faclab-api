@@ -41,29 +41,39 @@ class ProductBySku(Specification):
 
 
 class ProductBySearchTerm(Specification):
-    """Productos cuyo nombre o SKU contiene el término, o con ese código de barras"""
+    """Productos cuyo nombre o SKU contiene el término, o con una presentación
+    activa de ese código de barras (S5.2: los códigos viven en las presentaciones;
+    en memoria solo se comparan nombre y SKU)"""
 
     def __init__(self, term: str):
         self.term = term
 
     def is_satisfied_by(self, candidate) -> bool:
         term = self.term.lower()
-        return (
-            term in candidate.sku.lower()
-            or (candidate.barcode and candidate.barcode == self.term)
-            or term in candidate.name.lower()
-        )
+        return term in candidate.sku.lower() or term in candidate.name.lower()
 
     def to_query_criteria(self):
-        from sqlalchemy import or_
+        from sqlalchemy import and_, exists, or_
 
-        from src.catalog.product.infra.models import ProductModel
+        from src.catalog.product.infra.models import (
+            ProductModel,
+            ProductPresentationModel,
+        )
+        from src.shared.infra.tenant import tenant_criteria
 
         pattern = contains_pattern(self.term)
+        by_barcode = exists().where(
+            and_(
+                ProductPresentationModel.product_id == ProductModel.id,
+                ProductPresentationModel.barcode == self.term,
+                ProductPresentationModel.is_active.is_(True),
+                *tenant_criteria(ProductPresentationModel),
+            )
+        )
         return [
             or_(
                 ProductModel.sku.ilike(pattern, escape="\\"),
-                ProductModel.barcode == self.term,
                 ProductModel.name.ilike(pattern, escape="\\"),
+                by_barcode,
             )
         ]

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from config import config
 from src.catalog.product.infra.models import ProductModel
+from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.shared.infra.database import Base, create_session_maker, worker_session_maker
 from src.shared.infra.events.scope import create_sync_scope
@@ -70,7 +71,15 @@ def products(pg_engine, tenants) -> dict[UUID, int]:
     ids = {}
     with Session(bind=pg_engine) as session:
         for tenant_id in tenants:
-            product = ProductModel(name="Martillo", sku="MAR-1", tenant_id=tenant_id)
+            unit = UnitOfMeasureModel(name="Unidad", symbol="und", tenant_id=tenant_id)
+            session.add(unit)
+            session.flush()
+            product = ProductModel(
+                name="Martillo",
+                sku="MAR-1",
+                unit_of_measure_id=unit.id,
+                tenant_id=tenant_id,
+            )
             session.add(product)
             session.flush()
             ids[tenant_id] = product.id
@@ -160,7 +169,7 @@ def test_every_tenant_scoped_table_forces_its_policy(pg_engine):
             )
         ).all()
 
-    assert len(TENANT_SCOPED) == 39
+    assert len(TENANT_SCOPED) == 40
     assert forced == set(TENANT_SCOPED)
     assert [row.tablename for row in policies] == TENANT_SCOPED
     for row in policies:

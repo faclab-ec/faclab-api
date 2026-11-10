@@ -21,6 +21,7 @@ from tests.integration.postgres.api import (
     make_customer,
     make_location,
     make_movement,
+    make_presentation,
     make_product,
     make_supplier,
     make_warehouse,
@@ -68,6 +69,16 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
         reorderPoint=100,
     )["id"]
     ids["product_out"] = make_product(api, f"{m}-SKU-2", name=f"{m} Clavo")["id"]
+    # A box of 10 of the product, with its own barcode (S5.2)
+    ids["presentation_barcode"] = f"{seed}786100000010"
+    ids["presentation"] = make_presentation(
+        api,
+        ids["product"],
+        f"{m} Caja x10",
+        10,
+        barcode=ids["presentation_barcode"],
+        salePrice="95.00",
+    )["id"]
 
     ids["branch"] = make_branch(api, "001", name=f"{m} Matriz")["id"]
     ids["emission_point"] = api.post(

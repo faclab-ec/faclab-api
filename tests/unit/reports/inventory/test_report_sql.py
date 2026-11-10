@@ -53,7 +53,11 @@ def session(in_tenant) -> Iterator[Session]:
     db = sqlite_session(_MODELS)
     db.add(
         ProductModel(
-            id=1, name="Product A", sku="SKU-A", purchase_price=Decimal("10.00")
+            id=1,
+            name="Product A",
+            sku="SKU-A",
+            purchase_price=Decimal("10.00"),
+            unit_of_measure_id=1,
         )
     )
     db.add_all(
@@ -128,7 +132,11 @@ def other_tenant_stock(session):
         session.add(LocationModel(id=2, warehouse_id=2, name="B", code="A1"))
         session.add(
             ProductModel(
-                id=2, name="Product A", sku="SKU-A", purchase_price=Decimal("99.00")
+                id=2,
+                name="Product A",
+                sku="SKU-A",
+                purchase_price=Decimal("99.00"),
+                unit_of_measure_id=1,
             )
         )
         session.add(

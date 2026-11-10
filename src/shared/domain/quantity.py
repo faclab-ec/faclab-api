@@ -1,8 +1,8 @@
 """Cantidades decimales (S5.1).
 
 La base de datos guarda seis decimales (lo que admite `cantidad` en el XML 1.1.0
-del SRI) y cada unidad de medida dice cuántos acepta. Un producto sin unidad
-solo acepta cantidades enteras.
+del SRI) y cada unidad de medida dice cuántos acepta. Desde S5.2 todo producto
+tiene unidad; sin ella (un dato roto) solo se aceptan cantidades enteras.
 """
 
 from decimal import Decimal
@@ -18,6 +18,13 @@ def decimals_of(quantity: Decimal) -> int:
     """Decimales significativos: 2.50 tiene uno, 3.000000 ninguno"""
     exponent = quantity.normalize().as_tuple().exponent
     return -exponent if isinstance(exponent, int) and exponent < 0 else 0
+
+
+def presentation_decimals(unit_decimals: int, factor: Decimal | int) -> int:
+    """Decimales de una cantidad en una presentación (S5.2): los de la unidad
+    base menos los de su factor, así la cantidad en unidades base siempre cabe en
+    la unidad. Caja de 100 en una unidad entera: 0; rollo de 50 m en metros (2): 2"""
+    return max(0, unit_decimals - decimals_of(Decimal(factor)))
 
 
 def format_quantity(quantity: Decimal | int) -> str:

@@ -39,6 +39,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 TENANT = UUID("00000000-0000-4000-8000-00000000000a")
@@ -62,6 +63,7 @@ def _product(**overrides: Any) -> Product:
         "name": "Taladro",
         "purchase_price": Decimal("40"),
         "sale_price": Decimal("50"),
+        "unit_of_measure_id": 1,
     }
     return Product(**{**defaults, **overrides})
 
@@ -75,9 +77,14 @@ def _update_product(**changes: Any) -> FakeAuditTrail:
         name=existing.name,
         purchase_price=existing.purchase_price,
         sale_price=existing.sale_price,
+        unit_of_measure_id=1,
     )
     UpdateProductCommandHandler(
-        _echo(existing), MagicMock(), audit, FakeProductQuantities()
+        _echo(existing),
+        MagicMock(),
+        audit,
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     ).handle(replace(command, **changes))
     return audit
 
@@ -101,7 +108,11 @@ def test_a_new_material_code_is_an_update_with_only_what_changed():
     audit = FakeAuditTrail()
     existing = _product(tax_code=TaxCode.VAT_5)
     UpdateProductCommandHandler(
-        _echo(existing), MagicMock(), audit, FakeProductQuantities()
+        _echo(existing),
+        MagicMock(),
+        audit,
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     ).handle(
         UpdateProductCommand(
             product_id=1,
@@ -111,6 +122,7 @@ def test_a_new_material_code_is_an_update_with_only_what_changed():
             sale_price=existing.sale_price,
             tax_code=TaxCode.VAT_5,
             construction_material_code=ConstructionMaterialCode.CEMENT,
+            unit_of_measure_id=1,
         )
     )
 

@@ -8,24 +8,28 @@ from src.catalog.product.app.queries.get_products import (
 )
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.specifications import ProductBySearchTerm
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 
 # Specification tests
 def test_search_term_matches_sku():
     """Test ProductBySearchTerm matches by exact SKU."""
-    product = Product(id=1, sku="SKU-001", name="Laptop", barcode="1234567890")
+    product = Product(id=1, sku="SKU-001", name="Laptop")
     spec = ProductBySearchTerm(term="SKU-001")
 
     assert spec.is_satisfied_by(product) is True
 
 
-def test_search_term_matches_barcode():
-    """Test ProductBySearchTerm matches by exact barcode."""
-    product = Product(id=1, sku="SKU-001", name="Laptop", barcode="1234567890")
-    spec = ProductBySearchTerm(term="1234567890")
+def test_search_term_looks_for_the_barcode_in_the_presentations(in_tenant):
+    """Barcodes live in the presentations (S5.2): only the SQL criteria see them"""
+    (criteria,) = ProductBySearchTerm(term="1234567890").to_query_criteria()
 
-    assert spec.is_satisfied_by(product) is True
+    sql = str(criteria.compile(compile_kwargs={"literal_binds": True}))
+    assert "EXISTS" in sql
+    assert "product_presentations.barcode = '1234567890'" in sql
+    assert "product_presentations.is_active IS true" in sql
+    assert "product_presentations.tenant_id" in sql
 
 
 def test_search_term_matches_name():
@@ -38,7 +42,7 @@ def test_search_term_matches_name():
 
 def test_search_term_no_match():
     """Test ProductBySearchTerm returns False when no match."""
-    product = Product(id=1, sku="SKU-001", name="Laptop", barcode="1234567890")
+    product = Product(id=1, sku="SKU-001", name="Laptop")
     spec = ProductBySearchTerm(term="nonexistent")
 
     assert spec.is_satisfied_by(product) is False
@@ -52,7 +56,7 @@ def test_search_term_with_none_barcode():
     assert spec.is_satisfied_by(product) is False
 
 
-def test_search_term_sql_criteria():
+def test_search_term_sql_criteria(in_tenant):
     """Test ProductBySearchTerm generates SQL criteria."""
     spec = ProductBySearchTerm(term="SKU-001")
     criteria = spec.to_query_criteria()
@@ -69,7 +73,9 @@ def test_search_products_handler():
     ]
     mock_repo.filter_by_spec.return_value = products
 
-    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
+    handler = SearchProductsQueryHandler(
+        mock_repo, FakeProductQuantities(), FakeProductPresentations()
+    )
     result = handler.handle(SearchProductsQuery(search_term="SKU-001"))
 
     assert len(result) == 1
@@ -82,7 +88,9 @@ def test_search_products_handler_empty_results():
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = []
 
-    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
+    handler = SearchProductsQueryHandler(
+        mock_repo, FakeProductQuantities(), FakeProductPresentations()
+    )
     result = handler.handle(SearchProductsQuery(search_term="nonexistent"))
 
     assert result == []
@@ -93,7 +101,9 @@ def test_search_products_handler_respects_limit():
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = []
 
-    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
+    handler = SearchProductsQueryHandler(
+        mock_repo, FakeProductQuantities(), FakeProductPresentations()
+    )
     handler.handle(SearchProductsQuery(search_term="test", limit=5))
 
     _, kwargs = mock_repo.filter_by_spec.call_args
@@ -101,6 +111,6 @@ def test_search_products_handler_respects_limit():
 
 
 def test_search_term_matches_part_of_the_sku():
-    product = Product(id=1, sku="LAP-001", name="Portátil", barcode=None)
+    product = Product(id=1, sku="LAP-001", name="Portátil")
 
     assert ProductBySearchTerm(term="lap").is_satisfied_by(product) is True

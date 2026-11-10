@@ -3,10 +3,12 @@ from decimal import Decimal
 
 from wireup import injectable
 
+from src.catalog.product.app.presentations import ProductPresentations
 from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.catalog.product.domain.entities import Product
 from src.catalog.product.domain.events import ProductUpdated
+from src.catalog.product.domain.exceptions import UnitOfMeasureRequiredError
 from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
@@ -46,23 +48,27 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
         event_publisher: EventPublisher,
         audit: AuditTrail,
         quantities: ProductQuantities,
+        presentations: ProductPresentations,
     ):
         self.repo = repo
         self.quantities = quantities
+        self.presentations = presentations
         self.event_publisher = event_publisher
         self.audit = audit
 
     def _handle(self, command: UpdateProductCommand) -> dict:
+        if command.unit_of_measure_id is None:
+            raise UnitOfMeasureRequiredError()
         existing = self.repo.get_by_id(command.product_id)
         if existing is None:
             raise NotFoundError(f"Product with id {command.product_id} not found")
+        old_barcode = self.presentations.base_barcode(command.product_id)
 
         product = Product(
             id=command.product_id,
             sku=command.sku,
             name=command.name,
             description=command.description,
-            barcode=command.barcode,
             category_id=command.category_id,
             unit_of_measure_id=command.unit_of_measure_id,
             purchase_price=command.purchase_price,
@@ -82,13 +88,16 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             (product.min_stock, product.max_stock, product.reorder_point),
         )
         product = self.repo.update(product)
+        # The base presentation follows the unit and carries the barcode (S5.2)
+        self.presentations.sync_base(product, command.barcode)
 
         changes = {}
+        if old_barcode != command.barcode:
+            changes["barcode"] = {"old": old_barcode, "new": command.barcode}
         for field in (
             "sku",
             "name",
             "description",
-            "barcode",
             "category_id",
             "unit_of_measure_id",
             "purchase_price",
@@ -125,4 +134,7 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
             )
         )
 
-        return self.quantities.describe([product.dict()])[0]
+        [described] = self.presentations.describe(
+            self.quantities.describe([product.dict()])
+        )
+        return described

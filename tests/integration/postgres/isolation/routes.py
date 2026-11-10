@@ -63,6 +63,16 @@ def _product(sku: str) -> Body:
     }
 
 
+def _presentation(ids: Ids) -> dict:
+    # The dataset's box: a PUT replaces every field
+    return {
+        "name": f"{ids['marker']} Caja x10",
+        "factor": 10,
+        "barcode": ids["presentation_barcode"],
+        "salePrice": "95.00",
+    }
+
+
 def _location(code: str) -> Body:
     return lambda ids: {
         "warehouseId": ids["warehouse"],
@@ -189,6 +199,17 @@ ROUTES: dict[str, Route] = {
         path=("product",), body=_product("SKU-1"), refs=("category", "uom")
     ),
     f"DELETE {ADMIN}/products/{{id}}": Route(path=("product",)),
+    f"GET {ADMIN}/products/{{id}}/presentations": Route(path=("product",)),
+    f"POST {ADMIN}/products/{{id}}/presentations": Route(
+        path=("product",),
+        body=lambda ids: {"name": f"{ids['marker']} Paquete", "factor": 5},
+    ),
+    f"PUT {ADMIN}/products/{{id}}/presentations/{{presentation_id}}": Route(
+        path=("product", "presentation"), body=_presentation
+    ),
+    f"DELETE {ADMIN}/products/{{id}}/presentations/{{presentation_id}}": Route(
+        path=("product", "presentation")
+    ),
     # Inventory
     f"POST {ADMIN}/warehouses": Route(
         body=lambda ids: {
@@ -606,6 +627,11 @@ ROUTES: dict[str, Route] = {
     f"GET {POS}/products": Route(),
     f"GET {POS}/products/search": Route(
         query=lambda ids: {"term": ids["sku"]}, refs=("sku",), needs_query=True
+    ),
+    f"GET {POS}/products/barcode": Route(
+        query=lambda ids: {"code": ids["presentation_barcode"]},
+        refs=("presentation_barcode",),
+        needs_query=True,
     ),
     f"GET {POS}/products/{{id}}": Route(path=("product",)),
     f"POST {POS}/customers": Route(

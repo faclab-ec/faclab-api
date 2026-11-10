@@ -19,6 +19,7 @@ from tests.integration.postgres.api import (
     make_supplier,
     make_terminal,
     make_warehouse,
+    unit_id,
 )
 from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
 
@@ -77,7 +78,10 @@ def test_identifiers_are_still_unique_inside_a_tenant(api_a, api_b):
     _catalog(api_b)
 
     error = api_a.error(
-        "POST", "/api/admin/products", 409, json={"name": "Copy", "sku": "SKU-1"}
+        "POST",
+        "/api/admin/products",
+        409,
+        json={"name": "Copy", "sku": "SKU-1", "unitOfMeasureId": unit_id(api_a)},
     )
 
     assert error["code"] == "PRODUCT_SKU_ALREADY_EXISTS"
@@ -144,7 +148,12 @@ def test_the_database_rejects_a_sale_with_another_tenants_customer(
     [
         (
             "/api/admin/products",
-            lambda b: {"name": "P", "sku": "P-1", "categoryId": b["category"]},
+            lambda b: {
+                "name": "P",
+                "sku": "P-1",
+                "categoryId": b["category"],
+                "unitOfMeasureId": b["unit_a"],
+            },
         ),
         (
             "/api/admin/locations",
@@ -166,6 +175,7 @@ def test_a_reference_to_another_tenants_row_is_rejected(api_a, api_b, path, payl
         "category": api_b.post("/api/admin/categories", {"name": "Cat B"})["id"],
         "warehouse": make_warehouse(api_b, "WH-B")["id"],
         "product": make_product(api_b, "SKU-B")["id"],
+        "unit_a": unit_id(api_a),
     }
 
     # Nothing looks these ids up: the composite foreign key rejects them

@@ -21,6 +21,7 @@ from src.catalog.product.domain.exceptions import ConstructionMaterialTaxMismatc
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from tests.audit import FakeAuditTrail
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 # --- Helpers ---
@@ -32,9 +33,8 @@ def _make_product(**overrides) -> Product:
         "sku": "SKU-001",
         "name": "Test Product",
         "description": None,
-        "barcode": None,
         "category_id": None,
-        "unit_of_measure_id": None,
+        "unit_of_measure_id": 1,
         "purchase_price": None,
         "sale_price": None,
         "is_active": True,
@@ -44,6 +44,8 @@ def _make_product(**overrides) -> Product:
         "reorder_point": 0,
         "lead_time_days": None,
     }
+    # The barcode lives in the base presentation since S5.2
+    overrides.pop("barcode", None)
     defaults.update(overrides)
     return Product(**defaults)
 
@@ -67,7 +69,11 @@ def test_create_product_with_all_new_fields():
     repo = Mock()
     repo.create.return_value = product
     handler = CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
@@ -105,11 +111,17 @@ def test_create_product_service_type():
     repo = Mock()
     repo.create.return_value = product
     handler = CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
-        CreateProductCommand(sku="SVC-001", name="Consulting", is_service=True)
+        CreateProductCommand(
+            sku="SVC-001", name="Consulting", is_service=True, unit_of_measure_id=1
+        )
     )
 
     assert result["is_service"] is True
@@ -121,11 +133,17 @@ def test_create_product_inactive():
     repo = Mock()
     repo.create.return_value = product
     handler = CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
-        CreateProductCommand(sku="SKU-001", name="Old Product", is_active=False)
+        CreateProductCommand(
+            sku="SKU-001", name="Old Product", is_active=False, unit_of_measure_id=1
+        )
     )
 
     assert result["is_active"] is False
@@ -137,15 +155,21 @@ def test_create_product_defaults_for_new_fields():
     repo = Mock()
     repo.create.return_value = product
     handler = CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
-    result = handler.handle(CreateProductCommand(sku="SKU-001", name="Simple Product"))
+    result = handler.handle(
+        CreateProductCommand(sku="SKU-001", name="Simple Product", unit_of_measure_id=1)
+    )
 
     assert result["barcode"] is None
     assert result["purchase_price"] is None
     assert result["sale_price"] is None
-    assert result["unit_of_measure_id"] is None
+    assert result["unit_of_measure_id"] == 1
     assert result["is_active"] is True
     assert result["is_service"] is False
     assert result["min_stock"] == 0
@@ -158,8 +182,13 @@ def test_create_product_passes_new_fields_to_entity():
     """Handler passes new fields correctly to the entity constructor."""
     repo = Mock()
     repo.create.side_effect = lambda e: replace(e, id=1)  # simulate persistence
+    presentations = FakeProductPresentations()
     handler = CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        presentations,
     )
 
     handler.handle(
@@ -175,7 +204,7 @@ def test_create_product_passes_new_fields_to_entity():
     )
 
     created = repo.create.call_args[0][0]
-    assert created.barcode == "123456"
+    assert presentations.barcodes[1] == "123456"
     assert created.purchase_price == Decimal("5.00")
     assert created.unit_of_measure_id == 3
     assert created.min_stock == 2
@@ -198,7 +227,11 @@ def test_update_product_with_new_fields():
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
     handler = UpdateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
@@ -211,6 +244,7 @@ def test_update_product_with_new_fields():
             min_stock=Decimal(10),
             reorder_point=Decimal(3),
             lead_time_days=14,
+            unit_of_measure_id=1,
         )
     )
 
@@ -231,7 +265,11 @@ def test_update_product_tracks_new_field_changes_in_event():
 
     event_publisher = MagicMock()
     handler = UpdateProductCommandHandler(
-        repo, event_publisher, FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        event_publisher,
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
     handler.handle(
         UpdateProductCommand(
@@ -240,6 +278,7 @@ def test_update_product_tracks_new_field_changes_in_event():
             name="Test Product",
             min_stock=Decimal(5),
             purchase_price=Decimal("10.00"),
+            unit_of_measure_id=1,
         )
     )
 
@@ -260,12 +299,20 @@ def test_update_product_deactivate():
     repo.get_by_id.return_value = existing
     repo.update.return_value = deactivated
     handler = UpdateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
         UpdateProductCommand(
-            product_id=1, sku="SKU-001", name="Test Product", is_active=False
+            product_id=1,
+            sku="SKU-001",
+            name="Test Product",
+            is_active=False,
+            unit_of_measure_id=1,
         )
     )
 
@@ -276,25 +323,37 @@ def test_update_product_not_found_raises():
     repo = Mock()
     repo.get_by_id.return_value = None
     handler = UpdateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     with pytest.raises(NotFoundError):
         handler.handle(
-            UpdateProductCommand(product_id=999, sku="SKU-001", name="Product")
+            UpdateProductCommand(
+                product_id=999, sku="SKU-001", name="Product", unit_of_measure_id=1
+            )
         )
 
 
 def test_update_product_no_changes_does_not_include_unchanged_fields_in_event():
     """If a field did not change, it should NOT appear in event.changes."""
-    product = _make_product(min_stock=5, barcode="123")
+    product = _make_product(min_stock=5)
     repo = Mock()
     repo.get_by_id.return_value = product
     repo.update.return_value = product
+    presentations = FakeProductPresentations()
+    presentations.barcodes[1] = "123"
 
     event_publisher = MagicMock()
     handler = UpdateProductCommandHandler(
-        repo, event_publisher, FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        event_publisher,
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        presentations,
     )
     handler.handle(
         UpdateProductCommand(
@@ -303,6 +362,7 @@ def test_update_product_no_changes_does_not_include_unchanged_fields_in_event():
             name="Test Product",
             min_stock=Decimal(5),
             barcode="123",
+            unit_of_measure_id=1,
         )
     )
 
@@ -318,7 +378,11 @@ def test_update_product_set_barcode():
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
     handler = UpdateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
@@ -327,6 +391,7 @@ def test_update_product_set_barcode():
             sku="SKU-001",
             name="Test Product",
             barcode="9876543210123",
+            unit_of_measure_id=1,
         )
     )
 
@@ -340,7 +405,11 @@ def test_update_product_with_unit_of_measure():
     repo.get_by_id.return_value = existing
     repo.update.return_value = updated
     handler = UpdateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), FakeProductQuantities()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
@@ -362,7 +431,7 @@ def _create_handler() -> tuple[CreateProductCommandHandler, MagicMock]:
     repo = MagicMock()
     repo.create.side_effect = lambda product: replace(product, id=1)
     return CreateProductCommandHandler(
-        repo, MagicMock(), Mock(), FakeProductQuantities()
+        repo, MagicMock(), Mock(), FakeProductQuantities(), FakeProductPresentations()
     ), repo
 
 
@@ -371,7 +440,7 @@ def _update_handler(**existing) -> tuple[UpdateProductCommandHandler, MagicMock]
     repo.get_by_id.return_value = _make_product(**existing)
     repo.update.side_effect = lambda product: product
     return UpdateProductCommandHandler(
-        repo, MagicMock(), Mock(), FakeProductQuantities()
+        repo, MagicMock(), Mock(), FakeProductQuantities(), FakeProductPresentations()
     ), repo
 
 
@@ -384,6 +453,7 @@ def test_create_product_with_a_material_code_at_its_rate():
             name="Cemento 50 kg",
             tax_code=TaxCode.VAT_5,
             construction_material_code=ConstructionMaterialCode.CEMENT,
+            unit_of_measure_id=1,
         )
     )
 
@@ -401,6 +471,7 @@ def test_create_product_rejects_a_material_code_at_another_rate(tax_code):
                 name="Cemento 50 kg",
                 tax_code=tax_code,
                 construction_material_code=ConstructionMaterialCode.CEMENT,
+                unit_of_measure_id=1,
             )
         )
 
@@ -419,6 +490,7 @@ def test_update_product_rejects_a_material_code_at_another_rate():
                 name="Test Product",
                 tax_code=TaxCode.VAT_15,
                 construction_material_code=ConstructionMaterialCode.CEMENT,
+                unit_of_measure_id=1,
             )
         )
 
@@ -439,6 +511,7 @@ def test_update_product_cant_change_the_rate_of_a_material():
                 name="Test Product",
                 tax_code=TaxCode.VAT_15,
                 construction_material_code=ConstructionMaterialCode.CEMENT,
+                unit_of_measure_id=1,
             )
         )
 
@@ -454,7 +527,11 @@ def test_a_put_without_the_material_code_clears_it():
 
     result = handler.handle(
         UpdateProductCommand(
-            product_id=1, sku="SKU-001", name="Test Product", tax_code=TaxCode.VAT_5
+            product_id=1,
+            sku="SKU-001",
+            name="Test Product",
+            tax_code=TaxCode.VAT_5,
+            unit_of_measure_id=1,
         )
     )
 
@@ -466,7 +543,9 @@ def test_a_product_at_5_percent_needs_no_code():
     handler, _ = _create_handler()
 
     result = handler.handle(
-        CreateProductCommand(sku="X", name="X", tax_code=TaxCode.VAT_5)
+        CreateProductCommand(
+            sku="X", name="X", tax_code=TaxCode.VAT_5, unit_of_measure_id=1
+        )
     )
 
     assert result["tax_code"] == TaxCode.VAT_5

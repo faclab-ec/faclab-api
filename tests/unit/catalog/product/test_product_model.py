@@ -28,7 +28,9 @@ _MODELS = (
 @pytest.fixture
 def session(in_tenant) -> Iterator[Session]:
     db = sqlite_session(_MODELS, foreign_keys=True)
-    db.add(ProductModel(id=1, name="Product A", sku="SKU-A"))
+    db.add(UnitOfMeasureModel(id=1, name="Unidad", symbol="und"))
+    db.flush()
+    db.add(ProductModel(id=1, name="Product A", sku="SKU-A", unit_of_measure_id=1))
     db.commit()
     yield db
     db.close()

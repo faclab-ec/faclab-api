@@ -59,7 +59,9 @@ _MODELS = (
 def _sell(session: Session, shift_id: int, sale_id: int, amount: str) -> None:
     """A confirmed cash sale of one unit of product `sale_id`"""
     total = Decimal(amount)
-    session.add(ProductModel(id=sale_id, name="Martillo", sku="MAR-01"))
+    session.add(
+        ProductModel(id=sale_id, name="Martillo", sku="MAR-01", unit_of_measure_id=1)
+    )
     session.add(CustomerModel(id=sale_id, name="Cliente", tax_id="0912345678"))
     session.add(ShiftModel(id=shift_id, cashier_name=f"Caja {shift_id}"))
     session.flush()

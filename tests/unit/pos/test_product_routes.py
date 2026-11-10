@@ -6,6 +6,7 @@ from src.catalog.product.app.queries.get_products import SearchProductsQueryHand
 from src.catalog.product.domain.entities import Product
 from src.pos.infra.routes import POSProductRouter
 from src.shared.infra.validators import Meta
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 
@@ -13,10 +14,12 @@ def test_search_returns_matching_products():
     """Test search route wraps the handler's list result in a ListResponse."""
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = [
-        Product(id=1, sku="SKU-001", name="Laptop"),
-        Product(id=2, sku="SKU-002", name="Laptop Stand"),
+        Product(id=1, sku="SKU-001", name="Laptop", unit_of_measure_id=1),
+        Product(id=2, sku="SKU-002", name="Laptop Stand", unit_of_measure_id=1),
     ]
-    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
+    handler = SearchProductsQueryHandler(
+        mock_repo, FakeProductQuantities(), FakeProductPresentations()
+    )
     meta = Meta(request_id="req-1", timestamp="2026-01-01T00:00:00+00:00")
 
     response = POSProductRouter().search(
@@ -30,7 +33,9 @@ def test_search_returns_empty_list_when_no_matches():
     """Test search route returns an empty ListResponse when nothing matches."""
     mock_repo = Mock()
     mock_repo.filter_by_spec.return_value = []
-    handler = SearchProductsQueryHandler(mock_repo, FakeProductQuantities())
+    handler = SearchProductsQueryHandler(
+        mock_repo, FakeProductQuantities(), FakeProductPresentations()
+    )
     meta = Meta(request_id="req-1", timestamp="2026-01-01T00:00:00+00:00")
 
     response = POSProductRouter().search(
