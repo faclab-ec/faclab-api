@@ -190,6 +190,18 @@ def test_a_quantity_in_a_presentation_keeps_its_base_units_whole():
         quantities.ensure_for_presentation(CABLE, Decimal("0.5"), Decimal("0.25"))
 
 
+def test_lines_in_a_presentation_keep_their_base_units_whole():
+    quantities = _quantities()
+    quantities.ensure_in_presentations(
+        [(10, Decimal(100), Decimal(1)), (11, Decimal(50), Decimal("0.5"))]
+    )
+
+    with pytest.raises(QuantityPrecisionError, match="Product 10 takes whole"):
+        quantities.ensure_in_presentations([(10, Decimal(100), Decimal("0.5"))])
+    # An unknown product is left to its handler
+    quantities.ensure_in_presentations([(99, Decimal(3), Decimal("0.123"))])
+
+
 # The service
 
 

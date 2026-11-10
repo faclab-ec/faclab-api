@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from wireup import injectable
 
+from src.catalog.product.app.presentations import ProductPresentations
 from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
 from src.organization.app.numbering import DocumentNumbering
@@ -60,8 +61,10 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         session: Session,
         audit: AuditTrail,
         quantities: ProductQuantities,
+        presentations: ProductPresentations,
     ):
         self.quantities = quantities
+        self.presentations = presentations
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.product_repo = product_repo
@@ -108,15 +111,20 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 raise NotFoundError(
                     f"Product with id {item_data['product_id']} not found"
                 )
+            # The presentation it is sold in, the base unit by default (S5.2)
+            presentation = self.presentations.resolve(
+                product, item_data.get("presentation_id")
+            )
             quantity = Decimal(str(item_data["quantity"]))
-            self.quantities.ensure_for_product(product, quantity)
+            self.quantities.ensure_for_presentation(
+                product, presentation.factor, quantity
+            )
 
-            unit_price = Decimal(str(item_data.get("unit_price") or product.sale_price))
+            list_price = presentation.effective_sale_price(product.sale_price)
+            unit_price = Decimal(str(item_data.get("unit_price") or list_price))
             # Selling at another price is recorded like POST .../price: with
             # the new price and why
-            overridden = (
-                product.sale_price is not None and unit_price != product.sale_price
-            )
+            overridden = list_price is not None and unit_price != list_price
             reason = item_data.get("override_reason")
             if overridden and not reason:
                 raise OverrideReasonRequiredError(product.require_id())
@@ -130,12 +138,14 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
                 tax_code=product.tax_code,
                 price_override=unit_price if overridden else None,
                 override_reason=reason if overridden else None,
+                presentation_id=presentation.id,
+                unit_factor=presentation.factor,
             )
             sale_item.recalculate_tax()
             sale_item = self.sale_item_repo.create(sale_item)
             created_items.append(sale_item)
             if overridden:
-                audit_price_override(self.audit, sale, sale_item, product.sale_price)
+                audit_price_override(self.audit, sale, sale_item, list_price)
 
         # 5. Recalcular totales
         sale.recalculate_totals(created_items)
@@ -199,8 +209,14 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         # 11. Retornar venta completa, con la factura que el handler de
         # facturación dejó pendiente
         result = (self.sale_repo.get_by_id(sale.require_id()) or sale).dict()
+        names = self.presentations.names(i.presentation_id for i in created_items)
         result["items"] = [
-            {**item.dict(), "subtotal": item.subtotal} for item in created_items
+            {
+                **item.dict(),
+                "subtotal": item.subtotal,
+                "presentation_name": names.get(item.presentation_id or 0),
+            }
+            for item in created_items
         ]
         result["payments"] = [p.dict() for p in created_payments]
         return result

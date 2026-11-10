@@ -53,6 +53,21 @@ class ProductQuantities:
             if product_id in decimals:
                 ensure_quantity_decimals(quantity, decimals[product_id], product_id)
 
+    def ensure_in_presentations(
+        self, lines: Iterable[tuple[int, Decimal, Decimal | int]]
+    ) -> None:
+        """Cantidades de líneas en su presentación: (producto, factor, cantidad).
+        Un producto que no existe se salta"""
+        lines = list(lines)
+        decimals = self.decimals(product_id for product_id, _, _ in lines)
+        for product_id, factor, quantity in lines:
+            if product_id in decimals:
+                ensure_quantity_decimals(
+                    quantity,
+                    presentation_decimals(decimals[product_id], factor),
+                    product_id,
+                )
+
     def ensure_for_product(self, product: Product, quantity: Decimal | int) -> None:
         """Una cantidad de un producto ya cargado: solo consulta su unidad"""
         self.ensure_for_unit(

@@ -71,7 +71,8 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             self.session.query(
                 ProductModel.name.label("product_name"),
                 ProductModel.sku,
-                func.sum(SaleItemModel.quantity).label("quantity"),
+                # In base units: boxes and units of a product add up (S5.2)
+                func.sum(SaleItemModel.base_quantity).label("quantity"),
                 func.sum(SaleItemModel.quantity * SaleItemModel.unit_price).label(
                     "total"
                 ),
@@ -84,7 +85,7 @@ class GetDailySummaryQueryHandler(QueryHandler[GetDailySummaryQuery, dict]):
             .filter(SaleModel.sale_date >= day_start)
             .filter(SaleModel.sale_date <= day_end)
             .group_by(ProductModel.name, ProductModel.sku)
-            .order_by(func.sum(SaleItemModel.quantity).desc())
+            .order_by(func.sum(SaleItemModel.base_quantity).desc())
             .limit(10)
             .all()
         )

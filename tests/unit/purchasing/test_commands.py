@@ -1,10 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
+from src.catalog.product.domain.entities import Product
 from src.organization.domain.numbering import DocumentType
 from src.purchasing.app.commands.purchase_order import (
     CancelPurchaseOrderCommand,
@@ -42,6 +43,7 @@ from src.purchasing.domain.exceptions import (
     InvalidPurchaseOrderStatusError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 # ---------------------------------------------------------------------------
@@ -296,6 +298,15 @@ def test_cancel_purchase_order_publishes_event():
 # ---------------------------------------------------------------------------
 
 
+def _products() -> Mock:
+    """Every product sells in its base unit"""
+    products = Mock()
+    products.get_by_id.side_effect = lambda id: Product(
+        id=id, sku=f"SKU-{id}", name="Producto", unit_of_measure_id=1
+    )
+    return products
+
+
 def test_add_item_to_draft_po():
     po = _make_po()
     item = _make_item()
@@ -306,7 +317,11 @@ def test_add_item_to_draft_po():
     item_repo.filter_by.return_value = [item]
     po_repo.update.return_value = po
     handler = AddPurchaseOrderItemCommandHandler(
-        item_repo, po_repo, FakeProductQuantities()
+        item_repo,
+        po_repo,
+        FakeProductQuantities(),
+        _products(),
+        FakeProductPresentations(),
     )
 
     result = handler.handle(
@@ -329,7 +344,11 @@ def test_add_item_to_non_draft_po_raises():
     item_repo = MagicMock()
     po_repo.get_by_id.return_value = po
     handler = AddPurchaseOrderItemCommandHandler(
-        item_repo, po_repo, FakeProductQuantities()
+        item_repo,
+        po_repo,
+        FakeProductQuantities(),
+        _products(),
+        FakeProductPresentations(),
     )
 
     with pytest.raises(InvalidPurchaseOrderStatusError, match="Cannot add items"):
@@ -632,3 +651,49 @@ def test_receive_item_split_across_lines_completes_order():
     published_event = publisher.publish.call_args[0][0]
     assert published_event.is_complete is True
     assert len(published_event.items) == 2
+
+
+def test_two_boxes_of_100_put_200_units_in_stock():
+    """S5.2: received in the line's presentation; stock and lots in base units"""
+    handler, po_repo, item_repo, receipt_repo, receipt_item_repo, publisher = (
+        _make_receipt_handler()
+    )
+    po_repo.get_by_id.return_value = _make_po(status=PurchaseOrderStatus.SENT)
+    boxes = _make_item(
+        id=1,
+        quantity_ordered=Decimal(2),
+        quantity_received=Decimal(0),
+        presentation_id=7,
+        unit_factor=Decimal(100),
+    )
+    item_repo.filter_by.return_value = [boxes]
+    receipt_repo.create.return_value = _make_receipt()
+    receipt_item_repo.create.side_effect = lambda receipt_item: receipt_item
+    po_repo.update.return_value = _make_po(status=PurchaseOrderStatus.RECEIVED)
+
+    handler.handle(
+        CreatePurchaseReceiptCommand(
+            purchase_order_id=1,
+            items=[
+                ReceiveItemInput(
+                    purchase_order_item_id=1,
+                    quantity_received=Decimal(2),
+                    location_id=3,
+                )
+            ],
+        )
+    )
+
+    created = receipt_item_repo.create.call_args[0][0]
+    assert (created.quantity_received, created.base_quantity) == (2, 200)
+    [item] = publisher.publish.call_args[0][0].items
+    assert (
+        item["quantity"],
+        item["presentation_id"],
+        item["presentation_quantity"],
+    ) == (
+        200,
+        7,
+        2,
+    )
+    assert boxes.quantity_pending == 0

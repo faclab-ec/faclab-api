@@ -78,6 +78,15 @@ class RefundItem(Entity):
     tax_code: TaxCode = TaxCode.VAT_15
     tax_amount: Decimal = Decimal("0")
     id: int | None = None
+    # The presentation and factor of the sale item, copied (S5.2): quantity and
+    # price are in that presentation
+    presentation_id: int | None = None
+    unit_factor: Decimal = Decimal(1)
+
+    @property
+    def base_quantity(self) -> Decimal:
+        """La cantidad en unidades base: la que vuelve al stock"""
+        return self.quantity * self.unit_factor
 
     @property
     def subtotal(self) -> Decimal:

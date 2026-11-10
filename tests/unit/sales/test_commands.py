@@ -24,6 +24,7 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
+from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
 
@@ -132,7 +133,12 @@ def test_add_sale_item_command_handler():
     product_repo = _mock_repo(entity=product)
     event_publisher = MagicMock()
     handler = AddSaleItemCommandHandler(
-        sale_repo, item_repo, product_repo, event_publisher, FakeProductQuantities()
+        sale_repo,
+        item_repo,
+        product_repo,
+        event_publisher,
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     command = AddSaleItemCommand(
@@ -159,7 +165,12 @@ def test_add_sale_item_only_draft():
     item_repo = _mock_repo(entity=sale_item)
     product_repo = _mock_repo(entity=product)
     handler = AddSaleItemCommandHandler(
-        sale_repo, item_repo, product_repo, MagicMock(), FakeProductQuantities()
+        sale_repo,
+        item_repo,
+        product_repo,
+        MagicMock(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     command = AddSaleItemCommand(
@@ -177,7 +188,12 @@ def test_add_sale_item_sale_not_found():
     item_repo = _mock_repo()
     product_repo = _mock_repo()
     handler = AddSaleItemCommandHandler(
-        sale_repo, item_repo, product_repo, MagicMock(), FakeProductQuantities()
+        sale_repo,
+        item_repo,
+        product_repo,
+        MagicMock(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
     )
 
     command = AddSaleItemCommand(

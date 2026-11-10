@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, computed_field
 
 from src.sales.domain.entities import (
     InvoiceStatus,
@@ -29,17 +29,26 @@ class SaleItemRequest(BaseModel):
     quantity: QuantityNumber = Field(
         ...,
         gt=0,
-        description="Quantity to sell, with the decimals of the product's unit",
+        description="Quantity to sell in its presentation: the decimals of the "
+        "product's unit minus those of the presentation's factor",
     )
     unit_price: Decimal = Field(
         ...,
         gt=0,
-        description="Unit price",
+        description="Price of one unit of its presentation (one box)",
         validation_alias=AliasChoices("unitPrice", "unit_price"),
         serialization_alias="unitPrice",
     )
     discount: Decimal = Field(
         Decimal("0"), ge=0, le=100, description="Discount percentage (0-100)"
+    )
+    presentation_id: int | None = Field(
+        None,
+        gt=0,
+        description="Presentation it is sold in (box of 100); none: the base unit. "
+        "Stock moves quantity × its factor",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
     )
 
 
@@ -129,7 +138,26 @@ class SaleItemResponse(BaseModel):
         validation_alias=AliasChoices("productSku", "product_sku"),
         serialization_alias="productSku",
     )
-    quantity: QuantityNumber
+    quantity: QuantityNumber = Field(description="Quantity in its presentation")
+    presentation_id: int | None = Field(
+        None,
+        description="Presentation it is sold in (null in lines from before S5.2, "
+        "in base units)",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
+    )
+    presentation_name: str | None = Field(
+        None,
+        description="Name of its presentation (Caja x100)",
+        validation_alias=AliasChoices("presentationName", "presentation_name"),
+        serialization_alias="presentationName",
+    )
+    unit_factor: QuantityNumber = Field(
+        Decimal(1),
+        description="Base units in one of its presentation, copied when it was added",
+        validation_alias=AliasChoices("unitFactor", "unit_factor"),
+        serialization_alias="unitFactor",
+    )
     unit_price: DecimalNumber = Field(
         ...,
         validation_alias=AliasChoices("unitPrice", "unit_price"),
@@ -157,6 +185,12 @@ class SaleItemResponse(BaseModel):
         validation_alias=AliasChoices("overrideReason", "override_reason"),
         serialization_alias="overrideReason",
     )
+
+    @computed_field(alias="baseQuantity")
+    @property
+    def base_quantity(self) -> QuantityNumber:
+        """Quantity in base units, the one stock moved: quantity × unitFactor"""
+        return self.quantity * self.unit_factor
 
 
 class PaymentResponse(BaseModel):

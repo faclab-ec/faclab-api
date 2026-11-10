@@ -77,12 +77,19 @@ class PurchaseOrder(Entity):
 
 @dataclass
 class PurchaseOrderItem(Entity):
+    """Una línea de la orden, en una presentación del producto (S5.2): lo
+    pedido, lo recibido y lo pendiente se cuentan en ella (2 cajas) y
+    `unit_cost` es de una de ellas; `unit_factor` las convierte a unidades base"""
+
     purchase_order_id: int
     product_id: int
     quantity_ordered: Decimal
     unit_cost: Decimal
     id: int | None = None
     quantity_received: Decimal = Decimal(0)
+    # Its presentation (null before S5.2: the base unit) and its factor
+    presentation_id: int | None = None
+    unit_factor: Decimal = Decimal(1)
 
     @property
     def quantity_pending(self) -> Decimal:
@@ -116,6 +123,9 @@ class PurchaseReceipt(Entity):
 
 @dataclass
 class PurchaseReceiptItem(Entity):
+    """Lo recibido de una línea, en su presentación; `base_quantity` es lo que
+    entra al stock (S5.2)"""
+
     purchase_receipt_id: int
     purchase_order_item_id: int
     product_id: int
@@ -124,3 +134,8 @@ class PurchaseReceiptItem(Entity):
     location_id: int | None = None
     lot_number: str | None = None
     serial_numbers: list[str] | None = None
+    unit_factor: Decimal = Decimal(1)
+
+    @property
+    def base_quantity(self) -> Decimal:
+        return self.quantity_received * self.unit_factor

@@ -10,7 +10,11 @@ from uuid import UUID
 import pytest
 from sqlalchemy.orm import Session
 
-from src.catalog.product.infra.models import CategoryModel, ProductModel
+from src.catalog.product.infra.models import (
+    CategoryModel,
+    ProductModel,
+    ProductPresentationModel,
+)
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerModel
 from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
@@ -44,6 +48,7 @@ _MODELS = (
     CategoryModel,
     UnitOfMeasureModel,
     ProductModel,
+    ProductPresentationModel,
     CustomerModel,
     ShiftModel,
     SaleModel,

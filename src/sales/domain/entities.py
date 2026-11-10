@@ -70,7 +70,14 @@ class PaymentMethod(StrEnum):
 
 @dataclass
 class SaleItem(Entity):
-    """Item individual de una venta"""
+    """Item individual de una venta.
+
+    Se vende en una presentación del producto (S5.2): `quantity` y `unit_price`
+    son de esa presentación (2 cajas a $4.50), y `base_quantity`, lo que mueve el
+    stock, es `quantity` × `unit_factor` (200 unidades). El factor se copia al
+    crear la línea, así una devolución posterior devuelve lo mismo aunque la
+    presentación cambie.
+    """
 
     sale_id: int
     product_id: int
@@ -82,6 +89,15 @@ class SaleItem(Entity):
     price_override: Decimal | None = None
     override_reason: str | None = None
     id: int | None = None
+    # Its presentation; null in lines from before S5.2, which are in base units
+    presentation_id: int | None = None
+    # Base units in one of its presentation
+    unit_factor: Decimal = Decimal(1)
+
+    @property
+    def base_quantity(self) -> Decimal:
+        """La cantidad en unidades base: la que sale del stock"""
+        return self.quantity * self.unit_factor
 
     @property
     def subtotal(self) -> Decimal:

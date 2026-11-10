@@ -92,9 +92,11 @@ class CreatePurchaseReceiptCommandHandler(
             if po_item is None:
                 raise NotFoundError(f"Purchase order item with id {item_id} not found")
             po_item.receive(receive_item.quantity_received)
-        self.quantities.ensure(
+        # In the order item's presentation: its base units fit the unit (S5.2)
+        self.quantities.ensure_in_presentations(
             (
                 po_items_by_id[line.purchase_order_item_id].product_id,
+                po_items_by_id[line.purchase_order_item_id].unit_factor,
                 line.quantity_received,
             )
             for line in command.items
@@ -121,12 +123,17 @@ class CreatePurchaseReceiptCommandHandler(
                 location_id=receive_item.location_id,
                 lot_number=receive_item.lot_number,
                 serial_numbers=receive_item.serial_numbers,
+                unit_factor=po_item.unit_factor,
             )
             receipt_item = self.receipt_item_repo.create(receipt_item)
             receipt_items_data.append(
                 {
                     "product_id": po_item.product_id,
-                    "quantity": receive_item.quantity_received,
+                    # In base units: stock, movements and lots (2 boxes of 100
+                    # put 200 in); the lot handler finds its movement by it
+                    "quantity": receipt_item.base_quantity,
+                    "presentation_id": po_item.presentation_id,
+                    "presentation_quantity": receive_item.quantity_received,
                     "location_id": receive_item.location_id,
                     "lot_number": receive_item.lot_number,
                     "serial_numbers": receive_item.serial_numbers or [],

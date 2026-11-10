@@ -80,17 +80,26 @@ class PurchaseOrderItemRequest(BaseModel):
         validation_alias=AliasChoices("productId", "product_id"),
         serialization_alias="productId",
     )
+    presentation_id: int | None = Field(
+        None,
+        ge=1,
+        description="Presentation it is bought in (box of 100); none: the base "
+        "unit. Its receipts put quantity × its factor into stock",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
+    )
     quantity_ordered: QuantityNumber = Field(
         ...,
         gt=0,
-        description="Quantity ordered, with the decimals of the product's unit",
+        description="Quantity ordered in its presentation: the decimals of the "
+        "product's unit minus those of the presentation's factor",
         validation_alias=AliasChoices("quantityOrdered", "quantity_ordered"),
         serialization_alias="quantityOrdered",
     )
     unit_cost: Decimal = Field(
         ...,
         ge=0,
-        description="Unit cost",
+        description="Cost of one unit of its presentation (one box)",
         validation_alias=AliasChoices("unitCost", "unit_cost"),
         serialization_alias="unitCost",
     )
@@ -148,6 +157,25 @@ class PurchaseOrderItemResponse(BaseModel):
     unit_cost: DecimalNumber = Field(
         validation_alias=AliasChoices("unitCost", "unit_cost"),
         serialization_alias="unitCost",
+    )
+    presentation_id: int | None = Field(
+        None,
+        description="Presentation it is bought in (null before S5.2: the base unit)",
+        validation_alias=AliasChoices("presentationId", "presentation_id"),
+        serialization_alias="presentationId",
+    )
+    presentation_name: str | None = Field(
+        None,
+        description="Name of its presentation (Caja x100)",
+        validation_alias=AliasChoices("presentationName", "presentation_name"),
+        serialization_alias="presentationName",
+    )
+    unit_factor: QuantityNumber = Field(
+        Decimal(1),
+        description="Base units in one of its presentation: ordered, received and "
+        "pending are in the presentation",
+        validation_alias=AliasChoices("unitFactor", "unit_factor"),
+        serialization_alias="unitFactor",
     )
 
 

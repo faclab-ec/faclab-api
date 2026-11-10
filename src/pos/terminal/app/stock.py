@@ -14,10 +14,14 @@ from src.sales.domain.exceptions import InsufficientStockError
 
 
 class StockLine(Protocol):
-    """A sale or refund item: what moves and how much"""
+    """A sale or refund item: what moves and how much, in base units (a line in
+    a box of 100 moves 100 per box, S5.2)"""
 
-    product_id: int
-    quantity: Decimal
+    @property
+    def product_id(self) -> int: ...
+
+    @property
+    def base_quantity(self) -> Decimal: ...
 
 
 @injectable(lifetime="scoped")
@@ -50,7 +54,7 @@ class TerminalStock:
 
         for product_id in sorted(by_product):
             product_lines = by_product[product_id]
-            total = sum((abs(line.quantity) for line in product_lines), Decimal(0))
+            total = sum((abs(line.base_quantity) for line in product_lines), Decimal(0))
             stock = self.stock_repo.first_for_update(
                 product_id=product_id, location_id=location_id
             )
@@ -61,7 +65,7 @@ class TerminalStock:
                 self.movement_repo.create(
                     Movement(
                         product_id=product_id,
-                        quantity=-abs(line.quantity),
+                        quantity=-abs(line.base_quantity),
                         type=MovementType.OUT,
                         location_id=location_id,
                         reference_type=reference_type,
@@ -85,7 +89,7 @@ class TerminalStock:
             self.movement_repo.create(
                 Movement(
                     product_id=line.product_id,
-                    quantity=abs(line.quantity),
+                    quantity=abs(line.base_quantity),
                     type=MovementType.IN,
                     location_id=location_id,
                     reference_type=reference_type,
@@ -100,12 +104,12 @@ class TerminalStock:
                 self.stock_repo.create(
                     Stock(
                         product_id=line.product_id,
-                        quantity=abs(line.quantity),
+                        quantity=abs(line.base_quantity),
                         location_id=location_id,
                     )
                 )
             else:
-                stock.update_quantity(abs(line.quantity))
+                stock.update_quantity(abs(line.base_quantity))
                 self.stock_repo.update(stock)
 
     def taken_from(self, reference_type: str, reference_id: int) -> int | None:

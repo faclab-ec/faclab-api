@@ -1,3 +1,5 @@
+from typing import Any
+
 from wireup import injectable
 
 from src.pos.refund.domain.entities import Refund, RefundItem, RefundPayment
@@ -13,6 +15,10 @@ class RefundMapper(Mapper[Refund, RefundModel]):
 @injectable(lifetime="singleton")
 class RefundItemMapper(Mapper[RefundItem, RefundItemModel]):
     __entity__ = RefundItem
+
+    def to_dict(self, entity: RefundItem) -> dict[str, Any]:
+        # The quantity in base units is stored for the reports (S5.2)
+        return {**super().to_dict(entity), "base_quantity": entity.base_quantity}
 
 
 @injectable(lifetime="singleton")

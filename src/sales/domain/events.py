@@ -12,7 +12,11 @@ def sale_items_data(items: Iterable[SaleItem]) -> list[dict[str, Any]]:
     return [
         {
             "product_id": item.product_id,
+            # In its presentation, like the price (S5.2)
             "quantity": item.quantity,
+            "presentation_id": item.presentation_id,
+            # What moves the stock
+            "base_quantity": item.base_quantity,
             "unit_price": item.unit_price,
             "discount": item.discount,
             "tax_code": item.tax_code,

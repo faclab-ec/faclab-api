@@ -138,7 +138,7 @@ def test_a_unit_without_decimals_rejects_a_fraction(api, admin_api, shelf):
     assert error["code"] == "QUANTITY_PRECISION_EXCEEDED"
     assert admin_api.get("/api/admin/sales") == []
     assert _stock(admin_api, hammer["id"]) == 5
-    # Nor a manual movement, nor a product without unit
+    # Nor a manual movement, nor a product in the default unit (und)
     for product_id in (hammer["id"], make_product(admin_api, "SIN-1")["id"]):
         error = admin_api.error(
             "POST",
