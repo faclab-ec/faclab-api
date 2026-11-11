@@ -4,6 +4,7 @@ from wireup import injectable
 
 from src.organization.app.repositories import PosTerminalRepository
 from src.pos.terminal.app.stock import TerminalStock
+from src.receivables.app.credit import CustomerCredit
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.entities import Sale, SaleStatus
 from src.sales.domain.events import SaleCancelled
@@ -29,7 +30,9 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
         terminal_repo: PosTerminalRepository,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        credit: CustomerCredit,
     ):
+        self.credit = credit
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.stock = stock
@@ -58,6 +61,9 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 reference_type="sale",
                 reference_id=command.sale_id,
             )
+            # Its receivable, if it was on credit, after the stock like every POS
+            # document: only while nothing lowered its balance (S5.5)
+            self.credit.cancel_for_sale(command.sale_id)
 
             # In base units: what went back to stock
             items_data = [

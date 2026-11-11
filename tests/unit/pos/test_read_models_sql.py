@@ -35,6 +35,7 @@ from src.pos.sales.app.queries.generate_receipt import (
     GenerateReceiptQueryHandler,
 )
 from src.pos.shift.infra.models import ShiftModel
+from src.receivables.infra.models import CustomerPaymentModel
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
@@ -58,6 +59,7 @@ _MODELS = (
     RefundItemModel,
     RefundPaymentModel,
     CashMovementModel,
+    CustomerPaymentModel,
 )
 
 
@@ -124,6 +126,7 @@ def test_the_cash_summary_of_another_tenants_shift_is_empty(session):
     assert compute_cash_summary(session, 2) == {
         "cash_sales": 0,
         "cash_refunds": 0,
+        "customer_payments": 0,
         "cash_in": 0,
         "cash_out": 0,
     }

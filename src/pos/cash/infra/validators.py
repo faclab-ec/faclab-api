@@ -42,8 +42,12 @@ class CashSummaryResponse(BaseModel):
     )
     cash_sales: DecimalNumber = Field(description="Total cash received from sales")
     cash_refunds: DecimalNumber = Field(description="Total cash returned in refunds")
+    customer_payments: DecimalNumber = Field(
+        description="Total cash received as payments on account (S5.5)"
+    )
     cash_in: DecimalNumber = Field(description="Total manual cash-in movements")
     cash_out: DecimalNumber = Field(description="Total manual cash-out movements")
     expected_balance: DecimalNumber = Field(
-        description="Expected cash balance (opening + sales - refunds + in - out)"
+        description="Expected cash balance (opening + sales - refunds + payments on "
+        "account + in - out)"
     )

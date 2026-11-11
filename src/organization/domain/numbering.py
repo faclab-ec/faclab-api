@@ -3,12 +3,14 @@ from enum import StrEnum
 
 class DocumentType(StrEnum):
     """Documentos internos que el core numera (ADR-0012): ventas, devoluciones y
-    cotizaciones (S5.4) por sucursal, órdenes de compra por empresa"""
+    cotizaciones (S5.4) por sucursal; órdenes de compra y abonos de clientes
+    (S5.5) por empresa"""
 
     SALE = "SALE"
     REFUND = "REFUND"
     PURCHASE_ORDER = "PURCHASE_ORDER"
     QUOTE = "QUOTE"
+    CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
 
 
 _PREFIXES = {
@@ -16,6 +18,7 @@ _PREFIXES = {
     DocumentType.REFUND: "D",
     DocumentType.PURCHASE_ORDER: "PO",
     DocumentType.QUOTE: "COT",
+    DocumentType.CUSTOMER_PAYMENT: "AB",
 }
 
 

@@ -56,6 +56,8 @@ class AuditAction(StrEnum):
     REFUND_PROCESSED = "refund.processed"
     REFUND_CANCELLED = "refund.cancelled"
     CASH_MOVEMENT_REGISTERED = "cash_movement.registered"
+    # A customer's payment on account (S5.5), in a shift's cash or outside it
+    CUSTOMER_PAYMENT_RECORDED = "customer_payment.recorded"
     SHIFT_OPENED = "shift.opened"
     SHIFT_CLOSED = "shift.closed"
     USER_CREATED = "user.created"

@@ -62,6 +62,11 @@ from src.purchasing.infra.models import (
     PurchaseReceiptItemModel,
     PurchaseReceiptModel,
 )
+from src.receivables.infra.models import (
+    CustomerPaymentModel,
+    ReceivableApplicationModel,
+    ReceivableModel,
+)
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.database import create_session_maker
@@ -81,6 +86,10 @@ SECOND_TENANT_NAME = "Ferretería Demo Dos"
 
 TRUNCATE_ORDER = [
     UserBranchAccessModel,
+    # The portfolio of the sales on credit (S5.5), before its sales and customers
+    ReceivableApplicationModel,
+    CustomerPaymentModel,
+    ReceivableModel,
     PriceListItemModel,
     StockTransferItemModel,
     StockTransferModel,

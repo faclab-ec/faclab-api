@@ -55,8 +55,11 @@ class ProcessRefundPaymentInput(BaseModel):
 class ProcessRefundRequest(BaseModel):
     payments: list[ProcessRefundPaymentInput] = Field(
         ...,
-        min_length=1,
-        description="Refund payments (total must cover the refund amount)",
+        description=(
+            "Refund payments: they must cover the refund amount. A sale on credit "
+            "takes the refund off its receivable first (`accountCredit`): then "
+            "they give back exactly the rest, none if nothing is left. Never CREDIT"
+        ),
     )
 
 
@@ -208,6 +211,14 @@ class RefundDetailResponse(RefundResponse):
 
     items: list[RefundItemResponse] = []
     payments: list[RefundPaymentResponse] = []
+    account_credit: DecimalNumber = Field(
+        Decimal("0"),
+        description="What goes to the customer's account of a sale on credit (S5.5): "
+        "while pending, what processing it now would credit; once processed, what "
+        "it credited (its CREDIT payment). The payments give back the rest",
+        validation_alias=AliasChoices("accountCredit", "account_credit"),
+        serialization_alias="accountCredit",
+    )
 
 
 class RefundQueryParams(QueryParams):

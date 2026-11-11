@@ -170,6 +170,18 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
         f"/api/admin/customers/{ids['wholesale_customer']}/price-list",
         {"priceListId": ids["price_list"]},
     )
+    # Buys on credit (S5.5)
+    ids["credit_customer"] = make_customer(api, seed * 10 + 4, name=f"{m} Obra")["id"]
+    api.put(
+        f"/api/admin/customers/{ids['credit_customer']}",
+        {
+            "name": f"{m} Obra",
+            "taxId": national_id(seed * 10 + 4),
+            "taxType": 2,
+            "creditLimit": 1000,
+            "paymentTerms": 30,
+        },
+    )
 
     ids["supplier"] = make_supplier(api, seed * 10 + 2, name=f"{m} Proveedor")["id"]
     ids["supplier_contact"] = api.post(
@@ -290,6 +302,30 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
             "originalSaleId": ids["sale"],
             "items": [{"saleItemId": ids["sale_item"], "quantity": 1}],
             "reason": f"{m} devolución",
+        },
+    )["id"]
+    # A sale on credit (S5.5), its receivable and a payment on account of it
+    api.post(
+        "/api/pos/sales/quick",
+        {
+            "customerId": ids["credit_customer"],
+            "items": [{"productId": ids["product"], "quantity": 2}],
+            "payments": [
+                {"amount": "3.00", "paymentMethod": "CASH"},
+                {"amount": "20.00", "paymentMethod": "CREDIT"},
+            ],
+        },
+    )
+    [receivable] = api.get(
+        "/api/admin/receivables", params={"customerId": ids["credit_customer"]}
+    )
+    ids["receivable"] = receivable["id"]
+    ids["customer_payment"] = api.post(
+        "/api/pos/customer-payments",
+        {
+            "customerId": ids["credit_customer"],
+            "amount": "5.00",
+            "paymentMethod": "CASH",
         },
     )["id"]
     # A reconciliation discrepancy of the confirmed sale: with the threshold in

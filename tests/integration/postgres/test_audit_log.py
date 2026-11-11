@@ -540,6 +540,37 @@ def _cash_movement_registered(w):
     )["id"]
 
 
+def _customer_payment_recorded(w):
+    """A payment on account of a sale on credit, in the shift's cash (S5.5)"""
+    customer = make_customer(w.admin.api, seed=43, name="Constructora")
+    w.admin.api.put(
+        f"/api/admin/customers/{customer['id']}",
+        {
+            "name": "Constructora",
+            "taxId": customer["taxId"],
+            "taxType": 2,
+            "creditLimit": 500,
+            "paymentTerms": 30,
+        },
+    )
+    _shift(w)
+    product = _product(w)
+    w.cashier.api.post(
+        "/api/pos/sales/quick",
+        {
+            "customerId": customer["id"],
+            "items": [{"productId": product["id"], "quantity": 1}],
+            "payments": [{"amount": "11.50", "paymentMethod": "CREDIT"}],
+        },
+    )
+    return w.send(
+        w.cashier,
+        "POST",
+        "/api/pos/customer-payments",
+        {"customerId": customer["id"], "amount": "5.00", "paymentMethod": "CASH"},
+    )["id"]
+
+
 def _shift_opened(w):
     path = "/api/pos/shifts/open"
     return w.send(w.cashier, "POST", path, {"openingBalance": "50.00"})["id"]
@@ -708,6 +739,7 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.REFUND_PROCESSED: _refund_processed,
     AuditAction.REFUND_CANCELLED: _refund_cancelled,
     AuditAction.CASH_MOVEMENT_REGISTERED: _cash_movement_registered,
+    AuditAction.CUSTOMER_PAYMENT_RECORDED: _customer_payment_recorded,
     AuditAction.SHIFT_OPENED: _shift_opened,
     AuditAction.SHIFT_CLOSED: _shift_closed,
     AuditAction.USER_CREATED: _user_created,

@@ -20,6 +20,8 @@ from src.pos.refund.domain.exceptions import (
     SaleNotConfirmedError,
 )
 from src.pos.terminal.app.stock import TerminalStock
+from src.receivables.app.credit import CustomerCredit
+from src.receivables.domain.exceptions import CreditPaymentNotAllowedError
 from src.sales.app.repositories import SaleRepository
 from src.sales.domain.entities import PaymentMethod
 from src.shared.app.audit import AuditAction, AuditTrail
@@ -52,7 +54,9 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         event_publisher: EventPublisher,
         audit: AuditTrail,
         session: Session,
+        credit: CustomerCredit,
     ):
+        self.credit = credit
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
@@ -83,33 +87,10 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         items = self.refund_item_repo.filter_by(refund_id=command.refund_id)
 
-        total_payment = sum(
-            (Decimal(str(p["amount"])) for p in command.payments), Decimal("0")
-        )
-        if round_money(total_payment) < refund.total:
-            raise ValidationError(
-                message="Payment amount is insufficient",
-                detail=f"Total: {refund.total}, paid: {total_payment}",
-            )
-
-        created_payments = []
-        for payment_data in command.payments:
-            try:
-                payment_method = PaymentMethod(payment_data["payment_method"])
-            except ValueError:
-                raise ValidationError(
-                    message=f"Invalid payment method: {payment_data['payment_method']}",
-                    detail=f"Valid methods: {[m.value for m in PaymentMethod]}",
-                ) from None
-
-            payment = RefundPayment(
-                refund_id=refund.require_id(),
-                amount=Decimal(str(payment_data["amount"])),
-                payment_method=payment_method,
-                reference=payment_data.get("reference"),
-            )
-            payment = self.refund_payment_repo.create(payment)
-            created_payments.append(payment)
+        methods = [self._payment_method(p["payment_method"]) for p in command.payments]
+        if PaymentMethod.CREDIT in methods:
+            # What goes to the account is the core's to decide, below
+            raise CreditPaymentNotAllowedError()
 
         # The goods go back to the location of the refund's terminal
         terminal = (
@@ -124,6 +105,50 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
             reference_type="refund",
             reference_id=refund.require_id(),
         )
+
+        # A sale on credit takes the refund off its receivable first (S5.5):
+        # only what exceeds its balance is given back in money
+        credited = self.credit.credit_refund(sale, refund.require_id(), refund.total)
+        total_payment = round_money(
+            sum((Decimal(str(p["amount"])) for p in command.payments), Decimal("0"))
+        )
+        if credited > Decimal("0"):
+            due = refund.total - credited
+            if total_payment != due:
+                raise ValidationError(
+                    message=(
+                        f"{credited} of the refund goes to the customer's account: "
+                        f"the payments must give back {due}"
+                    ),
+                    detail=f"Total: {refund.total}, credited: {credited}, paid: "
+                    f"{total_payment}",
+                )
+        elif total_payment < refund.total:
+            raise ValidationError(
+                message="Payment amount is insufficient",
+                detail=f"Total: {refund.total}, paid: {total_payment}",
+            )
+
+        created_payments = []
+        if credited > Decimal("0"):
+            created_payments.append(
+                self.refund_payment_repo.create(
+                    RefundPayment(
+                        refund_id=refund.require_id(),
+                        amount=credited,
+                        payment_method=PaymentMethod.CREDIT,
+                    )
+                )
+            )
+        for payment_data, payment_method in zip(command.payments, methods, strict=True):
+            payment = RefundPayment(
+                refund_id=refund.require_id(),
+                amount=Decimal(str(payment_data["amount"])),
+                payment_method=payment_method,
+                reference=payment_data.get("reference"),
+            )
+            payment = self.refund_payment_repo.create(payment)
+            created_payments.append(payment)
 
         # Numbered after the stock, like every POS document
         number = (
@@ -177,4 +202,15 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         result["credit_note"] = notes[0].dict() if notes else None
         result["items"] = [{**item.dict(), "subtotal": item.subtotal} for item in items]
         result["payments"] = [p.dict() for p in created_payments]
+        result["account_credit"] = credited
         return result
+
+    @staticmethod
+    def _payment_method(value: str) -> PaymentMethod:
+        try:
+            return PaymentMethod(value)
+        except ValueError:
+            raise ValidationError(
+                message=f"Invalid payment method: {value}",
+                detail=f"Valid methods: {[m.value for m in PaymentMethod]}",
+            ) from None

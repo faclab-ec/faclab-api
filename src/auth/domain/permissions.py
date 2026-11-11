@@ -25,6 +25,10 @@ class Permission(StrEnum):
     SALE_READ = "sale:read"
     SALE_WRITE = "sale:write"
     SALE_CANCEL = "sale:cancel"
+    # Accounts receivable (S5.5): the portfolio and payments outside the cash
+    # register; at the POS a payment on account is `pos:operate`
+    RECEIVABLE_READ = "receivable:read"
+    RECEIVABLE_WRITE = "receivable:write"
 
     # Purchasing
     PURCHASE_READ = "purchase:read"
@@ -60,6 +64,7 @@ _ALL_READS = frozenset(
         Permission.PRODUCT_READ,
         Permission.STOCK_READ,
         Permission.SALE_READ,
+        Permission.RECEIVABLE_READ,
         Permission.PURCHASE_READ,
         Permission.CUSTOMER_READ,
         Permission.SUPPLIER_READ,
@@ -96,6 +101,8 @@ _OPERATOR_PERMS = frozenset(
         Permission.ALERT_READ,
         Permission.SALE_READ,
         Permission.SALE_WRITE,
+        Permission.RECEIVABLE_READ,
+        Permission.RECEIVABLE_WRITE,
         Permission.PURCHASE_READ,
         Permission.PURCHASE_WRITE,
         Permission.CUSTOMER_READ,

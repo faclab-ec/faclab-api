@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -32,11 +33,20 @@ from src.pos.refund.domain.exceptions import (
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
-from src.sales.domain.entities import InvoiceStatus, Sale, SaleItem, SaleStatus
+from src.receivables.domain.entities import Receivable, ReceivableStatus
+from src.receivables.domain.exceptions import CreditPaymentNotAllowedError
+from src.sales.domain.entities import (
+    InvoiceStatus,
+    PaymentMethod,
+    Sale,
+    SaleItem,
+    SaleStatus,
+)
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
 from tests.quantities import FakeProductQuantities
+from tests.receivables import credit_customer, customer_credit
 from tests.unit.pos.terminals import (
     AT_TERMINAL,
     LOCATION_ID,
@@ -162,6 +172,7 @@ class TestCreateRefund:
             shift_repo,
             terminal_resolver(),
             FakeProductQuantities(),
+            customer_credit(),
         )
         return handler, refund_repo, refund_item_repo
 
@@ -508,7 +519,9 @@ class TestCreateRefund:
 
 
 class TestProcessRefund:
-    def _make_handler(self, refund=None, refund_items=None, sale=None, notes=None):
+    def _make_handler(
+        self, refund=None, refund_items=None, sale=None, notes=None, credit=None
+    ):
         refund_repo = _mock_repo(refund)
         refund_item_repo = MagicMock()
         refund_item_repo.filter_by.return_value = refund_items or []
@@ -543,6 +556,7 @@ class TestProcessRefund:
             event_publisher,
             FakeAuditTrail(),
             session,
+            credit or customer_credit(),
         )
         return handler, movement_repo, stock_repo, event_publisher
 
@@ -569,6 +583,80 @@ class TestProcessRefund:
         assert stock_repo.update.call_args[0][0].quantity == 12
         event_publisher.publish.assert_called_once()
         assert result["credit_note"] is None
+
+    def _on_credit(self, balance: str):
+        """A sale of 115.00 on credit whose receivable still owes `balance`"""
+        receivable = Receivable.open(
+            customer_id=1,
+            sale_id=1,
+            amount=Decimal("115.00"),
+            term_days=30,
+            issued_on=date.today(),
+        )
+        receivable.id, receivable.balance = 1, Decimal(balance)
+        return customer_credit([credit_customer(id=1)], receivables=[receivable])
+
+    def test_a_sale_on_credit_takes_the_refund_off_its_account(self):
+        credit = self._on_credit("100.00")
+        handler, *_ = self._make_handler(
+            refund=_make_refund(), refund_items=[_make_refund_item()], credit=credit
+        )
+
+        result = handler.handle(ProcessRefundCommand(refund_id=1, payments=[]))
+
+        assert result["status"] == "COMPLETED"
+        assert result["account_credit"] == Decimal("46.00")
+        assert [(p["payment_method"], p["amount"]) for p in result["payments"]] == [
+            (PaymentMethod.CREDIT, Decimal("46.00"))
+        ]
+        assert credit.receivables.get_by_id(1).balance == Decimal("54.00")
+
+    def test_only_what_exceeds_the_balance_is_given_back(self):
+        credit = self._on_credit("30.00")
+        handler, *_ = self._make_handler(
+            refund=_make_refund(), refund_items=[_make_refund_item()], credit=credit
+        )
+
+        result = handler.handle(
+            ProcessRefundCommand(
+                refund_id=1, payments=[{"amount": "16.00", "payment_method": "CASH"}]
+            )
+        )
+
+        assert [(p["payment_method"], p["amount"]) for p in result["payments"]] == [
+            (PaymentMethod.CREDIT, Decimal("30.00")),
+            (PaymentMethod.CASH, Decimal("16.00")),
+        ]
+        assert credit.receivables.get_by_id(1).status == ReceivableStatus.PAID
+
+    def test_giving_back_the_whole_refund_of_a_sale_on_credit_fails(self):
+        """It would pay twice: on the account and in cash"""
+        handler, *_ = self._make_handler(
+            refund=_make_refund(),
+            refund_items=[_make_refund_item()],
+            credit=self._on_credit("100.00"),
+        )
+
+        with pytest.raises(ValidationError):
+            handler.handle(
+                ProcessRefundCommand(
+                    refund_id=1,
+                    payments=[{"amount": "46.00", "payment_method": "CASH"}],
+                )
+            )
+
+    def test_a_refund_is_not_paid_with_credit(self):
+        handler, *_ = self._make_handler(
+            refund=_make_refund(), refund_items=[_make_refund_item()]
+        )
+
+        with pytest.raises(CreditPaymentNotAllowedError):
+            handler.handle(
+                ProcessRefundCommand(
+                    refund_id=1,
+                    payments=[{"amount": "46.00", "payment_method": "CREDIT"}],
+                )
+            )
 
     def test_publishes_in_the_transaction_of_the_refund_and_answers_its_credit_note(
         self,

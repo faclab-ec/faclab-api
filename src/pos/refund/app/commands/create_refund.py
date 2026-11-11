@@ -17,6 +17,7 @@ from src.pos.refund.domain.exceptions import (
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
+from src.receivables.app.credit import CustomerCredit
 from src.sales.app.repositories import SaleItemRepository, SaleRepository
 from src.sales.domain.services import discount_factor
 from src.shared.app.commands import Command, CommandHandler
@@ -45,7 +46,9 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         shift_repo: ShiftRepository,
         terminals: TerminalResolver,
         quantities: ProductQuantities,
+        credit: CustomerCredit,
     ):
+        self.credit = credit
         self.quantities = quantities
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -158,4 +161,8 @@ class CreateRefundCommandHandler(CommandHandler[CreateRefundCommand, dict]):
         result["items"] = [
             {**item.dict(), "subtotal": item.subtotal} for item in created_items
         ]
+        # What processing it would take off the sale's receivable (S5.5)
+        result["account_credit"] = self.credit.creditable(
+            sale.require_id(), refund.total
+        )
         return result

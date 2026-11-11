@@ -612,6 +612,32 @@ ROUTES: dict[str, Route] = {
         query=_warehouse, refs=("warehouse",)
     ),
     f"GET {ADMIN}/dashboard": Route(),
+    # Accounts receivable (S5.5)
+    f"GET {ADMIN}/receivables": Route(
+        query=lambda ids: {"customerId": ids["credit_customer"]},
+        refs=("credit_customer",),
+    ),
+    f"GET {ADMIN}/receivables/aging": Route(),
+    f"GET {ADMIN}/receivables/{{id}}": Route(path=("receivable",)),
+    f"GET {ADMIN}/customer-accounts/{{customer_id}}": Route(path=("credit_customer",)),
+    f"GET {ADMIN}/customer-accounts/{{customer_id}}/statement": Route(
+        path=("credit_customer",)
+    ),
+    # Paid off the receivable by hand: B's customer or receivable look missing
+    f"POST {ADMIN}/customer-payments": Route(
+        body=lambda ids: {
+            "customerId": ids["credit_customer"],
+            "amount": "1.00",
+            "paymentMethod": "TRANSFER",
+            "applications": [{"receivableId": ids["receivable"], "amount": "1.00"}],
+        },
+        refs=("credit_customer", "receivable"),
+    ),
+    f"GET {ADMIN}/customer-payments": Route(
+        query=lambda ids: {"customerId": ids["credit_customer"]},
+        refs=("credit_customer",),
+    ),
+    f"GET {ADMIN}/customer-payments/{{id}}": Route(path=("customer_payment",)),
     # POS
     f"POST {POS}/sales": Route(
         body=lambda ids: {"customerId": ids["customer"]},
@@ -758,6 +784,16 @@ ROUTES: dict[str, Route] = {
         query=lambda ids: {"taxId": ids["tax_id"]}, refs=("tax_id",), needs_query=True
     ),
     f"GET {POS}/customers/{{id}}": Route(path=("customer",)),
+    f"GET {POS}/customer-accounts/{{customer_id}}": Route(path=("credit_customer",)),
+    f"POST {POS}/customer-payments": Route(
+        body=lambda ids: {
+            "customerId": ids["credit_customer"],
+            "amount": "1.00",
+            "paymentMethod": "CASH",
+        },
+        headers=_at_terminal(),
+        refs=("credit_customer", "branch", "terminal"),
+    ),
     f"POST {POS}/refunds": Route(
         body=lambda ids: {
             "originalSaleId": ids["sale"],

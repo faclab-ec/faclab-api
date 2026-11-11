@@ -124,6 +124,7 @@ class GenerateReceiptQueryHandler(QueryHandler[GenerateReceiptQuery, dict]):
                 "amount_tendered": p.amount_tendered,
                 "change": p.change,
                 "reference": p.reference,
+                "term_days": p.term_days,
             }
             for p in payment_rows
         ]
