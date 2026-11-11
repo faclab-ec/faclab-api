@@ -167,6 +167,16 @@ class QuickSaleRequest(BaseModel):
         serialization_alias="discountValue",
     )
     notes: str | None = Field(None, max_length=512, description="Additional notes")
+    quote_id: int | None = Field(
+        None,
+        gt=0,
+        description="Quote this sale converts (S5.4): one in force of the "
+        "terminal's branch, with its customer and its same items (product, "
+        "presentation, quantity, discount). Its quoted price, when today's is "
+        "another, goes as a price override with its reason",
+        validation_alias=AliasChoices("quoteId", "quote_id"),
+        serialization_alias="quoteId",
+    )
 
 
 class ReceiptItemResponse(BaseModel):

@@ -42,6 +42,8 @@ ERROR_CODE_TO_STATUS = {
     "IDEMPOTENCY_KEY_REUSED": 422,
     "QUANTITY_PRECISION_EXCEEDED": 422,
     "LOGIN_LOCKED": 429,
+    # The SMTP server refused or couldn't be reached (S5.4)
+    "EMAIL_DELIVERY_FAILED": 502,
 }
 
 # Checked in order, so subclasses go before their bases

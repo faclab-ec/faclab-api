@@ -1,10 +1,12 @@
 """Periodic tasks of the worker. Each one works across tenants as
-faclab_worker; the purges are idempotent DELETEs and the reconciliation can't
-open a discrepancy twice, so two workers only repeat work."""
+faclab_worker; the purges are idempotent DELETEs, the quote expiration an
+idempotent UPDATE and the reconciliation can't open a discrepancy twice, so two
+workers only repeat work."""
 
 from config import config
 from src.auth.infra import session_purge
 from src.invoicing.infra import reconciliation
+from src.quotes.infra import expiration as quote_expiration
 from src.shared.infra.idempotency import purge as idempotency_purge
 from src.shared.infra.outbox import purge as outbox_purge
 from src.shared.infra.worker.runner import PeriodicTask
@@ -16,6 +18,8 @@ def periodic_tasks() -> list[PeriodicTask]:
         PeriodicTask("outbox_purge", interval, outbox_purge.purge),
         PeriodicTask("idempotency_keys_purge", interval, idempotency_purge.purge),
         PeriodicTask("auth_sessions_purge", interval, session_purge.purge),
+        # Quotes past their validity (S5.4); with the purges' interval
+        PeriodicTask("quote_expiration", interval, quote_expiration.expire),
     ]
     # Without Kafka nothing is sent to faclab-invoicing, so nothing to reconcile
     if config.KAFKA_ENABLED and config.INVOICE_RECONCILIATION_ENABLED:

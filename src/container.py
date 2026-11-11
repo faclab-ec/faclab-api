@@ -34,12 +34,14 @@ def create_wireup_container():
     from src.pos.terminal.infra.container import POS_TERMINAL_INJECTABLES
     from src.pricing.infra.container import INJECTABLES as PRICING_INJECTABLES
     from src.purchasing.infra.container import INJECTABLES as PURCHASING_INJECTABLES
+    from src.quotes.infra.container import INJECTABLES as QUOTE_INJECTABLES
     from src.reports.dashboard.infra.container import DASHBOARD_INJECTABLES
     from src.reports.inventory.infra.container import REPORT_INJECTABLES
     from src.sales.infra.container import INJECTABLES as SALES_INJECTABLES
     from src.shared.infra.database import create_session_factory
     from src.shared.infra.events.event_bus_publisher import EventBusPublisher
     from src.shared.infra.idempotency.requests import Idempotency
+    from src.shared.infra.mail import mailer
     from src.shared.infra.outbox.writer import OutboxWriter
     from src.shared.infra.tenant import tenant_context
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
@@ -58,6 +60,7 @@ def create_wireup_container():
             EventBusPublisher,
             OutboxWriter,
             Idempotency,
+            mailer,
             *AUDIT_INJECTABLES,
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
@@ -80,6 +83,7 @@ def create_wireup_container():
             *REPORT_INJECTABLES,
             *DASHBOARD_INJECTABLES,
             *SALES_INJECTABLES,
+            *QUOTE_INJECTABLES,
             *INVOICING_INJECTABLES,
             *POS_TERMINAL_INJECTABLES,
             *POS_SALES_INJECTABLES,

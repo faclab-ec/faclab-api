@@ -59,6 +59,7 @@ GET /api/admin/sales?customerId=1&status=DRAFT&limit=20&offset=0
       "branchId": 1,
       "emissionPointId": 1,
       "terminalId": 3,
+      "quoteId": null,
       "number": "V-001-000123",
       "status": "CONFIRMED",
       "saleDate": "2026-03-08T10:00:00",
@@ -125,6 +126,9 @@ de la terminal, y `number` es el correlativo de la sucursal (`V-` + código de e
 dígitos), asignado al confirmar y que se conserva aunque la venta se cancele. Son `null` en los
 borradores (`number`) y en las ventas anteriores a S2.6. Desde S2.8 el seed crea sus ventas en la
 terminal de la matriz, con sucursal, punto de emisión y número.
+
+`quoteId` (S5.4) es la cotización que la venta cobró en el POS, con sus mismos ítems (una venta por
+cotización); `null` en las demás. Ver [quotes-spec.md](quotes-spec.md).
 
 **Error** `404`:
 
@@ -396,6 +400,7 @@ interface Sale {
   branchId: number | null;
   emissionPointId: number | null;
   terminalId: number | null;
+  quoteId: number | null;
   number: string | null;
   status: SaleStatus;
   saleDate: string | null;

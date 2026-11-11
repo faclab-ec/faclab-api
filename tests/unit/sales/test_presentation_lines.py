@@ -3,8 +3,7 @@ presentation, stock in base units."""
 
 from decimal import Decimal
 
-from src.catalog.product.domain.entities import Product, ProductPresentation
-from src.invoicing.infra.event_handlers import line_name
+from src.catalog.product.domain.entities import Product, ProductPresentation, line_name
 from src.pos.refund.domain.entities import RefundItem
 from src.pos.refund.infra.mappers import RefundItemMapper
 from src.sales.domain.entities import SaleItem

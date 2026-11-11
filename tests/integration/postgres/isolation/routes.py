@@ -21,6 +21,7 @@ A new route without an entry fails `test_every_route_is_covered`.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 
 from tests.integration.postgres.isolation.dataset import (
@@ -125,6 +126,10 @@ def _at_terminal(terminal: str = "terminal") -> Body:
 def _in_branch(ids: Ids) -> dict:
     """The POS header of an operation on a sale, shift or refund of the branch"""
     return {"X-Branch-Id": str(ids["branch"])}
+
+
+def _in_a_month(ids: Ids | None = None) -> str:
+    return (date.today() + timedelta(days=30)).isoformat()
 
 
 def _placement(ids: Ids) -> dict:
@@ -515,6 +520,50 @@ ROUTES: dict[str, Route] = {
     f"POST {ADMIN}/credit-notes/{{credit_note_id}}/request-again": Route(
         path=("credit_note",)
     ),
+    # Quotes (S5.4): A's draft stays a draft, only the calls with refs change it
+    f"GET {ADMIN}/quotes": Route(
+        query=lambda ids: {"customerId": ids["customer"], "branchId": ids["branch"]},
+        refs=("customer", "branch"),
+    ),
+    f"POST {ADMIN}/quotes": Route(
+        body=lambda ids: {
+            "branchId": ids["branch"],
+            "customerId": ids["customer"],
+            "validUntil": _in_a_month(),
+        },
+        refs=("branch", "customer"),
+    ),
+    f"GET {ADMIN}/quotes/{{id}}": Route(path=("quote",)),
+    f"PUT {ADMIN}/quotes/{{id}}": Route(
+        path=("quote",),
+        body=lambda ids: {"customerId": ids["customer"], "validUntil": _in_a_month()},
+        refs=("customer",),
+    ),
+    f"DELETE {ADMIN}/quotes/{{id}}": Route(path=("quote",)),
+    f"GET {ADMIN}/quotes/{{id}}/pdf": Route(path=("quote",)),
+    f"POST {ADMIN}/quotes/{{id}}/items": Route(
+        path=("quote",),
+        body=lambda ids: {
+            "productId": ids["product"],
+            "presentationId": ids["presentation"],
+            "quantity": 1,
+        },
+        refs=("product", "presentation"),
+    ),
+    f"PUT {ADMIN}/quotes/{{id}}/items/{{item_id}}": Route(
+        path=("quote", "quote_item"), body=lambda ids: {"quantity": 2}
+    ),
+    f"DELETE {ADMIN}/quotes/{{id}}/items/{{item_id}}": Route(
+        path=("quote", "quote_item")
+    ),
+    f"POST {ADMIN}/quotes/{{id}}/send": Route(path=("quote",)),
+    f"POST {ADMIN}/quotes/{{id}}/email": Route(
+        path=("quote",), body=lambda ids: {"to": "obra@test.local"}
+    ),
+    f"POST {ADMIN}/quotes/{{id}}/accept": Route(path=("quote",)),
+    f"POST {ADMIN}/quotes/{{id}}/renew": Route(
+        path=("quote",), body=lambda ids: {"validUntil": _in_a_month()}
+    ),
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
     f"GET {ADMIN}/audit-log": Route(),
@@ -691,6 +740,10 @@ ROUTES: dict[str, Route] = {
         },
         headers=_in_branch,
         refs=("wholesale_customer", "product", "presentation", "branch"),
+    ),
+    f"GET {POS}/quotes": Route(headers=_in_branch, refs=("branch",)),
+    f"GET {POS}/quotes/{{id}}": Route(
+        path=("quote",), headers=_at_terminal(), refs=("branch", "terminal")
     ),
     f"POST {POS}/customers": Route(
         body=lambda ids: {

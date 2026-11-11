@@ -31,6 +31,7 @@ def session(in_tenant) -> Iterator[Session]:
 def test_a_document_number_has_prefix_establishment_and_six_digits():
     assert document_number(DocumentType.SALE, "001", 123) == "V-001-000123"
     assert document_number(DocumentType.REFUND, "002", 45) == "D-002-000045"
+    assert document_number(DocumentType.QUOTE, "001", 12) == "COT-001-000012"
     # It keeps growing past six digits
     assert document_number(DocumentType.SALE, "001", 1_000_000) == "V-001-1000000"
 

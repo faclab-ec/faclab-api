@@ -288,6 +288,12 @@ Validaciones:
   sucursal o la general); sin precio de lista, el de la presentación: el propio o factor × el del
   producto. Sin ninguno de los dos y sin `unitPrice`: 400 `PRODUCT_WITHOUT_PRICE`
 - Un `unitPrice` distinto del precio de lista es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `PUT /sales/{saleId}/items/{itemId}/price`
+- `quoteId` (opcional, S5.4): la cotización que esta venta cobra. Debe regir (`QUOTE_EXPIRED`: renovarla
+  antes), ser de la sucursal de la terminal (`QUOTE_OUTSIDE_BRANCH`), no estar cobrada
+  (`QUOTE_ALREADY_CONVERTED`, 409), y la venta debe ser de su cliente (`QUOTE_CUSTOMER_CHANGED`) con sus
+  mismos ítems: producto, presentación, cantidad y descuento (`QUOTE_ITEMS_CHANGED`). Un precio
+  cotizado distinto del de hoy va como override con el motivo `Cotización <número>`. La venta queda con
+  `quoteId` y la cotización `CONVERTED` (ver [quotes-spec.md](quotes-spec.md) §4)
 
 Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
@@ -786,6 +792,18 @@ lo vuelve a pedir cuando cambian sus líneas o el cliente y envía ese precio co
 // ni lista ni producto tienen precio. Producto inexistente: 404; presentación inactiva: 400
 ```
 
+### Cotizaciones (S5.4)
+
+**GET `/quotes?search=`** — Las cotizaciones abiertas de la sucursal de `X-Branch-Id` que rigen hoy, las
+más nuevas primero; `search` busca en el número y en el nombre o RUC/cédula del cliente
+(`pos:operate`).
+
+**GET `/quotes/{id}`** — Una cotización de la sucursal de la terminal (`X-Branch-Id` + `X-Terminal-Id`;
+otra sucursal: 404) con `expired` y, por ítem, el precio de hoy (`listPrice`, `priceListName`,
+`priceChanged`) y el stock disponible en la ubicación de la terminal (`availableQuantity`,
+`enoughStock`, no reservado). Se cobra con `POST /sales/quick` y su `quoteId`. Detalle en
+[quotes-spec.md](quotes-spec.md) §4.
+
 ### Clientes
 
 **POST `/customers`** — Creación rápida
@@ -835,6 +853,11 @@ lo vuelve a pedir cuando cambian sus líneas o el cliente y envía ese precio co
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |
 | `OVERRIDE_REASON_REQUIRED` | 400 | Una línea a otro precio que el de su lista sin `overrideReason` |
 | `PRODUCT_WITHOUT_PRICE` | 400 | Ni una lista ni el producto le dan precio a la línea y no se envió `unitPrice` |
+| `QUOTE_EXPIRED` | 400 | La cotización de la venta rápida venció: se renueva antes |
+| `QUOTE_OUTSIDE_BRANCH` | 400 | La cotización es de otra sucursal |
+| `QUOTE_CUSTOMER_CHANGED` | 400 | La venta es de otro cliente que su cotización |
+| `QUOTE_ITEMS_CHANGED` | 400 | La venta no lleva los mismos ítems de su cotización |
+| `QUOTE_ALREADY_CONVERTED` | 409 | La cotización ya se cobró |
 | `IDEMPOTENCY_KEY_REQUIRED` | 422 | Falta `Idempotency-Key` en una operación que lo exige (§0.1) |
 | `INVALID_IDEMPOTENCY_KEY` | 422 | `Idempotency-Key` no es un UUID |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | La clave ya se usó con otra solicitud |
@@ -967,6 +990,13 @@ Formato de error estándar:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/resolve` | Precio de las líneas del carrito según las listas del cliente y la sucursal |
+
+### Quotes (`/quotes`)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/` | Cotizaciones vigentes de la sucursal |
+| GET | `/{id}` | Una cotización con el precio de hoy y el stock de la terminal |
 
 ### Customers (`/customers`)
 

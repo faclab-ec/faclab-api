@@ -121,10 +121,10 @@
   creación. La purga de claves vencidas la corre el worker cada hora desde S3.4;
   `make purge-idempotency-keys` queda para correrla a mano.
 - **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
-  del POS por sucursal (`V-001-000123`) y, desde S3.3, las órdenes de compra con el contador de la
-  empresa (`branch_id` nulo, `PO-2026-0001`, continuo). Faltan el formato configurable por empresa
-  (ADR-0012) y pasar a la misma tabla los ajustes, las transferencias, las cotizaciones (S5.4) y el
-  cierre de caja (S5.9).
+  del POS por sucursal (`V-001-000123`), desde S3.3 las órdenes de compra con el contador de la
+  empresa (`branch_id` nulo, `PO-2026-0001`, continuo) y desde S5.4 las cotizaciones por sucursal
+  (`COT-001-000012`). Faltan el formato configurable por empresa (ADR-0012) y pasar a la misma tabla
+  los ajustes, las transferencias y el cierre de caja (S5.9).
 - **Turno en una terminal desactivada** (detectado en S2.6). Desactivar una terminal con un turno
   abierto hace que `GET /api/pos/shifts/active` responda `POS_TERMINAL_INACTIVE`; el turno se sigue
   cerrando por id (`POST /api/pos/shifts/{id}/close`). Conviene impedir desactivar una terminal con
@@ -234,6 +234,20 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Cotizaciones, lo que quedó de S5.4** (2026-11-11):
+  - No reservan stock (fuera de alcance por la ficha): la venta lo descuenta al cobrarse y puede
+    faltar. El POS muestra el disponible de la terminal antes de cobrar.
+  - Solo se cobran completas y con sus mismos ítems: no hay conversión parcial ni con ítems cambiados
+    (el cliente que compra una parte se vende sin la cotización).
+  - No hay estado de rechazada o anulada: una que el cliente no acepta vence sola.
+  - No llevan descuento global ni precios a mano: el precio sale de las listas y el descuento es por
+    línea. Un precio negociado necesita su lista o el override en el POS.
+  - Si se anula la venta que la cobró, la cotización queda `CONVERTED`: no se vuelve a cobrar.
+  - El correo se envía dentro de la solicitud, sin bitácora de envíos ni reintentos (los tiene la
+    factura en faclab-invoicing). El PDF no lleva el logo de la empresa, que vive en faclab-invoicing.
+  - Las empresas de producción necesitan `EMAIL_ENABLED`, `EMAIL_FROM` y `SMTP_*` en el core, además de
+    los de faclab-invoicing (S8.1).
+  - Cotizar a crédito llega con S5.5.
 - **Listas de precios, lo que quedó de S5.3** (2026-11-10):
   - El cajero no elige una lista a mano para una venta (un maestro sin ficha de cliente): la lista sale
     del cliente o de la sucursal. Elegirla sería un descuento disfrazado: si hace falta, con permiso

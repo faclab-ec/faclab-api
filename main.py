@@ -48,6 +48,7 @@ from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
 from src.pricing.infra.routes import POSPriceRouter, PriceListRouter
 from src.purchasing.infra.routes import POItemRouter, PurchaseOrderRouter
+from src.quotes.infra.routes import POSQuoteRouter, QuoteRouter
 from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
@@ -310,6 +311,7 @@ admin_router.include_router(
     tags=["Purchase Order Items"],
 )
 admin_router.include_router(SaleRouter().router, prefix="/sales", tags=["Sales"])
+admin_router.include_router(QuoteRouter().router, prefix="/quotes", tags=["Quotes"])
 admin_router.include_router(
     InvoiceDiscrepancyRouter().router,
     prefix="/invoice-discrepancies",
@@ -365,6 +367,9 @@ pos_router.include_router(
     POSCustomerRouter().router, prefix="/customers", tags=["Customer Search"]
 )
 pos_router.include_router(POSPriceRouter().router, prefix="/prices", tags=["Prices"])
+pos_router.include_router(
+    POSQuoteRouter().router, prefix="/quotes", tags=["POS Quotes"]
+)
 pos_router.include_router(POSRefundRouter().router, prefix="/refunds", tags=["Refunds"])
 pos_router.include_router(
     POSTerminalRouter().router, prefix="/terminals", tags=["Terminals"]

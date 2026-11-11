@@ -236,6 +236,22 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
         },
     )["id"]
 
+    # Quotes (S5.4): a draft of the customer in the branch with the product
+    ids["quote"] = api.post(
+        "/api/admin/quotes",
+        {
+            "branchId": ids["branch"],
+            "customerId": ids["customer"],
+            "validUntil": (date.today() + timedelta(days=30)).isoformat(),
+            "notes": f"{m} obra",
+        },
+    )["id"]
+    quote = api.post(
+        f"/api/admin/quotes/{ids['quote']}/items",
+        {"productId": ids["product"], "quantity": 1},
+    )
+    ids["quote_item"] = quote["items"][0]["id"]
+
     # The POS runs at the first terminal
     api = Api(
         api.client,

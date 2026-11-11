@@ -37,6 +37,9 @@ class Outcome:
 
     @classmethod
     def of(cls, response: Response) -> "Outcome":
+        if "json" not in response.headers.get("content-type", "json"):
+            # A file (a quote's PDF): its bytes are the data
+            return cls(response.status_code, (), response.content, response.text)
         body = response.json() if response.content else None
         codes: tuple[str, ...] = ()
         data = None

@@ -116,6 +116,22 @@ class BaseConfig:
     )
 
     #
+    # Email (S5.4): quotes go out as PDF through any SMTP server. Off unless
+    # enabled; then SMTP_HOST and EMAIL_FROM (the platform's address, the
+    # message carries the company's name) are required. SMTP_SECURE is SMTPS
+    # (port 465); otherwise STARTTLS, required unless SMTP_REQUIRE_TLS=false
+    #
+    EMAIL_ENABLED = env.bool("EMAIL_ENABLED", False)
+    EMAIL_FROM = env.str("EMAIL_FROM", "")
+    SMTP_HOST = env.str("SMTP_HOST", "")
+    SMTP_PORT = env.int("SMTP_PORT", 587)
+    SMTP_SECURE = env.bool("SMTP_SECURE", False)
+    SMTP_REQUIRE_TLS = env.bool("SMTP_REQUIRE_TLS", True)
+    SMTP_USER = env.str("SMTP_USER", "")
+    SMTP_PASSWORD = env.str("SMTP_PASSWORD", "")
+    SMTP_TIMEOUT_SECONDS = env.float("SMTP_TIMEOUT_SECONDS", 20.0)
+
+    #
     # Auth / JWT config
     #
     JWT_SECRET = env("JWT_SECRET", "dev-only-change-me")
