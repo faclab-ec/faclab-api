@@ -45,7 +45,7 @@ from src.catalog.product.app.repositories import (
     ProductPresentationRepository,
     ProductRepository,
 )
-from src.catalog.product.domain.entities import Product, ProductPresentation
+from src.catalog.product.domain.entities import ProductPresentation, line_name
 from src.customers.app.repositories import CustomerRepository
 from src.invoicing.app.commands.credit_notes import (
     RequestRefundCreditNotesCommand,
@@ -157,20 +157,6 @@ def _presentations_of(
         p.require_id(): p
         for p in presentations.get_by_ids(i for i in presentation_ids if i is not None)
     }
-
-
-def line_name(
-    product: Product | None,
-    presentation: ProductPresentation | None,
-) -> str | None:
-    """The description of an invoice or credit note line (S5.2): the product's
-    name and, sold in a presentation other than the base unit, that presentation
-    ("Tornillo 1/2 (Caja x100)"): quantity and price are of the presentation"""
-    if product is None:
-        return None
-    if presentation is None or presentation.is_base:
-        return product.name
-    return f"{product.name} ({presentation.name})"
 
 
 def build_sale_confirmed_message(

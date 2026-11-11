@@ -152,3 +152,18 @@ def _effective(
     if product_value is None:
         return None
     return (Decimal(str(product_value)) * factor).quantize(PRICE_SCALE)
+
+
+def line_name(
+    product: Product | None,
+    presentation: ProductPresentation | None,
+) -> str | None:
+    """The description of a document line (S5.2): the product's name and, sold
+    in a presentation other than the base unit, that presentation ("Tornillo 1/2
+    (Caja x100)"): quantity and price are of the presentation. Invoices, credit
+    notes and quotes (S5.4) name their lines with it"""
+    if product is None:
+        return None
+    if presentation is None or presentation.is_base:
+        return product.name
+    return f"{product.name} ({presentation.name})"

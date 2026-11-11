@@ -15,6 +15,7 @@ from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
 from src.pos.terminal.app.stock import TerminalStock
 from src.pricing.app.resolver import PriceResolver
+from src.quotes.app.conversion import QuoteConversion
 from src.sales.app.price_override import audit_price_override
 from src.sales.app.repositories import (
     PaymentRepository,
@@ -42,6 +43,8 @@ class QuickSaleCommand(Command):
     discount_value: Decimal = Decimal("0")
     notes: str | None = None
     created_by: str | None = None
+    # The quote it converts (S5.4)
+    quote_id: int | None = None
 
 
 @injectable(lifetime="scoped")
@@ -64,7 +67,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         quantities: ProductQuantities,
         presentations: ProductPresentations,
         prices: PriceResolver,
+        quotes: QuoteConversion,
     ):
+        self.quotes = quotes
         self.quantities = quantities
         self.presentations = presentations
         self.prices = prices
@@ -91,6 +96,14 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         is_final_consumer = command.customer_id is None
         customer_id = None if is_final_consumer else command.customer_id
 
+        # The quote it converts, locked before the stock and the counter: in
+        # force, of this branch and for this customer (S5.4)
+        quote = (
+            self.quotes.take(command.quote_id, terminal.branch_id, customer_id)
+            if command.quote_id is not None
+            else None
+        )
+
         # 3. Crear venta en DRAFT
         sale = Sale(
             customer_id=customer_id,
@@ -99,6 +112,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             branch_id=terminal.branch_id,
             emission_point_id=terminal.emission_point_id,
             terminal_id=terminal.id,
+            quote_id=quote.id if quote else None,
             notes=command.notes,
             created_by=command.created_by,
         )
@@ -153,6 +167,10 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             if overridden:
                 audit_price_override(self.audit, sale, sale_item, list_price)
 
+        # Its same items: product, presentation, quantity and discount
+        if quote is not None:
+            self.quotes.ensure_items(quote, created_items)
+
         # 5. Recalcular totales
         sale.recalculate_totals(created_items)
         if sale.discount_value > 0:
@@ -188,6 +206,8 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         #    como en todo documento del POS)
         sale.confirm(self.numbering.next(terminal.branch_id, DocumentType.SALE))
         self.sale_repo.update(sale)
+        if quote is not None:
+            self.quotes.convert(quote)
 
         # 9. Registrar pagos
         created_payments = [self.payment_repo.create(p) for p in payments]

@@ -290,6 +290,12 @@ class SaleResponse(BaseModel):
         validation_alias=AliasChoices("terminalId", "terminal_id"),
         serialization_alias="terminalId",
     )
+    quote_id: int | None = Field(
+        None,
+        description="Quote the sale converted (S5.4), when it was charged from one",
+        validation_alias=AliasChoices("quoteId", "quote_id"),
+        serialization_alias="quoteId",
+    )
     number: str | None = Field(
         None,
         description="Document number, correlative per branch (`V-001-000123`), "

@@ -292,6 +292,12 @@ class POSSaleRouter:
         change (`amountTendered`, `change`). They must cover the total
         (`INSUFFICIENT_PAYMENT`); any other method can't exceed it
         (`PAYMENT_EXCEEDS_BALANCE`).
+        With `quoteId` the sale converts that quote (S5.4): it must be in force
+        (`QUOTE_EXPIRED` once its validity ended: renew it first), of the
+        terminal's branch (`QUOTE_OUTSIDE_BRANCH`), not converted yet
+        (`QUOTE_ALREADY_CONVERTED`, 409), for the same customer
+        (`QUOTE_CUSTOMER_CHANGED`) and with its same items (`QUOTE_ITEMS_CHANGED`).
+        The sale keeps `quoteId` and the quote becomes `CONVERTED`.
         Requires `Idempotency-Key`: a retry with it gets the same sale, charged once.
         """
 
@@ -306,6 +312,7 @@ class POSSaleRouter:
                     discount_value=sale.discount_value,
                     notes=sale.notes,
                     created_by=user.display_name,
+                    quote_id=sale.quote_id,
                 )
             )
             return DataResponse(

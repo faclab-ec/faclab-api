@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -15,6 +16,9 @@ from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
 from src.pricing.domain.entities import PriceList, PriceListItem
+from src.quotes.app.conversion import QuoteConversion
+from src.quotes.domain.entities import QuoteStatus
+from src.quotes.domain.exceptions import QuoteExpiredError, QuoteItemsChangedError
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import (
     InsufficientPaymentError,
@@ -30,6 +34,7 @@ from tests.presentations import FakeProductPresentations
 from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
+from tests.unit.quotes.fakes import InMemoryQuoteItems, InMemoryQuotes, draft, line
 
 
 def _make_shift(**overrides) -> Shift:
@@ -126,6 +131,7 @@ def _build_handler(
     audit=None,
     presentations=None,
     prices=None,
+    quotes=None,
 ):
     return QuickSaleCommandHandler(
         sale_repo=sale_repo or _mock_repo(),
@@ -142,6 +148,7 @@ def _build_handler(
         quantities=FakeProductQuantities(),
         presentations=presentations or FakeProductPresentations(),
         prices=prices or price_resolver(),
+        quotes=quotes or QuoteConversion(_mock_repo(), _mock_repo()),
     )
 
 
@@ -617,3 +624,101 @@ class TestQuickSaleErrors:
                     payments=[{"amount": 112.00, "payment_method": "BITCOIN"}]
                 )
             )
+
+
+class TestQuickSaleFromQuote:
+    """A quote charged at the terminal (S5.4)"""
+
+    def _handler(self, quote, quote_items, sale_repo=None, audit=None):
+        sale_repo = sale_repo or _mock_repo()
+        sale_repo.create.side_effect = lambda sale: replace(sale, id=1)
+        sale_repo.update.side_effect = lambda sale: sale
+        sale_repo.get_by_id.side_effect = lambda _id: sale_repo.update.call_args.args[0]
+        sale_item_repo = _mock_repo()
+        sale_item_repo.create.side_effect = lambda item: replace(item, id=1)
+        quotes = InMemoryQuotes(quote)
+        handler = _build_handler(
+            sale_repo=sale_repo,
+            sale_item_repo=sale_item_repo,
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=_mock_repo(entity=_make_stock(quantity=100)),
+            payment_repo=_mock_repo(entity=_make_payment()),
+            shift_repo=_mock_repo(entity=_make_shift()),
+            audit=audit,
+            quotes=QuoteConversion(quotes, InMemoryQuoteItems(*quote_items)),
+        )
+        return handler, quotes, sale_repo
+
+    def test_the_sale_converts_the_quote(self):
+        quote = draft(customer_id=None)
+        handler, quotes, sale_repo = self._handler(
+            quote,
+            [line(product_id=1, presentation_id=None, unit_price=Decimal("50.00"))],
+        )
+
+        result = handler.handle(
+            _quick_sale_command(quote_id=1, items=[{"product_id": 1, "quantity": 2}])
+        )
+
+        assert result["quote_id"] == 1
+        assert sale_repo.create.call_args.args[0].quote_id == 1
+        assert quotes.rows[1].status == QuoteStatus.CONVERTED
+
+    def test_the_quoted_price_goes_as_an_override_with_its_reason(self):
+        """The list says 50.00 today; the quote said 45.00 and the cashier
+        honours it"""
+        audit = FakeAuditTrail()
+        handler, quotes, _ = self._handler(
+            draft(customer_id=None),
+            [line(product_id=1, presentation_id=None, unit_price=Decimal("45.00"))],
+            audit=audit,
+        )
+
+        result = handler.handle(
+            _quick_sale_command(
+                quote_id=1,
+                items=[
+                    {
+                        "product_id": 1,
+                        "quantity": 2,
+                        "unit_price": 45.00,
+                        "override_reason": "Cotización COT-001-000001",
+                    }
+                ],
+                payments=[{"amount": 100.80, "payment_method": "CASH"}],
+            )
+        )
+
+        assert result["items"][0]["unit_price"] == Decimal("45.0")
+        [entry] = audit.entries
+        assert entry.action == AuditAction.SALE_PRICE_OVERRIDDEN
+        assert quotes.rows[1].status == QuoteStatus.CONVERTED
+
+    def test_other_items_fail_the_sale(self):
+        handler, quotes, _ = self._handler(
+            draft(customer_id=None),
+            [line(product_id=1, presentation_id=None, unit_price=Decimal("50.00"))],
+        )
+
+        with pytest.raises(QuoteItemsChangedError):
+            handler.handle(
+                _quick_sale_command(
+                    quote_id=1, items=[{"product_id": 1, "quantity": 3}]
+                )
+            )
+        assert quotes.rows[1].status == QuoteStatus.DRAFT
+
+    def test_an_expired_quote_fails_the_sale(self):
+        past = date.today() - timedelta(days=3)
+        handler, _, sale_repo = self._handler(
+            draft(customer_id=None, valid_until=past, issue_date=past),
+            [line(product_id=1, presentation_id=None, unit_price=Decimal("50.00"))],
+        )
+
+        with pytest.raises(QuoteExpiredError):
+            handler.handle(
+                _quick_sale_command(
+                    quote_id=1, items=[{"product_id": 1, "quantity": 2}]
+                )
+            )
+        sale_repo.create.assert_not_called()

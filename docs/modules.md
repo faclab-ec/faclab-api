@@ -66,9 +66,10 @@ devolucion existentes; ver `pos-api-spec.md` §0).
 ### DocumentSequence
 
 Numeracion de documentos internos por sucursal (ADR-0012, S2.6): `tenant_id`, `branch_id`,
-`doc_type` (`SALE`, `REFUND`) y `last_value`, el ultimo numero emitido. `DocumentNumbering` lo
-incrementa con un upsert dentro de la transaccion del documento y lo formatea con el codigo de
-establecimiento de la sucursal.
+`doc_type` (`SALE`, `REFUND`, `QUOTE` desde S5.4; `PURCHASE_ORDER` es de la empresa, con
+`branch_id` nulo) y `last_value`, el ultimo numero emitido. `DocumentNumbering` lo incrementa con un
+upsert dentro de la transaccion del documento y lo formatea con el codigo de establecimiento de la
+sucursal: `V-001-000123`, `D-001-000045`, `COT-001-000012`.
 
 ---
 
@@ -463,6 +464,65 @@ devolucion total; cuando todo esta devuelto y acreditado, su factura pasa a `CRE
 `INVOICED`. La factura a consumidor final no admite nota (Res. NAC-DGERCGC25-00000014, art. 3): esa
 devolucion se rechaza. Detalle en [pos-api-spec.md](pos-api-spec.md) (3) y
 [sales-spec.md](sales-spec.md) (2.6).
+
+---
+
+## Cotizaciones
+
+Proformas que una sucursal entrega para una obra (`src/quotes/`, S5.4, F-07). Rutas en
+`/api/admin/quotes` (`sale:read`; escribir es `sale:write`, los mismos roles que venden) y, para
+cobrarlas, `/api/pos/quotes` (`pos:operate`). Spec en [quotes-spec.md](quotes-spec.md).
+
+**Entidades:** `Quote`, `QuoteItem`
+
+**Estados:** `DRAFT` → `SENT` → `ACCEPTED` → `CONVERTED`; las abiertas (`DRAFT`, `SENT`, `ACCEPTED`)
+pasan a `EXPIRED` cuando vence su fecha, y una vencida se renueva a `DRAFT`.
+
+**Campos Quote:** `id`, `branch_id` (la que la emite y numera), `number` (`COT-001-000012`, al crearla),
+`customer_id` (nulo: consumidor final), `status`, `issue_date`, `valid_until` (ultimo dia en que rige,
+hoy o despues), `subtotal`, `tax`, `total`, `notes`, `created_by` (del token), `sent_at`,
+`accepted_at`, `converted_at`
+
+**Campos QuoteItem:** `id`, `quote_id`, `product_id`, `presentation_id` (sin ella al crear: la unidad
+base), `quantity` (en su presentacion, con sus decimales), `unit_factor`, `unit_price` (el de sus
+listas), `discount` (% de la linea), `tax_code`, `tax_amount`
+
+**Precios:** cada linea toma el precio que tendria hoy una venta de su cliente en su sucursal
+(`PriceResolver`, S5.3); la cotizacion no lleva precios a mano (`PRODUCT_WITHOUT_PRICE` si ni las
+listas ni el producto lo tienen). Cambiar la cantidad aplica la escala que corresponda; cambiar el
+cliente o renovarla vuelve a cotizar todas las lineas. Los totales se calculan como los de una venta
+sin descuento global, asi el total cotizado es el que cobra el POS.
+
+**Vigencia:** una abierta con la fecha ya pasada se trata como vencida aunque la tarea
+`quote_expiration` del worker (cada `WORKER_PURGE_INTERVAL_SECONDS`, como faclab_worker en todas las
+empresas) todavia no la haya marcado `EXPIRED`. Una vencida no se envia, acepta ni cobra
+(`QUOTE_EXPIRED`) hasta renovarla con una fecha nueva: vuelve a `DRAFT`, emitida hoy y con los
+precios de hoy.
+
+**PDF y correo:** `GET /api/admin/quotes/{id}/pdf` la dibuja con reportlab (empresa, sucursal,
+cliente, items, totales por tarifa de IVA, notas; "Documento sin valor tributario"). `POST
+.../{id}/email` envia ese PDF por SMTP a la direccion dada o a la del cliente
+(`QUOTE_EMAIL_REQUIRED` sin ninguna) y marca `SENT` un borrador; el servidor responde dentro de la
+solicitud (`EMAIL_DELIVERY_FAILED` 502, nada cambia) y con `EMAIL_ENABLED=false` responde
+`EMAIL_DISABLED`.
+
+**Conversion a venta:** se cobra en una terminal de su sucursal con la venta rapida y su `quoteId`
+(`QuoteConversion`): bloquea la cotizacion antes que el stock y el contador, exige que rija, que sea
+de la sucursal (`QUOTE_OUTSIDE_BRANCH`), el mismo cliente (`QUOTE_CUSTOMER_CHANGED`) y sus mismos items
+(producto, presentacion, cantidad y descuento; `QUOTE_ITEMS_CHANGED`). La venta guarda `quote_id`
+(una por cotizacion, `QUOTE_ALREADY_CONVERTED` 409) y la cotizacion pasa a `CONVERTED`. El stock se
+valida al descontarlo (`INSUFFICIENT_STOCK`): la cotizacion no lo reserva. Si un precio cambio desde
+que se cotizo, el cajero elige en el POS entre el cotizado (un override con el motivo
+`Cotizacion <numero>`, auditado en `sale.price_overridden`) y el actual.
+
+**Comandos:** `CreateQuote`, `UpdateQuote` (solo borrador), `DeleteQuote` (solo borrador; su numero no
+se reutiliza), `AddQuoteItem`, `UpdateQuoteItem`, `RemoveQuoteItem`, `SendQuote`, `AcceptQuote`,
+`RenewQuote`, `EmailQuote`. Ninguno se audita: una cotizacion no mueve dinero ni stock.
+
+**Queries:** `GetQuotes` (filtros `status`, `customerId`, `branchId`, `number`; solo las sucursales
+del usuario), `GetQuote` (con items y la venta en que se convirtio), `GetQuotePdf`, `GetPosQuotes`
+(las vigentes de la sucursal del POS, busqueda por numero o cliente) y `GetPosQuote` (precio de hoy y
+stock en la ubicacion de la terminal de cada linea).
 
 ---
 

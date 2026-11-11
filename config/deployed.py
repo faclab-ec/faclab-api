@@ -36,6 +36,21 @@ class DeployedConfig(BaseConfig):
                 "JWT_SECRET must be unique and at least "
                 f"{_MIN_JWT_SECRET_LENGTH} characters in {self.ENVIRONMENT}"
             )
+        # Quotes go out by email (S5.4): without a server or a sender, sending
+        # one would fail on every request instead of at startup
+        if self.EMAIL_ENABLED:
+            unset = [
+                name
+                for name, value in (
+                    ("SMTP_HOST", self.SMTP_HOST),
+                    ("EMAIL_FROM", self.EMAIL_FROM),
+                )
+                if not value
+            ]
+            if unset:
+                raise RuntimeError(
+                    f"EMAIL_ENABLED needs {', '.join(unset)} in {self.ENVIRONMENT}"
+                )
         # The API allows credentials, and with "*" the browser would accept
         # them from any site
         if "*" in self.CORS_ORIGINS:

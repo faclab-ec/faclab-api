@@ -1,7 +1,7 @@
 # ADR-0012: Numeración de documentos internos y tributarios
 
 - **Estado:** aceptado (2026-10-19; ventas y devoluciones del POS desde S2.6, comprobantes desde S2.8,
-  órdenes de compra desde S3.3)
+  órdenes de compra desde S3.3, cotizaciones desde S5.4)
 - **Relacionado:** [ADR-0004](0004-persistencia-de-facturacion-en-postgresql.md), [MULTI_TENANCY.md](../MULTI_TENANCY.md)
 
 ## Contexto
@@ -46,9 +46,9 @@
 - Orden de bloqueos: cada documento del POS bloquea primero sus filas de stock (por producto) y al
   final el contador, así dos ventas de productos distintos solo se esperan en el número y no hay
   ciclos entre ventas y devoluciones.
-- El formato es fijo por ahora; el formato configurable por empresa y la numeración de cotizaciones,
-  ajustes, transferencias y cierres quedan para sus sesiones (anotado en ROADMAP.md). Las órdenes de
-  compra se numeran desde S3.3 (abajo).
+- El formato es fijo por ahora; el formato configurable por empresa y la numeración de ajustes,
+  transferencias y cierres quedan para sus sesiones (anotado en ROADMAP.md). Las órdenes de compra se
+  numeran desde S3.3 y las cotizaciones desde S5.4 (abajo).
 
 ### Precisiones de la implementación (S2.8, comprobantes)
 
@@ -79,6 +79,16 @@
   en el mayor secuencial de sus órdenes, así que ningún número se repite.
 - El número se asigna al crear la orden (borrador), como antes: un borrador eliminado consume el suyo.
 - Desde purchasing se usa `DocumentNumbering` de organization, igual que en el POS.
+
+### Precisiones de la implementación (S5.4, cotizaciones)
+
+- La cotización es de una sucursal: `DocumentNumbering.next(branch_id, DocumentType.QUOTE)`, el
+  contador de la sucursal con `doc_type = QUOTE` (sin migración: `doc_type` no tiene `CHECK`), con el
+  formato de las ventas y el prefijo `COT` (`COT-001-000012`).
+- El número se asigna al crearla, como la orden de compra: el PDF de un borrador ya lo lleva y un
+  borrador borrado consume el suyo. La fecha se valida antes, así una inválida no gasta número.
+- `uq_quotes_tenant_number` es la última barrera. Cobrarla en el POS no la renumera: la venta toma su
+  propio `V-…` al confirmarse.
 
 ## Consecuencias
 

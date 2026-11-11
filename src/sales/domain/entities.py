@@ -123,6 +123,8 @@ class Sale(Entity):
     branch_id: int | None = None
     emission_point_id: int | None = None
     terminal_id: int | None = None
+    # The quote it converted (S5.4), charged at the POS with its items
+    quote_id: int | None = None
     # Correlative per branch (`V-001-000123`), given when it is confirmed
     number: str | None = None
     status: SaleStatus = SaleStatus.DRAFT

@@ -11,3 +11,5 @@ class Config(BaseConfig):
     # Local runs over plain HTTP, also towards the SigNoz collector
     AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", False)
     OTEL_EXPORTER_OTLP_INSECURE = env.bool("OTEL_EXPORTER_OTLP_INSECURE", True)
+    # Mailpit (faclab-infra) has no TLS
+    SMTP_REQUIRE_TLS = env.bool("SMTP_REQUIRE_TLS", False)

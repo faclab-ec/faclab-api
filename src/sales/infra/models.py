@@ -50,6 +50,13 @@ class SaleModel(TenantScoped, Base):
             ["pos_terminals.tenant_id", "pos_terminals.id"],
             name="fk_sales_terminal_tenant",
         ),
+        # The quote it converted (S5.4): one sale per quote
+        ForeignKeyConstraint(
+            ["tenant_id", "quote_id"],
+            ["quotes.tenant_id", "quotes.id"],
+            name="fk_sales_quote_tenant",
+        ),
+        UniqueConstraint("tenant_id", "quote_id", name="uq_sales_tenant_quote_id"),
         # The number is a correlative per branch (document_sequences)
         UniqueConstraint(
             "tenant_id", "branch_id", "number", name="uq_sales_tenant_branch_number"
@@ -74,6 +81,7 @@ class SaleModel(TenantScoped, Base):
     branch_id: Mapped[int | None] = mapped_column(Integer, index=True)
     emission_point_id: Mapped[int | None] = mapped_column(Integer, index=True)
     terminal_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    quote_id: Mapped[int | None] = mapped_column(Integer)
     number: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
     sale_date: Mapped[datetime | None] = mapped_column(DateTime, index=True)
