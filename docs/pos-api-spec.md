@@ -49,6 +49,7 @@ duplica.
 | `POST /refunds` | Crea la devolución |
 | `POST /refunds/{id}/process` | Devuelve dinero y stock |
 | `POST /shifts/{id}/cash-movements` | Registra el movimiento de caja |
+| `POST /customer-payments` | Registra el abono del cliente (S5.5) |
 
 - **Primera solicitud**: reserva la clave y guarda la respuesta en la misma transacción que la operación.
 - **Repetición con la misma clave y la misma solicitud** (método, ruta con sus ids y cuerpo JSON; el
@@ -122,7 +123,7 @@ terminal.
 { "data": { "closingBalance": 350.00, "expectedBalance": 345.50, "discrepancy": 4.50, "status": "CLOSED" } }
 ```
 
-Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn - cashOut`
+Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + customerPayments + cashIn - cashOut`
 
 **GET `/shifts/active`** — Turno abierto de la terminal (retorna `null` en `data` si no hay)
 
@@ -216,10 +217,15 @@ como anterior). Ver `docs/modules.md` (Listas de precios).
 | amount | decimal | Aplicado a la venta: lo entregado menos el vuelto |
 | amountTendered | decimal | Lo que entregó el cliente (>0), al centavo |
 | change | decimal | Vuelto; solo en efectivo |
-| paymentMethod | enum | `CASH` \| `CREDIT_CARD` \| `DEBIT_CARD` \| `TRANSFER` \| `OTHER` |
+| paymentMethod | enum | `CASH` \| `CREDIT_CARD` \| `DEBIT_CARD` \| `TRANSFER` \| `OTHER` \| `CREDIT` |
 | paymentDate | datetime | Fecha auto-generada |
 | reference | string? | Referencia de pago |
 | notes | string? | Notas |
+| termDays | int? | Plazo en días de un pago `CREDIT`, el del cliente (S5.5) |
+
+`CREDIT` (S5.5) deja su monto a crédito: lo cubre la cuenta por cobrar del cliente, dentro de su cupo,
+que se abre al confirmar la venta (en la venta rápida o en `/confirm`). Detalle en
+[receivables-spec.md](receivables-spec.md) §2.
 
 ### Flujo de venta normal
 
@@ -282,6 +288,10 @@ Validaciones:
   resto de uno en efectivo es el vuelto (`amountTendered`, `change`); deben cubrir el total
   (`INSUFFICIENT_PAYMENT`) y otro medio de pago no puede pasarse de lo que falta
   (`PAYMENT_EXCEEDS_BALANCE`). Se valida antes de tocar el stock
+- Un pago `CREDIT` (S5.5) necesita cliente (`CREDIT_CUSTOMER_REQUIRED`) con cupo
+  (`CUSTOMER_WITHOUT_CREDIT`) y que lo que debe más el crédito no pase el cupo
+  (`CREDIT_LIMIT_EXCEEDED`). Se comprueba bloqueando la fila del cliente, después del stock y antes del
+  número; la venta queda `PENDING` o `PARTIAL` con su cuenta por cobrar
 - `customerId=null` → `isFinalConsumer=true` automáticamente
 - `presentationId` (opcional, S5.2): la presentación en que se vende (la caja escaneada); sin él, la
   unidad base. Sin `unitPrice`, la línea toma el precio de su lista (S5.3: la del cliente, la de la
@@ -336,6 +346,8 @@ Validaciones:
   pago en efectivo se recalcula y otro medio que ahora se pasa del total responde
   `PAYMENT_EXCEEDS_BALANCE`. Se valida antes de tocar el stock
 - Stock suficiente para cada item en la ubicación de la terminal
+- Un pago `CREDIT` abre la cuenta por cobrar del cliente con las mismas reglas que en la venta rápida
+  (S5.5)
 
 Efectos:
 
@@ -592,6 +604,12 @@ Validaciones: total pagos ≥ total devolución. La venta sigue siendo devoluble
 se creó responde `SALE_NOT_CONFIRMED`, y una facturada a consumidor final desde entonces
 `FINAL_CONSUMER_REFUND_NOT_ALLOWED`.
 
+Venta a crédito (S5.5): la devolución se acredita primero a la cuenta por cobrar de la venta, hasta su
+saldo, como un pago de devolución `CREDIT`. Los `payments` devuelven exactamente el resto (lista vacía
+si todo cabe en el saldo); si no, `VALIDATION_ERROR`. La devolución creada y su detalle traen
+`accountCredit`: lo que procesarla ahora acreditaría (después, lo que acreditó). Un pago `CREDIT` en el
+request responde `CREDIT_PAYMENT_NOT_ALLOWED`.
+
 Efectos:
 
 - Status → COMPLETED, con el siguiente número de devolución de la sucursal
@@ -648,14 +666,18 @@ Efectos:
     "openingBalance": 100.00,
     "cashSales": 500.00,
     "cashRefunds": 30.00,
+    "customerPayments": 40.00,
     "cashIn": 200.00,
     "cashOut": 50.00,
-    "expectedBalance": 720.00
+    "expectedBalance": 760.00
   }
 }
 ```
 
-Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn - cashOut`
+Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + customerPayments + cashIn - cashOut`
+
+`customerPayments` (S5.5) son los abonos de clientes en efectivo recibidos en el turno
+(`POST /customer-payments`, §6).
 
 `cashSales` suma lo aplicado por los pagos en efectivo, sin el vuelto que se devolvió (S3.3): es lo que
 quedó en la caja. Los reportes X, Z, diario y por medio de pago suman lo mismo.
@@ -678,6 +700,9 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
       { "paymentMethod": "CASH", "count": 10, "total": 800 },
       { "paymentMethod": "CREDIT_CARD", "count": 5, "total": 530 }
     ],
+    "customerPaymentsByMethod": [
+      { "paymentMethod": "CASH", "count": 2, "total": 40 }
+    ],
     "itemsSold": [
       { "productName": "Producto X", "sku": "SKU001", "quantity": 20, "total": 500 }
     ]
@@ -695,10 +720,11 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
     "openingBalance": 100,
     "cashSales": 500,
     "cashRefunds": 30,
+    "customerPayments": 40,
     "cashIn": 200,
     "cashOut": 50,
-    "expectedBalance": 720,
-    "closingBalance": 715,
+    "expectedBalance": 760,
+    "closingBalance": 755,
     "discrepancy": -5
   }
 }
@@ -722,6 +748,10 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
   }
 }
 ```
+
+En `paymentsByMethod`, `CREDIT` es lo vendido a crédito, que no entra en la caja; los abonos del turno
+van aparte en `customerPaymentsByMethod` (S5.5). El resumen diario y el reporte por medio de pago no
+incluyen los abonos.
 
 En `itemsSold` (reporte X) y `topProducts` (resumen diario), `quantity` va en la unidad base del
 producto: una caja de 100 y 15 unidades suman 115 (S5.2). `total` suma cantidad × precio de cada línea.
@@ -819,6 +849,15 @@ otra sucursal: 404) con `expired` y, por ítem, el precio de hoy (`listPrice`, `
 
 **GET `/customers/{id}`** — Obtener por ID
 
+### Crédito y abonos (S5.5)
+
+**GET `/customer-accounts/{customerId}`** — Si el cliente compra a crédito (`hasCredit`), cuánto le
+queda (`available`), lo que debe y lo vencido, y sus cuentas abiertas.
+
+**POST `/customer-payments`** — Abono del cliente en la caja (`X-Branch-Id` + `X-Terminal-Id`, turno
+abierto, `Idempotency-Key`). FIFO por vencimiento o con `applications` por cuenta; en efectivo cuenta en
+`customerPayments` del turno. Detalle en [receivables-spec.md](receivables-spec.md) §2.5.
+
 ---
 
 ## 7. CÓDIGOS DE ERROR
@@ -848,6 +887,12 @@ otra sucursal: 404) con `expired` y, por ítem, el precio de hoy (`listPrice`, `
 | `INVALID_REFUND_STATUS` | 400 | Estado inválido para la operación |
 | `EXCEEDS_ORIGINAL_QUANTITY` | 400 | Cantidad devuelta excede disponible |
 | `SALE_NOT_CONFIRMED` | 400 | Venta no confirmada, o anulada desde que se creó la devolución |
+| `CREDIT_CUSTOMER_REQUIRED` | 400 | Pago `CREDIT` en una venta a consumidor final (S5.5) |
+| `CUSTOMER_WITHOUT_CREDIT` | 400 | Pago `CREDIT` de un cliente inactivo o sin cupo |
+| `CREDIT_LIMIT_EXCEEDED` | 400 | Lo que el cliente debe más el crédito nuevo pasa su cupo |
+| `RECEIVABLE_HAS_PAYMENTS` | 400 | Anular una venta a crédito con abonos o devoluciones acreditadas: se devuelve |
+| `CREDIT_PAYMENT_NOT_ALLOWED` | 400 | `CREDIT` en un abono o en los pagos de una devolución |
+| `CUSTOMER_PAYMENT_EXCEEDS_BALANCE` | 400 | El abono pasa lo que el cliente debe |
 | `REFUND_ITEM_NOT_IN_SALE` | 400 | Item no pertenece a la venta |
 | `INVALID_CASH_MOVEMENT_AMOUNT` | 400 | Monto debe ser > 0 |
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |
@@ -960,6 +1005,13 @@ Formato de error estándar:
 | POST | `/{id}/cancel` | Cancelar devolución |
 | GET | `/{id}` | Obtener devolución |
 | GET | `/` | Listar devoluciones |
+
+### Customer accounts (`/customer-accounts`, `/customer-payments`, S5.5)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/customer-accounts/{customerId}` | Crédito disponible y cuentas abiertas |
+| POST | `/customer-payments` | Abono en la caja (`Idempotency-Key`) |
 
 ### Reports (`/reports`)
 

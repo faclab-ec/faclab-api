@@ -234,6 +234,21 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Crédito y cuentas por cobrar, lo que quedó de S5.5** (2026-11-11):
+  - Un abono no se anula ni se corrige: uno equivocado se compensa con una devolución o se deja
+    anotado. Anularlo (con permiso propio, bitácora y su efecto en la caja del turno) queda pendiente.
+  - No hay saldo a favor: un abono no puede pasar de lo que el cliente debe, y una devolución de una
+    venta a crédito ya pagada se devuelve en dinero.
+  - El cupo no considera lo vencido: un cliente con saldo vencido sigue comprando a crédito mientras le
+    alcance el cupo. Bloquearlo (o pedir autorización) queda para una regla configurable.
+  - La antigüedad es siempre a hoy, sobre los saldos actuales; no hay antigüedad a una fecha pasada.
+  - Los reportes diario y por medio de pago del POS no muestran los abonos; X y Z sí
+    (`customerPaymentsByMethod`) y el arqueo cuenta los abonos en efectivo (`customerPayments`).
+  - No hay recibo imprimible del abono ni envío por correo del estado de cuenta.
+  - Las ventas de administración siguen de solo lectura (G-34): una venta a crédito sin pasar por la
+    caja (despacho a obra desde la bodega) necesita una terminal o la guía de remisión (F-14).
+  - La anulación de una venta a crédito sigue pidiendo `pos:operate` (ver `Permission.SALE_CANCEL`
+    arriba).
 - **Cotizaciones, lo que quedó de S5.4** (2026-11-11):
   - No reservan stock (fuera de alcance por la ficha): la venta lo descuenta al cobrarse y puede
     faltar. El POS muestra el disponible de la terminal antes de cobrar.
@@ -247,7 +262,8 @@
     factura en faclab-invoicing). El PDF no lleva el logo de la empresa, que vive en faclab-invoicing.
   - Las empresas de producción necesitan `EMAIL_ENABLED`, `EMAIL_FROM` y `SMTP_*` en el core, además de
     los de faclab-invoicing (S8.1).
-  - Cotizar a crédito llega con S5.5.
+  - ~~Cotizar a crédito llega con S5.5~~ (resuelto en S5.5: la venta rápida que cobra la cotización
+    acepta un pago `CREDIT` como cualquier otra).
 - **Listas de precios, lo que quedó de S5.3** (2026-11-10):
   - El cajero no elige una lista a mano para una venta (un maestro sin ficha de cliente): la lista sale
     del cliente o de la sucursal. Elegirla sería un descuento disfrazado: si hace falta, con permiso
@@ -460,7 +476,7 @@ flowchart LR
 | [S5.2](sessions/S5.2-unidades-y-presentaciones.md) | Unidades y presentaciones | Conversiones, presentaciones y códigos de barras | S5.1 | core, web | F-02, F-03 | L |
 | [S5.3](sessions/S5.3-listas-de-precios.md) | Listas de precios | Minorista, mayorista, por volumen y por sucursal | S5.2 | core, web | F-06 | M |
 | [S5.4](sessions/S5.4-cotizaciones.md) | Cotizaciones | Proformas con vigencia y conversión a venta | S5.3 | core, web | F-07 | M |
-| [S5.5](sessions/S5.5-credito-y-cuentas-por-cobrar.md) | Crédito y cuentas por cobrar | Venta a crédito, abonos, estado de cuenta | S5.3, S3.3 | core, web | F-08, G-34 | L |
+| [S5.5](sessions/S5.5-credito-y-cuentas-por-cobrar.md) | Crédito y cuentas por cobrar | Venta a crédito, abonos, estado de cuenta | S5.3, S3.3 | core, invoicing, web | F-08, G-34 | L |
 | [S5.6](sessions/S5.6-costo-promedio-y-kardex.md) | Costo promedio y kárdex | Costo ponderado por bodega y kárdex valorizado | S5.1, S3.2 | core, web | F-09 | M |
 | [S5.7](sessions/S5.7-compras-devoluciones-e-iva.md) | Compras: devoluciones e IVA | Devoluciones a proveedor, IVA en compras, cuentas por pagar básicas | S5.6 | core, web | F-11, F-12, G-37 | M |
 | [S5.8](sessions/S5.8-importacion-masiva.md) | Importación masiva | Productos, clientes, proveedores y saldos iniciales desde CSV | S5.2, S5.3 | core, web | F-05 | M |

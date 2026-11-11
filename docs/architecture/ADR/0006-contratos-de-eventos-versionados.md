@@ -1,7 +1,8 @@
 # ADR-0006: Contratos de eventos versionados y pruebas de contrato
 
 - **Estado:** aceptado (2026-10-15, implementado en S1.6; `sales.confirmed` v2 con empresa en S2.8;
-  v3 y `credit_notes.requested` v2 con cantidades decimales en S5.1)
+  v3 y `credit_notes.requested` v2 con cantidades decimales en S5.1; excepción hasta el piloto en
+  S5.5)
 - **Relacionado:** [ADR-0005](0005-kafka-outbox-y-consumidores-idempotentes.md), [ADR-0009](0009-webhooks-firmados.md)
 
 ## Contexto
@@ -91,3 +92,14 @@ establecimiento y punto de emisión en la Etapa 2.
 - Despliegue: facturación, después el core (que publica las versiones nuevas), después la web. Volver
   el core atrás publica de nuevo v2 y v1, que facturación sigue aceptando, siempre que el downgrade de
   la base no encuentre cantidades fraccionarias.
+
+## Excepción hasta el piloto (S5.5, 2026-11-11)
+
+Mientras ninguna empresa use la plataforma en producción, un cambio incompatible se hace sobre la
+versión vigente en lugar de crear `schema_version` + 1. No hay mensajes reales en vuelo ni un
+consumidor desplegado que proteger: core e invoicing se despliegan juntos, y el outbox y los mensajes
+fallidos locales se vacían o se reprocesan. Las pruebas de contrato siguen validando los dos lados
+con los mismos esquemas. Desde el piloto vuelve a regir el punto 4 sin excepciones.
+
+- Primera aplicación: `sales.confirmed` v3 admite `CREDIT` en `payments[].method` y `term_days` en
+  ese pago (S5.5). Detalle y orden de despliegue en `contracts/CHANGELOG.md`.
