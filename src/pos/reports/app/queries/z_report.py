@@ -5,7 +5,10 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
+from src.pos.cash.app.queries.get_cash_summary import (
+    compute_cash_summary,
+    expected_cash,
+)
 from src.pos.refund.infra.models import RefundModel
 from src.pos.reports.app.queries.x_report import (
     GetXReportQuery,
@@ -53,13 +56,7 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
         # Cash reconciliation
         cash_summary = compute_cash_summary(self.session, query.shift_id)
         opening_balance = shift.opening_balance or Decimal("0")
-        expected_balance = (
-            opening_balance
-            + cash_summary["cash_sales"]
-            - cash_summary["cash_refunds"]
-            + cash_summary["cash_in"]
-            - cash_summary["cash_out"]
-        )
+        expected_balance = expected_cash(opening_balance, cash_summary)
         closing_balance = shift.closing_balance
         discrepancy = (
             (closing_balance - expected_balance)
@@ -77,6 +74,7 @@ class GetZReportQueryHandler(QueryHandler[GetZReportQuery, dict]):
                 "opening_balance": opening_balance,
                 "cash_sales": cash_summary["cash_sales"],
                 "cash_refunds": cash_summary["cash_refunds"],
+                "customer_payments": cash_summary["customer_payments"],
                 "cash_in": cash_summary["cash_in"],
                 "cash_out": cash_summary["cash_out"],
                 "expected_balance": expected_balance,

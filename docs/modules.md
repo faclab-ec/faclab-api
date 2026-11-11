@@ -365,7 +365,7 @@ Gestion de clientes con datos fiscales, contactos y estados.
 
 **Entidades:** `Customer`, `CustomerContact`
 
-**Campos Customer:** `id`, `name`, `tax_id` (RUC/RUC), `tax_type`, `email`, `phone`, `address`, `is_active`, `price_list_id` (S5.3: la lista de precios con que compra; se cambia aparte con `PUT /api/admin/customers/{id}/price-list`, que pide `product:write`, y la edicion del cliente la conserva), `created_at`
+**Campos Customer:** `id`, `name`, `tax_id` (RUC/RUC), `tax_type`, `email`, `phone`, `address`, `is_active`, `credit_limit` y `payment_terms` (S5.5: el cupo y los dias de plazo de sus ventas a credito, ver Cuentas por cobrar), `price_list_id` (S5.3: la lista de precios con que compra; se cambia aparte con `PUT /api/admin/customers/{id}/price-list`, que pide `product:write`, y la edicion del cliente la conserva), `created_at`
 
 **Value Objects usados:** `TaxId`, `Email`
 
@@ -421,32 +421,32 @@ Gestion de ordenes de compra y recepciones de mercaderia.
 
 ## Ventas
 
-Ciclo de vida completo de ventas con items, pagos e integracion con inventario.
+Las ventas, sus items y sus pagos. Se crean, cobran, confirman y anulan en el POS, que mueve el stock de
+la ubicacion de la terminal en la misma transaccion (ver POS); el admin las consulta, las reenvia a
+facturacion y concilia sus facturas. Desde S5.5 (G-34) no hay ventas de administracion: se borraron los
+handlers de inventario que esperaban un `SaleConfirmed` o `SaleCancelled` del admin, que nunca se
+publicaban y movian stock sin ubicacion. Spec en [sales-spec.md](sales-spec.md).
 
 **Entidades:** `Sale`, `SaleItem`, `Payment`
 
-**Estados:** `DRAFT` → `CONFIRMED` → `CANCELLED`
+**Estados:** `DRAFT` → `CONFIRMED` → `INVOICED`, o `CANCELLED` (desde `DRAFT` o `CONFIRMED`)
 
-**Campos Sale:** `id`, `customer_id`, `status`, `subtotal`, `tax`, `total`, `notes`, `created_at`
+**Campos Sale:** `id`, `customer_id`, `status`, `payment_status`, `subtotal`, `tax`, `total`, `notes`, `number`, `branch_id`, `terminal_id`, `invoice_status`, `created_at`
 
-**Campos SaleItem:** `id`, `sale_id`, `product_id`, `quantity`, `unit_price`, `subtotal`
+**Campos SaleItem:** `id`, `sale_id`, `product_id`, `presentation_id`, `quantity`, `unit_factor`, `unit_price`, `subtotal`
 
-**Campos Payment:** `id`, `sale_id`, `amount`, `method`, `reference`, `created_at`
+**Campos Payment:** `id`, `sale_id`, `amount` (aplicado), `amount_tendered`, `change`, `payment_method` (`CREDIT`: la parte a credito, S5.5), `term_days` (plazo de un pago `CREDIT`), `reference`, `created_at`
 
-**Comandos:** `CreateSale`, `AddSaleItem`, `RemoveSaleItem`, `ConfirmSale`, `CancelSale`, `RegisterPayment`
+**Comandos:** `CreateSale`, `AddSaleItem`, `UpdateSaleItem`, `RemoveSaleItem`, `RegisterPayment`, `RequestSaleInvoicing`, `InvoiceSale`, `RejectSaleInvoice` (confirmar y anular son del POS)
 
 **Queries:** `GetAllSales`, `GetSaleById`, `GetSaleItems`, `GetSalePayments`
 
-**Eventos publicados:** `SaleCreated`, `SaleConfirmed`, `SaleCancelled`
-
-**Integracion con inventario:**
-- `SaleConfirmed` → Movement(OUT) por cada item → Stock decrementado
-- `SaleCancelled` → Movement(IN) por cada item → Stock restaurado
+**Eventos publicados:** `SaleConfirmed`, `SaleCancelled`, `SaleInvoicingRequested` (desde el POS, con `source="pos"`)
 
 **Reglas de dominio:**
 - Solo se pueden agregar items si la venta esta en estado `DRAFT`
-- Solo se puede confirmar una venta `DRAFT` con al menos un item
-- Solo se puede cancelar una venta `CONFIRMED` o `DRAFT`
+- Solo se puede confirmar una venta `DRAFT` con al menos un item y cubierta por sus pagos; un pago `CREDIT` la cubre con la cuenta por cobrar del cliente (S5.5)
+- Solo se puede cancelar una venta `CONFIRMED` o `DRAFT`; una a credito, solo si su cuenta no recibio abonos
 
 **Conciliacion con faclab-invoicing (S4.3, `src/invoicing/`):** la tarea `invoice_reconciliation`
 del worker abre una discrepancia (`invoice_discrepancies`) por cada venta confirmada que sigue sin
@@ -523,6 +523,43 @@ se reutiliza), `AddQuoteItem`, `UpdateQuoteItem`, `RemoveQuoteItem`, `SendQuote`
 del usuario), `GetQuote` (con items y la venta en que se convirtio), `GetQuotePdf`, `GetPosQuotes`
 (las vigentes de la sucursal del POS, busqueda por numero o cliente) y `GetPosQuote` (precio de hoy y
 stock en la ubicacion de la terminal de cada linea).
+
+---
+
+## Cuentas por cobrar
+
+Ventas a credito y cartera (`src/receivables/`, S5.5, F-08). Rutas en `/api/admin/receivables`,
+`/api/admin/customer-accounts` y `/api/admin/customer-payments` (`receivable:read`; abonar fuera de
+caja es `receivable:write`) y, en el POS, `/api/pos/customer-accounts` y `/api/pos/customer-payments`
+(`pos:operate`). Spec en [receivables-spec.md](receivables-spec.md).
+
+**Entidades:** `Receivable` (una por venta a credito), `CustomerPayment` (abono), `ReceivableApplication` (lo que un abono o una devolucion bajo de una cuenta)
+
+**Estados de Receivable:** `OPEN` → `PAID` (saldada), o `CANCELLED` (su venta se anulo sin abonos)
+
+**Campos Receivable:** `id`, `customer_id`, `sale_id` (unica), `branch_id`, `amount` (lo que quedo a credito), `balance`, `issued_on`, `due_on` (`issued_on` + `term_days`), `term_days` (los `payment_terms` del cliente), `status`, `cancelled_at`
+
+**Campos CustomerPayment:** `id`, `number` (`AB-2026-0001`, por empresa), `customer_id`, `amount`, `payment_method` (nunca `CREDIT`), `reference`, `notes`, `paid_at`, `received_by` (del token), `branch_id`, `terminal_id` y `shift_id` (el turno cuya caja lo recibio, en el POS)
+
+**Venta a credito:** un pago `CREDIT` en la venta rapida o al confirmar. `CustomerCredit.open`
+(`src/receivables/app/credit.py`), en la transaccion de la venta, bloquea la fila del cliente (despues
+del stock y antes del contador), exige un cliente activo con cupo (`CUSTOMER_WITHOUT_CREDIT`), que lo
+que debe mas el credito no pase el cupo (`CREDIT_LIMIT_EXCEEDED`) y abre la cuenta con su plazo; el
+pago lleva `term_days`, que viaja a la factura (`sales.confirmed` v3). La venta queda `PENDING` o
+`PARTIAL` y pasa a `PAID` cuando su cuenta se salda.
+
+**Abonos:** FIFO (la cuenta que vence antes primero) o manuales por cuenta; bloquean al cliente y sus
+cuentas abiertas, no dejan saldo a favor (`CUSTOMER_PAYMENT_EXCEEDS_BALANCE`) y se auditan
+(`customer_payment.recorded`). En el POS van al turno abierto de la terminal: en efectivo suman
+`customer_payments` en la caja (resumen, cierre y Z).
+
+**Devoluciones y anulaciones:** una devolucion de una venta a credito se acredita primero a su cuenta,
+hasta su saldo (un pago de devolucion `CREDIT`), y solo el resto se devuelve en dinero. Una venta a
+credito se anula solo si su cuenta no bajo (`RECEIVABLE_HAS_PAYMENTS`).
+
+**Comandos:** `RecordCustomerPayment` (admin y POS). **Servicio:** `CustomerCredit` (abrir, acreditar devolucion, anular, vista previa).
+
+**Queries:** `GetReceivables` (filtros `customerId`, `status`, `overdue`, `branchId`), `GetReceivable` (con sus aplicaciones), `GetReceivablesAging` (por cliente: por vencer, 1-30, 31-60, 61-90 y mas de 90 dias de vencido), `GetCustomerAccount` (cupo, saldo, vencido, disponible y cuentas abiertas), `GetCustomerStatement` (saldo inicial, movimientos con saldo corrido y saldo final), `GetCustomerPayments`, `GetCustomerPayment`
 
 ---
 

@@ -10,6 +10,7 @@ from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.entities import ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
+from src.receivables.app.credit import CustomerCredit
 from src.sales.app.repositories import (
     PaymentRepository,
     SaleItemRepository,
@@ -40,7 +41,9 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         numbering: DocumentNumbering,
         event_publisher: EventPublisher,
         session: Session,
+        credit: CustomerCredit,
     ):
+        self.credit = credit
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
         self.stock = stock
@@ -69,13 +72,12 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         sale.ensure_draft("confirm")
         # The payments cover the total, applied again in the order they were
         # taken because the items may have changed after paying; checked
-        # before locking anything
+        # before locking anything. A CREDIT payment leaves its amount on the
+        # customer's account (S5.5)
         payments = sorted(
             self.payment_repo.filter_by(sale_id=sale.id), key=lambda p: p.require_id()
         )
-        sale.settle(payments)
-        for payment in payments:
-            self.payment_repo.update(payment)
+        on_credit = sale.settle(payments) > 0
 
         # The stock of the terminal's location, not of any other. Stock rows
         # are locked before the number's counter, in every POS document
@@ -92,12 +94,18 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
             reference_id=command.sale_id,
         )
 
+        # Its credit within the customer's limit: the customer's row is locked
+        # after the stock and before the counter
+        self.credit.open(sale, payments)
+        for payment in payments:
+            self.payment_repo.update(payment)
+
         number = (
             self.numbering.next(sale.branch_id, DocumentType.SALE)
             if sale.branch_id is not None
             else None
         )
-        sale.confirm(number)
+        sale.confirm(number, on_credit=on_credit)
         self.sale_repo.update(sale)
 
         self.event_publisher.publish(

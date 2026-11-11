@@ -80,6 +80,12 @@ COMPOSITE_FOREIGN_KEYS = {
     ("quote_items", "product_id"),
     ("quote_items", "presentation_id"),
     ("sales", "quote_id"),
+    ("receivables", "customer_id"),
+    ("receivables", "branch_id"),
+    ("customer_payments", "customer_id"),
+    ("customer_payments", "branch_id"),
+    ("customer_payments", "terminal_id"),
+    ("receivable_applications", "receivable_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
@@ -109,6 +115,10 @@ INTERNAL_FOREIGN_KEYS = {
     ("credit_notes", "sale_id"): "the sale loaded by id",
     ("credit_notes", "refund_id"): "the refund loaded by id",
     ("quote_items", "quote_id"): "the quote loaded by id",
+    ("receivables", "sale_id"): "the sale being confirmed",
+    ("customer_payments", "shift_id"): "the terminal's open shift",
+    ("receivable_applications", "customer_payment_id"): "the payment being recorded",
+    ("receivable_applications", "refund_id"): "the refund being processed",
 }
 
 TABLES = Base.metadata.tables
@@ -130,7 +140,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 44
+    assert len(BUSINESS_TABLES) == 47
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

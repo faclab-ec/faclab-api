@@ -4,7 +4,10 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
+from src.pos.cash.app.queries.get_cash_summary import (
+    compute_cash_summary,
+    expected_cash,
+)
 from src.pos.shift.app.repositories import ShiftRepository
 from src.pos.shift.domain.events import ShiftClosed
 from src.shared.app.audit import AuditAction, AuditTrail
@@ -45,13 +48,7 @@ class CloseShiftCommandHandler(CommandHandler[CloseShiftCommand, dict]):
             raise NotFoundError(f"Shift with id {command.shift_id} not found")
 
         summary = compute_cash_summary(self.session, command.shift_id)
-        expected_balance = (
-            shift.opening_balance
-            + summary["cash_sales"]
-            - summary["cash_refunds"]
-            + summary["cash_in"]
-            - summary["cash_out"]
-        )
+        expected_balance = expected_cash(shift.opening_balance, summary)
 
         before_status = shift.status
         discrepancy = shift.close(

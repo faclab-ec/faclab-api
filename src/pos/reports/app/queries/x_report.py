@@ -8,6 +8,7 @@ from wireup import injectable
 from src.catalog.product.infra.models import ProductModel
 from src.pos.shift.infra.models import ShiftModel
 from src.pos.terminal.app.scope import in_scope
+from src.receivables.infra.models import CustomerPaymentModel
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
@@ -80,6 +81,21 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
             .all()
         )
 
+        # Payments on account taken in the shift (S5.5), by method
+        customer_payment_rows = (
+            self.session.query(
+                CustomerPaymentModel.payment_method,
+                func.count(CustomerPaymentModel.id).label("count"),
+                func.sum(CustomerPaymentModel.amount).label("total"),
+            )
+            .filter(
+                CustomerPaymentModel.shift_id == query.shift_id,
+                *tenant_criteria(CustomerPaymentModel),
+            )
+            .group_by(CustomerPaymentModel.payment_method)
+            .all()
+        )
+
         # Items sold
         items_rows = (
             self.session.query(
@@ -125,6 +141,14 @@ class GetXReportQueryHandler(QueryHandler[GetXReportQuery, dict]):
                     "total": row.total,
                 }
                 for row in payments_rows
+            ],
+            "customer_payments_by_method": [
+                {
+                    "payment_method": row.payment_method,
+                    "count": row.count,
+                    "total": row.total,
+                }
+                for row in customer_payment_rows
             ],
             "items_sold": [
                 {

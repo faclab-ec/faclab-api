@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 from wireup import injectable
 
@@ -8,6 +9,7 @@ from src.pos.refund.app.repositories import (
     RefundPaymentRepository,
     RefundRepository,
 )
+from src.pos.refund.domain.entities import RefundStatus
 from src.pos.refund.domain.specifications import (
     RefundsByStatus,
     RefundsByTerminal,
@@ -15,6 +17,8 @@ from src.pos.refund.domain.specifications import (
     RefundsOfSale,
 )
 from src.pos.terminal.app.scope import branch_scope, in_scope
+from src.receivables.app.credit import CustomerCredit
+from src.sales.domain.entities import PaymentMethod
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.specifications import Specification, all_of
@@ -35,7 +39,9 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
         refund_item_repo: RefundItemRepository,
         refund_payment_repo: RefundPaymentRepository,
         credit_notes: CreditNoteRepository,
+        credit: CustomerCredit,
     ):
+        self.credit = credit
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
@@ -54,6 +60,19 @@ class GetRefundByIdQueryHandler(QueryHandler[GetRefundByIdQuery, dict]):
         result["payments"] = [p.dict() for p in payments]
         notes = self.credit_notes.of_refunds([refund.require_id()])
         result["credit_note"] = notes[0].dict() if notes else None
+        # Of a sale on credit (S5.5): what it credited, or would credit now
+        result["account_credit"] = (
+            self.credit.creditable(refund.original_sale_id, refund.total)
+            if refund.status == RefundStatus.PENDING
+            else sum(
+                (
+                    p.amount
+                    for p in payments
+                    if p.payment_method == PaymentMethod.CREDIT
+                ),
+                Decimal("0"),
+            )
+        )
         return result
 
 

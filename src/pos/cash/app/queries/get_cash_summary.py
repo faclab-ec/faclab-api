@@ -8,6 +8,7 @@ from wireup import injectable
 from src.pos.cash.infra.models import CashMovementModel
 from src.pos.refund.infra.models import RefundModel, RefundPaymentModel
 from src.pos.shift.app.repositories import ShiftRepository
+from src.receivables.infra.models import CustomerPaymentModel
 from src.sales.domain.entities import COMPLETED_SALE_STATUSES
 from src.sales.infra.models import PaymentModel, SaleModel
 from src.shared.app.queries import Query, QueryHandler
@@ -44,6 +45,19 @@ def compute_cash_summary(session: Session, shift_id: int) -> dict:
         .scalar()
     )
 
+    # Payments on account in cash taken in this shift (S5.5)
+    customer_payments = (
+        session.query(
+            func.coalesce(func.sum(CustomerPaymentModel.amount), Decimal("0"))
+        )
+        .filter(
+            CustomerPaymentModel.shift_id == shift_id,
+            *tenant_criteria(CustomerPaymentModel),
+        )
+        .filter(CustomerPaymentModel.payment_method == "CASH")
+        .scalar()
+    )
+
     # Cash in: SUM of IN cash movements in this shift
     cash_in = (
         session.query(func.coalesce(func.sum(CashMovementModel.amount), Decimal("0")))
@@ -67,9 +81,23 @@ def compute_cash_summary(session: Session, shift_id: int) -> dict:
     return {
         "cash_sales": cash_sales,
         "cash_refunds": cash_refunds,
+        "customer_payments": customer_payments,
         "cash_in": cash_in,
         "cash_out": cash_out,
     }
+
+
+def expected_cash(opening_balance: Decimal, summary: dict) -> Decimal:
+    """The cash the drawer should have: what it opened with, plus cash sales and
+    payments on account, minus cash refunds, plus and minus the movements"""
+    return (
+        opening_balance
+        + summary["cash_sales"]
+        - summary["cash_refunds"]
+        + summary["customer_payments"]
+        + summary["cash_in"]
+        - summary["cash_out"]
+    )
 
 
 @dataclass
@@ -91,13 +119,7 @@ class GetCashSummaryQueryHandler(QueryHandler[GetCashSummaryQuery, dict]):
         summary = compute_cash_summary(self.session, query.shift_id)
 
         opening_balance = shift.opening_balance
-        expected_balance = (
-            opening_balance
-            + summary["cash_sales"]
-            - summary["cash_refunds"]
-            + summary["cash_in"]
-            - summary["cash_out"]
-        )
+        expected_balance = expected_cash(opening_balance, summary)
 
         return {
             "shift_id": query.shift_id,

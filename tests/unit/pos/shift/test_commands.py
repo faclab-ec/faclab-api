@@ -25,6 +25,7 @@ from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
 _ZERO_SUMMARY = {
     "cash_sales": Decimal("0"),
     "cash_refunds": Decimal("0"),
+    "customer_payments": Decimal("0"),
     "cash_in": Decimal("0"),
     "cash_out": Decimal("0"),
 }

@@ -187,6 +187,7 @@ ROUTES = [
     "/api/pos/refunds",
     "/api/pos/refunds/1/process",
     "/api/pos/shifts/1/cash-movements",
+    "/api/pos/customer-payments",
 ]
 
 

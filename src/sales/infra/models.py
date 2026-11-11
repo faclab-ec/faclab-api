@@ -205,6 +205,8 @@ class PaymentModel(TenantScoped, Base):
     payment_date: Mapped[datetime | None] = mapped_column(DateTime)
     reference: Mapped[str | None] = mapped_column(String(128))
     notes: Mapped[str | None] = mapped_column(String(512))
+    # Days to pay a CREDIT payment (S5.5)
+    term_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

@@ -70,6 +70,10 @@ def test_a_tenant_document_number_has_prefix_year_and_four_digits():
         tenant_document_number(DocumentType.PURCHASE_ORDER, 2027, 10_000)
         == "PO-2027-10000"
     )
+    # A customer's payment on account (S5.5)
+    assert (
+        tenant_document_number(DocumentType.CUSTOMER_PAYMENT, 2026, 3) == "AB-2026-0003"
+    )
 
 
 def test_a_tenant_counter_has_no_branch_and_is_apart_from_the_branches(session):

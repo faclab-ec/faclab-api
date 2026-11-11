@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
-from src.sales.domain.entities import Payment, SaleItem
+from src.sales.domain.entities import Payment, PaymentMethod, SaleItem
 from src.shared.domain.events import DomainEvent
 
 
@@ -29,8 +29,17 @@ def sale_items_data(items: Iterable[SaleItem]) -> list[dict[str, Any]]:
 
 def sale_payments_data(payments: Iterable[Payment]) -> list[dict[str, Any]]:
     """Pagos de la venta como los llevan SaleConfirmed y SaleInvoicingRequested:
-    lo aplicado, sin el vuelto, así que suman el total de la venta"""
-    return [{"method": p.payment_method, "amount": p.amount} for p in payments]
+    lo aplicado, sin el vuelto, así que suman el total de la venta. La parte a
+    crédito lleva su plazo (S5.5), el `plazo` de la factura."""
+    return [
+        {"method": p.payment_method, "amount": p.amount}
+        | (
+            {"term_days": p.term_days or 0}
+            if p.payment_method == PaymentMethod.CREDIT
+            else {}
+        )
+        for p in payments
+    ]
 
 
 @dataclass

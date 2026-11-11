@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
@@ -8,6 +9,13 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
 from src.pos.terminal.app.stock import TerminalStock
+from src.receivables.domain.entities import (
+    Receivable,
+    ReceivableApplication,
+    ReceivableApplicationKind,
+    ReceivableStatus,
+)
+from src.receivables.domain.exceptions import ReceivableHasPaymentsError
 from src.sales.domain.entities import (
     Payment,
     PaymentMethod,
@@ -24,6 +32,7 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError
 from tests.audit import FakeAuditTrail
+from tests.receivables import customer_credit
 from tests.unit.pos.terminals import LOCATION_ID, TERMINAL, numbering
 
 
@@ -102,6 +111,7 @@ def _build_confirm_handler(sale=None, items=None, stock=None, payments=None):
     )
     handler.event_publisher = MagicMock()
     handler.session = MagicMock()
+    handler.credit = customer_credit()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale
@@ -131,6 +141,7 @@ def _build_cancel_handler(sale=None, items=None, stock=None):
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.event_publisher = MagicMock()
     handler.audit = FakeAuditTrail()
+    handler.credit = customer_credit()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale
@@ -381,6 +392,54 @@ class TestPOSCancelSaleCommandHandler:
         handler.stock_repo.update.assert_called_once()
         assert handler.stock_repo.update.call_args[0][0].quantity == 50
 
+    def _credit_of_sale(self, *applications):
+        receivable = Receivable.open(
+            customer_id=10,
+            sale_id=1,
+            amount=Decimal("100"),
+            term_days=30,
+            issued_on=date.today(),
+        )
+        receivable.id = 1
+        return customer_credit(receivables=[receivable], applications=applications)
+
+    def test_cancelling_a_sale_on_credit_cancels_its_receivable(self):
+        from src.pos.sales.app.commands import POSCancelSaleCommand
+
+        handler = _build_cancel_handler(
+            sale=_make_sale(status=SaleStatus.CONFIRMED),
+            items=[_make_sale_item()],
+            stock=_make_stock(quantity=45),
+        )
+        handler.credit = self._credit_of_sale()
+
+        handler._handle(POSCancelSaleCommand(sale_id=1))
+
+        receivable = handler.credit.receivables.get_by_id(1)
+        assert receivable is not None
+        assert receivable.status == ReceivableStatus.CANCELLED
+
+    def test_a_sale_on_credit_with_payments_on_account_is_not_cancelled(self):
+        from src.pos.sales.app.commands import POSCancelSaleCommand
+
+        handler = _build_cancel_handler(
+            sale=_make_sale(status=SaleStatus.CONFIRMED),
+            items=[_make_sale_item()],
+            stock=_make_stock(quantity=45),
+        )
+        handler.credit = self._credit_of_sale(
+            ReceivableApplication(
+                id=1,
+                receivable_id=1,
+                amount=Decimal("10"),
+                kind=ReceivableApplicationKind.PAYMENT,
+                customer_payment_id=1,
+            )
+        )
+
+        with pytest.raises(ReceivableHasPaymentsError):
+            handler._handle(POSCancelSaleCommand(sale_id=1))
+
     def test_cancel_puts_back_where_the_sale_took_from(self):
         from src.pos.sales.app.commands import POSCancelSaleCommand
 
@@ -477,61 +536,10 @@ class TestPOSCancelSaleCommandHandler:
         assert published_event.was_confirmed is False
 
 
-# === Event Handler Guard Tests ===
+# === Sale events ===
 
 
-class TestEventHandlerGuards:
-    def test_sale_confirmed_pos_source_skips_inventory(self):
-        from src.inventory.infra.event_handlers import handle_sale_confirmed
-        from src.sales.domain.events import SaleConfirmed
-
-        event = SaleConfirmed(
-            aggregate_id=1,
-            sale_id=1,
-            customer_id=10,
-            items=[{"product_id": 100, "quantity": 5}],
-            total=Decimal("1000.0"),
-            source="pos",
-        )
-
-        handle_sale_confirmed(event)
-
-    def test_sale_cancelled_pos_source_skips_inventory(self):
-        from src.inventory.infra.event_handlers import handle_sale_cancelled
-        from src.sales.domain.events import SaleCancelled
-
-        event = SaleCancelled(
-            aggregate_id=1,
-            sale_id=1,
-            customer_id=10,
-            items=[{"product_id": 100, "quantity": 5}],
-            reason="test",
-            was_confirmed=True,
-            source="pos",
-        )
-
-        handle_sale_cancelled(event)
-
-    def test_sale_confirmed_admin_source_processes_normally(self, monkeypatch):
-        import src
-        from src.inventory.infra.event_handlers import handle_sale_confirmed
-        from src.sales.domain.events import SaleConfirmed
-
-        # Reaching the scope proves the handler didn't skip the event
-        monkeypatch.setattr(src, "wireup_container", None)
-
-        event = SaleConfirmed(
-            aggregate_id=1,
-            sale_id=1,
-            customer_id=10,
-            items=[{"product_id": 100, "quantity": 5}],
-            total=Decimal("1000.0"),
-            source="admin",
-        )
-
-        with pytest.raises(RuntimeError, match="wireup container is not initialized"):
-            handle_sale_confirmed(event)
-
+class TestSaleEventDefaults:
     def test_sale_confirmed_default_source_is_admin(self):
         from src.sales.domain.events import SaleConfirmed
 

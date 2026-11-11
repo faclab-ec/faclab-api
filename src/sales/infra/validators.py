@@ -238,6 +238,12 @@ class PaymentResponse(BaseModel):
     )
     reference: str | None
     notes: str | None
+    term_days: int | None = Field(
+        None,
+        description="Days the customer has to pay a CREDIT payment (S5.5)",
+        validation_alias=AliasChoices("termDays", "term_days"),
+        serialization_alias="termDays",
+    )
     created_at: datetime | None = Field(
         None,
         validation_alias=AliasChoices("createdAt", "created_at"),

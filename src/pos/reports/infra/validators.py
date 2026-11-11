@@ -65,6 +65,9 @@ class CashReconciliation(BaseModel):
     opening_balance: DecimalNumber = Field(description="Opening balance")
     cash_sales: DecimalNumber = Field(description="Cash received from sales")
     cash_refunds: DecimalNumber = Field(description="Cash returned in refunds")
+    customer_payments: DecimalNumber = Field(
+        description="Cash received as payments on account (S5.5)"
+    )
     cash_in: DecimalNumber = Field(description="Manual cash-in movements")
     cash_out: DecimalNumber = Field(description="Manual cash-out movements")
     expected_balance: DecimalNumber = Field(description="Expected cash in drawer")
@@ -89,7 +92,10 @@ class XReportResponse(BaseModel):
     shift: ShiftInfo = Field(description="Shift information")
     sales_summary: SalesSummary = Field(description="Sales totals for the shift")
     payments_by_method: list[PaymentMethodDetail] = Field(
-        description="Breakdown by payment method"
+        description="Breakdown by payment method; CREDIT is what was sold on credit"
+    )
+    customer_payments_by_method: list[PaymentMethodDetail] = Field(
+        description="Payments on account taken in the shift, by method (S5.5)"
     )
     items_sold: list[ItemSoldDetail] = Field(
         description="Top products sold during the shift"
@@ -115,7 +121,10 @@ class ZReportResponse(BaseModel):
     shift: ShiftInfo = Field(description="Shift information")
     sales_summary: SalesSummary = Field(description="Sales totals for the shift")
     payments_by_method: list[PaymentMethodDetail] = Field(
-        description="Breakdown by payment method"
+        description="Breakdown by payment method; CREDIT is what was sold on credit"
+    )
+    customer_payments_by_method: list[PaymentMethodDetail] = Field(
+        description="Payments on account taken in the shift, by method (S5.5)"
     )
     items_sold: list[ItemSoldDetail] = Field(
         description="Products sold during the shift"

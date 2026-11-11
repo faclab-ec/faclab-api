@@ -19,8 +19,16 @@ from src.pricing.domain.entities import PriceList, PriceListItem
 from src.quotes.app.conversion import QuoteConversion
 from src.quotes.domain.entities import QuoteStatus
 from src.quotes.domain.exceptions import QuoteExpiredError, QuoteItemsChangedError
-from src.sales.domain.entities import Sale, SaleItem, SaleStatus
+from src.receivables.domain.exceptions import CreditLimitExceededError
+from src.sales.domain.entities import (
+    PaymentMethod,
+    PaymentStatus,
+    Sale,
+    SaleItem,
+    SaleStatus,
+)
 from src.sales.domain.exceptions import (
+    CreditCustomerRequiredError,
     InsufficientPaymentError,
     InsufficientStockError,
     OverrideReasonRequiredError,
@@ -33,6 +41,7 @@ from tests.audit import FakeAuditTrail
 from tests.presentations import FakeProductPresentations
 from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
+from tests.receivables import credit_customer, customer_credit
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 from tests.unit.quotes.fakes import InMemoryQuoteItems, InMemoryQuotes, draft, line
 
@@ -132,6 +141,7 @@ def _build_handler(
     presentations=None,
     prices=None,
     quotes=None,
+    credit=None,
 ):
     return QuickSaleCommandHandler(
         sale_repo=sale_repo or _mock_repo(),
@@ -149,6 +159,7 @@ def _build_handler(
         presentations=presentations or FakeProductPresentations(),
         prices=prices or price_resolver(),
         quotes=quotes or QuoteConversion(_mock_repo(), _mock_repo()),
+        credit=credit or customer_credit(),
     )
 
 
@@ -722,3 +733,69 @@ class TestQuickSaleFromQuote:
                 )
             )
         sale_repo.create.assert_not_called()
+
+
+class TestQuickSaleOnCredit:
+    """S5.5: a CREDIT payment leaves its amount on the customer's account"""
+
+    def _handler(self, credit, event_publisher=None, customer_id=7):
+        payment_repo = MagicMock()
+        payment_repo.create.side_effect = lambda payment: payment
+        sale = _make_sale(
+            customer_id=customer_id, is_final_consumer=customer_id is None
+        )
+        handler = _build_handler(
+            sale_repo=_mock_repo(entity=sale),
+            sale_item_repo=_mock_repo(entity=_make_sale_item()),
+            product_repo=_mock_repo(entity=_make_product()),
+            stock_repo=_mock_repo(entity=_make_stock()),
+            payment_repo=payment_repo,
+            shift_repo=_mock_repo(entity=_make_shift()),
+            event_publisher=event_publisher,
+            credit=credit,
+        )
+        return handler
+
+    def _on_credit(self, customer_id=7):
+        return _quick_sale_command(
+            customer_id=customer_id,
+            payments=[
+                {"amount": 12, "payment_method": "CASH"},
+                {"amount": 100, "payment_method": "CREDIT"},
+            ],
+        )
+
+    def test_what_is_left_on_credit_goes_to_the_customers_account(self):
+        credit = customer_credit([credit_customer()])
+        publisher = MagicMock()
+
+        result = self._handler(credit, publisher).handle(self._on_credit())
+
+        assert result["status"] == SaleStatus.CONFIRMED
+        assert result["payment_status"] == PaymentStatus.PARTIAL
+        [receivable] = credit.receivables.rows.values()
+        assert (receivable.sale_id, receivable.amount) == (1, Decimal("100"))
+        assert credit.customers.locked == [{"id": 7}]
+        # The invoice's pagos: the cash and the credit with its terms
+        event = publisher.publish.call_args[0][0]
+        assert event.payments == [
+            {"method": PaymentMethod.CASH, "amount": Decimal("12")},
+            {"method": PaymentMethod.CREDIT, "amount": Decimal("100"), "term_days": 30},
+        ]
+        assert [p["term_days"] for p in result["payments"]] == [None, 30]
+
+    def test_over_the_credit_limit_the_sale_is_rejected(self):
+        credit = customer_credit([credit_customer(credit_limit=Decimal("99.99"))])
+        publisher = MagicMock()
+
+        with pytest.raises(CreditLimitExceededError):
+            self._handler(credit, publisher).handle(self._on_credit())
+
+        assert credit.receivables.rows == {}
+        publisher.publish.assert_not_called()
+
+    def test_a_final_consumer_doesnt_buy_on_credit(self):
+        credit = customer_credit([credit_customer()])
+
+        with pytest.raises(CreditCustomerRequiredError):
+            self._handler(credit, customer_id=None).handle(self._on_credit(None))

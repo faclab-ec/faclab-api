@@ -218,3 +218,17 @@ class CreditNoteRequiredError(SalesError):
             message=f"Sale {sale_id} is invoiced: void it with a credit note",
             detail=f"sale_id={sale_id}",
         )
+
+
+class CreditCustomerRequiredError(SalesError):
+    """Una venta a consumidor final no se vende a crédito: la cuenta por cobrar
+    es de un cliente (S5.5)"""
+
+    error_code = "CREDIT_CUSTOMER_REQUIRED"
+
+    def __init__(self, sale_id: int | None):
+        self.sale_id = sale_id
+        super().__init__(
+            message=f"Sale {sale_id} has no customer and cannot be sold on credit",
+            detail=f"sale_id={sale_id}",
+        )

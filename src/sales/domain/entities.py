@@ -5,6 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from src.sales.domain.exceptions import (
+    CreditCustomerRequiredError,
     CreditNoteRequiredError,
     InsufficientPaymentError,
     InvalidSaleStatusError,
@@ -59,13 +60,18 @@ class InvoiceStatus(StrEnum):
 
 
 class PaymentMethod(StrEnum):
-    """Método de pago"""
+    """Método de pago.
+
+    CREDIT es la parte que el cliente queda debiendo (S5.5): la cubre su cuenta
+    por cobrar, con el plazo de sus condiciones de pago, y no entra en la caja.
+    """
 
     CASH = "CASH"
     CREDIT_CARD = "CREDIT_CARD"
     DEBIT_CARD = "DEBIT_CARD"
     TRANSFER = "TRANSFER"
     OTHER = "OTHER"
+    CREDIT = "CREDIT"
 
 
 @dataclass
@@ -157,11 +163,12 @@ class Sale(Entity):
         if self.status != SaleStatus.DRAFT:
             raise InvalidSaleStatusError(self.status, operation)
 
-    def confirm(self, number: str | None = None) -> None:
-        """Confirma la venta (solo si está en DRAFT y pagada, ver `settle`) con
-        su número de documento. Las ventas a crédito llegan en S5.5."""
+    def confirm(self, number: str | None = None, on_credit: bool = False) -> None:
+        """Confirma la venta (solo si está en DRAFT y cubierta, ver `settle`) con
+        su número de documento. Una venta a crédito (`on_credit`) queda cubierta
+        por su cuenta por cobrar aunque no esté pagada (S5.5)."""
         self.ensure_draft("confirm")
-        if self.payment_status != PaymentStatus.PAID:
+        if self.payment_status != PaymentStatus.PAID and not on_credit:
             raise InsufficientPaymentError(self.id, self.total, Decimal("0"))
         self.status = SaleStatus.CONFIRMED
         if number is not None:
@@ -321,22 +328,31 @@ class Sale(Entity):
     def take_payment(self, payment: "Payment", previous: Iterable["Payment"]) -> None:
         """Aplica un pago nuevo a lo que falta pagar, después de los anteriores.
 
-        Una venta cancelada o facturada no recibe pagos.
+        Una venta cancelada o facturada no recibe pagos, y una a consumidor
+        final no recibe crédito.
         """
         if self.status in (SaleStatus.CANCELLED, SaleStatus.INVOICED):
             raise SaleNotPayableError(self.id, self.status)
+        self._ensure_credit_allowed([payment])
         previous = list(previous)
         payment.apply(self.balance(previous))
         self.update_payment_status(sum((p.amount for p in previous), payment.amount))
 
-    def settle(self, payments: Iterable["Payment"]) -> None:
-        """Aplica los pagos, en orden, al total de la venta.
+    def settle(self, payments: Iterable["Payment"]) -> Decimal:
+        """Aplica los pagos, en orden, al total de la venta, y dice cuánto queda
+        a crédito.
 
         Cada pago toma lo que todavía falta y el resto de uno en efectivo es el
         vuelto, así que lo aplicado suma exactamente el total. Se vuelve a
         calcular al confirmar porque los ítems de un borrador cambian después de
-        cobrar. Falla si los pagos no cubren el total.
+        cobrar. Falla si los pagos, con el crédito, no cubren el total.
+
+        Sin crédito la venta queda PAID. Con crédito su estado de pago es el de
+        su cuenta por cobrar (`owe_on_account`), así que
+        no se toca: un reenvío a facturación no lo hace retroceder.
         """
+        payments = list(payments)
+        self._ensure_credit_allowed(payments)
         owed = round_money(self.total)
         paid = Decimal("0")
         for payment in payments:
@@ -344,7 +360,26 @@ class Sale(Entity):
             paid += payment.amount
         if paid < owed:
             raise InsufficientPaymentError(self.id, owed, paid)
-        self.payment_status = PaymentStatus.PAID
+        credit = sum(
+            (p.amount for p in payments if p.payment_method == PaymentMethod.CREDIT),
+            Decimal("0"),
+        )
+        if credit == Decimal("0"):
+            self.payment_status = PaymentStatus.PAID
+        return credit
+
+    def owe_on_account(self, balance: Decimal) -> None:
+        """Lo que la venta todavía debe en su cuenta por cobrar (S5.5): queda
+        pendiente de cobro, parcial si ya se cobró una parte, y pagada cuando la
+        cuenta se salda"""
+        self.update_payment_status(round_money(self.total) - max(balance, Decimal("0")))
+
+    def _ensure_credit_allowed(self, payments: Iterable["Payment"]) -> None:
+        """El crédito es de un cliente: una venta a consumidor final no lo toma"""
+        if self.customer_id is None and any(
+            p.payment_method == PaymentMethod.CREDIT for p in payments
+        ):
+            raise CreditCustomerRequiredError(self.id)
 
 
 @dataclass
@@ -363,6 +398,9 @@ class Payment(Entity):
     amount_tendered: Decimal | None = None
     # Given back from a cash payment that exceeds what the sale owed
     change: Decimal = Decimal("0")
+    # Days its customer has to pay a CREDIT payment, from its payment terms
+    # (S5.5); the invoice's `plazo`
+    term_days: int | None = None
     id: int | None = None
     created_at: datetime | None = None
 
@@ -390,8 +428,9 @@ class Payment(Entity):
     def apply(self, owed: Decimal) -> None:
         """Aplica a la venta lo que todavía debe, tomado de lo entregado.
 
-        El resto de un pago en efectivo es el vuelto; otro medio de pago no
-        puede pasarse de lo que se debe, y un pago que no aplica nada sobra.
+        El resto de un pago en efectivo es el vuelto; otro medio de pago,
+        crédito incluido, no puede pasarse de lo que se debe, y un pago que no
+        aplica nada sobra.
         """
         tendered = self.amount_tendered or self.amount
         applied = min(tendered, round_money(owed))

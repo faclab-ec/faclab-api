@@ -2,6 +2,13 @@
 
 Specification del módulo de ventas para implementación frontend. Endpoints de consulta (Admin), el reenvío a facturación y la conciliación con faclab-invoicing (S4.3).
 
+Las ventas se crean, cobran, confirman y anulan en el POS (`docs/pos-api-spec.md`): toda venta nace en
+una terminal, con su sucursal, punto de emisión y ubicación de stock. En S5.5 (G-34) se decidió dejar
+las ventas de administración de solo lectura y borrar los handlers de inventario que esperaban
+ventas confirmadas o anuladas aquí, que nunca se ejecutaban y movían stock sin ubicación. La
+cotización (`docs/quotes-spec.md`) es el documento de administración que se cobra en el POS. Las
+ventas a crédito y su cartera están en `docs/receivables-spec.md`.
+
 ---
 
 ## 1. Enums
@@ -19,13 +26,16 @@ Specification del módulo de ventas para implementación frontend. Endpoints de 
 
 | Valor     | Descripción                   |
 |-----------|-------------------------------|
-| `PENDING` | Sin pagos registrados         |
-| `PARTIAL` | Pago parcial recibido         |
-| `PAID`    | Pagado completamente          |
+| `PENDING` | Sin pagos registrados, o a crédito sin abonos |
+| `PARTIAL` | Pago parcial recibido, o a crédito con una parte pagada o abonada |
+| `PAID`    | Pagado completamente; a crédito, cuando su cuenta por cobrar se salda |
 
 ### PaymentMethod
 
-`CASH` | `CREDIT_CARD` | `DEBIT_CARD` | `TRANSFER` | `OTHER`
+`CASH` | `CREDIT_CARD` | `DEBIT_CARD` | `TRANSFER` | `OTHER` | `CREDIT`
+
+`CREDIT` (S5.5) es lo que el cliente queda debiendo: lo cubre su cuenta por cobrar, con el plazo de sus
+condiciones de pago (`termDays` del pago). No entra en la caja.
 
 ---
 
@@ -218,7 +228,8 @@ GET /api/admin/sales/{sale_id}/payments
 ```
 
 `amount` es lo aplicado a la venta, `amountTendered` lo que entregó el cliente y `change` el vuelto
-(solo en efectivo): `amountTendered = amount + change` (ver «Pagos» en la sección de reglas).
+(solo en efectivo): `amountTendered = amount + change` (ver «Pagos» en la sección de reglas). Un pago
+`CREDIT` trae `termDays`, los días de plazo del cliente (nulo en los demás).
 
 ---
 
@@ -390,7 +401,7 @@ interface ErrorResponse {
 type SaleStatus = "DRAFT" | "CONFIRMED" | "INVOICED" | "CANCELLED";
 type PaymentStatus = "PENDING" | "PARTIAL" | "PAID";
 type InvoiceStatus = "PENDING" | "AUTHORIZED" | "REJECTED";
-type PaymentMethod = "CASH" | "CREDIT_CARD" | "DEBIT_CARD" | "TRANSFER" | "OTHER";
+type PaymentMethod = "CASH" | "CREDIT_CARD" | "DEBIT_CARD" | "TRANSFER" | "OTHER" | "CREDIT";
 
 // Entidades
 interface Sale {
@@ -445,6 +456,7 @@ interface Payment {
   paymentDate: string | null;
   reference: string | null;
   notes: string | null;
+  termDays: number | null; // plazo de un pago CREDIT (S5.5)
   createdAt: string;
 }
 
@@ -566,7 +578,8 @@ elif total_paid < total:   PARTIAL
 else:                      PAID
 ```
 
-`total_paid` y `total` se comparan redondeados al centavo.
+`total_paid` y `total` se comparan redondeados al centavo. En una venta a crédito, `total_paid` es el
+total menos el saldo de su cuenta por cobrar (S5.5).
 
 ### Pagos: aplicado, entregado y vuelto (S3.3)
 
@@ -585,8 +598,13 @@ vuelto   = entregado - aplicado
 - Una venta `CANCELLED` o `INVOICED` no recibe pagos: `400 SALE_NOT_PAYABLE`.
 - **Confirmar exige cobertura**: al confirmar, los pagos se vuelven a aplicar en el orden en que se
   registraron sobre el total final (los ítems de un borrador pueden cambiar después de cobrar) y deben
-  cubrirlo; si no, `400 INSUFFICIENT_PAYMENT`. La venta queda `PAID`. Las ventas a crédito llegan en
-  S5.5.
+  cubrirlo; si no, `400 INSUFFICIENT_PAYMENT`. La venta queda `PAID`.
+- **Ventas a crédito (S5.5)**: un pago `CREDIT` cubre lo que el cliente queda debiendo, dentro de su
+  cupo (`CREDIT_LIMIT_EXCEEDED`), y abre su cuenta por cobrar en la misma transacción. Se aplica como
+  cualquier medio que no es efectivo (sin vuelto, sin pasar lo que se debe) y no se acepta a
+  consumidor final (`CREDIT_CUSTOMER_REQUIRED`). La venta queda `PENDING` o `PARTIAL` y su estado de
+  pago sigue al saldo de la cuenta: `PAID` cuando se salda con abonos o devoluciones. Reenviarla a
+  facturación no lo cambia. Detalle en `docs/receivables-spec.md`.
 - Lo aplicado es lo que cuenta en la caja (resumen, X, Z, por medio de pago, cierre de turno) y lo que
   viaja a facturación: la suma de los pagos de `sales.confirmed` es igual al total de la venta.
 - Los pagos anteriores a S3.3 guardaban lo entregado: la migración `f19314b5842a` pasó el excedente de
@@ -614,6 +632,8 @@ vuelto   = entregado - aplicado
   factura rechazada, o sin enviar (Kafka apagado o ventas anteriores a S3.3), se cancela como antes.
 - Una venta `INVOICED` no se cancela: `400 CREDIT_NOTE_REQUIRED`. Se anula con una devolución total
   en el POS (`docs/pos-api-spec.md`, 3), que genera la nota de crédito (S4.5).
+- Una venta a crédito se cancela solo si su cuenta por cobrar no bajó (queda `CANCELLED`); con abonos
+  o devoluciones acreditadas responde `400 RECEIVABLE_HAS_PAYMENTS` (S5.5).
 
 ### Montos
 

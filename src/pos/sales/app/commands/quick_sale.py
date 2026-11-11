@@ -16,6 +16,7 @@ from src.pos.terminal.app.resolver import TerminalRequest, TerminalResolver
 from src.pos.terminal.app.stock import TerminalStock
 from src.pricing.app.resolver import PriceResolver
 from src.quotes.app.conversion import QuoteConversion
+from src.receivables.app.credit import CustomerCredit
 from src.sales.app.price_override import audit_price_override
 from src.sales.app.repositories import (
     PaymentRepository,
@@ -68,8 +69,10 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         presentations: ProductPresentations,
         prices: PriceResolver,
         quotes: QuoteConversion,
+        credit: CustomerCredit,
     ):
         self.quotes = quotes
+        self.credit = credit
         self.quantities = quantities
         self.presentations = presentations
         self.prices = prices
@@ -177,8 +180,9 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             audit_discount(self.audit, sale)
 
         # 6. Aplicar los pagos al total: cada monto es lo que entrega el
-        #    cliente, se aplica lo que falta y el resto en efectivo es el vuelto.
-        #    Antes de bloquear el stock
+        #    cliente, se aplica lo que falta y el resto en efectivo es el vuelto;
+        #    un pago CREDIT deja su monto a crédito (S5.5). Antes de bloquear el
+        #    stock
         payments = [
             Payment(
                 sale_id=sale.require_id(),
@@ -188,7 +192,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             )
             for payment_data in command.payments
         ]
-        sale.settle(payments)
+        on_credit = sale.settle(payments) > 0
         self.sale_repo.update(sale)
 
         # 7. Descontar el stock de la ubicación de la terminal (bloquea las filas
@@ -202,17 +206,24 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             reference_id=sale.require_id(),
         )
 
-        # 8. Confirmar la venta con su número de la sucursal (después del stock,
+        # 8. Lo que queda a crédito va a la cuenta del cliente, dentro de su
+        #    cupo: bloquea su fila después del stock y antes del contador
+        self.credit.open(sale, payments)
+
+        # 9. Confirmar la venta con su número de la sucursal (después del stock,
         #    como en todo documento del POS)
-        sale.confirm(self.numbering.next(terminal.branch_id, DocumentType.SALE))
+        sale.confirm(
+            self.numbering.next(terminal.branch_id, DocumentType.SALE),
+            on_credit=on_credit,
+        )
         self.sale_repo.update(sale)
         if quote is not None:
             self.quotes.convert(quote)
 
-        # 9. Registrar pagos
+        # 10. Registrar pagos
         created_payments = [self.payment_repo.create(p) for p in payments]
 
-        # 10. Publicar evento
+        # 11. Publicar evento
         self.event_publisher.publish(
             SaleConfirmed(
                 aggregate_id=sale.require_id(),
@@ -232,7 +243,7 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
             session=self.session,
         )
 
-        # 11. Retornar venta completa, con la factura que el handler de
+        # 12. Retornar venta completa, con la factura que el handler de
         # facturación dejó pendiente
         result = (self.sale_repo.get_by_id(sale.require_id()) or sale).dict()
         names = self.presentations.names(i.presentation_id for i in created_items)

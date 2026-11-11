@@ -151,7 +151,11 @@ class QuickSaleRequest(BaseModel):
     payments: list[QuickSalePaymentInput] = Field(
         ...,
         min_length=1,
-        description="Payments, applied in order: they must cover the sale total",
+        description=(
+            "Payments, applied in order: they must cover the sale total. A "
+            "CREDIT payment leaves its amount on the customer's account, within "
+            "their credit limit (S5.5)"
+        ),
     )
     discount_type: Literal["PERCENTAGE", "AMOUNT"] | None = Field(
         None,
@@ -278,6 +282,12 @@ class ReceiptPaymentResponse(BaseModel):
     )
     change: DecimalNumber = Field(..., description="Given back (cash only)")
     reference: str | None = None
+    term_days: int | None = Field(
+        None,
+        description="Days to pay a CREDIT payment (S5.5)",
+        validation_alias=AliasChoices("termDays", "term_days"),
+        serialization_alias="termDays",
+    )
 
 
 class CustomerReceiptResponse(BaseModel):

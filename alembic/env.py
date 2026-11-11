@@ -46,6 +46,11 @@ from src.purchasing.infra.models import (  # noqa: F401
     PurchaseReceiptModel,
 )
 from src.quotes.infra.models import QuoteItemModel, QuoteModel  # noqa: F401
+from src.receivables.infra.models import (  # noqa: F401
+    CustomerPaymentModel,
+    ReceivableApplicationModel,
+    ReceivableModel,
+)
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel  # noqa: F401
 from src.shared.infra.database import Base
 from src.shared.infra.idempotency.models import IdempotencyKeyModel  # noqa: F401

@@ -305,6 +305,7 @@ def test_the_edge_cases_have_examples():
         "branch-without-address",
         "construction-material",
         "decimal-quantity",
+        "credit-sale",
     }
 
 
@@ -355,6 +356,18 @@ def _material_code(value: str) -> Callable[[dict], None]:
 def _quantity(value: Any) -> Callable[[dict], None]:
     def change(message: dict) -> None:
         message["payload"]["items"][0]["quantity"] = value
+
+    return change
+
+
+def _payment(index: int, **changes: Any) -> Callable[[dict], None]:
+    def change(message: dict) -> None:
+        payment = message["payload"]["payments"][index]
+        for key, value in changes.items():
+            if value is None:
+                payment.pop(key, None)
+            else:
+                payment[key] = value
 
     return change
 
@@ -414,6 +427,67 @@ def test_incompatible_changes_break_the_contract(change):
     change(message)
 
     assert errors(SCHEMA, message)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        _payment(1, term_days=None),
+        _payment(1, term_days=-1),
+        _payment(1, term_days="30"),
+        _payment(0, term_days=30),
+    ],
+    ids=[
+        "credit-without-terms",
+        "negative-terms",
+        "terms-as-text",
+        "terms-on-cash",
+    ],
+)
+def test_the_terms_go_with_the_credit_and_only_with_it(change):
+    message = copy.deepcopy(EXAMPLES["credit-sale"])
+
+    change(message)
+
+    assert errors(SCHEMA, message)
+
+
+def test_a_sale_on_credit_says_its_terms(session):
+    """S5.5: what the customer owes travels as a CREDIT payment with its terms,
+    the invoice's plazo; the payments still add up to the total"""
+    items = [_item(10, 2, "8.500000", TaxCode.VAT_15)]
+    sale = Sale(id=1, customer_id=7)
+    sale.recalculate_totals(items)
+    cash = Payment(sale_id=1, amount=Decimal("5.00"), payment_method=PaymentMethod.CASH)
+    credit = Payment(
+        sale_id=1,
+        amount=sale.total - Decimal("5.00"),
+        payment_method=PaymentMethod.CREDIT,
+    )
+    sale.settle([cash, credit])
+    credit.term_days = 30
+    event = SaleConfirmed(
+        aggregate_id=1,
+        sale_id=1,
+        customer_id=7,
+        items=sale_items_data(items),
+        subtotal=sale.subtotal,
+        total_discount=sale.discount,
+        total=sale.total,
+        payments=sale_payments_data([cash, credit]),
+        source="pos",
+        branch_id=2,
+        emission_point_id=3,
+        number="V-002-000018",
+    )
+
+    message = _written(session, event, CUSTOMER, PRODUCTS)
+
+    assert errors(SCHEMA, message) == []
+    assert message["payload"]["payments"] == [
+        {"method": "CASH", "amount": "5.00"},
+        {"method": "CREDIT", "amount": "14.55", "term_days": 30},
+    ]
 
 
 def test_a_decimal_quantity_travels_as_text(session):
