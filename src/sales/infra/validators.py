@@ -32,10 +32,12 @@ class SaleItemRequest(BaseModel):
         description="Quantity to sell in its presentation: the decimals of the "
         "product's unit minus those of the presentation's factor",
     )
-    unit_price: Decimal = Field(
-        ...,
+    unit_price: Decimal | None = Field(
+        None,
         gt=0,
-        description="Price of one unit of its presentation (one box)",
+        description="Price of one unit of its presentation (one box). None: the "
+        "price of its list (the customer's, the branch's or the general one, "
+        "S5.3). Another price is an override: it needs overrideReason",
         validation_alias=AliasChoices("unitPrice", "unit_price"),
         serialization_alias="unitPrice",
     )
@@ -49,6 +51,14 @@ class SaleItemRequest(BaseModel):
         "Stock moves quantity × its factor",
         validation_alias=AliasChoices("presentationId", "presentation_id"),
         serialization_alias="presentationId",
+    )
+    override_reason: str | None = Field(
+        None,
+        max_length=512,
+        description="Why it is sold at a price other than its list's "
+        "(OVERRIDE_REASON_REQUIRED without it); recorded in the audit log",
+        validation_alias=AliasChoices("overrideReason", "override_reason"),
+        serialization_alias="overrideReason",
     )
 
 

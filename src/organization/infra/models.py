@@ -25,6 +25,13 @@ class BranchModel(TenantScoped, Base):
             postgresql_where=text("is_main"),
             sqlite_where=text("is_main"),
         ),
+        # Composite: the list is of the branch's tenant. Deleting an assigned
+        # list answers RECORD_IN_USE
+        ForeignKeyConstraint(
+            ["tenant_id", "price_list_id"],
+            ["price_lists.tenant_id", "price_lists.id"],
+            name="fk_branches_price_list_tenant",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -33,6 +40,8 @@ class BranchModel(TenantScoped, Base):
     address: Mapped[str | None] = mapped_column(String(300))
     is_main: Mapped[bool] = mapped_column(default=False)
     is_active: Mapped[bool] = mapped_column(default=True)
+    # The price list of its sales when the customer has none (S5.3)
+    price_list_id: Mapped[int | None] = mapped_column(index=True)
     created_at: Mapped[datetime | None] = mapped_column(default=datetime.now)
 
 

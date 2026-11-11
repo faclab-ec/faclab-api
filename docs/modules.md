@@ -6,14 +6,17 @@ Estructura de la empresa (`src/organization/`, S2.5): sucursales, puntos de emis
 terminales del POS. Rutas en `/api/admin/branches`, `/api/admin/emission-points` y
 `/api/admin/pos-terminals` (`organization:read`; escribir es `organization:write`, solo
 ADMIN). La CLI de alta (`make provision-tenant`) crea la estructura minima: matriz 001,
-punto de emision 001, bodega `BOD-001` con su ubicacion `GENERAL` y la terminal `CAJA-01`.
+punto de emision 001, bodega `BOD-001` con su ubicacion `GENERAL`, la terminal `CAJA-01` y la lista
+de precios general (S5.3).
 
 ### Branch
 
 Una sucursal: un establecimiento del SRI.
 
 **Campos:** `id`, `establishment_code` (tres digitos, `001` a `999`, unico por empresa), `name`,
-`address`, `is_main` (la matriz; una por empresa, la crea el alta y no se borra), `is_active`
+`address`, `is_main` (la matriz; una por empresa, la crea el alta y no se borra), `is_active`,
+`price_list_id` (S5.3: la lista de precios de sus ventas cuando el cliente no tiene una; se cambia
+con el `PUT` de la sucursal y queda en `branch.updated`)
 
 **Comandos:** `CreateBranch`, `UpdateBranch`, `DeleteBranch` (no borra la matriz ni una sucursal
 con bodegas, puntos de emision, terminales o accesos: `RECORD_IN_USE`)
@@ -150,6 +153,57 @@ movimientos que crean los documentos no se validan otra vez. Las respuestas de p
 **Comandos:** `CreateUnitOfMeasure`, `UpdateUnitOfMeasure`, `DeleteUnitOfMeasure`
 
 **Queries:** `GetAllUnitsOfMeasure`, `GetUnitOfMeasureById`
+
+---
+
+## Listas de precios
+
+Listas de precios de la empresa (`src/pricing/`, S5.3, F-06): minorista, mayorista, por volumen.
+Rutas en `/api/admin/price-lists` (`product:read`; escribir es `product:write`: quien cambia el precio
+de un producto cambia sus listas).
+
+**Entidades:** `PriceList`, `PriceListItem`
+
+**Campos PriceList:** `id`, `name` (unico por empresa), `description`, `is_default` (la general, una
+por empresa), `is_active`, `valid_from` y `valid_to` (vigencia, fechas inclusivas, opcionales)
+
+**Campos PriceListItem:** `id`, `price_list_id`, `product_id`, `presentation_id` (sin ella al crear: la
+unidad base), `min_quantity` (desde que cantidad rige, en su presentacion: 0 es el precio base de la
+lista, mas es una escala por volumen; con los decimales de la presentacion), `price` (de una unidad de
+su presentacion). Un solo precio por presentacion y cantidad minima
+(`PRICE_LIST_ITEM_ALREADY_EXISTS`, 409).
+
+**Lista general:** la crean la migracion `924daed89837` y el alta de empresa. Su precio base es el del
+producto y sus presentaciones (`sale_price`, que se sigue editando en el producto): solo guarda escalas
+para todos (`min_quantity` 0 responde 400 `DEFAULT_PRICE_LIST_BASE_PRICE`). Siempre esta activa, sin
+vigencia, y no se borra (`DEFAULT_PRICE_LIST_LOCKED`).
+
+**Asignacion:** un cliente compra con su lista (`customers.price_list_id`, `PUT
+/api/admin/customers/{id}/price-list`, `product:write`: un cajero edita clientes pero no sus precios;
+auditado como `customer.price_list_changed`) y una sucursal tiene la suya para los clientes sin lista
+(`branches.price_list_id`). Una lista asignada no se borra (`RECORD_IN_USE`, 409): se desactiva o se
+quita la asignacion. Borrar una lista borra sus precios.
+
+**Resolucion del precio** (`PriceResolver`, `src/pricing/app/resolver.py`; regla pura en
+`src/pricing/domain/services.py`): la cadena de una venta es la lista del cliente, la de su sucursal y
+la general, saltando las inactivas o fuera de vigencia. La primera lista con un precio para la linea
+gana; sin ninguno, la linea toma el de su presentacion (el propio o factor x el del producto). Dentro
+de una lista, una presentacion vendida en cantidad q toma el item de esa presentacion con la mayor
+cantidad minima que no supere q; si la lista no tiene item de esa presentacion, el de la unidad base
+con la mayor cantidad minima que no supere q x factor, multiplicado por el factor (2 cajas de 25 son
+50 unidades). El POS la usa al agregar un item, al cambiar su cantidad (una linea sin override vuelve a
+tomar su precio, asi alcanza la escala) y en la venta rapida; `POST /api/pos/prices/resolve` la expone
+para el carrito (ver `docs/pos-api-spec.md`). Un precio distinto del resuelto es un override: exige
+motivo y queda en la bitacora (`sale.price_overridden`).
+
+**Comandos:** `CreatePriceList`, `UpdatePriceList`, `DeletePriceList`, `CreatePriceListItem`,
+`UpdatePriceListItem` (precio y cantidad minima; el producto y la presentacion no cambian),
+`DeletePriceListItem`, todos auditados (`price_list.created/updated/deleted`,
+`price_list.item_created/updated/deleted`, con la lista como recurso)
+
+**Queries:** `GetPriceLists` (la general primero, luego por nombre; filtro `isActive`),
+`GetPriceList`, `GetPriceListItems` (filtro `productId`; con el nombre y el SKU del producto y el
+nombre y el factor de la presentacion), `ResolvePrices`
 
 ---
 
@@ -310,13 +364,13 @@ Gestion de clientes con datos fiscales, contactos y estados.
 
 **Entidades:** `Customer`, `CustomerContact`
 
-**Campos Customer:** `id`, `name`, `tax_id` (RUC/RUC), `tax_type`, `email`, `phone`, `address`, `is_active`, `created_at`
+**Campos Customer:** `id`, `name`, `tax_id` (RUC/RUC), `tax_type`, `email`, `phone`, `address`, `is_active`, `price_list_id` (S5.3: la lista de precios con que compra; se cambia aparte con `PUT /api/admin/customers/{id}/price-list`, que pide `product:write`, y la edicion del cliente la conserva), `created_at`
 
 **Value Objects usados:** `TaxId`, `Email`
 
 **Ciclo de vida:** activo / inactivo (activate/deactivate)
 
-**Comandos:** `CreateCustomer`, `UpdateCustomer`, `DeleteCustomer`, `ActivateCustomer`, `DeactivateCustomer`, `CreateCustomerContact`, `UpdateCustomerContact`, `DeleteCustomerContact`
+**Comandos:** `CreateCustomer`, `UpdateCustomer`, `DeleteCustomer`, `ActivateCustomer`, `DeactivateCustomer`, `ChangeCustomerPriceList` (auditado como `customer.price_list_changed`), `CreateCustomerContact`, `UpdateCustomerContact`, `DeleteCustomerContact`
 
 **Queries:** `GetAllCustomers`, `GetCustomerById`, `GetCustomerByTaxId`, `GetContactsByCustomer`
 
@@ -472,7 +526,8 @@ del primer admin (fuera de toda empresa) no deja entrada.
 | Movimiento | `movement.created` (solo el manual de `POST /movements`) | producto, ubicacion, tipo, cantidad, motivo |
 | Ajuste | `adjustment.confirmed`, `adjustment.cancelled` | estado, bodega, motivo, items con diferencia |
 | Transferencia | `transfer.confirmed`, `transfer.received`, `transfer.cancelled` | estado, origen, destino, items |
-| Venta (POS) | `sale.cancelled`, `sale.price_overridden` (endpoint de precio y cada linea con otro precio en la venta rapida), `sale.discount_applied` (endpoint y venta rapida con descuento) | estado y total / precio anterior, nuevo y motivo / descuento |
+| Lista de precios (S5.3) | `price_list.created`, `price_list.updated`, `price_list.deleted`, `price_list.item_created`, `price_list.item_updated`, `price_list.item_deleted` (con la lista como recurso), `customer.price_list_changed` | nombre, descripcion, activa, vigencia / item, producto, presentacion, cantidad minima, precio / lista del cliente antes y despues |
+| Venta (POS) | `sale.cancelled`, `sale.price_overridden` (endpoint de precio y cada linea agregada a otro precio que el de su lista, en un item o en la venta rapida), `sale.discount_applied` (endpoint y venta rapida con descuento) | estado y total / precio de lista o anterior, nuevo y motivo / descuento |
 | Venta (facturacion, S4.3) | `sale.invoice_requested` (reenvio a facturacion), `invoice_discrepancy.reviewed` (discrepancia de conciliacion marcada revisada) | estado, factura y motivo del rechazo antes y despues / estado, tipo, venta y nota |
 | Devolucion | `refund.processed` (quien la aprueba), `refund.cancelled` | estado, numero, venta original, total, pagos |
 | Caja | `cash_movement.registered`, `shift.opened`, `shift.closed` | turno, tipo, monto, motivo / fondo inicial / contado, esperado, diferencia |

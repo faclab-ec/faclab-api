@@ -95,8 +95,9 @@ class QuickSaleItemInput(BaseModel):
     unit_price: Decimal | None = Field(
         None,
         gt=0,
-        description="Price of one unit of its presentation; omitted: the "
-        "presentation's price (its own or factor × the product's)",
+        description="Price of one unit of its presentation; omitted: its list's "
+        "(the customer's, the branch's or the general one, S5.3; without a list "
+        "price, the presentation's: its own or factor × the product's)",
         validation_alias=AliasChoices("unitPrice", "unit_price"),
         serialization_alias="unitPrice",
     )
@@ -107,8 +108,7 @@ class QuickSaleItemInput(BaseModel):
         None,
         min_length=1,
         max_length=512,
-        description="Why unitPrice differs from the presentation's price "
-        "(required then)",
+        description="Why unitPrice differs from its list's price (required then)",
         validation_alias=AliasChoices("overrideReason", "override_reason"),
         serialization_alias="overrideReason",
     )

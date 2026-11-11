@@ -18,6 +18,12 @@ class BranchRequest(BaseModel):
         None, max_length=300, description="Establishment address"
     )
     is_active: bool = Field(True, description="Whether the branch is active")
+    price_list_id: int | None = Field(
+        None,
+        ge=1,
+        description="Price list of its sales when the customer has none (S5.3); "
+        "null: the general one",
+    )
 
 
 class BranchResponse(BaseModel):
@@ -31,6 +37,9 @@ class BranchResponse(BaseModel):
         description="Whether this is the main branch (matriz), set at provisioning"
     )
     is_active: bool = Field(description="Whether the branch is active")
+    price_list_id: int | None = Field(
+        None, description="Price list of its sales when the customer has none"
+    )
 
 
 class BranchQueryParams(QueryParams):

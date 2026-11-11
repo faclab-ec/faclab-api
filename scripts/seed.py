@@ -55,6 +55,7 @@ from src.organization.infra.models import (
 )
 from src.organization.infra.repositories import SqlAlchemyDocumentSequenceRepository
 from src.pos.shift.infra.models import ShiftModel  # noqa: F401  # sales.shift_id FK
+from src.pricing.infra.models import PriceListItemModel, PriceListModel
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
     PurchaseOrderModel,
@@ -80,6 +81,7 @@ SECOND_TENANT_NAME = "Ferretería Demo Dos"
 
 TRUNCATE_ORDER = [
     UserBranchAccessModel,
+    PriceListItemModel,
     StockTransferItemModel,
     StockTransferModel,
     AdjustmentItemModel,
@@ -113,6 +115,8 @@ TRUNCATE_ORDER = [
     DocumentSequenceModel,
     EmissionPointModel,
     BranchModel,
+    # After the customers and branches it is assigned to
+    PriceListModel,
 ]
 
 
@@ -548,6 +552,56 @@ def seed_presentations(
     session.add_all(models)
     session.flush()
     return models
+
+
+# Price lists (S5.3): the general one with a volume tier for everyone and a
+# wholesale one for builders. sku -> [(min quantity, price)] of the base unit
+GENERAL_TIERS = {"FERR-003": [("10", "9.00")]}
+WHOLESALE_PRICES = {
+    "FERR-003": [("0", "8.90"), ("50", "8.50")],
+    "ELEC-001": [("0", "0.70")],
+    "FERR-005": [("0", "3.80"), ("100", "3.50")],
+    "PLOM-002": [("0", "1.50")],
+}
+WHOLESALE_CUSTOMER = "Ferretería El Maestro"
+
+
+def seed_price_lists(
+    session: Session,
+    products: list[ProductModel],
+    presentations: list[ProductPresentationModel],
+    customers: list[CustomerModel],
+) -> list[PriceListModel]:
+    """The general list (the product's price plus its tiers) and "Mayorista",
+    the list of one builder customer. A box or roll without its own item takes
+    the unit's price × its factor"""
+    general = PriceListModel(name="General", is_default=True)
+    wholesale = PriceListModel(name="Mayorista", description="Maestros y constructores")
+    session.add_all([general, wholesale])
+    session.flush()
+    by_sku = {p.sku: p for p in products}
+    bases = {p.product_id: p.id for p in presentations if p.is_base}
+    items = [
+        PriceListItemModel(
+            price_list_id=price_list.id,
+            product_id=by_sku[sku].id,
+            presentation_id=bases[by_sku[sku].id],
+            min_quantity=Decimal(min_quantity),
+            price=Decimal(price),
+        )
+        for price_list, prices in (
+            (general, GENERAL_TIERS),
+            (wholesale, WHOLESALE_PRICES),
+        )
+        for sku, tiers in prices.items()
+        for min_quantity, price in tiers
+    ]
+    session.add_all(items)
+    for customer in customers:
+        if customer.name == WHOLESALE_CUSTOMER:
+            customer.price_list_id = wholesale.id
+    session.flush()
+    return [general, wholesale]
 
 
 def seed_customers(session: Session) -> list[CustomerModel]:
@@ -1931,10 +1985,13 @@ def seed_tenant(session: Session) -> None:
     products = seed_products(session, categories, uoms)
 
     print("Sembrando presentaciones...")
-    seed_presentations(session, products, uoms)
+    presentations = seed_presentations(session, products, uoms)
 
     print("Sembrando clientes...")
     customers = seed_customers(session)
+
+    print("Sembrando listas de precios...")
+    price_lists = seed_price_lists(session, products, presentations, customers)
 
     print("Sembrando contactos de clientes...")
     seed_customer_contacts(session, customers)
@@ -1978,6 +2035,7 @@ def seed_tenant(session: Session) -> None:
     print(f"  - {len(locations)} ubicaciones")
     print(f"  - {len(products)} productos")
     print(f"  - {len(customers)} clientes")
+    print(f"  - {len(price_lists)} listas de precios")
     print(f"  - {len(suppliers)} proveedores")
     print(f"  - {len(lots)} lotes")
 

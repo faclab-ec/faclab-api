@@ -46,6 +46,7 @@ from src.pos.refund.infra.routes import POSRefundRouter
 from src.pos.reports.infra.routes import POSReportRouter
 from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
+from src.pricing.infra.routes import POSPriceRouter, PriceListRouter
 from src.purchasing.infra.routes import POItemRouter, PurchaseOrderRouter
 from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
@@ -263,6 +264,9 @@ admin_router.include_router(
     ProductRouter().router, prefix="/products", tags=["Products"]
 )
 admin_router.include_router(
+    PriceListRouter().router, prefix="/price-lists", tags=["Price Lists"]
+)
+admin_router.include_router(
     WarehouseRouter().router, prefix="/warehouses", tags=["Warehouses"]
 )
 admin_router.include_router(
@@ -360,6 +364,7 @@ pos_router.include_router(
 pos_router.include_router(
     POSCustomerRouter().router, prefix="/customers", tags=["Customer Search"]
 )
+pos_router.include_router(POSPriceRouter().router, prefix="/prices", tags=["Prices"])
 pos_router.include_router(POSRefundRouter().router, prefix="/refunds", tags=["Refunds"])
 pos_router.include_router(
     POSTerminalRouter().router, prefix="/terminals", tags=["Terminals"]

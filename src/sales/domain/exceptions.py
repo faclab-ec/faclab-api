@@ -115,6 +115,19 @@ class OverrideReasonRequiredError(SalesError):
         )
 
 
+class ProductWithoutPriceError(SalesError):
+    """Ni una lista ni el producto le dan precio a la línea, y no se indicó uno"""
+
+    error_code = "PRODUCT_WITHOUT_PRICE"
+
+    def __init__(self, product_id: int):
+        self.product_id = product_id
+        super().__init__(
+            message="The product has no price: send the line's unit price",
+            detail=f"product_id={product_id}",
+        )
+
+
 class SaleWithoutEmissionPointError(SalesError):
     """La venta no tiene punto de emisión (anterior a S2.6): faclab-invoicing no
     sabe con qué establecimiento ni con qué secuencial facturarla"""

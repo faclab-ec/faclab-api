@@ -244,6 +244,27 @@ def test_a_branch_update_that_changes_nothing_leaves_no_entry():
     assert audit.entries == []
 
 
+def test_a_branch_records_its_new_price_list():
+    audit = FakeAuditTrail()
+
+    UpdateBranchCommandHandler(_echo(_branch()), audit).handle(
+        UpdateBranchCommand(
+            branch_id=2,
+            establishment_code="002",
+            name="Norte",
+            address="Av. 1",
+            price_list_id=7,
+        )
+    )
+
+    (entry,) = audit.entries
+    assert entry.action == AuditAction.BRANCH_UPDATED
+    assert (entry.before, entry.after) == (
+        {"price_list_id": None},
+        {"price_list_id": 7},
+    )
+
+
 def test_a_deleted_branch_keeps_what_it_was():
     audit = FakeAuditTrail()
 
@@ -258,4 +279,5 @@ def test_a_deleted_branch_keeps_what_it_was():
         "name": "Norte",
         "address": "Av. 1",
         "is_active": True,
+        "price_list_id": None,
     }

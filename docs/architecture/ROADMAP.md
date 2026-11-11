@@ -228,12 +228,28 @@
     certificados (viven en faclab-invoicing; auditarlos allá, con S4.x), los datos del tenant (sin
     rutas hasta S8.5), las órdenes de compra, el reenvío a facturación y el resultado del SRI por
     Kafka, y los borradores de ajustes y transferencias.
-  - `POST /api/pos/sales/{id}/items` acepta cualquier `unitPrice` sin motivo ni entrada en la
-    bitácora (la venta rápida y `PUT .../price` sí la dejan). Cerrarlo con las listas de precios (S5.3)
-    o antes: exigir motivo cuando difiere del precio del producto.
+  - ~~`POST /api/pos/sales/{id}/items` acepta cualquier `unitPrice` sin motivo ni entrada en la
+    bitácora~~ (resuelto en S5.3: sin `unitPrice` toma el de su lista; uno distinto exige
+    `overrideReason` y queda en la bitácora como en la venta rápida).
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Listas de precios, lo que quedó de S5.3** (2026-11-10):
+  - El cajero no elige una lista a mano para una venta (un maestro sin ficha de cliente): la lista sale
+    del cliente o de la sucursal. Elegirla sería un descuento disfrazado: si hace falta, con permiso
+    propio y en la bitácora.
+  - No hay listas definidas como porcentaje sobre el precio general (mayorista = 10% menos): cada
+    precio se carga por producto y presentación. La carga masiva de ítems llega con la importación
+    (S5.8).
+  - La grilla de productos del POS y el selector de presentaciones muestran el precio general; el
+    carrito muestra el de la lista una vez que la resuelve.
+  - La línea de venta no guarda qué lista le dio el precio: solo su precio y, si se cambió, el motivo.
+  - La escala se compara con la cantidad de cada línea, no con la suma del producto en la venta (el
+    carrito junta las líneas de un mismo producto y presentación).
+  - `PUT /api/pos/sales/{id}/items/{itemId}/price` sigue registrando como precio anterior el de la línea,
+    no el de su lista, y marca override aunque el precio nuevo sea el de la lista.
+  - Las empresas que se den de alta por SQL, como las de las pruebas, no tienen lista general hasta el
+    próximo alta: sin ella la venta toma el precio del producto, sin escalas generales.
 - **Presentaciones, lo que quedó de S5.2** (2026-11-10):
   - La factura y la nota de crédito nombran la presentación en la descripción de la línea, pero no
     llevan `unidadMedida` (opcional en el XSD): necesita un campo nuevo en `sales.confirmed` y
@@ -241,8 +257,8 @@
     faclab-invoicing solo difiere en la descripción de `product_name`: resincronizarla cuando convenga.
   - Los productos de proveedor (`supplier_products`) siguen con precio y mínimo de pedido por unidad
     base: no tienen presentación.
-  - Las listas de precios por presentación quedan para S5.3. `POST /api/pos/sales/{id}/items` sigue
-    recibiendo el `unitPrice` del cliente (la web envía el de la presentación).
+  - ~~Las listas de precios por presentación quedan para S5.3~~ (resuelto en S5.3: un ítem de lista es
+    de una presentación, y una sin ítem toma el de la unidad base de la lista × su factor).
   - Ajustes, transferencias y movimientos manuales siguen solo en unidades base, y ninguna regla
     relaciona la cantidad de números de serie con la cantidad base recibida.
   - Una presentación que alguna línea usa no se borra (409) y su factor puede cambiar: las líneas

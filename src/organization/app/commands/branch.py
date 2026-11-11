@@ -9,7 +9,13 @@ from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
 
-AUDITED_FIELDS = ("establishment_code", "name", "address", "is_active")
+AUDITED_FIELDS = (
+    "establishment_code",
+    "name",
+    "address",
+    "is_active",
+    "price_list_id",
+)
 
 
 @dataclass
@@ -18,6 +24,7 @@ class CreateBranchCommand(Command):
     name: str
     address: str | None = None
     is_active: bool = True
+    price_list_id: int | None = None
 
 
 @injectable(lifetime="scoped")
@@ -32,6 +39,7 @@ class CreateBranchCommandHandler(CommandHandler[CreateBranchCommand, dict]):
             name=command.name,
             address=command.address,
             is_active=command.is_active,
+            price_list_id=command.price_list_id,
         )
         branch = self.repo.create(branch)
         self.audit.record(
@@ -50,6 +58,7 @@ class UpdateBranchCommand(Command):
     name: str
     address: str | None = None
     is_active: bool = True
+    price_list_id: int | None = None
 
 
 @injectable(lifetime="scoped")
@@ -70,6 +79,7 @@ class UpdateBranchCommandHandler(CommandHandler[UpdateBranchCommand, dict]):
             address=command.address,
             is_main=branch.is_main,
             is_active=command.is_active,
+            price_list_id=command.price_list_id,
         )
         branch = self.repo.update(branch)
         before, after = changed(previous, snapshot(branch, *AUDITED_FIELDS))

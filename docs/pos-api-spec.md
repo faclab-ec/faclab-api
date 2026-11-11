@@ -182,7 +182,7 @@ Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + cashIn -
 | quantity | decimal | Cantidad en su presentación (2 cajas) |
 | unitFactor | decimal | Unidades base de una de su presentación, copiado al agregarla |
 | baseQuantity | decimal | quantity × unitFactor: lo que mueve el stock (200 unidades) |
-| unitPrice | decimal | Precio de una unidad de su presentación (una caja) |
+| unitPrice | decimal | Precio de una unidad de su presentación (una caja): el de su lista de precios o el sobrescrito |
 | discount | decimal | Descuento % (0-100) |
 | taxCode | string | Código semántico de IVA (ej: VAT_15) |
 | taxAmount | decimal | Monto de impuesto calculado |
@@ -196,6 +196,16 @@ totales se calculan igual; el stock de la terminal baja `baseQuantity`. Una cant
 presentación admite los decimales de la unidad menos los de su factor (media caja de 100 unidades
 enteras: 422 `QUANTITY_PRECISION_EXCEEDED`). Una presentación de otro producto responde 404 y una
 inactiva 400 `PRESENTATION_INACTIVE`. Ver `docs/modules.md` (Catálogo).
+
+**Listas de precios (S5.3):** una línea nueva toma el precio de la primera lista de la venta que tenga
+uno: la del cliente, la de la sucursal de la venta y la general (sus escalas por volumen sobre el
+precio del producto); sin ninguno, el de su presentación. Dentro de una lista rige la escala con la
+mayor cantidad mínima que no supere la cantidad de la línea; una presentación sin precio en la lista
+toma el de la unidad base de esa lista × su factor, con su escala comparada con las unidades base.
+`POST /prices/resolve` (§6) da el precio que tomaría cada línea, para el carrito. Un `unitPrice`
+distinto del resuelto es un override: exige `overrideReason` (400 `OVERRIDE_REASON_REQUIRED`), queda en
+`priceOverride` y `overrideReason` y en la bitácora (`sale.price_overridden`, con el precio de lista
+como anterior). Ver `docs/modules.md` (Listas de precios).
 
 ### Entidad: Payment
 
@@ -274,9 +284,10 @@ Validaciones:
   (`PAYMENT_EXCEEDS_BALANCE`). Se valida antes de tocar el stock
 - `customerId=null` → `isFinalConsumer=true` automáticamente
 - `presentationId` (opcional, S5.2): la presentación en que se vende (la caja escaneada); sin él, la
-  unidad base. Sin `unitPrice`, la línea toma el precio de la presentación: el propio o factor × el del
-  producto
-- Un `unitPrice` distinto del precio de la presentación es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `POST /sales/{saleId}/items/{itemId}/price`
+  unidad base. Sin `unitPrice`, la línea toma el precio de su lista (S5.3: la del cliente, la de la
+  sucursal o la general); sin precio de lista, el de la presentación: el propio o factor × el del
+  producto. Sin ninguno de los dos y sin `unitPrice`: 400 `PRODUCT_WITHOUT_PRICE`
+- Un `unitPrice` distinto del precio de lista es un override: exige `overrideReason` (si falta, 400 `OVERRIDE_REASON_REQUIRED`) y queda registrado en el item (`priceOverride`, `overrideReason`), igual que con `PUT /sales/{saleId}/items/{itemId}/price`
 
 Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
@@ -286,9 +297,12 @@ Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 
 ```json
 // Request
-{ "productId": 1, "quantity": 3, "unitPrice": 10.50, "discount": 0, "presentationId": null }
-// unitPrice es obligatorio (el de la presentación), discount es opcional (default 0, rango 0-100)
+{ "productId": 1, "quantity": 3, "discount": 0, "presentationId": null }
+// unitPrice es opcional (S5.3): sin él, el de la lista de la venta (cliente, sucursal, general).
+// Uno distinto es un override y exige overrideReason (400 OVERRIDE_REASON_REQUIRED); queda en la
+// bitácora. discount es opcional (default 0, rango 0-100)
 // presentationId es opcional (S5.2): sin él, la unidad base
+{ "productId": 1, "quantity": 3, "unitPrice": 9.00, "overrideReason": "Cliente frecuente" }
 // Response 201
 ```
 
@@ -299,6 +313,8 @@ Response 201 — Sale CONFIRMED con su número, items y pagos incluidos.
 ```json
 // Request — ambos campos son opcionales, enviar solo los que se quieren cambiar
 { "quantity": 5, "discount": 10 }
+// Una línea sin override que cambia de cantidad vuelve a tomar el precio de su lista (S5.3), así
+// alcanza una escala por volumen; una con override conserva su precio
 ```
 
 **DELETE `/sales/{saleId}/items/{itemId}`** — Eliminar item
@@ -742,6 +758,34 @@ Las respuestas de producto llevan sus `presentations` (la base primero, luego po
 
 **GET `/products/{id}`** — Obtener por ID
 
+### Precios (S5.3)
+
+**POST `/prices/resolve`** — El precio que tomaría cada línea del carrito en una venta de ese cliente
+en la sucursal de `X-Branch-Id` (`pos:operate`). Es una lectura: no pide `Idempotency-Key`. El carrito
+lo vuelve a pedir cuando cambian sus líneas o el cliente y envía ese precio como `unitPrice`
+
+```json
+// Request (hasta 500 líneas; customerId null: consumidor final)
+{
+  "customerId": 7,
+  "items": [
+    { "productId": 10, "quantity": 60 },
+    { "productId": 10, "presentationId": 41, "quantity": 2 }
+  ]
+}
+// Response 200
+{
+  "data": [
+    { "productId": 10, "presentationId": 40, "quantity": 60, "unitPrice": 8.50,
+      "priceListId": 2, "priceListName": "Mayorista", "minQuantity": 50 },
+    { "productId": 10, "presentationId": 41, "quantity": 2, "unitPrice": 340.00,
+      "priceListId": 2, "priceListName": "Mayorista", "minQuantity": 50 }
+  ]
+}
+// priceListId null: el precio de la presentación (la lista general sin escala). unitPrice null:
+// ni lista ni producto tienen precio. Producto inexistente: 404; presentación inactiva: 400
+```
+
 ### Clientes
 
 **POST `/customers`** — Creación rápida
@@ -789,6 +833,8 @@ Las respuestas de producto llevan sus `presentations` (la base primero, luego po
 | `REFUND_ITEM_NOT_IN_SALE` | 400 | Item no pertenece a la venta |
 | `INVALID_CASH_MOVEMENT_AMOUNT` | 400 | Monto debe ser > 0 |
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |
+| `OVERRIDE_REASON_REQUIRED` | 400 | Una línea a otro precio que el de su lista sin `overrideReason` |
+| `PRODUCT_WITHOUT_PRICE` | 400 | Ni una lista ni el producto le dan precio a la línea y no se envió `unitPrice` |
 | `IDEMPOTENCY_KEY_REQUIRED` | 422 | Falta `Idempotency-Key` en una operación que lo exige (§0.1) |
 | `INVALID_IDEMPOTENCY_KEY` | 422 | `Idempotency-Key` no es un UUID |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | La clave ya se usó con otra solicitud |
@@ -834,7 +880,9 @@ Formato de error estándar:
 
 11. **Autoría desde el token**: `cashierName`, `closedBy`, `createdBy`, `refundedBy` y `performedBy` los pone el backend con el usuario autenticado (su nombre completo o, si no tiene, su username). No se envían en el cuerpo; si llegan, se ignoran.
 
-12. **Idempotencia**: Las operaciones de §0.1 llevan `Idempotency-Key`, una por operación del usuario y la misma en cada reintento, hasta recibir una respuesta definitiva.
+12. **Precio de lista (S5.3)**: El carrito pide el precio de sus líneas a `POST /prices/resolve` (cliente, sucursal, cantidad) y lo envía como `unitPrice`; uno distinto exige `overrideReason`. No calcula el precio por su cuenta.
+
+13. **Idempotencia**: Las operaciones de §0.1 llevan `Idempotency-Key`, una por operación del usuario y la misma en cada reintento, hasta recibir una respuesta definitiva.
 
 ---
 
@@ -913,6 +961,12 @@ Formato de error estándar:
 | GET | `/search` | Buscar productos |
 | GET | `/barcode` | Producto y presentación de un código de barras |
 | GET | `/{id}` | Obtener producto |
+
+### Prices (`/prices`)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/resolve` | Precio de las líneas del carrito según las listas del cliente y la sucursal |
 
 ### Customers (`/customers`)
 

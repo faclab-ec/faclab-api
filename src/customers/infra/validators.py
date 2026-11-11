@@ -69,9 +69,27 @@ class CustomerContactRequest(BaseModel):
     phone: str | None = Field(None, max_length=32)
 
 
+class CustomerPriceListRequest(BaseModel):
+    price_list_id: int | None = Field(
+        ...,
+        ge=1,
+        description="Price list the customer buys with (S5.3); null: its branch's "
+        "or the general one",
+        validation_alias=AliasChoices("priceListId", "price_list_id"),
+        serialization_alias="priceListId",
+    )
+
+
 # Customer Responses
 class CustomerResponse(CustomerRequest):
     id: int = Field(ge=1, description="Customer ID")
+    price_list_id: int | None = Field(
+        None,
+        description="Price list the customer buys with (S5.3), set with "
+        "PUT /customers/{id}/price-list",
+        validation_alias=AliasChoices("priceListId", "price_list_id"),
+        serialization_alias="priceListId",
+    )
 
 
 class CustomerContactResponse(CustomerContactRequest):

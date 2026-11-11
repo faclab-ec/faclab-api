@@ -6,6 +6,8 @@ from src.auth.infra.dependencies import require_permission
 from src.customers.app.commands.customer import (
     ActivateCustomerCommand,
     ActivateCustomerCommandHandler,
+    ChangeCustomerPriceListCommand,
+    ChangeCustomerPriceListCommandHandler,
     CreateCustomerCommand,
     CreateCustomerCommandHandler,
     DeactivateCustomerCommand,
@@ -40,6 +42,7 @@ from src.customers.app.queries.customer_contact import (
 from src.customers.infra.validators import (
     CustomerContactRequest,
     CustomerContactResponse,
+    CustomerPriceListRequest,
     CustomerQueryParams,
     CustomerRequest,
     CustomerResponse,
@@ -122,6 +125,14 @@ class CustomerRouter:
             responses=RESPONSES_COMMAND,
             dependencies=_write,
         )(self.deactivate)
+        self.router.put(
+            "/{id}/price-list",
+            response_model=DataResponse[CustomerResponse],
+            summary="Change the customer's price list",
+            responses=RESPONSES_COMMAND,
+            # Who changes prices, not who edits customers: a cashier edits them
+            dependencies=[Depends(require_permission(Permission.PRODUCT_WRITE))],
+        )(self.change_price_list)
         self.router.post(
             "/{customer_id}/contacts",
             response_model=DataResponse[CustomerContactResponse],
@@ -227,6 +238,23 @@ class CustomerRouter:
     ) -> DataResponse[CustomerResponse]:
         """Deactivates a customer."""
         result = handler.handle(DeactivateCustomerCommand(id=id))
+        return DataResponse(data=CustomerResponse.model_validate(result), meta=meta)
+
+    def change_price_list(
+        self,
+        handler: Injected[ChangeCustomerPriceListCommandHandler],
+        id: int,
+        body: CustomerPriceListRequest,
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[CustomerResponse]:
+        """Sets the price list the customer buys with (null: its branch's or the
+        general one). Needs `product:write`; audited as
+        `customer.price_list_changed`."""
+        result = handler.handle(
+            ChangeCustomerPriceListCommand(
+                customer_id=id, price_list_id=body.price_list_id
+            )
+        )
         return DataResponse(data=CustomerResponse.model_validate(result), meta=meta)
 
     def create_contact(

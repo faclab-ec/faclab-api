@@ -11,6 +11,7 @@ from src.customers.domain.events import (
     CustomerDeactivated,
     CustomerUpdated,
 )
+from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
@@ -101,6 +102,9 @@ class UpdateCustomerCommandHandler(CommandHandler[UpdateCustomerCommand, dict]):
             Email(command.email)
         if command.tax_type in (TaxType.RUC, TaxType.NATIONAL_ID):
             TaxId(command.tax_id)
+        current = self.repo.get_by_id(command.id)
+        if current is None:
+            raise NotFoundError(f"Customer with id {command.id} not found")
 
         customer = Customer(
             id=command.id,
@@ -116,6 +120,8 @@ class UpdateCustomerCommandHandler(CommandHandler[UpdateCustomerCommand, dict]):
             credit_limit=command.credit_limit,
             payment_terms=command.payment_terms,
             is_active=command.is_active,
+            # Changed apart, by whoever changes prices (S5.3)
+            price_list_id=current.price_list_id,
         )
         customer = self.repo.update(customer)
 
@@ -125,6 +131,42 @@ class UpdateCustomerCommandHandler(CommandHandler[UpdateCustomerCommand, dict]):
                 customer_id=customer.require_id(),
                 name=customer.name,
             )
+        )
+        return customer.dict()
+
+
+@dataclass
+class ChangeCustomerPriceListCommand(Command):
+    customer_id: int
+    price_list_id: int | None
+
+
+@injectable(lifetime="scoped")
+class ChangeCustomerPriceListCommandHandler(
+    CommandHandler[ChangeCustomerPriceListCommand, dict]
+):
+    """La lista de precios con que compra el cliente (S5.3). Aparte de la edición
+    del cliente: quien la cambia cambia sus precios. Una lista que no es de la
+    empresa responde 422 REFERENCE_NOT_FOUND."""
+
+    def __init__(self, repo: CustomerRepository, audit: AuditTrail):
+        self.repo = repo
+        self.audit = audit
+
+    def _handle(self, command: ChangeCustomerPriceListCommand) -> dict:
+        customer = self.repo.get_by_id(command.customer_id)
+        if customer is None:
+            raise NotFoundError(f"Customer with id {command.customer_id} not found")
+        previous = customer.price_list_id
+        if previous == command.price_list_id:
+            return customer.dict()
+        customer.price_list_id = command.price_list_id
+        customer = self.repo.update(customer)
+        self.audit.record(
+            AuditAction.CUSTOMER_PRICE_LIST_CHANGED,
+            customer.require_id(),
+            before={"price_list_id": previous},
+            after={"price_list_id": customer.price_list_id},
         )
         return customer.dict()
 

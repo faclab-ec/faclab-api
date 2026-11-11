@@ -1,5 +1,6 @@
 from src.customers.app.commands.customer import (
     ActivateCustomerCommandHandler,
+    ChangeCustomerPriceListCommandHandler,
     CreateCustomerCommandHandler,
     DeactivateCustomerCommandHandler,
     DeleteCustomerCommandHandler,
@@ -35,6 +36,7 @@ INJECTABLES = [
     DeleteCustomerCommandHandler,
     ActivateCustomerCommandHandler,
     DeactivateCustomerCommandHandler,
+    ChangeCustomerPriceListCommandHandler,
     GetAllCustomersQueryHandler,
     GetCustomerByIdQueryHandler,
     GetCustomerByTaxIdQueryHandler,

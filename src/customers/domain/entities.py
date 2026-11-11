@@ -21,6 +21,8 @@ class Customer(Entity):
     credit_limit: Decimal | None = None
     payment_terms: int | None = None  # Days
     is_active: bool = True
+    # The price list it buys with (S5.3); none: its branch's or the general one
+    price_list_id: int | None = None
     created_at: datetime | None = None
 
     def activate(self) -> None:

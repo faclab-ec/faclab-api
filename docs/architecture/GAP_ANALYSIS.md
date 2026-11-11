@@ -156,7 +156,7 @@
 | F-03 | Código de barras por presentación | Existe (S5.2): uno por presentación, único en la empresa; escanear la caja la vende como caja con su precio | Imprescindible | S5.2 |
 | F-04 | Nota de crédito electrónica para devoluciones | Existe (S4.5) | **Imprescindible** | S4.5 |
 | F-05 | Importación masiva de productos, clientes, proveedores y saldos iniciales | No existe | **Imprescindible** (catálogos de miles de artículos) | S5.8 |
-| F-06 | Listas de precios minorista y mayorista, precio por volumen | Un solo `sale_price` | Muy recomendable | S5.3 |
+| F-06 | Listas de precios minorista y mayorista, precio por volumen | Existe (S5.3): listas por cliente y sucursal sobre la general, por presentación y con escalas por cantidad | Muy recomendable | S5.3 |
 | F-07 | Cotizaciones con vigencia y conversión a venta | No existe | Muy recomendable | S5.4 |
 | F-08 | Venta a crédito, abonos, estado de cuenta, antigüedad de saldos, límite de crédito | Solo pagos parciales | Muy recomendable | S5.5 |
 | F-09 | Costo promedio ponderado y kárdex valorizado por bodega | No existe (el reporte llama "costo promedio" al precio de compra) | Muy recomendable | S5.6 |

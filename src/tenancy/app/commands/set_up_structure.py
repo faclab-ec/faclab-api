@@ -12,6 +12,8 @@ from src.organization.app.repositories import (
     PosTerminalRepository,
 )
 from src.organization.domain.entities import Branch, EmissionPoint, PosTerminal
+from src.pricing.app.commands.price_lists import ensure_default_price_list
+from src.pricing.app.repositories import PriceListRepository
 from src.shared.app.commands import Command, CommandHandler
 
 MAIN_ESTABLISHMENT = "001"
@@ -31,10 +33,12 @@ class SetUpTenantStructureCommandHandler(
     CommandHandler[SetUpTenantStructureCommand, dict]
 ):
     """Deja operativa una empresa nueva: la matriz (establecimiento 001), su
-    punto de emisión 001, una bodega con su ubicación por defecto y una
-    terminal. Corre en el contexto de la empresa.
+    punto de emisión 001, una bodega con su ubicación por defecto, una
+    terminal y su lista de precios general (S5.3). Corre en el contexto de la
+    empresa.
 
-    Idempotente: una empresa que ya tiene sucursales queda como está."""
+    Idempotente: una empresa que ya tiene sucursales queda como está, y solo
+    recibe la lista general si le falta."""
 
     def __init__(
         self,
@@ -43,14 +47,17 @@ class SetUpTenantStructureCommandHandler(
         warehouses: WarehouseRepository,
         locations: LocationRepository,
         terminals: PosTerminalRepository,
+        price_lists: PriceListRepository,
     ):
         self.branches = branches
         self.emission_points = emission_points
         self.warehouses = warehouses
         self.locations = locations
         self.terminals = terminals
+        self.price_lists = price_lists
 
     def _handle(self, command: SetUpTenantStructureCommand) -> dict:
+        ensure_default_price_list(self.price_lists)
         if self.branches.count_by() > 0:
             return {"structure_created": False}
 

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.catalog.product.domain.entities import ProductPresentation
 from src.inventory.stock.domain.entities import Stock
 from src.pos.sales.app.commands.quick_sale import (
     QuickSaleCommand,
@@ -13,6 +14,7 @@ from src.pos.sales.app.commands.quick_sale import (
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
+from src.pricing.domain.entities import PriceList, PriceListItem
 from src.sales.domain.entities import Sale, SaleItem, SaleStatus
 from src.sales.domain.exceptions import (
     InsufficientPaymentError,
@@ -25,6 +27,7 @@ from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
 from tests.presentations import FakeProductPresentations
+from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
 from tests.unit.pos.terminals import AT_TERMINAL, numbering, terminal_resolver
 
@@ -45,6 +48,7 @@ def _make_product(**overrides):
     product.id = overrides.get("id", 1)
     product.sale_price = overrides.get("sale_price", Decimal("50.00"))
     product.tax_code = overrides.get("tax_code", TaxCode.VAT_12)
+    product.require_id.return_value = product.id
     return product
 
 
@@ -121,6 +125,7 @@ def _build_handler(
     event_publisher=None,
     audit=None,
     presentations=None,
+    prices=None,
 ):
     return QuickSaleCommandHandler(
         sale_repo=sale_repo or _mock_repo(),
@@ -136,6 +141,7 @@ def _build_handler(
         audit=audit or FakeAuditTrail(),
         quantities=FakeProductQuantities(),
         presentations=presentations or FakeProductPresentations(),
+        prices=prices or price_resolver(),
     )
 
 
@@ -385,11 +391,13 @@ class TestQuickSaleHappyPath:
 class TestQuickSalePriceOverride:
     audit: FakeAuditTrail
 
-    def _handle(self, item: dict):
+    def _handle(self, item: dict, prices=None, presentations=None, **command):
         sale_item_repo = _mock_repo()
         sale_item_repo.create.side_effect = lambda sale_item: sale_item
         self.audit = FakeAuditTrail()
         handler = _build_handler(
+            prices=prices,
+            presentations=presentations,
             sale_repo=_mock_repo(entity=_make_sale()),
             sale_item_repo=sale_item_repo,
             product_repo=_mock_repo(entity=_make_product(sale_price=Decimal("50"))),
@@ -402,9 +410,52 @@ class TestQuickSalePriceOverride:
             _quick_sale_command(
                 items=[{"product_id": 1, "quantity": 1, **item}],
                 payments=[{"amount": 100, "payment_method": "CASH"}],
+                **command,
             )
         )
         return sale_item_repo.create.call_args.args[0]
+
+    def _wholesale(self):
+        """Customer 10 buys product 1 at 40 with its list (S5.3)"""
+        base = ProductPresentation(id=60, product_id=1, name="Unidad", is_base=True)
+        prices = price_resolver(
+            lists=[PriceList(id=1, name="Mayorista")],
+            items=[
+                PriceListItem(
+                    price_list_id=1,
+                    product_id=1,
+                    presentation_id=60,
+                    price=Decimal("40"),
+                )
+            ],
+            customer_lists={10: 1},
+            bases={1: 60},
+        )
+        return prices, FakeProductPresentations([base])
+
+    def test_a_customer_with_a_list_buys_at_its_price(self):
+        prices, presentations = self._wholesale()
+
+        sale_item = self._handle(
+            {"presentation_id": 60},
+            prices=prices,
+            presentations=presentations,
+            customer_id=10,
+        )
+
+        assert sale_item.unit_price == Decimal("40")
+        assert sale_item.price_override is None
+
+    def test_the_products_price_is_an_override_for_a_customer_with_a_list(self):
+        prices, presentations = self._wholesale()
+
+        with pytest.raises(OverrideReasonRequiredError):
+            self._handle(
+                {"presentation_id": 60, "unit_price": 50},
+                prices=prices,
+                presentations=presentations,
+                customer_id=10,
+            )
 
     def test_another_price_is_recorded_with_its_reason(self):
         sale_item = self._handle(
