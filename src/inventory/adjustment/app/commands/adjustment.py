@@ -72,6 +72,8 @@ class AddAdjustmentItemCommand(Command):
     actual_quantity: Decimal = Decimal(0)
     lot_id: int | None = None
     notes: str | None = None
+    # Per base unit, for what the count adds over the system (S5.6)
+    unit_cost: Decimal | None = None
 
 
 @dataclass
@@ -79,6 +81,7 @@ class UpdateAdjustmentItemCommand(Command):
     id: int = 0
     actual_quantity: Decimal | None = None
     notes: str | None = None
+    unit_cost: Decimal | None = None
 
 
 @dataclass
@@ -177,15 +180,19 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
             diff = item.difference
             if diff == 0:
                 continue
-            adjusted_items.append(
-                {
-                    "product_id": item.product_id,
-                    "location_id": item.location_id,
-                    "expected_quantity": item.expected_quantity,
-                    "actual_quantity": item.actual_quantity,
-                }
-            )
+            entry = {
+                "product_id": item.product_id,
+                "location_id": item.location_id,
+                "expected_quantity": item.expected_quantity,
+                "actual_quantity": item.actual_quantity,
+            }
             movement_type = MovementType.IN if diff > 0 else MovementType.OUT
+            # What the count adds enters at the item's cost (an initial
+            # balance) or at the average; what it takes leaves at the average
+            unit_cost = item.unit_cost if movement_type == MovementType.IN else None
+            if unit_cost is not None:
+                entry["unit_cost"] = unit_cost
+            adjusted_items.append(entry)
             self.movement_handler.handle(
                 CreateMovementCommand(
                     product_id=item.product_id,
@@ -195,6 +202,7 @@ class ConfirmAdjustmentCommandHandler(CommandHandler[ConfirmAdjustmentCommand, d
                     reference_type="adjustment",
                     reference_id=adjustment.id,
                     reason=f"Ajuste de inventario: {adjustment.reason.value}",
+                    unit_cost=unit_cost,
                 )
             )
             adjusted_count += 1
@@ -279,6 +287,7 @@ class AddAdjustmentItemCommandHandler(CommandHandler[AddAdjustmentItemCommand, d
             actual_quantity=command.actual_quantity,
             lot_id=command.lot_id,
             notes=command.notes,
+            unit_cost=command.unit_cost,
         )
         saved = self.item_repo.create(item)
         return {**saved.dict(), "difference": saved.difference}
@@ -309,7 +318,11 @@ class UpdateAdjustmentItemCommandHandler(
         if command.actual_quantity is not None:
             self.quantities.ensure([(item.product_id, command.actual_quantity)])
 
-        item.update(actual_quantity=command.actual_quantity, notes=command.notes)
+        item.update(
+            actual_quantity=command.actual_quantity,
+            notes=command.notes,
+            unit_cost=command.unit_cost,
+        )
         saved = self.item_repo.update(item)
         return {**saved.dict(), "difference": saved.difference}
 

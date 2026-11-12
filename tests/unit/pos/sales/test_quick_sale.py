@@ -38,6 +38,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.presentations import FakeProductPresentations
 from tests.prices import price_resolver
 from tests.quantities import FakeProductQuantities
@@ -147,7 +148,9 @@ def _build_handler(
         sale_repo=sale_repo or _mock_repo(),
         sale_item_repo=sale_item_repo or _mock_repo(),
         product_repo=product_repo or _mock_repo(),
-        stock=TerminalStock(stock_repo or _mock_repo(), movement_repo or _mock_repo()),
+        stock=TerminalStock(
+            stock_repo or _mock_repo(), movement_repo or _mock_repo(), inventory_costs()
+        ),
         payment_repo=payment_repo or _mock_repo(),
         shift_repo=shift_repo or _mock_repo(),
         terminals=terminal_resolver(),

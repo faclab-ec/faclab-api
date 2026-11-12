@@ -2,6 +2,8 @@ from collections.abc import Sequence
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
+# The scale of every money column (`MoneyColumn`): unit costs and averages
+COST_QUANTUM = Decimal("0.000001")
 
 
 def round_money(amount: Decimal) -> Decimal:
@@ -11,6 +13,13 @@ def round_money(amount: Decimal) -> Decimal:
     (subtotal, descuento, IVA) de ventas, devoluciones y órdenes de compra.
     """
     return amount.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def round_cost(amount: Decimal) -> Decimal:
+    """Redondea un costo unitario a 6 decimales (la escala de `MoneyColumn`)
+    con la mitad hacia arriba: el costo de una unidad base y el promedio
+    ponderado del stock (S5.6)."""
+    return amount.quantize(COST_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 def allocate(total: Decimal, weights: Sequence[Decimal]) -> list[Decimal]:

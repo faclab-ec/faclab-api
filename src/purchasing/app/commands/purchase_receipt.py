@@ -132,6 +132,8 @@ class CreatePurchaseReceiptCommandHandler(
                     # In base units: stock, movements and lots (2 boxes of 100
                     # put 200 in); the lot handler finds its movement by it
                     "quantity": receipt_item.base_quantity,
+                    # Per base unit: the location's average cost takes it (S5.6)
+                    "unit_cost": po_item.base_unit_cost,
                     "presentation_id": po_item.presentation_id,
                     "presentation_quantity": receive_item.quantity_received,
                     "location_id": receive_item.location_id,

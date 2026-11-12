@@ -264,8 +264,8 @@ class ReceiveStockTransferCommandHandler(
                 source_stock.release(item.quantity)
                 self.stock_repo.update(source_stock)
 
-            # OUT movement from source
-            self.movement_handler.handle(
+            # OUT movement from source, at its average cost
+            taken = self.movement_handler.handle(
                 CreateMovementCommand(
                     product_id=item.product_id,
                     quantity=-abs(item.quantity),
@@ -278,7 +278,7 @@ class ReceiveStockTransferCommandHandler(
                 )
             )
 
-            # IN movement to destination
+            # IN movement to destination, at the source's cost (S5.6)
             self.movement_handler.handle(
                 CreateMovementCommand(
                     product_id=item.product_id,
@@ -289,6 +289,7 @@ class ReceiveStockTransferCommandHandler(
                     reference_type="transfer",
                     reference_id=transfer.id,
                     reason=f"Transferencia #{transfer.id} - entrada a destino",
+                    unit_cost=taken["unit_cost"],
                 )
             )
 

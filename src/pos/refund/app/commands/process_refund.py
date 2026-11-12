@@ -104,6 +104,8 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
             reason=f"Refund #{refund.id}",
             reference_type="refund",
             reference_id=refund.require_id(),
+            # At the cost the sale took it out at (S5.6)
+            costs=self.stock.costs_of("sale", sale.require_id()),
         )
 
         # A sale on credit takes the refund off its receivable first (S5.5):

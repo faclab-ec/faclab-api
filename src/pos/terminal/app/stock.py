@@ -1,5 +1,5 @@
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Protocol
 
@@ -8,6 +8,7 @@ from wireup import injectable
 from src.inventory.movement.app.repositories import MovementRepository
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
+from src.inventory.stock.app.costs import InventoryCosts
 from src.inventory.stock.app.repositories import StockRepository
 from src.inventory.stock.domain.entities import Stock
 from src.sales.domain.exceptions import InsufficientStockError
@@ -31,11 +32,21 @@ class TerminalStock:
 
     Every product locks its stock row (`first_for_update`), sorted by product
     so concurrent requests lock in the same order and can't deadlock. Each
-    movement points at its document (`reference_type`, `reference_id`)."""
+    movement points at its document (`reference_type`, `reference_id`).
 
-    def __init__(self, stock_repo: StockRepository, movement_repo: MovementRepository):
+    Costs (S5.6): a sale leaves at the location's average cost; what goes back
+    enters at the cost it left at (`costs_of` the sale), which recalculates the
+    average of the location it enters."""
+
+    def __init__(
+        self,
+        stock_repo: StockRepository,
+        movement_repo: MovementRepository,
+        costs: InventoryCosts,
+    ):
         self.stock_repo = stock_repo
         self.movement_repo = movement_repo
+        self.costs = costs
 
     def take(
         self,
@@ -61,6 +72,7 @@ class TerminalStock:
             available = stock.available_quantity if stock else Decimal(0)
             if stock is None or available < total:
                 raise InsufficientStockError(product_id, total, available)
+            unit_cost = self.costs.exit_cost(stock)
             for line in product_lines:
                 self.movement_repo.create(
                     Movement(
@@ -71,6 +83,7 @@ class TerminalStock:
                         reference_type=reference_type,
                         reference_id=reference_id,
                         reason=reason,
+                        unit_cost=unit_cost,
                     )
                 )
             stock.update_quantity(-total)
@@ -83,34 +96,54 @@ class TerminalStock:
         reason: str,
         reference_type: str,
         reference_id: int,
+        costs: Mapping[int, Decimal] | None = None,
     ) -> None:
-        """IN movements into the location, creating its stock row if needed"""
+        """IN movements into the location, creating its stock row if needed.
+        Each product enters at its cost in `costs` (what it left at, see
+        `costs_of`) or, without one, at the location's average"""
+        costs = costs or {}
         for line in sorted(lines, key=lambda line: line.product_id):
+            quantity = abs(line.base_quantity)
+            stock = self.stock_repo.first_for_update(
+                product_id=line.product_id, location_id=location_id
+            )
+            unit_cost = self.costs.entry_cost(
+                line.product_id, stock, costs.get(line.product_id)
+            )
             self.movement_repo.create(
                 Movement(
                     product_id=line.product_id,
-                    quantity=abs(line.base_quantity),
+                    quantity=quantity,
                     type=MovementType.IN,
                     location_id=location_id,
                     reference_type=reference_type,
                     reference_id=reference_id,
                     reason=reason,
+                    unit_cost=unit_cost,
                 )
-            )
-            stock = self.stock_repo.first_for_update(
-                product_id=line.product_id, location_id=location_id
             )
             if stock is None:
-                self.stock_repo.create(
-                    Stock(
-                        product_id=line.product_id,
-                        quantity=abs(line.base_quantity),
-                        location_id=location_id,
-                    )
+                stock = Stock(
+                    product_id=line.product_id,
+                    quantity=Decimal(0),
+                    location_id=location_id,
                 )
+                stock.update_quantity(quantity, unit_cost)
+                self.stock_repo.create(stock)
             else:
-                stock.update_quantity(abs(line.base_quantity))
+                stock.update_quantity(quantity, unit_cost)
                 self.stock_repo.update(stock)
+
+    def costs_of(self, reference_type: str, reference_id: int) -> dict[int, Decimal]:
+        """The cost per base unit each product left at in a document's OUT
+        movements: a cancellation or refund puts it back at that cost"""
+        return {
+            movement.product_id: movement.unit_cost
+            for movement in self.movement_repo.filter_by(
+                reference_type=reference_type, reference_id=reference_id
+            )
+            if movement.type == MovementType.OUT
+        }
 
     def taken_from(self, reference_type: str, reference_id: int) -> int | None:
         """The location a document's OUT movements took from (None if it has

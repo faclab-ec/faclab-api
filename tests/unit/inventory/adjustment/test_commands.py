@@ -213,6 +213,37 @@ def test_confirm_adjustment_creates_out_movement_for_negative_diff():
     assert call_args.type == "OUT"
 
 
+def test_what_the_count_adds_enters_at_the_cost_of_the_item():
+    """An initial balance (S5.6): the counted units enter at their cost"""
+    item = _make_item(expected_quantity=0, actual_quantity=40, unit_cost=Decimal("6.5"))
+    handler, _, _, movement_handler = _confirm_handler(_make_adjustment(), [item], {})
+
+    handler.handle(ConfirmAdjustmentCommand(id=1))
+
+    call_args = movement_handler.handle.call_args[0][0]
+    assert (call_args.type, call_args.quantity, call_args.unit_cost) == (
+        "IN",
+        40,
+        Decimal("6.5"),
+    )
+    assert isinstance(handler.audit, FakeAuditTrail)
+    entry = handler.audit.entries[0]
+    assert entry.after is not None
+    assert entry.after["items"][0]["unit_cost"] == Decimal("6.5")
+
+
+def test_what_the_count_takes_leaves_at_the_average_whatever_the_item_says():
+    item = _make_item(expected_quantity=100, actual_quantity=85, unit_cost=Decimal(9))
+    handler, _, _, movement_handler = _confirm_handler(
+        _make_adjustment(), [item], {(5, 3): 100}
+    )
+
+    handler.handle(ConfirmAdjustmentCommand(id=1))
+
+    call_args = movement_handler.handle.call_args[0][0]
+    assert (call_args.type, call_args.unit_cost) == ("OUT", None)
+
+
 def test_confirm_adjustment_applies_the_count_against_the_stock_at_confirmation():
     """Counted 7 when the stock was 10; a sale of 2 left 8 before confirming:
     the adjustment takes 1, not the 3 it saw when the item was added"""
@@ -362,6 +393,30 @@ def test_add_adjustment_item_success_auto_reads_stock():
     created_item = item_repo.create.call_args[0][0]
     assert created_item.expected_quantity == 50
     assert result["difference"] == 10
+
+
+def test_an_item_keeps_the_cost_of_what_it_adds():
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_adjustment(status=AdjustmentStatus.DRAFT)
+    item_repo = MagicMock()
+    item_repo.create.side_effect = lambda item: item
+    stock_repo = MagicMock()
+    stock_repo.first.return_value = None
+
+    handler = AddAdjustmentItemCommandHandler(
+        repo, item_repo, stock_repo, FakeProductQuantities()
+    )
+    result = handler.handle(
+        AddAdjustmentItemCommand(
+            adjustment_id=1,
+            product_id=5,
+            location_id=3,
+            actual_quantity=Decimal(30),
+            unit_cost=Decimal("2.75"),
+        )
+    )
+
+    assert result["unit_cost"] == Decimal("2.75")
 
 
 def test_add_adjustment_item_uses_zero_expected_if_no_stock():

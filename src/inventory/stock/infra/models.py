@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import QuantityColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn
 
 if TYPE_CHECKING:
     from src.catalog.product.infra.models import ProductModel
@@ -49,6 +49,9 @@ class StockModel(TenantScoped, Base):
             "reserved_quantity >= 0 AND reserved_quantity <= quantity",
             name="ck_stocks_reserved_quantity_range",
         ),
+        CheckConstraint(
+            "average_cost >= 0", name="ck_stocks_average_cost_non_negative"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -56,5 +59,10 @@ class StockModel(TenantScoped, Base):
     quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
     location_id: Mapped[int | None] = mapped_column(index=True)
     reserved_quantity: Mapped[Decimal] = mapped_column(QuantityColumn, default=0)
+    # Weighted average cost per base unit of this location (S5.6): every IN
+    # recalculates it under this row's lock, every OUT takes it
+    average_cost: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0)
+    )
 
     product: Mapped["ProductModel"] = relationship(back_populates="stocks")

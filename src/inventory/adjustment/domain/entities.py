@@ -65,6 +65,9 @@ class AdjustmentItem(Entity):
     id: int | None = None
     lot_id: int | None = None
     notes: str | None = None
+    # Por unidad base, para lo que el conteo agrega sobre el sistema (saldos
+    # iniciales, S5.6); sin él entra al costo promedio de la ubicación
+    unit_cost: Decimal | None = None
 
     @property
     def difference(self) -> Decimal:
@@ -77,9 +80,14 @@ class AdjustmentItem(Entity):
         self.expected_quantity = stock_quantity
 
     def update(
-        self, actual_quantity: Decimal | None = None, notes: str | None = None
+        self,
+        actual_quantity: Decimal | None = None,
+        notes: str | None = None,
+        unit_cost: Decimal | None = None,
     ) -> None:
         if actual_quantity is not None:
             self.actual_quantity = actual_quantity
         if notes is not None:
             self.notes = notes
+        if unit_cost is not None:
+            self.unit_cost = unit_cost

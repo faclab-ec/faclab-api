@@ -8,7 +8,7 @@ from src.purchasing.domain.exceptions import (
     InvalidPurchaseOrderStatusError,
 )
 from src.shared.domain.entities import Entity
-from src.shared.domain.money import round_money
+from src.shared.domain.money import round_cost, round_money
 
 
 class PurchaseOrderStatus(StrEnum):
@@ -98,6 +98,12 @@ class PurchaseOrderItem(Entity):
     @property
     def subtotal(self) -> Decimal:
         return self.unit_cost * self.quantity_ordered
+
+    @property
+    def base_unit_cost(self) -> Decimal:
+        """El costo de una unidad base (S5.6): una caja de 12 a 30,00 pone
+        cada unidad a 2,50. Es lo que la recepción lleva al stock"""
+        return round_cost(self.unit_cost / self.unit_factor)
 
     def update(self, quantity_ordered: Decimal, unit_cost: Decimal) -> None:
         self.quantity_ordered = quantity_ordered

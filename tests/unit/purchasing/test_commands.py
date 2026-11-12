@@ -696,4 +696,6 @@ def test_two_boxes_of_100_put_200_units_in_stock():
         7,
         2,
     )
+    # A box at 25.00 puts each of its 100 units at 0.25 (S5.6)
+    assert item["unit_cost"] == Decimal("0.25")
     assert boxes.quantity_pending == 0

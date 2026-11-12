@@ -1,10 +1,12 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.exceptions import InvalidMovementTypeError
-from src.shared.infra.validators import QuantityNumber, QueryParams
+from src.shared.infra.precision import MONEY_PRECISION, MONEY_SCALE
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 class MovementBase(BaseModel):
@@ -31,6 +33,18 @@ class MovementBase(BaseModel):
 
 
 class MovementRequest(MovementBase):
+    unit_cost: Decimal | None = Field(
+        None,
+        ge=0,
+        max_digits=MONEY_PRECISION,
+        decimal_places=MONEY_SCALE,
+        description="Cost per base unit, only for an IN (e.g. an initial balance). "
+        "Without it the IN enters at the location's average cost; an OUT always "
+        "leaves at that average",
+        validation_alias=AliasChoices("unitCost", "unit_cost"),
+        serialization_alias="unitCost",
+    )
+
     @field_validator("quantity", mode="after")
     @classmethod
     def validate_quantity_not_zero(cls, v):
@@ -48,6 +62,11 @@ class MovementRequest(MovementBase):
             raise InvalidMovementTypeError(
                 "La cantidad debe ser negativa para movimientos de salida"
             )
+        if self.type == MovementType.OUT and self.unit_cost is not None:
+            raise InvalidMovementTypeError(
+                "El costo unitario solo aplica a entradas: una salida sale al "
+                "costo promedio de la ubicación"
+            )
         return self
 
 
@@ -64,6 +83,12 @@ class MovementResponse(MovementBase):
         None,
         validation_alias=AliasChoices("referenceId", "reference_id"),
         serialization_alias="referenceId",
+    )
+    unit_cost: DecimalNumber = Field(
+        description="Cost per base unit it moved at: an IN's own cost, an OUT "
+        "the average of its location",
+        validation_alias=AliasChoices("unitCost", "unit_cost"),
+        serialization_alias="unitCost",
     )
 
 

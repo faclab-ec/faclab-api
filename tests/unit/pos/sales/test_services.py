@@ -32,6 +32,7 @@ from src.sales.domain.exceptions import (
 )
 from src.shared.domain.exceptions import NotFoundError
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.receivables import customer_credit
 from tests.unit.pos.terminals import LOCATION_ID, TERMINAL, numbering
 
@@ -100,7 +101,9 @@ def _build_confirm_handler(sale=None, items=None, stock=None, payments=None):
     handler.sale_item_repo = MagicMock()
     handler.movement_repo = MagicMock()
     handler.stock_repo = MagicMock()
-    handler.stock = TerminalStock(handler.stock_repo, handler.movement_repo)
+    handler.stock = TerminalStock(
+        handler.stock_repo, handler.movement_repo, inventory_costs()
+    )
     handler.terminal_repo = MagicMock()
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.numbering = numbering()
@@ -136,7 +139,9 @@ def _build_cancel_handler(sale=None, items=None, stock=None):
     handler.movement_repo = MagicMock()
     handler.movement_repo.filter_by.return_value = []
     handler.stock_repo = MagicMock()
-    handler.stock = TerminalStock(handler.stock_repo, handler.movement_repo)
+    handler.stock = TerminalStock(
+        handler.stock_repo, handler.movement_repo, inventory_costs()
+    )
     handler.terminal_repo = MagicMock()
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.event_publisher = MagicMock()
@@ -440,7 +445,7 @@ class TestPOSCancelSaleCommandHandler:
         with pytest.raises(ReceivableHasPaymentsError):
             handler._handle(POSCancelSaleCommand(sale_id=1))
 
-    def test_cancel_puts_back_where_the_sale_took_from(self):
+    def test_cancel_puts_back_where_the_sale_took_from_at_its_cost(self):
         from src.pos.sales.app.commands import POSCancelSaleCommand
 
         sale = _make_sale(status=SaleStatus.CONFIRMED, terminal_id=TERMINAL.id)
@@ -456,16 +461,24 @@ class TestPOSCancelSaleCommandHandler:
                 location_id=4,
                 reference_type="sale",
                 reference_id=1,
+                unit_cost=Decimal("2.5"),
             )
         ]
 
         handler._handle(POSCancelSaleCommand(sale_id=1))
 
-        handler.movement_repo.filter_by.assert_called_once_with(
+        handler.movement_repo.filter_by.assert_called_with(
             reference_type="sale", reference_id=1
         )
         handler.stock_repo.first_for_update.assert_called_once_with(
             product_id=100, location_id=4
+        )
+        # Back at the cost it left at (S5.6)
+        [put_back] = [c.args[0] for c in handler.movement_repo.create.call_args_list]
+        assert (put_back.type, put_back.quantity, put_back.unit_cost) == (
+            MovementType.IN,
+            5,
+            Decimal("2.5"),
         )
 
     def test_cancel_creates_the_stock_row_if_the_location_has_none(self):

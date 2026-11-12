@@ -39,6 +39,7 @@ from src.shared.app.audit import AuditAction
 from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
@@ -145,7 +146,13 @@ def test_a_put_that_changes_nothing_leaves_no_entry():
 def test_only_the_manual_movement_is_audited(manual, entries):
     audit = FakeAuditTrail()
     handler = CreateMovementCommandHandler(
-        _echo(), MagicMock(), Mock(), audit, FakeProductQuantities()
+        _echo(),
+        MagicMock(),
+        Mock(),
+        audit,
+        FakeProductQuantities(),
+        Mock(first_for_update=Mock(return_value=None)),
+        inventory_costs(),
     )
 
     handler.handle(

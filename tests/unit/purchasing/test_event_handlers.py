@@ -14,8 +14,8 @@ def test_handle_purchase_order_received_creates_movements(mock_create_scope):
     from src.purchasing.infra import event_handlers  # noqa: F401 (registers handler)
 
     items = [
-        {"product_id": 5, "quantity": 10, "location_id": None},
-        {"product_id": 6, "quantity": 3, "location_id": 2},
+        {"product_id": 5, "quantity": 10, "location_id": None, "unit_cost": 4},
+        {"product_id": 6, "quantity": 3, "location_id": 2, "unit_cost": 7},
     ]
 
     mock_handler = MagicMock()
@@ -45,7 +45,11 @@ def test_handle_purchase_order_received_creates_movements(mock_create_scope):
     assert first_call.reference_type == "purchase_order"
     assert first_call.reference_id == 1
 
+    # The cost of each line recalculates the location's average (S5.6)
+    assert first_call.unit_cost == 4
+
     second_call = mock_handler.handle.call_args_list[1][0][0]
     assert second_call.product_id == 6
     assert second_call.quantity == 3
     assert second_call.location_id == 2
+    assert second_call.unit_cost == 7

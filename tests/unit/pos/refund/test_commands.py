@@ -6,6 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.inventory.movement.domain.constants import MovementType
+from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
 from src.invoicing.domain.entities import CreditNote
 from src.pos.refund.app.commands.cancel_refund import (
@@ -45,6 +47,7 @@ from src.sales.domain.entities import (
 from src.shared.domain.exceptions import NotFoundError, ValidationError
 from src.shared.domain.tax import TaxCode
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.quantities import FakeProductQuantities
 from tests.receivables import credit_customer, customer_credit
 from tests.unit.pos.terminals import (
@@ -550,7 +553,7 @@ class TestProcessRefund:
             refund_payment_repo,
             sale_repo,
             credit_notes,
-            TerminalStock(stock_repo, movement_repo),
+            TerminalStock(stock_repo, movement_repo, inventory_costs()),
             terminal_repo,
             numbering("D-001-000001"),
             event_publisher,
@@ -719,6 +722,15 @@ class TestProcessRefund:
         handler, movement_repo, stock_repo, _ = self._make_handler(
             refund=refund, refund_items=[_make_refund_item()]
         )
+        # What the sale took out, and at what cost (S5.6)
+        movement_repo.filter_by.return_value = [
+            Movement(
+                product_id=100,
+                quantity=Decimal(-2),
+                type=MovementType.OUT,
+                unit_cost=Decimal("6.50"),
+            )
+        ]
 
         result = handler.handle(
             ProcessRefundCommand(
@@ -729,8 +741,13 @@ class TestProcessRefund:
         stock_repo.first_for_update.assert_called_once_with(
             product_id=100, location_id=LOCATION_ID
         )
+        movement_repo.filter_by.assert_called_once_with(
+            reference_type="sale", reference_id=1
+        )
         movement = movement_repo.create.call_args.args[0]
         assert (movement.reference_type, movement.reference_id) == ("refund", 1)
+        # Back at the cost the sale took it out at
+        assert movement.unit_cost == Decimal("6.50")
         handler.numbering.next.assert_called_once_with(1, "REFUND")
         assert result["number"] == "D-001-000001"
 

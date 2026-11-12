@@ -15,9 +15,18 @@ from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
 from src.inventory.movement.domain.events import MovementCreated
 from src.inventory.movement.domain.exceptions import InvalidMovementTypeError
+from src.inventory.stock.domain.entities import Stock
 from src.shared.domain.quantity import QuantityPrecisionError
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.quantities import FakeProductQuantities
+
+
+def _stock_repo(stock=None):
+    """The stock repository the handler locks the row with (none by default)"""
+    repo = Mock()
+    repo.first_for_update.return_value = stock
+    return repo
 
 
 @pytest.fixture
@@ -56,6 +65,8 @@ def test_create_movement_in_command_handler_success(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     result = handler.handle(command)
@@ -92,6 +103,8 @@ def test_create_movement_out_command_handler_success(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     result = handler.handle(command)
@@ -128,6 +141,8 @@ def test_create_movement_publishes_movement_created_event(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
     handler.handle(command)
 
@@ -156,6 +171,8 @@ def test_create_movement_in_with_negative_quantity_raises(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     with pytest.raises(InvalidMovementTypeError) as exc_info:
@@ -182,6 +199,8 @@ def test_create_movement_out_with_positive_quantity_raises(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     with pytest.raises(InvalidMovementTypeError) as exc_info:
@@ -206,6 +225,8 @@ def test_create_movement_zero_quantity_raises(mock_movement_repo, event_publishe
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     with pytest.raises(InvalidMovementTypeError) as exc_info:
@@ -240,6 +261,8 @@ def test_create_movement_with_date(mock_movement_repo, event_publisher):
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     result = handler.handle(command)
@@ -257,6 +280,8 @@ def test_a_manual_movement_takes_the_decimals_of_the_product_unit(
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(decimals={1: 0}),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     with pytest.raises(QuantityPrecisionError):
@@ -279,6 +304,8 @@ def test_a_document_movement_is_not_checked_again(mock_movement_repo, event_publ
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(decimals={1: 0}),
+        _stock_repo(),
+        inventory_costs(),
     )
 
     result = handler.handle(
@@ -288,3 +315,125 @@ def test_a_document_movement_is_not_checked_again(mock_movement_repo, event_publ
     )
 
     assert result["quantity"] == Decimal("-2.5")
+
+
+# --- Its cost (S5.6) ---
+
+
+def _costing_handler(stock=None, audit=None, purchase_prices=None):
+    repo = Mock()
+    repo.create.side_effect = lambda m: replace(m, id=1)
+    stock_repo = _stock_repo(stock)
+    publisher = MagicMock()
+    handler = CreateMovementCommandHandler(
+        repo,
+        publisher,
+        Mock(),
+        audit or FakeAuditTrail(),
+        FakeProductQuantities(),
+        stock_repo,
+        inventory_costs(purchase_prices),
+    )
+    return handler, stock_repo, publisher
+
+
+def _row(quantity: str, average_cost: str) -> Stock:
+    return Stock(
+        id=3,
+        product_id=1,
+        location_id=7,
+        quantity=Decimal(quantity),
+        average_cost=Decimal(average_cost),
+    )
+
+
+def test_an_in_carries_its_cost_to_the_stock_handler():
+    handler, stock_repo, publisher = _costing_handler(_row("10", "5.00"))
+
+    result = handler.handle(
+        CreateMovementCommand(
+            product_id=1,
+            quantity=Decimal(30),
+            type=MovementType.IN.value,
+            location_id=7,
+            unit_cost=Decimal("7.00"),
+        )
+    )
+
+    # Locks the row the stock handler updates, before writing the movement
+    stock_repo.first_for_update.assert_called_once_with(product_id=1, location_id=7)
+    assert result["unit_cost"] == Decimal("7.00")
+    event = publisher.publish.call_args.args[0]
+    assert isinstance(event, MovementCreated)
+    assert event.unit_cost == Decimal("7.00")
+
+
+def test_an_in_without_cost_enters_at_the_average_of_the_location():
+    handler, _, _ = _costing_handler(_row("10", "6.50"))
+
+    result = handler.handle(
+        CreateMovementCommand(
+            product_id=1, quantity=Decimal(2), type="IN", location_id=7
+        )
+    )
+
+    assert result["unit_cost"] == Decimal("6.50")
+
+
+def test_an_in_where_the_product_never_was_takes_its_purchase_price():
+    handler, _, _ = _costing_handler(None, purchase_prices={1: Decimal("4.20")})
+
+    result = handler.handle(
+        CreateMovementCommand(
+            product_id=1, quantity=Decimal(2), type="IN", location_id=7
+        )
+    )
+
+    assert result["unit_cost"] == Decimal("4.20")
+
+
+def test_an_out_leaves_at_the_average_of_the_location():
+    handler, _, publisher = _costing_handler(_row("40", "6.50"))
+
+    result = handler.handle(
+        CreateMovementCommand(
+            product_id=1, quantity=Decimal(-15), type="OUT", location_id=7
+        )
+    )
+
+    assert result["unit_cost"] == Decimal("6.50")
+    assert publisher.publish.call_args.args[0].unit_cost == Decimal("6.50")
+
+
+def test_an_out_takes_no_cost_of_its_own():
+    handler, _, _ = _costing_handler(_row("40", "6.50"))
+
+    with pytest.raises(InvalidMovementTypeError):
+        handler.handle(
+            CreateMovementCommand(
+                product_id=1,
+                quantity=Decimal(-1),
+                type="OUT",
+                location_id=7,
+                unit_cost=Decimal("1.00"),
+            )
+        )
+
+
+def test_the_audit_log_keeps_the_cost_of_a_manual_movement():
+    audit = FakeAuditTrail()
+    handler, _, _ = _costing_handler(_row("0", "0"), audit=audit)
+
+    handler.handle(
+        CreateMovementCommand(
+            product_id=1,
+            quantity=Decimal(5),
+            type="IN",
+            location_id=7,
+            unit_cost=Decimal("3.10"),
+            manual=True,
+        )
+    )
+
+    (entry,) = audit.entries
+    assert entry.after is not None and entry.after["unit_cost"] == Decimal("3.10")
