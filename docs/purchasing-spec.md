@@ -4,6 +4,43 @@
 
 El módulo de compras gestiona el ciclo de vida completo de las órdenes de compra a proveedores: desde la creación del borrador, el envío al proveedor, la recepción parcial o total de mercancía, hasta la cancelación. Al recibir mercancía, el sistema genera automáticamente movimientos de inventario (IN), actualiza stock, crea lotes y registra números de serie cuando aplique.
 
+Desde S5.7:
+
+- Cada línea lleva el IVA del código tributario de su producto y la orden lo suma por tarifa, como una venta (ver [IVA de compras](#iva-de-compras-s57)).
+- Cada recepción guarda lo recibido con su IVA y abre la cuenta por pagar al proveedor ([payables-spec.md](payables-spec.md)).
+- Lo recibido puede volver al proveedor con una devolución ([Devoluciones a proveedor](#devoluciones-a-proveedor-s57)).
+
+---
+
+## IVA de compras (S5.7)
+
+- **El código sale del producto.** Al agregar una línea, toma el `taxCode` que tiene su producto ese día (`VAT_15`, `VAT_5`, `VAT_0`, `EXEMPT`…) y lo conserva aunque el producto cambie después. La tasa es `TaxCode.rate`, la misma fuente que ventas.
+- **Cada línea guarda su IVA a precisión completa.** `taxAmount = quantityOrdered × unitCost × tasa / 100`.
+- **La orden suma por tarifa**, como la factura del proveedor y como una venta sin descuento global (`tax_breakdown`):
+  - agrupa las bases y los IVA de las líneas por código;
+  - redondea cada grupo a centavos (half-up);
+  - `tax` es la suma de esos grupos, `subtotal` la suma de las bases a centavos y `total = subtotal + tax`.
+- **El costo nunca incluye el IVA.** El IVA no entra al costo promedio del stock (S5.6).
+- **Recepciones y devoluciones** calculan sus totales igual, con la cantidad recibida o devuelta al costo y la tarifa de su línea.
+
+Ejemplo (criterio de aceptación):
+
+| Línea | Base | IVA |
+|---|---|---|
+| 10 × 2,50 al 15 % | 25,00 | 3,75 |
+| 4 × 3,25 al 0 % | 13,00 | 0,00 |
+
+`subtotal` 38,00, `tax` 3,75, `total` 41,75. `GET /purchase-orders/{id}` lo desglosa en `taxes`:
+
+```json
+[
+  {"taxCode": "VAT_15", "rate": 15, "base": 25.00, "tax": 3.75},
+  {"taxCode": "VAT_0", "rate": 0, "base": 13.00, "tax": 0.00}
+]
+```
+
+La migración `9d3f6a2c8e14` dio a las líneas existentes el código actual de su producto y recalculó el IVA de todas las órdenes y los totales de todas las recepciones.
+
 ---
 
 ## Enums
@@ -63,8 +100,9 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `orderNumber`  | `string`          | auto      | —           | Código único generado (`PO-{año}-{seq}`) |
 | `status`       | `PurchaseOrderStatus` | auto  | `draft`     | Estado actual de la orden                |
 | `subtotal`     | `number`          | auto      | `0`         | Suma de costos de todos los ítems, redondeada a centavos |
-| `tax`          | `number`          | auto      | `0`         | Impuestos (actualmente siempre 0)        |
+| `tax`          | `number`          | auto      | `0`         | IVA: cada tarifa redondeada a centavos y sumada (S5.7) |
 | `total`        | `number`          | auto      | `0`         | subtotal + tax                           |
+| `taxes`        | `TaxRate[] \| null` | auto  | —           | Base e IVA por tarifa, de la mayor a la menor; solo en `GET /{id}` |
 | `notes`        | `string \| null`  | no        | `null`      | Notas opcionales                         |
 | `expectedDate` | `datetime \| null`| no        | `null`      | Fecha esperada de entrega                |
 | `createdAt`    | `datetime \| null`| auto      | —           | Fecha de creación                        |
@@ -85,7 +123,11 @@ El módulo de compras gestiona el ciclo de vida completo de las órdenes de comp
 | `unitFactor`      | `decimal`| auto      | `1`     | Unidades base de una de su presentación, copiado al agregar el ítem |
 | `quantityOrdered` | `decimal` | sí        | —       | Cantidad pedida, en su presentación  |
 | `quantityReceived`| `decimal` | auto      | `0`     | Cantidad recibida acumulada, en su presentación |
-| `unitCost`        | `number` | sí        | —       | Costo de una unidad de su presentación (una caja) |
+| `quantityReturned`| `decimal` | auto      | `0`     | Cantidad devuelta al proveedor, en su presentación (S5.7) |
+| `unitCost`        | `number` | sí        | —       | Costo de una unidad de su presentación (una caja), sin IVA |
+| `taxCode`         | `TaxCode`| auto      | el del producto | Código de IVA del producto al agregar la línea (S5.7) |
+| `subtotal`        | `number` | auto      | —       | `unitCost × quantityOrdered`, sin IVA, a precisión completa |
+| `taxAmount`       | `number` | auto      | —       | IVA de la línea a precisión completa; la orden redondea cada tarifa |
 
 **Presentaciones (S5.2):** lo pedido, lo recibido, lo pendiente y el costo se cuentan en la
 presentación del ítem (2 cajas a 3,00); al recibir, el stock, los movimientos y los lotes suben
@@ -95,10 +137,10 @@ presentación (el propio o factor × el del producto).
 
 **Campos calculados (no vienen del API, calcular en frontend):**
 
-| Campo             | Fórmula                               |
-| ----------------- | ------------------------------------- |
-| `quantityPending` | `quantityOrdered - quantityReceived`  |
-| `subtotal`        | `unitCost * quantityOrdered`          |
+| Campo                | Fórmula                               |
+| -------------------- | ------------------------------------- |
+| `quantityPending`    | `quantityOrdered - quantityReceived`  |
+| `quantityReturnable` | `quantityReceived - quantityReturned` |
 
 ### PurchaseReceipt
 
@@ -108,6 +150,10 @@ presentación (el propio o factor × el del producto).
 | `purchaseOrderId` | `int`             | sí        | —       | ID de la orden de compra       |
 | `notes`           | `string \| null`  | no        | `null`  | Notas de la recepción          |
 | `receivedAt`      | `datetime \| null`| no        | `null`  | Fecha/hora de recepción        |
+| `supplierInvoiceNumber` | `string \| null` | no  | `null`  | Factura del proveedor de esta entrega (`001-001-000000123`), hasta 20 caracteres (S5.7) |
+| `subtotal`        | `number`          | auto      | —       | Lo recibido al costo de cada línea, sin IVA (S5.7) |
+| `tax`             | `number`          | auto      | —       | Su IVA, por tarifa              |
+| `total`           | `number`          | auto      | —       | Lo que se le debe al proveedor por ella: su cuenta por pagar |
 | `createdAt`       | `datetime \| null`| auto      | —       | Fecha de creación del registro |
 
 ### PurchaseReceiptItem
@@ -383,7 +429,8 @@ Registra la recepción de mercancía. Puede ser parcial o total.
     }
   ],
   "notes": "Recibido en buenas condiciones",
-  "receivedAt": "2026-03-08T10:30:00Z"
+  "receivedAt": "2026-03-08T10:30:00Z",
+  "supplierInvoiceNumber": "001-001-000000123"
 }
 ```
 
@@ -397,8 +444,9 @@ Registra la recepción de mercancía. Puede ser parcial o total.
 | `items[].serialNumbers`      | `string[] \| null`| no        | —                |
 | `notes`                      | `string \| null`  | no        | max 1024 chars   |
 | `receivedAt`                 | `datetime \| null`| no        | formato ISO 8601 |
+| `supplierInvoiceNumber`      | `string \| null`  | no        | max 20 chars (S5.7) |
 
-**Response (201):**
+**Response (200):**
 
 ```json
 {
@@ -406,6 +454,10 @@ Registra la recepción de mercancía. Puede ser parcial o total.
   "purchaseOrderId": 1,
   "notes": "Recibido en buenas condiciones",
   "receivedAt": "2026-03-08T10:30:00Z",
+  "supplierInvoiceNumber": "001-001-000000123",
+  "subtotal": 2250.00,
+  "tax": 337.50,
+  "total": 2587.50,
   "createdAt": "2026-03-08T10:30:00Z"
 }
 ```
@@ -429,6 +481,13 @@ Registra la recepción de mercancía. Puede ser parcial o total.
 - Si se proporciona `lotNumber`, se crea o actualiza el lote (también en unidades base)
 - Si se proporcionan `serialNumbers`, se registran los números de serie
 - El estado de la orden cambia a `partial` o `received` según corresponda
+- La recepción guarda su `subtotal`, `tax` y `total`: lo recibido al costo de cada línea, con el
+  IVA de su tarifa (S5.7)
+- Con un total mayor que 0 abre la cuenta por pagar al proveedor por ese monto, con la factura del
+  proveedor y vencimiento en su plazo (`paymentTerms`; sin plazo, el mismo día). Ver
+  [payables-spec.md](payables-spec.md)
+- Bloquea las líneas de la orden en orden de id, después el stock (los IN) y al final abre la
+  cuenta, el mismo orden que la devolución a proveedor
 
 ---
 
@@ -573,6 +632,110 @@ Elimina un ítem de orden de compra. Solo permitido cuando la orden está en est
 
 ---
 
+## Devoluciones a proveedor (S5.7)
+
+Mercadería recibida de una orden que vuelve al proveedor (defectuosa, equivocada, de más). Es un
+documento con borrador: se arma con líneas de la orden y, al confirmarse, saca el stock y baja lo
+que se le debe al proveedor.
+
+### SupplierReturnStatus
+
+| Valor       | Descripción |
+|-------------|-------------|
+| `draft`     | Borrador: se agregan, cambian y quitan líneas; se puede eliminar |
+| `confirmed` | Confirmada: el stock salió y las cuentas por pagar se acreditaron. No se anula |
+
+### SupplierReturn
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `id` | `int` | ID |
+| `number` | `string` | `DP-2026-0001`: contador de la empresa (`document_sequences`, `SUPPLIER_RETURN`), asignado al crearse; un borrador eliminado no devuelve su número |
+| `supplierId`, `supplierName` | `int`, `string?` | El proveedor de la orden |
+| `purchaseOrderId`, `orderNumber` | `int`, `string?` | La orden de la que sale lo devuelto |
+| `status` | `SupplierReturnStatus` | |
+| `notes` | `string?` | Motivo |
+| `supplierCreditNoteNumber` | `string?` | Nota de crédito del proveedor, hasta 20 caracteres; se indica al confirmar |
+| `subtotal`, `tax`, `total` | `number` | Lo devuelto al costo y la tarifa de cada línea: lo que el proveedor acredita |
+| `creditedAmount` | `number` | Lo que bajó de las cuentas por pagar del proveedor al confirmarse |
+| `refundDue` | `number` | `total − creditedAmount`: lo que el proveedor debe reembolsar porque ya se le había pagado |
+| `taxes` | `TaxRate[]?` | Base e IVA por tarifa; solo en `GET /{id}` |
+| `confirmedAt`, `confirmedBy` | `datetime?`, `string?` | Cuándo y quién (el nombre del token) la confirmó |
+
+### SupplierReturnItem
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `purchaseOrderItemId` | `int` | Línea de la orden (de la misma orden que la devolución) |
+| `productId`, `productName`, `productSku` | | Copiados de la línea |
+| `presentationId`, `presentationName`, `unitFactor` | | La presentación de la línea: se devuelve en ella |
+| `quantity` | `decimal` | En la presentación de la línea, `> 0` |
+| `baseQuantity` | `decimal` | `quantity × unitFactor`: lo que sale del stock |
+| `unitCost`, `taxCode` | | El costo y la tarifa de la línea de la orden: lo que cobró el proveedor |
+| `subtotal`, `taxAmount` | `number` | A precisión completa |
+| `locationId` | `int?` | Ubicación de la que sale; sin ella, el stock sin ubicación (como se recibió) |
+
+### Reglas
+
+- Solo una orden con algo recibido sin devolver acepta devoluciones (`PURCHASE_ORDER_NOT_RETURNABLE`),
+  en cualquier estado (`partial`, `received`, o `cancelled` después de una recepción parcial).
+- Lo devuelto de una línea nunca pasa de lo recibido menos lo ya devuelto (`quantityReturned`):
+  - al agregar o cambiar una línea se cuenta lo que el borrador ya toma de ella;
+  - al confirmar se comprueba con la línea de la orden bloqueada (`EXCEEDS_RETURNABLE_QUANTITY`).
+  Dos borradores que juntos pasan de lo recibido se confirman uno; el otro falla.
+- **Confirmar** (`purchase:confirm`):
+  1. bloquea la devolución y las líneas de la orden (en orden de id) y suma `quantityReturned`;
+  2. crea un movimiento `OUT` por línea (por producto y ubicación), con `referenceType`
+     `supplier_return`, al **costo promedio de la ubicación** (S5.6), sin tocar el promedio;
+     sin stock disponible, `INSUFFICIENT_STOCK` y nada cambia;
+  3. acredita su `total` a las cuentas por pagar abiertas del proveedor: primero las de su orden y
+     después las demás, cada grupo de la que vence antes a la que vence después (aplicaciones
+     `RETURN`). Lo que no cabe en lo que se debe queda en `refundDue`, sin saldo a favor;
+  4. queda en la bitácora (`supplier_return.confirmed`).
+- El monto acreditado (el costo que cobró el proveedor) y el valor con que sale el stock (el
+  promedio) pueden diferir: el inventario se valora al promedio y la cuenta del proveedor al costo
+  de la compra.
+
+### Endpoints
+
+**Base URL:** `/api/admin/supplier-returns` (lectura `purchase:read`, escritura `purchase:write`,
+confirmar `purchase:confirm`)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/` | Crear un borrador: `{"purchaseOrderId": 1, "notes": "Golpeados"}` |
+| `GET` | `/` | Listar, la más reciente primero; filtros `supplierId`, `purchaseOrderId`, `status`, `limit`, `offset` |
+| `GET` | `/{id}` | Detalle con `taxes` |
+| `PUT` | `/{id}` | Cambiar `notes` (borrador) |
+| `DELETE` | `/{id}` | Eliminar un borrador con sus líneas |
+| `POST` | `/{id}/confirm` | Confirmar: `{"supplierCreditNoteNumber": "001-001-000000045"}` (opcional) |
+| `GET` | `/{id}/items` | Líneas, con nombre y SKU del producto y la presentación |
+| `POST` | `/{id}/items` | Agregar: `{"purchaseOrderItemId": 7, "quantity": 2, "locationId": 4}` |
+| `PUT` | `/api/admin/supplier-return-items/{id}` | Cambiar `quantity` y `locationId` (borrador) |
+| `DELETE` | `/api/admin/supplier-return-items/{id}` | Quitar una línea (borrador) |
+
+Respuesta de `POST /{id}/confirm`:
+
+```json
+{
+  "id": 3,
+  "number": "DP-2026-0001",
+  "supplierId": 10,
+  "purchaseOrderId": 1,
+  "status": "confirmed",
+  "supplierCreditNoteNumber": "001-001-000000045",
+  "subtotal": 24.00,
+  "tax": 3.60,
+  "total": 27.60,
+  "creditedAmount": 27.60,
+  "refundDue": 0.00,
+  "confirmedAt": "2026-11-12T15:30:00",
+  "confirmedBy": "Ana Pérez"
+}
+```
+
+---
+
 ## Manejo de Errores
 
 Todas las respuestas de error siguen el formato estándar:
@@ -594,6 +757,12 @@ Todas las respuestas de error siguen el formato estándar:
 | ----------- | ------------------ | ------------------------------------------ |
 | 400         | `INVALID_PURCHASE_ORDER_STATUS` | Operación no permitida en el estado actual de la orden |
 | 400         | `EXCEEDS_PENDING_QUANTITY` | Recibir más unidades de las pendientes |
+| 400         | `PURCHASE_ORDER_NOT_RETURNABLE` | Devolución de una orden sin nada recibido por devolver (S5.7) |
+| 400         | `EXCEEDS_RETURNABLE_QUANTITY` | Devolver más de lo recibido menos lo ya devuelto (S5.7) |
+| 400         | `SUPPLIER_RETURN_ITEM_OUTSIDE_ORDER` | La línea no es de la orden de la devolución |
+| 400         | `INVALID_SUPPLIER_RETURN_STATUS` | Editar o confirmar una devolución ya confirmada |
+| 400         | `SUPPLIER_RETURN_WITHOUT_ITEMS` | Confirmar una devolución sin líneas |
+| 400         | `INSUFFICIENT_STOCK` | La ubicación ya no tiene lo que la devolución saca |
 | 409         | `PURCHASE_ORDER_NUMBER_ALREADY_EXISTS` | Número de orden duplicado (creación concurrente) |
 | 404         | `NOT_FOUND`        | Orden, ítem, proveedor o producto no existe|
 | 422         | `VALIDATION_ERROR` | Campos requeridos faltantes, valores fuera de rango |
@@ -611,6 +780,7 @@ Todas las respuestas de error siguen el formato estándar:
 | **Inventory/Stock**  | Los movimientos actualizan el stock en las ubicaciones             |
 | **Inventory/Lot**    | Si se incluye `lotNumber`, se crea/actualiza el lote               |
 | **Inventory/Serial** | Si se incluyen `serialNumbers`, se registran los números de serie  |
+| **Payables**         | La recepción abre su cuenta por pagar y la devolución confirmada la acredita (S5.7, `SupplierAccounts`, en la misma transacción) |
 
 ---
 
@@ -621,6 +791,13 @@ Todas las respuestas de error siguen el formato estándar:
 ```typescript
 type PurchaseOrderStatus = 'draft' | 'sent' | 'partial' | 'received' | 'cancelled';
 
+interface TaxRate {
+  taxCode: TaxCode;
+  rate: number; // 15
+  base: number;
+  tax: number;
+}
+
 interface PurchaseOrder {
   id: number;
   supplierId: number;
@@ -629,6 +806,7 @@ interface PurchaseOrder {
   subtotal: number;
   tax: number;
   total: number;
+  taxes?: TaxRate[] | null; // solo en GET /{id}
   notes: string | null;
   expectedDate: string | null; // ISO 8601
   createdAt: string | null;
@@ -641,7 +819,11 @@ interface PurchaseOrderItem {
   productId: number;
   quantityOrdered: number;
   quantityReceived: number;
+  quantityReturned: number;
   unitCost: number;
+  taxCode: TaxCode;
+  subtotal: number;
+  taxAmount: number;
 }
 
 interface PurchaseReceipt {
@@ -649,6 +831,10 @@ interface PurchaseReceipt {
   purchaseOrderId: number;
   notes: string | null;
   receivedAt: string | null;
+  supplierInvoiceNumber: string | null;
+  subtotal: number;
+  tax: number;
+  total: number;
   createdAt: string | null;
 }
 
