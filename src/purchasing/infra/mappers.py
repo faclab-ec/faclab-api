@@ -7,12 +7,16 @@ from src.purchasing.domain.entities import (
     PurchaseOrderItem,
     PurchaseReceipt,
     PurchaseReceiptItem,
+    SupplierReturn,
+    SupplierReturnItem,
 )
 from src.purchasing.infra.models import (
     PurchaseOrderItemModel,
     PurchaseOrderModel,
     PurchaseReceiptItemModel,
     PurchaseReceiptModel,
+    SupplierReturnItemModel,
+    SupplierReturnModel,
 )
 from src.shared.infra.mappers import Mapper
 
@@ -40,4 +44,19 @@ class PurchaseReceiptItemMapper(Mapper[PurchaseReceiptItem, PurchaseReceiptItemM
 
     def to_dict(self, entity: PurchaseReceiptItem) -> dict[str, Any]:
         # What went into stock, in base units (S5.2)
+        return {**super().to_dict(entity), "base_quantity": entity.base_quantity}
+
+
+@injectable(lifetime="singleton")
+class SupplierReturnMapper(Mapper[SupplierReturn, SupplierReturnModel]):
+    __entity__ = SupplierReturn
+    __exclude_fields__ = frozenset({"created_at", "updated_at"})
+
+
+@injectable(lifetime="singleton")
+class SupplierReturnItemMapper(Mapper[SupplierReturnItem, SupplierReturnItemModel]):
+    __entity__ = SupplierReturnItem
+
+    def to_dict(self, entity: SupplierReturnItem) -> dict[str, Any]:
+        # What leaves the stock, in base units
         return {**super().to_dict(entity), "base_quantity": entity.base_quantity}

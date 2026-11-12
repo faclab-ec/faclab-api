@@ -31,6 +31,7 @@ from tests.integration.postgres.api import (
     make_movement,
     make_presentation,
     make_product,
+    make_supplier,
     make_terminal,
     make_warehouse,
     unit_id,
@@ -571,6 +572,73 @@ def _customer_payment_recorded(w):
     )["id"]
 
 
+def _received_order(w) -> dict:
+    """An order of 2 units at 5.00 received at the shelf (S5.7): 11.50 owed"""
+    api = w.admin.api
+    supplier = make_supplier(api, seed=44, name="Distribuidora")
+    product = _product(w, stock=0)
+    po = api.post("/api/admin/purchase-orders", {"supplierId": supplier["id"]})
+    item = api.post(
+        "/api/admin/purchase-order-items",
+        {
+            "purchaseOrderId": po["id"],
+            "productId": product["id"],
+            "quantityOrdered": 2,
+            "unitCost": "5.00",
+        },
+    )
+    api.post(f"/api/admin/purchase-orders/{po['id']}/send")
+    api.post(
+        f"/api/admin/purchase-orders/{po['id']}/receive",
+        {
+            "items": [
+                {
+                    "purchaseOrderItemId": item["id"],
+                    "quantityReceived": 2,
+                    "locationId": w.shelf["id"],
+                }
+            ]
+        },
+    )
+    return {"supplier": supplier, "po": po, "item": item}
+
+
+def _supplier_return_confirmed(w):
+    received = _received_order(w)
+    supplier_return = w.admin.api.post(
+        "/api/admin/supplier-returns", {"purchaseOrderId": received["po"]["id"]}
+    )
+    w.admin.api.post(
+        f"/api/admin/supplier-returns/{supplier_return['id']}/items",
+        {
+            "purchaseOrderItemId": received["item"]["id"],
+            "quantity": 1,
+            "locationId": w.shelf["id"],
+        },
+    )
+    w.send(
+        w.admin,
+        "POST",
+        f"/api/admin/supplier-returns/{supplier_return['id']}/confirm",
+        {},
+    )
+    return supplier_return["id"]
+
+
+def _supplier_payment_recorded(w):
+    received = _received_order(w)
+    return w.send(
+        w.admin,
+        "POST",
+        "/api/admin/supplier-payments",
+        {
+            "supplierId": received["supplier"]["id"],
+            "amount": "11.50",
+            "paymentMethod": "TRANSFER",
+        },
+    )["id"]
+
+
 def _shift_opened(w):
     path = "/api/pos/shifts/open"
     return w.send(w.cashier, "POST", path, {"openingBalance": "50.00"})["id"]
@@ -740,6 +808,8 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.REFUND_CANCELLED: _refund_cancelled,
     AuditAction.CASH_MOVEMENT_REGISTERED: _cash_movement_registered,
     AuditAction.CUSTOMER_PAYMENT_RECORDED: _customer_payment_recorded,
+    AuditAction.SUPPLIER_RETURN_CONFIRMED: _supplier_return_confirmed,
+    AuditAction.SUPPLIER_PAYMENT_RECORDED: _supplier_payment_recorded,
     AuditAction.SHIFT_OPENED: _shift_opened,
     AuditAction.SHIFT_CLOSED: _shift_closed,
     AuditAction.USER_CREATED: _user_created,

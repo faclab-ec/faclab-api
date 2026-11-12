@@ -58,6 +58,10 @@ class AuditAction(StrEnum):
     CASH_MOVEMENT_REGISTERED = "cash_movement.registered"
     # A customer's payment on account (S5.5), in a shift's cash or outside it
     CUSTOMER_PAYMENT_RECORDED = "customer_payment.recorded"
+    # Purchasing (S5.7): goods back to the supplier (stock out, accounts
+    # payable credited) and a payment to a supplier
+    SUPPLIER_RETURN_CONFIRMED = "supplier_return.confirmed"
+    SUPPLIER_PAYMENT_RECORDED = "supplier_payment.recorded"
     SHIFT_OPENED = "shift.opened"
     SHIFT_CLOSED = "shift.closed"
     USER_CREATED = "user.created"

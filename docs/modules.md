@@ -410,7 +410,7 @@ Gestion de proveedores con contactos y catalogo de productos que ofrecen.
 
 **Entidades:** `Supplier`, `SupplierContact`, `SupplierProduct`
 
-**Campos Supplier:** `id`, `name`, `tax_id`, `email`, `phone`, `address`, `is_active`
+**Campos Supplier:** `id`, `name`, `tax_id`, `email`, `phone`, `address`, `payment_terms` (dias de credito: el vencimiento de sus cuentas por pagar, S5.7), `is_active`
 
 **Campos SupplierProduct:** `id`, `supplier_id`, `product_id`, `reference_code`, `unit_price`, `lead_time_days`
 
@@ -422,23 +422,52 @@ Gestion de proveedores con contactos y catalogo de productos que ofrecen.
 
 ## Compras
 
-Gestion de ordenes de compra y recepciones de mercaderia.
+Gestion de ordenes de compra, recepciones de mercaderia y devoluciones a proveedor. Spec completo en
+[purchasing-spec.md](purchasing-spec.md).
 
-**Entidades:** `PurchaseOrder`, `PurchaseOrderItem`
+**Entidades:** `PurchaseOrder`, `PurchaseOrderItem`, `PurchaseReceipt`, `PurchaseReceiptItem`, `SupplierReturn`, `SupplierReturnItem`
 
-**Estados de PO:** `DRAFT` → `CONFIRMED` → `RECEIVED` → `CANCELLED`
+**Estados de la orden:** `draft` → `sent` → `partial` → `received`; `cancelled` desde `draft`, `sent` o `partial`
 
-**Campos PurchaseOrder:** `id`, `supplier_id`, `status`, `notes`, `expected_date`, `created_at`
+**Campos PurchaseOrder:** `id`, `supplier_id`, `order_number` (`PO-2026-0001`), `status`, `subtotal`, `tax`, `total`, `notes`, `expected_date`
 
-**Campos PurchaseOrderItem:** `id`, `purchase_order_id`, `product_id`, `quantity`, `unit_price`
+**Campos PurchaseOrderItem:** `id`, `purchase_order_id`, `product_id`, `presentation_id`, `unit_factor`, `quantity_ordered`, `quantity_received`, `quantity_returned`, `unit_cost` (sin IVA), `tax_code`, `tax_amount`
 
-**Comandos:** `CreatePurchaseOrder`, `AddPurchaseOrderItem`, `UpdatePurchaseOrderItem`, `DeletePurchaseOrderItem`, `ReceivePurchaseOrder`
+**Campos PurchaseReceipt:** `id`, `purchase_order_id`, `received_at`, `notes`, `supplier_invoice_number`, `subtotal`, `tax`, `total`
 
-**Queries:** `GetAllPurchaseOrders`, `GetPurchaseOrderById`, `GetPurchaseOrderItems`
+**IVA (S5.7):** cada linea toma el `tax_code` de su producto al agregarse y guarda su IVA a precision completa. La orden, la recepcion y la devolucion suman por tarifa como una venta sin descuento global (`tax_breakdown` de `src/sales/domain/services.py`): cada tarifa se redondea a centavos y el IVA es la suma. El costo nunca incluye el IVA.
 
-**Eventos publicados:** `PurchaseOrderReceived`
+**Devolucion a proveedor (S5.7):** `draft` → `confirmed`, numerada por empresa (`DP-2026-0001`). Sus lineas son lineas de una orden con lo recibido sin devolver, con su costo, tarifa y presentacion. Confirmar bloquea las lineas de la orden (en orden de id), crea un OUT por linea al costo promedio de la ubicacion (`reference_type` `supplier_return`) y acredita su total a las cuentas por pagar del proveedor; lo que no cabe queda como `refund_due`.
 
-**Integracion:** Al recepcionar (`ReceivePurchaseOrder`), se publica `PurchaseOrderReceived` → Inventory crea Movement(IN) por cada item → Stock se incrementa. Cada item lleva `unit_cost`, el costo de la linea por unidad base (`PurchaseOrderItem.base_unit_cost` = costo / factor de su presentacion), que recalcula el costo promedio de la ubicacion (S5.6).
+**Comandos:** `CreatePurchaseOrder`, `UpdatePurchaseOrder`, `DeletePurchaseOrder`, `SendPurchaseOrder`, `CancelPurchaseOrder`, `AddPurchaseOrderItem`, `UpdatePurchaseOrderItem`, `RemovePurchaseOrderItem`, `CreatePurchaseReceipt`, `CreateSupplierReturn`, `UpdateSupplierReturn`, `DeleteSupplierReturn`, `AddSupplierReturnItem`, `UpdateSupplierReturnItem`, `RemoveSupplierReturnItem`, `ConfirmSupplierReturn`
+
+**Queries:** `GetAllPurchaseOrders`, `GetPurchaseOrderById` (con `taxes` por tarifa), `GetPurchaseOrderItemsByPO`, `GetReceiptsByPurchaseOrder`, `GetSupplierReturns`, `GetSupplierReturnById`, `GetSupplierReturnItems`
+
+**Eventos publicados:** `PurchaseOrderCreated`, `PurchaseOrderSent`, `PurchaseOrderReceived`, `PurchaseOrderCancelled`, `SupplierReturnConfirmed`
+
+**Integracion:**
+
+- Al recibir se publica `PurchaseOrderReceived` → Inventory crea Movement(IN) por cada item → Stock se incrementa. Cada item lleva `unit_cost`, el costo de la linea por unidad base (`PurchaseOrderItem.base_unit_cost` = costo / factor de su presentacion), que recalcula el costo promedio de la ubicacion (S5.6). Despues, la recepcion abre su cuenta por pagar con `SupplierAccounts.open_for_receipt` (payables, misma transaccion).
+- Al confirmar una devolucion se publica `SupplierReturnConfirmed` → Movement(OUT) por linea. Despues `SupplierAccounts.credit_return` acredita las cuentas del proveedor.
+
+---
+
+## Cuentas por pagar
+
+Lo que se le debe a cada proveedor por sus entregas (S5.7). Spec completo en
+[payables-spec.md](payables-spec.md).
+
+**Entidades:** `Payable` (una por recepcion con total: monto, saldo, emision, vencimiento por el `payment_terms` del proveedor, factura del proveedor), `PayableApplication` (`PAYMENT` o `RETURN`), `SupplierPayment` (`PP-2026-0001`)
+
+**Estados:** `OPEN` → `PAID`
+
+**Comandos:** `RecordSupplierPayment` (FIFO por vencimiento o a mano, nunca mas de lo que se debe, auditado `supplier_payment.recorded`)
+
+**Composicion:** `SupplierAccounts` (`src/payables/app/accounts.py`), que compras usa en la transaccion de la recepcion (abre la cuenta) y de la devolucion confirmada (la acredita, primero las cuentas de su orden). Un pago y una devolucion bloquean las cuentas abiertas del proveedor `FOR NO KEY UPDATE` en orden de id.
+
+**Queries:** `GetPayables`, `GetPayable`, `GetSupplierAccount`, `GetSupplierPayments`, `GetSupplierPayment`
+
+**Permisos:** `payable:read` (ADMIN, MANAGER, OPERATOR, VIEWER), `payable:write` (ADMIN, MANAGER)
 
 ---
 
@@ -653,6 +682,7 @@ del primer admin (fuera de toda empresa) no deja entrada.
 | Venta (facturacion, S4.3) | `sale.invoice_requested` (reenvio a facturacion), `invoice_discrepancy.reviewed` (discrepancia de conciliacion marcada revisada) | estado, factura y motivo del rechazo antes y despues / estado, tipo, venta y nota |
 | Devolucion | `refund.processed` (quien la aprueba), `refund.cancelled` | estado, numero, venta original, total, pagos |
 | Caja | `cash_movement.registered`, `shift.opened`, `shift.closed` | turno, tipo, monto, motivo / fondo inicial / contado, esperado, diferencia |
+| Compras (S5.7) | `supplier_return.confirmed` (devolucion a proveedor confirmada), `supplier_payment.recorded` (pago a proveedor) | estado, numero, orden, proveedor, nota de credito, total, acreditado, por reembolsar, items / numero, proveedor, monto, medio, cuentas pagadas |
 | Usuario | `user.created`, `user.role_changed`, `user.branches_changed`, `user.renamed`, `user.activated`, `user.deactivated`, `user.password_reset` | usuario, rol, sucursales, nombre, activo; el restablecimiento de contrasena sin valores |
 | Organizacion | `branch.*`, `emission_point.*`, `pos_terminal.*` (`created`, `updated`, `deleted`) | codigo, nombre, direccion, activo, punto de emision, ubicacion de venta |
 

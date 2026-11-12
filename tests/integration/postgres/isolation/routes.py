@@ -500,6 +500,60 @@ ROUTES: dict[str, Route] = {
         body=lambda ids: {"quantityOrdered": 4, "unitCost": "5.00"},
     ),
     f"DELETE {ADMIN}/purchase-order-items/{{id}}": Route(path=("po_draft_item",)),
+    # Supplier returns (S5.7): a line of B's order or a B location look missing
+    f"POST {ADMIN}/supplier-returns": Route(
+        body=lambda ids: {"purchaseOrderId": ids["po_received"]},
+        refs=("po_received",),
+    ),
+    f"GET {ADMIN}/supplier-returns": Route(
+        query=lambda ids: {"supplierId": ids["supplier"]}, refs=("supplier",)
+    ),
+    f"GET {ADMIN}/supplier-returns/{{id}}": Route(path=("supplier_return",)),
+    f"PUT {ADMIN}/supplier-returns/{{id}}": Route(
+        path=("supplier_return",), body=lambda ids: {"notes": f"{ids['marker']} otra"}
+    ),
+    f"DELETE {ADMIN}/supplier-returns/{{id}}": Route(path=("supplier_return",)),
+    f"POST {ADMIN}/supplier-returns/{{id}}/confirm": Route(
+        path=("supplier_return",), body=lambda ids: {}
+    ),
+    f"GET {ADMIN}/supplier-returns/{{id}}/items": Route(path=("supplier_return",)),
+    f"POST {ADMIN}/supplier-returns/{{id}}/items": Route(
+        path=("supplier_return",),
+        body=lambda ids: {
+            "purchaseOrderItemId": ids["po_received_item"],
+            "quantity": 1,
+            "locationId": ids["location"],
+        },
+        refs=("po_received_item", "location"),
+    ),
+    f"PUT {ADMIN}/supplier-return-items/{{id}}": Route(
+        path=("supplier_return_item",),
+        body=lambda ids: {"quantity": 1, "locationId": ids["location"]},
+        refs=("location",),
+    ),
+    f"DELETE {ADMIN}/supplier-return-items/{{id}}": Route(
+        path=("supplier_return_item",)
+    ),
+    # Accounts payable (S5.7)
+    f"GET {ADMIN}/payables": Route(
+        query=lambda ids: {"supplierId": ids["supplier"]}, refs=("supplier",)
+    ),
+    f"GET {ADMIN}/payables/{{id}}": Route(path=("payable",)),
+    f"GET {ADMIN}/supplier-accounts/{{supplier_id}}": Route(path=("supplier",)),
+    # Paid by hand: B's supplier or payable look missing
+    f"POST {ADMIN}/supplier-payments": Route(
+        body=lambda ids: {
+            "supplierId": ids["supplier"],
+            "amount": "1.00",
+            "paymentMethod": "TRANSFER",
+            "applications": [{"payableId": ids["payable"], "amount": "1.00"}],
+        },
+        refs=("supplier", "payable"),
+    ),
+    f"GET {ADMIN}/supplier-payments": Route(
+        query=lambda ids: {"supplierId": ids["supplier"]}, refs=("supplier",)
+    ),
+    f"GET {ADMIN}/supplier-payments/{{id}}": Route(path=("supplier_payment",)),
     # Sales (admin)
     f"GET {ADMIN}/sales": Route(
         query=lambda ids: {"customerId": ids["customer"]}, refs=("customer",)

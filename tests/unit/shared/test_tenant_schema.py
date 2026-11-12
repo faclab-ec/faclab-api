@@ -86,6 +86,12 @@ COMPOSITE_FOREIGN_KEYS = {
     ("customer_payments", "branch_id"),
     ("customer_payments", "terminal_id"),
     ("receivable_applications", "receivable_id"),
+    ("supplier_returns", "supplier_id"),
+    ("supplier_returns", "purchase_order_id"),
+    ("supplier_return_items", "location_id"),
+    ("payables", "supplier_id"),
+    ("supplier_payments", "supplier_id"),
+    ("payable_applications", "payable_id"),
 }
 # Single-column keys no request can point at another tenant: the handler takes
 # the value from a parent it already loaded through a tenant-filtered repository
@@ -119,6 +125,14 @@ INTERNAL_FOREIGN_KEYS = {
     ("customer_payments", "shift_id"): "the terminal's open shift",
     ("receivable_applications", "customer_payment_id"): "the payment being recorded",
     ("receivable_applications", "refund_id"): "the refund being processed",
+    ("supplier_return_items", "supplier_return_id"): "the return loaded by id",
+    ("supplier_return_items", "purchase_order_item_id"): "a line of the return's order",
+    ("supplier_return_items", "product_id"): "copied from the order line",
+    ("supplier_return_items", "presentation_id"): "copied from the order line",
+    ("payables", "purchase_order_id"): "the order being received",
+    ("payables", "purchase_receipt_id"): "the receipt being created",
+    ("payable_applications", "supplier_payment_id"): "the payment being recorded",
+    ("payable_applications", "supplier_return_id"): "the return being confirmed",
 }
 
 TABLES = Base.metadata.tables
@@ -140,7 +154,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 47
+    assert len(BUSINESS_TABLES) == 52
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

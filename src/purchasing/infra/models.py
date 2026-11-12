@@ -3,9 +3,11 @@ from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -22,6 +24,8 @@ class PurchaseOrderModel(TenantScoped, Base):
         UniqueConstraint(
             "tenant_id", "order_number", name="uq_purchase_orders_tenant_order_number"
         ),
+        # Target of the composite foreign key from its supplier returns (S5.7)
+        UniqueConstraint("tenant_id", "id", name="uq_purchase_orders_tenant_id_id"),
         # Composite: the supplier is of the order's tenant
         ForeignKeyConstraint(
             ["tenant_id", "supplier_id"],
@@ -87,6 +91,17 @@ class PurchaseOrderItemModel(TenantScoped, Base):
     unit_factor: Mapped[Decimal] = mapped_column(
         QuantityColumn, nullable=False, default=Decimal(1), server_default="1"
     )
+    # The product's VAT when the line was added, and the line's (S5.7)
+    tax_code: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="VAT_15", server_default="VAT_15"
+    )
+    tax_amount: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0), server_default="0"
+    )
+    # What went back to the supplier, in the line's presentation (S5.7)
+    quantity_returned: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(0), server_default="0"
+    )
 
     purchase_order: Mapped["PurchaseOrderModel"] = relationship(back_populates="items")
 
@@ -100,6 +115,18 @@ class PurchaseReceiptModel(TenantScoped, Base):
     )
     notes: Mapped[str | None] = mapped_column(Text)
     received_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # The supplier's invoice for the delivery and what was received, at the
+    # order lines' costs with their VAT (S5.7)
+    supplier_invoice_number: Mapped[str | None] = mapped_column(String(20))
+    subtotal: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0), server_default="0"
+    )
+    tax: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0), server_default="0"
+    )
+    total: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0), server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
@@ -152,3 +179,103 @@ class PurchaseReceiptItemModel(TenantScoped, Base):
     purchase_receipt: Mapped["PurchaseReceiptModel"] = relationship(
         back_populates="items"
     )
+
+
+class SupplierReturnModel(TenantScoped, Base):
+    """Goods of a purchase order going back to the supplier (S5.7), numbered
+    per tenant (`DP-2026-0001`)"""
+
+    __tablename__ = "supplier_returns"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "number", name="uq_supplier_returns_tenant_number"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "supplier_id"],
+            ["suppliers.tenant_id", "suppliers.id"],
+            name="fk_supplier_returns_supplier_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "purchase_order_id"],
+            ["purchase_orders.tenant_id", "purchase_orders.id"],
+            name="fk_supplier_returns_purchase_order_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "credited_amount >= 0 AND credited_amount <= total",
+            name="ck_supplier_returns_credited_amount",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    number: Mapped[str | None] = mapped_column(String(32))
+    supplier_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    purchase_order_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="draft", index=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    supplier_credit_note_number: Mapped[str | None] = mapped_column(String(20))
+    subtotal: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False, default=0)
+    tax: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False, default=0)
+    total: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False, default=0)
+    credited_amount: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=0
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confirmed_by: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
+
+
+class SupplierReturnItemModel(TenantScoped, Base):
+    """A line of a supplier return: part of what an order line received, with
+    the line's cost, VAT and presentation"""
+
+    __tablename__ = "supplier_return_items"
+    __table_args__ = (
+        # Where it leaves from, a location a request names
+        ForeignKeyConstraint(
+            ["tenant_id", "location_id"],
+            ["locations.tenant_id", "locations.id"],
+            name="fk_supplier_return_items_location_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("quantity > 0", name="ck_supplier_return_items_quantity"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    supplier_return_id: Mapped[int] = mapped_column(
+        ForeignKey("supplier_returns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    purchase_order_item_id: Mapped[int] = mapped_column(
+        ForeignKey("purchase_order_items.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    presentation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("product_presentations.id", ondelete="RESTRICT"), index=True
+    )
+    quantity: Mapped[Decimal] = mapped_column(QuantityColumn, nullable=False)
+    unit_factor: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=Decimal(1)
+    )
+    base_quantity: Mapped[Decimal] = mapped_column(
+        QuantityColumn, nullable=False, default=base_quantity_of("quantity")
+    )
+    unit_cost: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
+    tax_code: Mapped[str] = mapped_column(String(16), nullable=False, default="VAT_15")
+    tax_amount: Mapped[Decimal] = mapped_column(
+        MoneyColumn, nullable=False, default=Decimal(0)
+    )
+    location_id: Mapped[int | None] = mapped_column(Integer, index=True)

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.app.quantities import ProductQuantities
+from src.payables.app.accounts import SupplierAccounts
 from src.purchasing.app.repositories import (
     PurchaseOrderItemRepository,
     PurchaseOrderRepository,
@@ -39,6 +40,8 @@ class CreatePurchaseReceiptCommand(Command):
     items: list[ReceiveItemInput] = field(default_factory=list)
     notes: str | None = None
     received_at: datetime | None = None
+    # The supplier's invoice for this delivery (S5.7)
+    supplier_invoice_number: str | None = None
 
     def __post_init__(self):
         if self.items is None:
@@ -49,6 +52,11 @@ class CreatePurchaseReceiptCommand(Command):
 class CreatePurchaseReceiptCommandHandler(
     CommandHandler[CreatePurchaseReceiptCommand, dict]
 ):
+    """Recibe mercadería: actualiza las líneas de la orden (en orden de id),
+    publica la recepción (los movimientos IN bloquean el stock) y abre la
+    cuenta por pagar de lo recibido con su IVA (S5.7), en ese orden, como la
+    devolución a proveedor"""
+
     def __init__(
         self,
         po_repo: PurchaseOrderRepository,
@@ -58,7 +66,9 @@ class CreatePurchaseReceiptCommandHandler(
         event_publisher: EventPublisher,
         session: Session,
         quantities: ProductQuantities,
+        accounts: SupplierAccounts,
     ):
+        self.accounts = accounts
         self.quantities = quantities
         self.po_repo = po_repo
         self.item_repo = item_repo
@@ -102,11 +112,18 @@ class CreatePurchaseReceiptCommandHandler(
             for line in command.items
         )
 
-        # Create the receipt
+        # Create the receipt, with what was received at the order lines' costs
         receipt = PurchaseReceipt(
             purchase_order_id=command.purchase_order_id,
             notes=command.notes,
             received_at=command.received_at or datetime.now(),
+            supplier_invoice_number=command.supplier_invoice_number,
+        )
+        receipt.recalculate_totals(
+            po_items_by_id[line.purchase_order_item_id].taxed_line(
+                line.quantity_received
+            )
+            for line in command.items
         )
         receipt = self.receipt_repo.create(receipt)
 
@@ -143,7 +160,8 @@ class CreatePurchaseReceiptCommandHandler(
                 }
             )
 
-        for item_id in {line.purchase_order_item_id for line in command.items}:
+        # In id order, like a supplier return locks them
+        for item_id in sorted({line.purchase_order_item_id for line in command.items}):
             self.item_repo.update(po_items_by_id[item_id])
 
         purchase_order.update_reception_status(list(po_items_by_id.values()))
@@ -160,4 +178,13 @@ class CreatePurchaseReceiptCommandHandler(
             session=self.session,
         )
 
+        # What is owed to the supplier for it, due in the supplier's terms
+        self.accounts.open_for_receipt(
+            supplier_id=updated_po.supplier_id,
+            purchase_order_id=updated_po.require_id(),
+            purchase_receipt_id=receipt.require_id(),
+            amount=receipt.total,
+            issued_on=(receipt.received_at or datetime.now()).date(),
+            supplier_invoice_number=receipt.supplier_invoice_number,
+        )
         return receipt.dict()

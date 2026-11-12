@@ -11,7 +11,7 @@ from src.inventory.movement.app.commands.movement import (
     CreateMovementCommandHandler,
 )
 from src.inventory.movement.domain.constants import MovementType
-from src.purchasing.domain.events import PurchaseOrderReceived
+from src.purchasing.domain.events import PurchaseOrderReceived, SupplierReturnConfirmed
 from src.shared.infra.events.decorators import event_handler
 from src.shared.infra.events.scope import create_sync_scope
 
@@ -66,3 +66,36 @@ def handle_purchase_order_received(
                 error=str(e),
             )
             raise
+
+
+@event_handler(SupplierReturnConfirmed)
+def handle_supplier_return_confirmed(
+    event: SupplierReturnConfirmed, session: Any = None
+) -> None:
+    """Goods back to the supplier (S5.7): an OUT movement per line, at the
+    location's average cost (S5.6), sorted by product and location so concurrent
+    documents lock stock rows in the same order. Without enough available stock
+    the whole return fails (INSUFFICIENT_STOCK)."""
+    logger.info(
+        "handling_supplier_return_confirmed",
+        supplier_return_id=event.supplier_return_id,
+        number=event.number,
+        item_count=len(event.items),
+    )
+    lines = sorted(
+        event.items, key=lambda i: (i["product_id"], i.get("location_id") or 0)
+    )
+    with create_sync_scope(session) as scope:
+        handler = scope.get(CreateMovementCommandHandler)
+        for item in lines:
+            handler.handle(
+                CreateMovementCommand(
+                    product_id=item["product_id"],
+                    quantity=-abs(item["quantity"]),
+                    type=MovementType.OUT.value,
+                    location_id=item.get("location_id"),
+                    reference_type="supplier_return",
+                    reference_id=event.supplier_return_id,
+                    reason=f"Supplier return {event.number}",
+                )
+            )

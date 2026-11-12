@@ -53,3 +53,42 @@ def test_handle_purchase_order_received_creates_movements(mock_create_scope):
     assert second_call.quantity == 3
     assert second_call.location_id == 2
     assert second_call.unit_cost == 7
+
+
+@patch("src.purchasing.infra.event_handlers.create_sync_scope")
+def test_a_confirmed_supplier_return_takes_the_stock_out(mock_create_scope):
+    """S5.7: an OUT movement per line, by product and location, without a cost
+    (it leaves at the location's average)"""
+    from src.inventory.movement.app.commands.movement import CreateMovementCommand
+    from src.inventory.movement.domain.constants import MovementType
+    from src.purchasing.domain.events import SupplierReturnConfirmed
+    from src.purchasing.infra.event_handlers import handle_supplier_return_confirmed
+
+    mock_handler = MagicMock()
+    mock_scope = Mock()
+    mock_scope.get.return_value = mock_handler
+    mock_create_scope.return_value.__enter__.return_value = mock_scope
+
+    handle_supplier_return_confirmed(
+        SupplierReturnConfirmed(
+            aggregate_id=3,
+            supplier_return_id=3,
+            number="DP-2026-0001",
+            items=[
+                {"product_id": 9, "quantity": 2, "location_id": 1},
+                {"product_id": 5, "quantity": 24, "location_id": 4},
+            ],
+        )
+    )
+
+    commands = [call.args[0] for call in mock_handler.handle.call_args_list]
+    assert all(isinstance(c, CreateMovementCommand) for c in commands)
+    assert [(c.product_id, c.quantity, c.location_id) for c in commands] == [
+        (5, -24, 4),
+        (9, -2, 1),
+    ]
+    assert {c.type for c in commands} == {MovementType.OUT.value}
+    assert {(c.reference_type, c.reference_id) for c in commands} == {
+        ("supplier_return", 3)
+    }
+    assert {c.unit_cost for c in commands} == {None}

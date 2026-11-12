@@ -25,6 +25,7 @@ from src.purchasing.domain.entities import (
     PurchaseReceipt,
 )
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxCode
 from src.suppliers.domain.entities import Supplier
 
 # ---------------------------------------------------------------------------
@@ -51,6 +52,12 @@ def _supplier_repo(*suppliers: Supplier) -> MagicMock:
     repo = MagicMock()
     repo.get_by_ids.side_effect = lambda ids: [by_id[i] for i in ids if i in by_id]
     repo.get_by_id.side_effect = by_id.get
+    return repo
+
+
+def _item_repo(*items: PurchaseOrderItem) -> MagicMock:
+    repo = MagicMock()
+    repo.filter_by.return_value = list(items)
     return repo
 
 
@@ -166,12 +173,53 @@ def test_get_purchase_order_by_id():
     po = _make_po()
     repo = MagicMock()
     repo.get_by_id.return_value = po
-    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo())
+    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo(), _item_repo())
 
     result = handler.handle(GetPurchaseOrderByIdQuery(id=1))
 
     assert result["id"] == 1
     assert result["order_number"] == "PO-2026-0001"
+    assert result["taxes"] == []
+
+
+def test_get_purchase_order_by_id_breaks_the_tax_down_by_rate():
+    """The order's detail gives each rate's base and VAT, like the supplier's
+    invoice (S5.7): highest rate first, each group rounded to cents"""
+    repo = MagicMock()
+    repo.get_by_id.return_value = _make_po()
+    lines = [
+        _make_item(
+            id=1,
+            quantity_ordered=3,
+            unit_cost=Decimal("1.115"),
+            tax_code=TaxCode.VAT_15,
+        ),
+        _make_item(
+            id=2, quantity_ordered=2, unit_cost=Decimal("4.50"), tax_code=TaxCode.VAT_0
+        ),
+    ]
+    for line in lines:
+        line.recalculate_tax()
+    handler = GetPurchaseOrderByIdQueryHandler(
+        repo, _supplier_repo(), _item_repo(*lines)
+    )
+
+    result = handler.handle(GetPurchaseOrderByIdQuery(id=1))
+
+    assert result["taxes"] == [
+        {
+            "tax_code": TaxCode.VAT_15,
+            "rate": Decimal("15"),
+            "base": Decimal("3.35"),
+            "tax": Decimal("0.50"),
+        },
+        {
+            "tax_code": TaxCode.VAT_0,
+            "rate": Decimal("0"),
+            "base": Decimal("9.00"),
+            "tax": Decimal("0.00"),
+        },
+    ]
 
 
 def test_get_all_purchase_orders_adds_supplier_name():
@@ -205,7 +253,7 @@ def test_get_purchase_order_by_id_adds_supplier_name():
     suppliers = _supplier_repo(
         Supplier(id=10, name="Distribuidora Andina", tax_id="0990000000001")
     )
-    handler = GetPurchaseOrderByIdQueryHandler(repo, suppliers)
+    handler = GetPurchaseOrderByIdQueryHandler(repo, suppliers, _item_repo())
 
     result = handler.handle(GetPurchaseOrderByIdQuery(id=1))
 
@@ -215,7 +263,7 @@ def test_get_purchase_order_by_id_adds_supplier_name():
 def test_get_purchase_order_by_id_not_found_raises():
     repo = MagicMock()
     repo.get_by_id.return_value = None
-    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo())
+    handler = GetPurchaseOrderByIdQueryHandler(repo, _supplier_repo(), _item_repo())
 
     with pytest.raises(NotFoundError, match="Purchase order with id 99 not found"):
         handler.handle(GetPurchaseOrderByIdQuery(id=99))

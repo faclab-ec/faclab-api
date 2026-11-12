@@ -234,6 +234,25 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Compras, devoluciones y cuentas por pagar, lo que quedó de S5.7** (2026-11-12):
+  - La devolución a proveedor no toca lotes ni series: el OUT no descuenta el lote ni marca las series
+    devueltas. Hacerlo pide elegir el lote (o las series) en cada línea, como al recibir.
+  - Una devolución confirmada y un pago a proveedor no se anulan: uno equivocado se compensa a mano.
+    Anularlos (con permiso propio, bitácora y su efecto en el stock y las cuentas) queda pendiente.
+  - No hay saldo a favor del proveedor: lo que una devolución no acredita (porque ya se le pagó) queda
+    como `refundDue`, y el reembolso se registra fuera del sistema. Tampoco se cruza con la próxima
+    compra.
+  - Las recepciones anteriores a S5.7 no tienen cuenta por pagar (la migración solo recalculó sus
+    totales). Cargar los saldos de proveedores llega con la importación (S5.8) si hace falta.
+  - Cuentas por pagar sin antigüedad de saldos ni estado de cuenta del proveedor (los tiene la cartera,
+    S5.5), sin retenciones en la fuente (Anexo y comprobante de retención) y sin enlazar la factura
+    electrónica del proveedor (se escribe su número a mano en la recepción).
+  - `PaymentMethod` no tiene cheque: un pago con cheque va como `OTHER` con su número en `reference`.
+  - El IVA de una línea sale del producto al agregarla y no se cambia en la orden: una compra con otra
+    tarifa (un proveedor RISE, un bien exento solo para ese proveedor) necesita cambiar el producto.
+  - La web de órdenes de compra sigue sin `useCan` en sus acciones de siempre (enviar, recibir,
+    cancelar); las nuevas (devolver, confirmar, pagar) sí lo usan.
+
 - **Costo promedio y kárdex, lo que quedó de S5.6** (2026-11-12):
   - El costo promedio es por ubicación (decisión de S5.6, en `docs/modules.md`): en una bodega con
     varias ubicaciones, una venta sale al promedio de la suya y el de la bodega se deriva (valor /
@@ -246,7 +265,8 @@
   - Un movimiento manual con fecha pasada entra al kárdex en su fecha, pero recalculó el promedio al
     registrarse: el saldo cuadra, el costo de las salidas de en medio no se rehace.
   - El kárdex no se pagina ni se exporta (PDF o Excel); se consulta por producto y rango de fechas.
-  - El IVA de compras queda fuera del costo y la devolución a proveedor saldrá al promedio (S5.7); los
+  - ~~El IVA de compras queda fuera del costo y la devolución a proveedor saldrá al promedio (S5.7)~~
+    (hecho en S5.7: el IVA nunca entra al costo y la devolución sale al promedio de su ubicación). Los
     saldos iniciales de la importación (S5.8) envían `unitCost` en los ítems del ajuste.
   - El movimiento manual de la web no elige ubicación: va al stock sin ubicación (ya era así) y queda
     fuera del kárdex de una bodega. Agregar el selector de ubicación al formulario.

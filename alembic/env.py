@@ -31,6 +31,11 @@ from src.organization.infra.models import (  # noqa: F401
     EmissionPointModel,
     PosTerminalModel,
 )
+from src.payables.infra.models import (  # noqa: F401
+    PayableApplicationModel,
+    PayableModel,
+    SupplierPaymentModel,
+)
 from src.pos.cash.infra.models import CashMovementModel  # noqa: F401
 from src.pos.refund.infra.models import (  # noqa: F401
     RefundItemModel,
@@ -44,6 +49,8 @@ from src.purchasing.infra.models import (  # noqa: F401
     PurchaseOrderModel,
     PurchaseReceiptItemModel,
     PurchaseReceiptModel,
+    SupplierReturnItemModel,
+    SupplierReturnModel,
 )
 from src.quotes.infra.models import QuoteItemModel, QuoteModel  # noqa: F401
 from src.receivables.infra.models import (  # noqa: F401
