@@ -20,6 +20,8 @@ class MovementCreated(DomainEvent):
     location_id: int | None = None
     reason: str | None = None
     date: datetime | None = None
+    # Per base unit: an IN recalculates the location's average with it (S5.6)
+    unit_cost: Decimal = Decimal(0)
 
     def _payload(self) -> dict[str, Any]:
         return {
@@ -29,5 +31,6 @@ class MovementCreated(DomainEvent):
             "type": self.type,
             "location_id": self.location_id,
             "reason": self.reason,
+            "unit_cost": self.unit_cost,
             "date": self.date.isoformat() if self.date else None,
         }

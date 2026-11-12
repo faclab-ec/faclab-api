@@ -18,6 +18,7 @@ from src.inventory.stock.infra.event_handlers import handle_movement_created
 from src.shared.infra.events.event_bus import EventBus
 from src.shared.infra.events.event_bus_publisher import EventBusPublisher
 from tests.audit import FakeAuditTrail
+from tests.costs import inventory_costs
 from tests.quantities import FakeProductQuantities
 
 
@@ -80,6 +81,8 @@ def test_create_movement_triggers_stock_update_via_event(mock_stock_scope):
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        mock_stock_repo,
+        inventory_costs(),
     )
     command = CreateMovementCommand(
         product_id=10,
@@ -147,12 +150,16 @@ def test_multiple_movements_accumulate_stock(mock_stock_scope):
     mock_scope.get.return_value = mock_stock_repo
     mock_stock_scope.return_value.__enter__.return_value = mock_scope
 
+    # The handler's own lock of the row (for the cost) doesn't count the calls
+    # of the stock handler this test follows
     handler = CreateMovementCommandHandler(
         mock_movement_repo,
         EventBusPublisher(),
         Mock(),
         FakeAuditTrail(),
         FakeProductQuantities(),
+        Mock(first_for_update=Mock(return_value=None)),
+        inventory_costs(),
     )
 
     # Movement 1: +10

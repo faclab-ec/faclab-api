@@ -243,9 +243,9 @@ POST /transfers/{id}/receive
 1. Verifica que la transferencia esté en estado `confirmed`.
 2. Para cada ítem:
    - Libera la reserva de stock en origen (decrementa `reservedQuantity`).
-   - Crea un movimiento **OUT** desde la ubicación origen (cantidad negativa).
-   - Crea un movimiento **IN** en la ubicación destino (cantidad positiva).
-3. Los movimientos generan eventos `MovementCreated` que actualizan las cantidades de stock automáticamente.
+   - Crea un movimiento **OUT** desde la ubicación origen (cantidad negativa), al costo promedio del origen.
+   - Crea un movimiento **IN** en la ubicación destino (cantidad positiva) a ese mismo costo, que recalcula el costo promedio ponderado del destino (S5.6).
+3. Los movimientos generan eventos `MovementCreated` que actualizan las cantidades y el costo promedio del stock automáticamente.
 4. Cambia el estado a `received`.
 
 **Response** `200`: Transferencia con estado `received`.

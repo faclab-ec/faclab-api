@@ -13,6 +13,7 @@ from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.entities import Payment, PaymentMethod, Sale, SaleItem, SaleStatus
+from tests.costs import inventory_costs
 from tests.receivables import customer_credit
 from tests.unit.pos.terminals import numbering
 
@@ -96,7 +97,7 @@ def test_confirm_sale_with_open_shift():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo),
+        TerminalStock(stock_repo, movement_repo, inventory_costs()),
         shift_repo,
         MagicMock(),
         _paid_in_full(),
@@ -127,7 +128,7 @@ def test_confirm_sale_shift_closed_raises_error():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo),
+        TerminalStock(stock_repo, movement_repo, inventory_costs()),
         shift_repo,
         MagicMock(),
         _mock_repo(entities=[]),
@@ -157,7 +158,7 @@ def test_confirm_sale_no_shift_linked():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo),
+        TerminalStock(stock_repo, movement_repo, inventory_costs()),
         shift_repo,
         MagicMock(),
         _paid_in_full(),

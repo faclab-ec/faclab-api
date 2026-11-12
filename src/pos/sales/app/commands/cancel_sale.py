@@ -60,6 +60,8 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 reason=f"Sale #{command.sale_id} cancelled - reversal",
                 reference_type="sale",
                 reference_id=command.sale_id,
+                # Back at the cost it left at (S5.6)
+                costs=self.stock.costs_of("sale", command.sale_id),
             )
             # Its receivable, if it was on credit, after the stock like every POS
             # document: only while nothing lowered its balance (S5.5)

@@ -422,6 +422,9 @@ Registra la recepción de mercancía. Puede ser parcial o total.
 **Efectos secundarios (automáticos):**
 - Se crean movimientos de inventario tipo `IN` por cada ítem recibido, en unidades base:
   `quantityReceived` × el factor de la presentación del ítem (2 cajas de 100 = 200, S5.2)
+- Cada movimiento lleva el costo por unidad base de su ítem, `unitCost` / factor de la presentación
+  (una caja de 12 a 30,00 pone cada unidad a 2,50; 6 decimales), y recalcula el costo promedio
+  ponderado de la ubicación (S5.6). El IVA de compras no entra al costo
 - Se actualizan las cantidades de stock en las ubicaciones correspondientes
 - Si se proporciona `lotNumber`, se crea o actualiza el lote (también en unidades base)
 - Si se proporcionan `serialNumbers`, se registran los números de serie

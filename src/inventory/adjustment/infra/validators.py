@@ -1,10 +1,18 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.inventory.adjustment.domain.entities import AdjustmentReason, AdjustmentStatus
-from src.shared.infra.validators import QuantityNumber, QueryParams
+from src.shared.infra.precision import MONEY_PRECISION, MONEY_SCALE
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
+
+_UNIT_COST = (
+    "Cost per base unit of what the count adds over the system, e.g. an initial "
+    "balance. Without it those units enter at the location's average cost; "
+    "units the count takes away always leave at that average"
+)
 
 
 class CreateAdjustmentRequest(BaseModel):
@@ -29,6 +37,13 @@ class AddAdjustmentItemRequest(BaseModel):
     actual_quantity: QuantityNumber = Field(description="Actual counted quantity")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
+    unit_cost: Decimal | None = Field(
+        None,
+        ge=0,
+        max_digits=MONEY_PRECISION,
+        decimal_places=MONEY_SCALE,
+        description=_UNIT_COST,
+    )
 
 
 class UpdateAdjustmentItemRequest(BaseModel):
@@ -38,6 +53,13 @@ class UpdateAdjustmentItemRequest(BaseModel):
         None, description="Corrected actual quantity"
     )
     notes: str | None = Field(None, description="Updated notes")
+    unit_cost: Decimal | None = Field(
+        None,
+        ge=0,
+        max_digits=MONEY_PRECISION,
+        decimal_places=MONEY_SCALE,
+        description=_UNIT_COST,
+    )
 
 
 class AdjustmentResponse(BaseModel):
@@ -71,6 +93,7 @@ class AdjustmentItemResponse(BaseModel):
     difference: QuantityNumber = Field(description="Difference (actual - expected)")
     lot_id: int | None = Field(None, description="Lot ID (if applicable)")
     notes: str | None = Field(None, description="Notes for this item")
+    unit_cost: DecimalNumber | None = Field(None, description=_UNIT_COST)
 
 
 class AdjustmentQueryParams(QueryParams):

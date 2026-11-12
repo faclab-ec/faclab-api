@@ -47,6 +47,8 @@ def handle_purchase_order_received(
                     reference_type="purchase_order",
                     reference_id=event.purchase_order_id,
                     reason=f"Purchase order {event.order_number} received",
+                    # Recalculates the weighted average of the location (S5.6)
+                    unit_cost=item.get("unit_cost"),
                 )
 
                 handler.handle(command)

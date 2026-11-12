@@ -9,6 +9,7 @@ from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
 from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.exceptions import InsufficientStockError
+from tests.costs import inventory_costs
 
 
 @dataclass
@@ -20,10 +21,14 @@ class Line:
 
 
 def _stock(
-    rows: dict[int, int], reserved: dict[int, int] | None = None
+    rows: dict[int, int],
+    reserved: dict[int, int] | None = None,
+    costs: dict[int, str] | None = None,
 ) -> tuple[TerminalStock, MagicMock, MagicMock]:
-    """Stock rows of location 7 by product, with `reserved` units of some"""
+    """Stock rows of location 7 by product, with `reserved` units of some and
+    the average cost of some (`costs`)"""
     reserved = reserved or {}
+    costs = costs or {}
     stock_repo = MagicMock()
     stock_repo.first_for_update.side_effect = lambda product_id, location_id: (
         Stock(
@@ -31,12 +36,17 @@ def _stock(
             product_id=product_id,
             quantity=Decimal(rows[product_id]),
             reserved_quantity=Decimal(reserved.get(product_id, 0)),
+            average_cost=Decimal(costs.get(product_id, "0")),
         )
         if location_id == 7 and product_id in rows
         else None
     )
     movement_repo = MagicMock()
-    return TerminalStock(stock_repo, movement_repo), stock_repo, movement_repo
+    return (
+        TerminalStock(stock_repo, movement_repo, inventory_costs()),
+        stock_repo,
+        movement_repo,
+    )
 
 
 def test_take_locks_by_product_and_writes_out_movements_at_the_location():
@@ -142,3 +152,82 @@ def test_taken_from_reads_the_documents_out_movements():
     )
     movement_repo.filter_by.return_value = []
     assert stock.taken_from("sale", 6) is None
+
+
+# --- Costs (S5.6) ---
+
+
+def test_a_sale_leaves_at_the_average_cost_of_the_location():
+    stock, _, movement_repo = _stock({1: 40, 2: 10}, costs={1: "6.50", 2: "1.25"})
+
+    stock.take([Line(1, Decimal(15)), Line(2, Decimal(1))], 7, "Sale #5", "sale", 5)
+
+    movements = [c.args[0] for c in movement_repo.create.call_args_list]
+    assert [(m.product_id, m.unit_cost) for m in movements] == [
+        (1, Decimal("6.50")),
+        (2, Decimal("1.25")),
+    ]
+
+
+def test_what_goes_back_enters_at_the_cost_it_left_at():
+    """10 at 6.50 left; meanwhile the location's average went to 8.00 (5 left):
+    the 10 back weigh at 6.50, (5 × 8.00 + 10 × 6.50) / 15 = 7.00"""
+    stock, stock_repo, movement_repo = _stock({1: 5}, costs={1: "8.00"})
+
+    stock.put_back(
+        [Line(1, Decimal(10))],
+        7,
+        "Sale #5 cancelled",
+        "sale",
+        5,
+        costs={1: Decimal("6.50")},
+    )
+
+    assert movement_repo.create.call_args.args[0].unit_cost == Decimal("6.50")
+    updated = stock_repo.update.call_args.args[0]
+    assert (updated.quantity, updated.average_cost) == (15, Decimal("7.000000"))
+
+
+def test_without_its_cost_it_goes_back_at_the_average():
+    stock, stock_repo, movement_repo = _stock({1: 5}, costs={1: "8.00"})
+
+    stock.put_back([Line(1, Decimal(1)), Line(3, Decimal(2))], 7, "R", "refund", 2)
+
+    movements = {
+        c.args[0].product_id: c.args[0] for c in movement_repo.create.call_args_list
+    }
+    assert movements[1].unit_cost == Decimal("8.00")
+    assert stock_repo.update.call_args.args[0].average_cost == Decimal("8.00")
+    # A location that never had it, without a purchase price: at 0
+    assert movements[3].unit_cost == 0
+    assert stock_repo.create.call_args.args[0].average_cost == 0
+
+
+def test_costs_of_reads_what_each_product_left_at():
+    stock, _, movement_repo = _stock({})
+    movement_repo.filter_by.return_value = [
+        Movement(
+            product_id=1,
+            quantity=Decimal(-2),
+            type=MovementType.OUT,
+            unit_cost=Decimal("6.50"),
+        ),
+        Movement(
+            product_id=2,
+            quantity=Decimal(-1),
+            type=MovementType.OUT,
+            unit_cost=Decimal("1.25"),
+        ),
+        # What a cancellation already put back isn't a cost it left at
+        Movement(
+            product_id=1,
+            quantity=Decimal(2),
+            type=MovementType.IN,
+            unit_cost=Decimal(9),
+        ),
+    ]
+
+    assert stock.costs_of("sale", 5) == {1: Decimal("6.50"), 2: Decimal("1.25")}
+    movement_repo.filter_by.assert_called_once_with(
+        reference_type="sale", reference_id=5
+    )

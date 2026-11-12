@@ -1043,6 +1043,9 @@ def seed_movements_and_stocks(
     cue_a1 = locations[10]  # BOD-CUE main storage
 
     sku_map = {p.sku: p for p in products}
+    # Every movement at its product's purchase price, so the average cost of
+    # each stock row is that price and the kardex adds up to the valuation (S5.6)
+    cost_of = {p.id: p.purchase_price or Decimal(0) for p in products}
 
     # Stock ledger to track quantities
     ledger: dict[tuple[int, int], Decimal] = {}
@@ -1068,6 +1071,7 @@ def seed_movements_and_stocks(
             reference_id=ref_id,
             reason=reason,
             date=now,
+            unit_cost=cost_of[product_id],
         )
         movements.append(m)
         key = (product_id, location_id)
@@ -1230,6 +1234,7 @@ def seed_movements_and_stocks(
                 location_id=location_id,
                 quantity=quantity,
                 reserved_quantity=0,
+                average_cost=cost_of[product_id],
             )
             stocks.append(s)
     session.add_all(stocks)

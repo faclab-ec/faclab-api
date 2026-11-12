@@ -342,6 +342,8 @@ def test_receive_transfer_creates_movements_and_releases_reservation():
     stock_repo.first_for_update.return_value = stock
 
     movement_handler = MagicMock()
+    # The OUT leaves at the source's average cost
+    movement_handler.handle.return_value = {"unit_cost": Decimal("6.50")}
     event_publisher = MagicMock()
 
     handler = ReceiveStockTransferCommandHandler(
@@ -368,6 +370,9 @@ def test_receive_transfer_creates_movements_and_releases_reservation():
     assert in_call.type == "IN"
     assert in_call.location_id == 20  # destination
     assert in_call.source_location_id == 10
+    # The destination receives at the source's cost (S5.6)
+    assert out_call.unit_cost is None
+    assert in_call.unit_cost == Decimal("6.50")
 
     assert result["status"] == TransferStatus.RECEIVED
     event_publisher.publish.assert_called_once()

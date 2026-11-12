@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from pydantic import AliasChoices, BaseModel, Field
 
-from src.shared.infra.validators import QuantityNumber, QueryParams
+from src.shared.infra.validators import DecimalNumber, QuantityNumber, QueryParams
 
 
 class StockResponse(BaseModel):
@@ -38,6 +38,13 @@ class StockResponse(BaseModel):
         description="Quantity reserved for confirmed transfers or orders",
         validation_alias=AliasChoices("reservedQuantity", "reserved_quantity"),
         serialization_alias="reservedQuantity",
+    )
+    average_cost: DecimalNumber = Field(
+        Decimal(0),
+        description="Weighted average cost per base unit in this location: every "
+        "IN recalculates it with its cost, every OUT leaves at it",
+        validation_alias=AliasChoices("averageCost", "average_cost"),
+        serialization_alias="averageCost",
     )
 
 

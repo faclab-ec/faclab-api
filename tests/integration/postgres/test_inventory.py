@@ -169,8 +169,15 @@ def test_out_movement_cannot_take_units_reserved_by_a_transfer(api, store):
         ),
         (
             "INSERT INTO stocks (tenant_id, product_id, location_id, quantity,"
-            " reserved_quantity) SELECT tenant_id, product_id, NULL, -4, 0 FROM stocks",
+            " reserved_quantity, average_cost)"
+            " SELECT tenant_id, product_id, NULL, -4, 0, 0 FROM stocks",
             "ck_stocks_quantity_non_negative",
+        ),
+        # Costs are never negative (S5.6)
+        ("UPDATE stocks SET average_cost = -1", "ck_stocks_average_cost_non_negative"),
+        (
+            "UPDATE movements SET unit_cost = -0.01",
+            "ck_movements_unit_cost_non_negative",
         ),
     ],
 )

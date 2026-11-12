@@ -611,6 +611,15 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/reports/inventory/summary": Route(
         query=_warehouse, refs=("warehouse",)
     ),
+    # The other tenant's product or warehouse answers NOT_FOUND (S5.6)
+    f"GET {ADMIN}/reports/inventory/kardex": Route(
+        query=lambda ids: {
+            "productId": ids["product"],
+            "warehouseId": ids["warehouse"],
+        },
+        refs=("product", "warehouse"),
+        needs_query=True,
+    ),
     f"GET {ADMIN}/dashboard": Route(),
     # Accounts receivable (S5.5)
     f"GET {ADMIN}/receivables": Route(

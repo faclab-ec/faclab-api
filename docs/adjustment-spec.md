@@ -59,6 +59,7 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `difference`       | decimal        | Calculado | -       | `actualQuantity - expectedQuantity` |
 | `lotId`            | int \| null    | No        | null    | FK a Lot (opcional)                |
 | `notes`            | string \| null | No        | null    | Observaciones del item             |
+| `unitCost`         | decimal \| null | No       | null    | Costo por unidad base de lo que el conteo agrega sobre el sistema (S5.6), p. ej. un saldo inicial |
 
 > **Nota:** `expectedQuantity` lo asigna el backend automaticamente consultando el stock actual del producto en la ubicacion. No se envia desde el frontend. Al confirmar se vuelve a leer (ver Reglas): en un ajuste confirmado es el stock contra el que se aplico el conteo.
 
@@ -150,8 +151,13 @@ Base URL: `/api/admin`
 | `actualQuantity` | decimal        | Si        |
 | `lotId`          | int \| null    | No        |
 | `notes`          | string \| null | No        |
+| `unitCost`       | decimal \| null | No (`>= 0`, hasta 6 decimales) |
 
 > El backend consulta el stock actual y asigna `expectedQuantity` automaticamente.
+
+> `unitCost` (S5.6) es el costo por unidad base de las unidades que el conteo agrega: un saldo inicial
+> (la importacion de S5.8 lo envia) o mercaderia encontrada con su costo. Sin el, lo agregado entra al
+> costo promedio de la ubicacion. Lo que el conteo quita sale siempre al promedio: ahi se ignora.
 
 ### UpdateAdjustmentItemRequest (PUT `/adjustment-items/{id}`)
 
@@ -166,6 +172,7 @@ Base URL: `/api/admin`
 |------------------|----------------|-----------|
 | `actualQuantity` | decimal \| null | No        |
 | `notes`          | string \| null | No        |
+| `unitCost`       | decimal \| null | No        |
 
 ### AdjustmentResponse
 
@@ -194,7 +201,8 @@ Base URL: `/api/admin`
   "actualQuantity": 48,
   "difference": -2,
   "lotId": null,
-  "notes": "Faltan 2 unidades"
+  "notes": "Faltan 2 unidades",
+  "unitCost": null
 }
 ```
 
@@ -282,6 +290,10 @@ Si difference == 0: sin movimiento
 ```
 
 Referencia del movimiento: `referenceType = "adjustment"`, `referenceId = adjustment.id`.
+
+Costo (S5.6): el `IN` entra al `unitCost` del item, que recalcula el costo promedio ponderado de la
+ubicacion; sin el, al promedio vigente (que no cambia). El `OUT` sale al promedio. La auditoria de
+`adjustment.confirmed` incluye `unit_cost` en los items que lo traen.
 
 ---
 

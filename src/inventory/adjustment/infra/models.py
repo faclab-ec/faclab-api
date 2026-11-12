@@ -5,7 +5,7 @@ from sqlalchemy import ForeignKey, ForeignKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.shared.infra.database import Base, TenantScoped
-from src.shared.infra.precision import QuantityColumn
+from src.shared.infra.precision import MoneyColumn, QuantityColumn
 
 
 class InventoryAdjustmentModel(TenantScoped, Base):
@@ -62,3 +62,6 @@ class AdjustmentItemModel(TenantScoped, Base):
     actual_quantity: Mapped[Decimal] = mapped_column(QuantityColumn)
     lot_id: Mapped[int | None] = mapped_column(nullable=True)
     notes: Mapped[str | None]
+    # Per base unit, for what the count adds over the system (initial balances,
+    # S5.6): without it the units enter at the location's average cost
+    unit_cost: Mapped[Decimal | None] = mapped_column(MoneyColumn, nullable=True)
