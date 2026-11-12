@@ -67,22 +67,25 @@ def session(in_tenant) -> Iterator[Session]:
                 quantity=100,
                 type=MovementType.IN,
                 date=datetime(2026, 3, 1, 10),
+                unit_cost=Decimal("10.00"),
             ),
             MovementModel(
                 product_id=1,
                 quantity=-30,
                 type=MovementType.OUT,
                 date=datetime(2026, 3, 10, 10),
+                unit_cost=Decimal("10.00"),
             ),
             MovementModel(
                 product_id=1,
                 quantity=-20,
                 type=MovementType.OUT,
                 date=datetime(2026, 4, 5, 10),
+                unit_cost=Decimal("10.00"),
             ),
         ]
     )
-    db.add(StockModel(product_id=1, quantity=50))
+    db.add(StockModel(product_id=1, quantity=50, average_cost=Decimal("10.00")))
     db.commit()
     yield db
     db.close()

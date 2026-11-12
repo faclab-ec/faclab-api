@@ -45,6 +45,7 @@ class GetMovementHistoryReportQueryHandler(
             MovementModel.reason,
             MovementModel.date,
             MovementModel.created_at,
+            MovementModel.unit_cost,
         ).join(ProductModel, ProductModel.id == MovementModel.product_id)
         q = q.filter(*tenant_criteria(MovementModel, ProductModel))
 
@@ -94,6 +95,7 @@ class GetMovementHistoryReportQueryHandler(
                     "reason": row.reason,
                     "date": row.date,
                     "created_at": row.created_at,
+                    "unit_cost": row.unit_cost,
                 }
                 for row in rows
             ],

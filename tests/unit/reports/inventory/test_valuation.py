@@ -34,15 +34,16 @@ def _make_row(
     product_id=1,
     name="Product A",
     sku="SKU-001",
-    purchase_price=Decimal("10.00"),
+    cost=Decimal("10.00"),
     quantity=100,
 ):
+    """A product's aggregate: its quantity and its value at average cost"""
     row = MagicMock()
     row.id = product_id
     row.name = name
     row.sku = sku
-    row.purchase_price = purchase_price
     row.quantity = quantity
+    row.value = Decimal(quantity) * cost
     return row
 
 
@@ -52,7 +53,7 @@ def _make_row(
 
 
 def test_valuation_returns_correct_total_value():
-    row = _make_row(quantity=100, purchase_price=Decimal("10.00"))
+    row = _make_row(quantity=100, cost=Decimal("10.00"))
     session = _make_session(rows=[row])
     handler = GetInventoryValuationQueryHandler(session)
 
@@ -67,13 +68,13 @@ def test_valuation_returns_correct_total_value():
 
 def test_valuation_aggregates_multiple_products():
     rows = [
-        _make_row(product_id=1, quantity=50, purchase_price=Decimal("20.00")),
+        _make_row(product_id=1, quantity=50, cost=Decimal("20.00")),
         _make_row(
             product_id=2,
             name="Product B",
             sku="SKU-002",
             quantity=200,
-            purchase_price=Decimal("5.00"),
+            cost=Decimal("5.00"),
         ),
     ]
     session = _make_session(rows=rows)
@@ -98,7 +99,7 @@ def test_valuation_uses_provided_as_of_date_in_response():
     as_of = date(2026, 1, 15)
 
     # For _valuation_at_date, mock both query calls
-    row = _make_row(quantity=50, purchase_price=Decimal("10.00"))
+    row = _make_row(quantity=50, cost=Decimal("10.00"))
     session = MagicMock()
     q = MagicMock()
     q.join.return_value = q
@@ -126,7 +127,7 @@ def test_valuation_returns_empty_items_when_no_stocks():
 
 
 def test_valuation_excludes_zero_quantity_rows():
-    row = _make_row(quantity=0, purchase_price=Decimal("10.00"))
+    row = _make_row(quantity=0, cost=Decimal("10.00"))
     session = _make_session(rows=[row])
     handler = GetInventoryValuationQueryHandler(session)
 
@@ -142,7 +143,7 @@ def test_valuation_includes_product_name_and_sku():
         name="Coffee Bag",
         sku="COFFEE-001",
         quantity=10,
-        purchase_price=Decimal("15.00"),
+        cost=Decimal("15.00"),
     )
     session = _make_session(rows=[row])
     handler = GetInventoryValuationQueryHandler(session)
@@ -172,7 +173,7 @@ def test_valuation_with_warehouse_id_passes_to_query():
 
 
 def test_valuation_at_date_excludes_negative_quantity():
-    row = _make_row(quantity=-5, purchase_price=Decimal("10.00"))
+    row = _make_row(quantity=-5, cost=Decimal("10.00"))
     session = MagicMock()
     q = MagicMock()
     q.join.return_value = q

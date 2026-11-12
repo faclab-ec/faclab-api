@@ -38,12 +38,9 @@ class GetWarehouseSummaryQueryHandler(
                 func.coalesce(func.sum(StockModel.reserved_quantity), 0).label(
                     "reserved_quantity"
                 ),
+                # At the weighted average cost of each location (S5.6)
                 func.coalesce(
-                    func.sum(
-                        StockModel.quantity
-                        * func.coalesce(ProductModel.purchase_price, 0)
-                    ),
-                    0,
+                    func.sum(StockModel.quantity * StockModel.average_cost), 0
                 ).label("total_value"),
             )
             .join(LocationModel, LocationModel.warehouse_id == WarehouseModel.id)

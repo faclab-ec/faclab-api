@@ -1,3 +1,4 @@
+from src.reports.inventory.app.queries.kardex import GetKardexQueryHandler
 from src.reports.inventory.app.queries.movement_history import (
     GetMovementHistoryReportQueryHandler,
 )
@@ -14,4 +15,5 @@ REPORT_INJECTABLES = [
     GetProductRotationQueryHandler,
     GetMovementHistoryReportQueryHandler,
     GetWarehouseSummaryQueryHandler,
+    GetKardexQueryHandler,
 ]
