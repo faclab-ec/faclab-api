@@ -3,14 +3,17 @@ from enum import StrEnum
 
 class DocumentType(StrEnum):
     """Documentos internos que el core numera (ADR-0012): ventas, devoluciones y
-    cotizaciones (S5.4) por sucursal; órdenes de compra y abonos de clientes
-    (S5.5) por empresa"""
+    cotizaciones (S5.4) por sucursal; órdenes de compra, abonos de clientes
+    (S5.5), devoluciones y pagos a proveedores (S5.7) por empresa"""
 
     SALE = "SALE"
     REFUND = "REFUND"
     PURCHASE_ORDER = "PURCHASE_ORDER"
     QUOTE = "QUOTE"
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
+    SUPPLIER_RETURN = "SUPPLIER_RETURN"
+    # 16 characters: the length of document_sequences.doc_type
+    SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
 
 
 _PREFIXES = {
@@ -19,6 +22,8 @@ _PREFIXES = {
     DocumentType.PURCHASE_ORDER: "PO",
     DocumentType.QUOTE: "COT",
     DocumentType.CUSTOMER_PAYMENT: "AB",
+    DocumentType.SUPPLIER_RETURN: "DP",
+    DocumentType.SUPPLIER_PAYMENT: "PP",
 }
 
 

@@ -187,7 +187,7 @@ class KardexEntryResponse(BaseModel):
     reference_type: str | None = Field(
         None,
         description="Document that moved it (sale, refund, purchase_order, "
-        "adjustment, transfer); none for a manual movement",
+        "supplier_return, adjustment, transfer); none for a manual movement",
     )
     reference_id: int | None = Field(None, description="Document ID")
     reason: str | None = Field(None, description="Reason")

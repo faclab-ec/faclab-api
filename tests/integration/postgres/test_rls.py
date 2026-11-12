@@ -169,7 +169,7 @@ def test_every_tenant_scoped_table_forces_its_policy(pg_engine):
             )
         ).all()
 
-    assert len(TENANT_SCOPED) == 47
+    assert len(TENANT_SCOPED) == 52
     assert forced == set(TENANT_SCOPED)
     assert [row.tablename for row in policies] == TENANT_SCOPED
     for row in policies:

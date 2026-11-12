@@ -35,6 +35,9 @@ class Permission(StrEnum):
     PURCHASE_WRITE = "purchase:write"
     PURCHASE_CONFIRM = "purchase:confirm"
     PURCHASE_RECEIVE = "purchase:receive"
+    # Accounts payable (S5.7): what is owed to suppliers and their payments
+    PAYABLE_READ = "payable:read"
+    PAYABLE_WRITE = "payable:write"
 
     # Partners
     CUSTOMER_READ = "customer:read"
@@ -66,6 +69,7 @@ _ALL_READS = frozenset(
         Permission.SALE_READ,
         Permission.RECEIVABLE_READ,
         Permission.PURCHASE_READ,
+        Permission.PAYABLE_READ,
         Permission.CUSTOMER_READ,
         Permission.SUPPLIER_READ,
         Permission.ALERT_READ,
@@ -105,6 +109,8 @@ _OPERATOR_PERMS = frozenset(
         Permission.RECEIVABLE_WRITE,
         Permission.PURCHASE_READ,
         Permission.PURCHASE_WRITE,
+        # Paying a supplier is the admin's and the manager's
+        Permission.PAYABLE_READ,
         Permission.CUSTOMER_READ,
         Permission.CUSTOMER_WRITE,
         Permission.SUPPLIER_READ,

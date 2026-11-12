@@ -6,6 +6,7 @@ from wireup import injectable
 from src.catalog.product.app.presentations import ProductPresentations
 from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.app.repositories import ProductRepository
+from src.purchasing.app.queries.purchase_order_item import describe_order_item
 from src.purchasing.app.repositories import (
     PurchaseOrderItemRepository,
     PurchaseOrderRepository,
@@ -13,6 +14,7 @@ from src.purchasing.app.repositories import (
 from src.purchasing.domain.entities import PurchaseOrderItem
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxCode
 
 
 @dataclass
@@ -71,7 +73,10 @@ class AddPurchaseOrderItemCommandHandler(
                 presentation.id if presentation else command.presentation_id
             ),
             unit_factor=factor,
+            # The product's VAT today (S5.7); the line keeps it
+            tax_code=product.tax_code if product is not None else TaxCode.VAT_15,
         )
+        item.recalculate_tax()
         item = self.item_repo.create(item)
 
         all_items = self.item_repo.filter_by(
@@ -80,7 +85,7 @@ class AddPurchaseOrderItemCommandHandler(
         purchase_order.recalculate_totals(all_items)
         self.po_repo.update(purchase_order)
 
-        return item.dict()
+        return describe_order_item(item)
 
 
 @dataclass
@@ -128,7 +133,7 @@ class UpdatePurchaseOrderItemCommandHandler(
         purchase_order.recalculate_totals(all_items)
         self.po_repo.update(purchase_order)
 
-        return updated.dict()
+        return describe_order_item(updated)
 
 
 @dataclass

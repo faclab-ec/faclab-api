@@ -212,6 +212,42 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
             ]
         },
     )
+    # Its account payable (S5.7), with a payment to the supplier
+    [payable] = api.get(
+        "/api/admin/payables", params={"purchaseOrderId": ids["po_sent"]}
+    )
+    ids["payable"] = payable["id"]
+    ids["supplier_payment"] = api.post(
+        "/api/admin/supplier-payments",
+        {"supplierId": ids["supplier"], "amount": "1.00", "paymentMethod": "TRANSFER"},
+    )["id"]
+    # A received order with a draft supplier return of one of its three units
+    ids["po_received"], ids["po_received_item"] = _order(api, ids)
+    api.post(f"/api/admin/purchase-orders/{ids['po_received']}/send")
+    api.post(
+        f"/api/admin/purchase-orders/{ids['po_received']}/receive",
+        {
+            "items": [
+                {
+                    "purchaseOrderItemId": ids["po_received_item"],
+                    "quantityReceived": 3,
+                    "locationId": ids["location"],
+                }
+            ]
+        },
+    )
+    ids["supplier_return"] = api.post(
+        "/api/admin/supplier-returns",
+        {"purchaseOrderId": ids["po_received"], "notes": f"{m} golpeados"},
+    )["id"]
+    ids["supplier_return_item"] = api.post(
+        f"/api/admin/supplier-returns/{ids['supplier_return']}/items",
+        {
+            "purchaseOrderItemId": ids["po_received_item"],
+            "quantity": 1,
+            "locationId": ids["location"],
+        },
+    )["id"]
 
     ids["adjustment"] = api.post(
         "/api/admin/adjustments",

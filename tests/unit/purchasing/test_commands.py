@@ -43,6 +43,7 @@ from src.purchasing.domain.exceptions import (
     InvalidPurchaseOrderStatusError,
 )
 from src.shared.domain.exceptions import NotFoundError
+from src.shared.domain.tax import TaxCode
 from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
@@ -431,6 +432,7 @@ def _make_receipt_handler():
             event_publisher,
             MagicMock(),
             FakeProductQuantities(),
+            MagicMock(),
         ),
         po_repo,
         item_repo,
@@ -699,3 +701,93 @@ def test_two_boxes_of_100_put_200_units_in_stock():
     # A box at 25.00 puts each of its 100 units at 0.25 (S5.6)
     assert item["unit_cost"] == Decimal("0.25")
     assert boxes.quantity_pending == 0
+
+
+def test_a_receipt_records_its_totals_and_opens_what_is_owed():
+    """S5.7: 5 of a line at 2.50 with 15 % VAT, with the supplier's invoice:
+    the receipt totals 14.38 and its account payable is that"""
+    accounts = MagicMock()
+    po_repo, item_repo, receipt_repo = MagicMock(), MagicMock(), MagicMock()
+    handler = CreatePurchaseReceiptCommandHandler(
+        po_repo,
+        item_repo,
+        receipt_repo,
+        MagicMock(),
+        MagicMock(),
+        MagicMock(),
+        FakeProductQuantities(),
+        accounts,
+    )
+    item = _make_item(
+        id=1,
+        quantity_ordered=Decimal(10),
+        unit_cost=Decimal("2.50"),
+        tax_code=TaxCode.VAT_15,
+    )
+    item.recalculate_tax()
+    po = _make_po(status=PurchaseOrderStatus.SENT)
+    po_repo.get_by_id.return_value = po
+    po_repo.update.side_effect = lambda entity: entity
+    item_repo.filter_by.return_value = [item]
+    receipt_repo.create.side_effect = lambda receipt: (
+        setattr(receipt, "id", 4) or receipt
+    )
+
+    result = handler.handle(
+        CreatePurchaseReceiptCommand(
+            purchase_order_id=1,
+            items=[
+                ReceiveItemInput(purchase_order_item_id=1, quantity_received=Decimal(5))
+            ],
+            supplier_invoice_number="001-002-000000123",
+            received_at=datetime(2026, 11, 3, 10, 30),
+        )
+    )
+
+    assert (result["subtotal"], result["tax"], result["total"]) == (
+        Decimal("12.50"),
+        Decimal("1.88"),
+        Decimal("14.38"),
+    )
+    assert result["supplier_invoice_number"] == "001-002-000000123"
+    assert accounts.open_for_receipt.call_args.kwargs == {
+        "supplier_id": 10,
+        "purchase_order_id": 1,
+        "purchase_receipt_id": 4,
+        "amount": Decimal("14.38"),
+        "issued_on": datetime(2026, 11, 3).date(),
+        "supplier_invoice_number": "001-002-000000123",
+    }
+
+
+def test_a_new_line_takes_its_products_vat():
+    item_repo = MagicMock()
+    item_repo.create.side_effect = lambda entity: entity
+    po_repo = MagicMock()
+    po_repo.get_by_id.return_value = _make_po()
+    products = MagicMock()
+    products.get_by_id.return_value = Product(
+        id=5, sku="T-1", name="Tornillo", tax_code=TaxCode.VAT_5
+    )
+    handler = AddPurchaseOrderItemCommandHandler(
+        item_repo,
+        po_repo,
+        FakeProductQuantities(),
+        products,
+        FakeProductPresentations(),
+    )
+
+    result = handler.handle(
+        AddPurchaseOrderItemCommand(
+            purchase_order_id=1,
+            product_id=5,
+            quantity_ordered=Decimal(4),
+            unit_cost=Decimal("10.00"),
+        )
+    )
+
+    assert (result["tax_code"], result["tax_amount"], result["subtotal"]) == (
+        TaxCode.VAT_5,
+        Decimal("2.00"),
+        Decimal("40.00"),
+    )

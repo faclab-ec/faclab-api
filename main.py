@@ -40,6 +40,11 @@ from src.organization.infra.routes import (
     EmissionPointRouter,
     PosTerminalRouter,
 )
+from src.payables.infra.routes import (
+    PayableRouter,
+    SupplierAccountRouter,
+    SupplierPaymentRouter,
+)
 from src.pos.cash.infra.routes import POSCashRouter
 from src.pos.infra.routes import POSCustomerRouter, POSProductRouter, POSTerminalRouter
 from src.pos.refund.infra.routes import POSRefundRouter
@@ -47,7 +52,12 @@ from src.pos.reports.infra.routes import POSReportRouter
 from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
 from src.pricing.infra.routes import POSPriceRouter, PriceListRouter
-from src.purchasing.infra.routes import POItemRouter, PurchaseOrderRouter
+from src.purchasing.infra.routes import (
+    POItemRouter,
+    PurchaseOrderRouter,
+    SupplierReturnItemRouter,
+    SupplierReturnRouter,
+)
 from src.quotes.infra.routes import POSQuoteRouter, QuoteRouter
 from src.receivables.infra.routes import (
     CustomerAccountRouter,
@@ -316,6 +326,29 @@ admin_router.include_router(
     POItemRouter().router,
     prefix="/purchase-order-items",
     tags=["Purchase Order Items"],
+)
+admin_router.include_router(
+    SupplierReturnRouter().router,
+    prefix="/supplier-returns",
+    tags=["Supplier Returns"],
+)
+admin_router.include_router(
+    SupplierReturnItemRouter().router,
+    prefix="/supplier-return-items",
+    tags=["Supplier Returns"],
+)
+admin_router.include_router(
+    PayableRouter().router, prefix="/payables", tags=["Payables"]
+)
+admin_router.include_router(
+    SupplierAccountRouter().router,
+    prefix="/supplier-accounts",
+    tags=["Payables"],
+)
+admin_router.include_router(
+    SupplierPaymentRouter().router,
+    prefix="/supplier-payments",
+    tags=["Payables"],
 )
 admin_router.include_router(SaleRouter().router, prefix="/sales", tags=["Sales"])
 admin_router.include_router(QuoteRouter().router, prefix="/quotes", tags=["Quotes"])

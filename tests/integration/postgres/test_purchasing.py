@@ -202,3 +202,73 @@ def test_an_order_line_of_a_million_and_a_half_is_stored_and_read(api, order):
     items = api.get(f"/api/admin/purchase-orders/{po_id}/items")
     assert [i["unitCost"] for i in items] == [6.0, 1_500_000.0]
     assert api.get(f"/api/admin/purchase-orders/{po_id}")["subtotal"] == 1_500_060.0
+
+
+def test_an_order_with_15_and_0_percent_products_taxes_each_rate(api):
+    """Acceptance (S5.7): 10 × 2.50 of a product at 15 % and 4 × 3.25 of one at
+    0 % make a subtotal of 38.00 with 3.75 of VAT; the detail breaks it down"""
+    supplier = make_supplier(api)
+    taxed = make_product(api, "SKU-TAX", taxCode="VAT_15")
+    exempt = make_product(api, "SKU-ZERO", taxCode="VAT_0")
+    po = api.post("/api/admin/purchase-orders", {"supplierId": supplier["id"]})
+    line = api.post(
+        "/api/admin/purchase-order-items",
+        {
+            "purchaseOrderId": po["id"],
+            "productId": taxed["id"],
+            "quantityOrdered": 10,
+            "unitCost": "2.50",
+        },
+    )
+    api.post(
+        "/api/admin/purchase-order-items",
+        {
+            "purchaseOrderId": po["id"],
+            "productId": exempt["id"],
+            "quantityOrdered": 4,
+            "unitCost": "3.25",
+        },
+    )
+
+    assert (line["taxCode"], line["taxAmount"], line["subtotal"]) == (
+        "VAT_15",
+        3.75,
+        25.0,
+    )
+    detail = api.get(f"/api/admin/purchase-orders/{po['id']}")
+    assert (detail["subtotal"], detail["tax"], detail["total"]) == (38.0, 3.75, 41.75)
+    assert detail["taxes"] == [
+        {"taxCode": "VAT_15", "rate": 15.0, "base": 25.0, "tax": 3.75},
+        {"taxCode": "VAT_0", "rate": 0.0, "base": 13.0, "tax": 0.0},
+    ]
+
+
+def test_a_receipt_with_the_suppliers_invoice_opens_what_is_owed(api, order):
+    """4 of the 10 at 6.00 with 15 %: the receipt totals 27.60 and its account
+    payable carries the supplier's invoice"""
+    po_id, item_id = order["po"]["id"], order["item"]["id"]
+    api.post(f"/api/admin/purchase-orders/{po_id}/send")
+
+    receipt = api.post(
+        f"/api/admin/purchase-orders/{po_id}/receive",
+        {
+            "items": [{"purchaseOrderItemId": item_id, "quantityReceived": 4}],
+            "supplierInvoiceNumber": "001-002-000000123",
+        },
+    )
+
+    assert (receipt["subtotal"], receipt["tax"], receipt["total"]) == (
+        24.0,
+        3.6,
+        27.6,
+    )
+    [listed] = api.get(f"/api/admin/purchase-orders/{po_id}/receipts")
+    assert listed["supplierInvoiceNumber"] == "001-002-000000123"
+    [payable] = api.get("/api/admin/payables", params={"purchaseOrderId": po_id})
+    assert (payable["amount"], payable["balance"], payable["status"]) == (
+        27.6,
+        27.6,
+        "OPEN",
+    )
+    assert payable["supplierInvoiceNumber"] == "001-002-000000123"
+    assert payable["purchaseReceiptId"] == receipt["id"]
