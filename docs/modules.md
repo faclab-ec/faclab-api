@@ -245,11 +245,24 @@ Nivel de inventario de un producto en una ubicacion especifica. El stock no se g
 
 **Entidades:** `Stock`
 
-**Campos:** `id`, `product_id`, `location_id`, `quantity`, `reserved_quantity`, `min_quantity`, `updated_at`
+**Campos:** `id`, `product_id`, `location_id`, `quantity`, `reserved_quantity`, `average_cost`, `min_quantity`, `updated_at`
 
 **Queries:** `GetAllStock`, `GetStockById`, `GetStockByProduct`, `GetStockByLocation`
 
-**Eventos recibidos:** `MovementCreated` → actualiza `quantity` (crea la fila si la ubicacion no tenia)
+**Eventos recibidos:** `MovementCreated` → actualiza `quantity` y, en una entrada, `average_cost` (crea la fila si la ubicacion no tenia)
+
+**Costo promedio ponderado (S5.6):** `average_cost` es el costo por unidad base del producto en esa
+ubicacion. Se decidio llevarlo **por ubicacion** (en la fila de stock) y no por bodega: esa fila es la
+que bloquea toda entrada y salida (`first_for_update`), asi que el promedio se recalcula sin tablas ni
+bloqueos nuevos y sin riesgo de deadlocks. El costo y el valor por bodega se derivan (valor = Σ cantidad
+× costo de cada ubicacion; promedio = valor / cantidad); con una ubicacion por bodega, lo que crea el
+aprovisionamiento, es identico a un promedio por bodega. Con varias, una salida sale al promedio de su
+ubicacion. Regla unica: **toda entrada recalcula el promedio con su costo** ((Q · promedio + q · costo)
+/ (Q + q), a 6 decimales con la mitad hacia arriba; sin existencias queda el costo de la entrada) y
+**toda salida sale al promedio vigente sin cambiarlo**. El costo de cada entrada lo pone su documento
+(tabla en [reports-spec.md](reports-spec.md), "Costo de inventario"); sin uno entra al promedio de la
+ubicacion, o al precio de compra del producto si la ubicacion nunca lo tuvo. `InventoryCosts`
+(`src/inventory/stock/app/costs.py`) resuelve ese costo.
 
 **Reglas (S3.2):** el stock nunca queda negativo. Una salida solo toma lo disponible
 (`available_quantity = quantity - reserved_quantity`; lo reservado es de transferencias confirmadas):
@@ -265,7 +278,11 @@ Registro de entradas (`IN`) y salidas (`OUT`) de inventario. Cada movimiento gen
 
 **Entidades:** `Movement`
 
-**Campos:** `id`, `product_id`, `location_id`, `type` (IN/OUT), `quantity`, `reference`, `notes`, `created_at`
+**Campos:** `id`, `product_id`, `location_id`, `type` (IN/OUT), `quantity`, `unit_cost`, `reference`, `notes`, `created_at`
+
+`unit_cost` (S5.6) es el costo por unidad base con que se movio: una salida, el promedio de su
+ubicacion; una entrada, el de su documento. `CreateMovement` bloquea la fila de stock antes de escribir
+el movimiento para fijarlo. `POST /api/admin/movements` acepta `unitCost` solo en una entrada.
 
 **Comandos:** `CreateMovement`
 
@@ -274,9 +291,10 @@ Registro de entradas (`IN`) y salidas (`OUT`) de inventario. Cada movimiento gen
 **Eventos publicados:** `MovementCreated`
 
 **Origenes posibles de un Movement:**
-- Confirmacion de venta → `SaleConfirmed` → OUT
-- Anulacion de venta → `SaleCancelled` → IN
-- Recepcion de compra → `PurchaseOrderReceived` → IN
+- Venta del POS → OUT directo (`TerminalStock.take`) al promedio de la ubicacion del terminal
+- Anulacion o devolucion del POS → IN directo (`TerminalStock.put_back`) al costo con que salio de la venta
+- Recepcion de compra → `PurchaseOrderReceived` → IN al costo de la linea / factor de su presentacion
+- Transferencia recibida → OUT del origen a su promedio e IN al destino a ese mismo costo
 - Ajuste de inventario → directo (la diferencia contra el stock al confirmar)
 - Creacion manual → via endpoint, sin documento: `POST /api/admin/movements` no acepta
   `referenceType` ni `referenceId`, que solo llenan los flujos anteriores
@@ -321,7 +339,11 @@ Ajustes de inventario para conteos fisicos, correcciones o bajas.
 
 **Campos Adjustment:** `id`, `type` (COUNT/CORRECTION/WRITEOFF), `location_id`, `status`, `notes`, `created_at`
 
-**Campos AdjustmentItem:** `id`, `adjustment_id`, `product_id`, `expected_qty`, `actual_qty`, `difference`
+**Campos AdjustmentItem:** `id`, `adjustment_id`, `product_id`, `expected_qty`, `actual_qty`, `difference`, `unit_cost`
+
+`unit_cost` (S5.6, opcional) es el costo por unidad base de lo que el conteo agrega sobre el sistema: los
+saldos iniciales (S5.8) lo informan. Sin el, lo agregado entra al promedio de la ubicacion; lo que el
+conteo quita sale siempre al promedio.
 
 **Comandos:** `CreateAdjustment`, `UpdateAdjustment`, `CreateAdjustmentItem`, `UpdateAdjustmentItem`, `DeleteAdjustmentItem`
 
@@ -331,7 +353,8 @@ Ajustes de inventario para conteos fisicos, correcciones o bajas.
 
 ### Transfer
 
-Transferencias de stock entre ubicaciones.
+Transferencias de stock entre ubicaciones. Al recibir, el destino recibe al costo promedio del origen
+(S5.6), que recalcula su propio promedio.
 
 **Entidades:** `Transfer`, `TransferItem`
 
@@ -415,7 +438,7 @@ Gestion de ordenes de compra y recepciones de mercaderia.
 
 **Eventos publicados:** `PurchaseOrderReceived`
 
-**Integracion:** Al recepcionar (`ReceivePurchaseOrder`), se publica `PurchaseOrderReceived` → Inventory crea Movement(IN) por cada item → Stock se incrementa.
+**Integracion:** Al recepcionar (`ReceivePurchaseOrder`), se publica `PurchaseOrderReceived` → Inventory crea Movement(IN) por cada item → Stock se incrementa. Cada item lleva `unit_cost`, el costo de la linea por unidad base (`PurchaseOrderItem.base_unit_cost` = costo / factor de su presentacion), que recalcula el costo promedio de la ubicacion (S5.6).
 
 ---
 
@@ -584,10 +607,12 @@ Consultas analiticas de inventario sin estado propio — leen datos de los modul
 **Modulo:** `src/reports/inventory/`
 
 **Queries disponibles:**
-- `GetInventoryValuation` — valor total del inventario por producto/ubicacion
+- `GetInventoryValuation` — valor del inventario por producto al costo promedio ponderado (S5.6), actual o a una fecha
 - `GetInventoryRotation` — frecuencia de rotacion por producto en un periodo
-- `GetInventoryMovementsReport` — movimientos agrupados por tipo y periodo
+- `GetInventoryMovementsReport` — movimientos con su costo unitario, por tipo y periodo
 - `GetInventorySummary` — resumen consolidado de stock, alertas y valuacion
+- `GetKardex` — kardex valorizado de un producto por bodega: saldo inicial, movimientos con saldo
+  acumulado en cantidad y valor, y saldo final (S5.6). Spec en [reports-spec.md](reports-spec.md)
 
 ---
 

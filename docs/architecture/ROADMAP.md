@@ -234,6 +234,20 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Costo promedio y kárdex, lo que quedó de S5.6** (2026-11-12):
+  - El costo promedio es por ubicación (decisión de S5.6, en `docs/modules.md`): en una bodega con
+    varias ubicaciones, una venta sale al promedio de la suya y el de la bodega se deriva (valor /
+    cantidad). Llevarlo por bodega pide una tabla propia y reordenar los bloqueos de stock del POS,
+    ajustes, transferencias y compras.
+  - No hay costo de ventas ni margen en los reportes del POS ni del dashboard: el dato queda en los OUT
+    de cada venta (`unit_cost`).
+  - Corregir el costo de una compra ya recibida no recalcula los movimientos posteriores ni el
+    promedio: no hay recosteo retroactivo. Tampoco costo propio por lote.
+  - Un movimiento manual con fecha pasada entra al kárdex en su fecha, pero recalculó el promedio al
+    registrarse: el saldo cuadra, el costo de las salidas de en medio no se rehace.
+  - El kárdex no se pagina ni se exporta (PDF o Excel); se consulta por producto y rango de fechas.
+  - El IVA de compras queda fuera del costo y la devolución a proveedor saldrá al promedio (S5.7); los
+    saldos iniciales de la importación (S5.8) envían `unitCost` en los ítems del ajuste.
 - **Crédito y cuentas por cobrar, lo que quedó de S5.5** (2026-11-11):
   - Un abono no se anula ni se corrige: uno equivocado se compensa con una devolución o se deja
     anotado. Anularlo (con permiso propio, bitácora y su efecto en la caja del turno) queda pendiente.

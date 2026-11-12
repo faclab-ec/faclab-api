@@ -71,9 +71,40 @@ Todas las respuestas usan wrappers estándar. Los campos usan **camelCase** en J
 
 ---
 
+## Costo de inventario (S5.6)
+
+Cada movimiento guarda su costo por unidad base (`unitCost`) y cada fila de stock
+su **costo promedio ponderado** (`averageCost`, `GET /api/admin/stock`). El
+promedio vive en la fila (producto, ubicación): la que bloquea toda entrada y
+salida, así que se recalcula sin bloqueos nuevos. El costo y el valor por bodega
+se derivan: valor = Σ cantidad × costo de cada ubicación; promedio = valor /
+cantidad. Con una ubicación por bodega (lo que crea el aprovisionamiento) es lo
+mismo que un promedio por bodega.
+
+**Toda entrada recalcula el promedio con su costo; toda salida sale al promedio
+vigente y no lo cambia.** Promedio nuevo = (Q · promedio + q · costo) / (Q + q),
+a 6 decimales con la mitad hacia arriba; sin existencias queda el costo de la
+entrada.
+
+| Flujo | Costo del movimiento |
+| --- | --- |
+| Recepción de compra (IN) | Costo de la línea / factor de su presentación (una caja de 12 a 30,00 pone cada unidad a 2,50). Sin IVA |
+| Venta del POS (OUT) | Promedio de la ubicación del terminal |
+| Anulación o devolución del POS (IN) | El costo con que salió de la venta |
+| Transferencia | OUT del origen a su promedio; el destino recibe a ese costo |
+| Ajuste | Lo que el conteo quita sale al promedio; lo que agrega entra al `unitCost` del ítem (saldos iniciales) o, sin él, al promedio |
+| Movimiento manual | OUT al promedio (no acepta `unitCost`); IN al `unitCost` enviado o, sin él, al promedio |
+
+Una entrada sin costo en una ubicación que nunca tuvo el producto toma su precio
+de compra, o 0. Los movimientos y el stock anteriores a S5.6 quedaron con el
+precio de compra del producto (migración `720f0fa5fb74`).
+
+---
+
 ## 1. Valorización de Inventario
 
-Calcula el valor monetario del inventario actual o en una fecha histórica.
+Calcula el valor del inventario al costo promedio ponderado, actual o en una
+fecha histórica.
 
 ### Request
 
@@ -116,8 +147,8 @@ GET /valuation
 | `productName` | `string`  | Nombre del producto                     |
 | `sku`         | `string`  | Código SKU                              |
 | `quantity`    | `decimal` | Cantidad en stock                       |
-| `averageCost` | `number`  | Precio de compra (purchase_price)       |
-| `totalValue`  | `number`  | quantity × averageCost                  |
+| `averageCost` | `number`  | Costo promedio ponderado por unidad base: `totalValue / quantity`, ponderado entre las ubicaciones |
+| `totalValue`  | `number`  | Valor: Σ cantidad × costo promedio de cada ubicación |
 
 ### Campos del objeto principal
 
@@ -129,10 +160,10 @@ GET /valuation
 
 ### Lógica de negocio
 
-- **Sin `asOfDate`**: Usa la tabla de stock actual. Suma cantidades por producto agrupando todas las ubicaciones.
-- **Con `asOfDate`**: Reconstruye el stock histórico sumando movimientos IN y restando movimientos OUT hasta esa fecha.
+- **Sin `asOfDate`**: Usa la tabla de stock actual: por producto, Σ cantidad y Σ cantidad × `averageCost` de cada ubicación.
+- **Con `asOfDate`**: Reconstruye el stock y su valor con los movimientos hasta esa fecha: Σ cantidad y Σ cantidad × `unitCost` (las salidas restan). Coincide con el saldo final del kárdex a esa fecha.
 - Excluye productos marcados como servicio (`isService = true`).
-- Solo incluye productos con `purchasePrice > 0`.
+- Solo incluye productos con cantidad > 0. Un producto sin costo aparece con valor 0 (antes de S5.6 se omitían los productos sin precio de compra).
 - Si se proporciona `warehouseId`, filtra ubicaciones pertenecientes a ese almacén.
 
 ---
@@ -233,7 +264,8 @@ GET /movements
       "referenceId": 15,
       "reason": null,
       "date": "2026-03-07T14:30:00",
-      "createdAt": "2026-03-07T14:30:05"
+      "createdAt": "2026-03-07T14:30:05",
+      "unitCost": 6.5
     }
   ],
   "meta": {
@@ -265,6 +297,7 @@ GET /movements
 | `reason`           | `string \| null` | Razón (para ajustes)                                  |
 | `date`             | `datetime \| null` | Fecha del movimiento (ISO 8601)                     |
 | `createdAt`        | `datetime \| null` | Fecha de creación del registro (ISO 8601)           |
+| `unitCost`         | `number`         | Costo por unidad base con que se movió (una salida: el promedio de su ubicación) |
 
 ### Lógica de negocio
 
@@ -319,7 +352,7 @@ GET /summary
 | `totalQuantity`     | `decimal` | Suma de todas las cantidades en stock              |
 | `reservedQuantity`  | `decimal` | Suma de cantidades reservadas                     |
 | `availableQuantity` | `decimal` | `totalQuantity - reservedQuantity`                |
-| `totalValue`        | `number` | Suma de `quantity × purchasePrice` por producto   |
+| `totalValue`        | `number` | Σ `quantity × averageCost` de las filas de stock    |
 
 ### Lógica de negocio
 
@@ -327,7 +360,75 @@ GET /summary
 - Solo incluye almacenes activos (`isActive = true`).
 - Excluye servicios.
 - Solo incluye registros de stock con `quantity > 0`.
-- `totalValue` = Σ(quantity × product.purchasePrice).
+- `totalValue` = Σ(quantity × averageCost) de cada fila de stock (S5.6).
+
+---
+
+## 5. Kárdex valorizado (S5.6)
+
+Entradas, salidas y saldos de un producto, en cantidad y valor, en una bodega (o
+en todas las ubicaciones).
+
+### Request
+
+```
+GET /kardex
+```
+
+| Query Param   | Tipo   | Requerido | Default                      | Descripción |
+| ------------- | ------ | --------- | ---------------------------- | ----------- |
+| `productId`   | `int`  | Sí        |                              | Producto (≥ 1) |
+| `warehouseId` | `int`  | No        | `null`                       | Bodega; sin ella, todas las ubicaciones |
+| `fromDate`    | `date` | No        | Primer día del mes actual    | Desde (inclusive) |
+| `toDate`      | `date` | No        | Hoy                          | Hasta (inclusive) |
+
+### Response — `DataResponse<Kardex>`
+
+```json
+{
+  "data": {
+    "productId": 1,
+    "productName": "Cemento 50 kg",
+    "sku": "CEM-50",
+    "warehouseId": 1,
+    "fromDate": "2026-04-01",
+    "toDate": "2026-04-30",
+    "opening": { "quantity": 25, "value": 162.5, "averageCost": 6.5 },
+    "entries": [
+      {
+        "movementId": 4,
+        "date": "2026-04-02T10:00:00",
+        "type": "OUT",
+        "locationId": 1,
+        "locationName": "Percha",
+        "referenceType": "transfer",
+        "referenceId": 3,
+        "reason": "Transferencia #3 - salida de origen",
+        "inQuantity": 0,
+        "outQuantity": 5,
+        "unitCost": 6.5,
+        "value": 32.5,
+        "balanceQuantity": 20,
+        "balanceValue": 130.0,
+        "averageCost": 6.5
+      }
+    ],
+    "totalIn": { "quantity": 0, "value": 0 },
+    "totalOut": { "quantity": 5, "value": 32.5 },
+    "closing": { "quantity": 20, "value": 130.0, "averageCost": 6.5 }
+  },
+  "meta": { "requestId": "...", "timestamp": "..." }
+}
+```
+
+### Lógica de negocio
+
+- `opening`: Σ cantidad y Σ cantidad × `unitCost` de los movimientos antes de `fromDate`.
+- `entries`: los movimientos del período, ordenados por fecha e id, con el saldo acumulado después de cada uno. `value` = cantidad × `unitCost` (sin signo); `averageCost` = saldo en valor / saldo en cantidad (`null` sin existencias).
+- `closing` = `opening` + `totalIn` − `totalOut`, en cantidad y en valor; con la bodega completa coincide con la valorización de esa bodega.
+- Con `warehouseId`, toma los movimientos de sus ubicaciones: una transferencia entre dos de ellas aparece como salida y entrada al mismo costo (se compensan).
+- Cantidades en unidades base. Producto o bodega inexistentes (u otra empresa): `NOT_FOUND`.
+- Sin paginación: un producto en un rango de fechas.
 
 ---
 
@@ -425,6 +526,7 @@ interface MovementHistoryItem {
   reason: string | null;
   date: string | null;      // ISO 8601
   createdAt: string | null;  // ISO 8601
+  unitCost: number;
 }
 
 interface MovementHistoryParams {
@@ -452,6 +554,53 @@ interface WarehouseSummary {
 
 interface SummaryParams {
   warehouseId?: number;
+}
+
+// --- Kárdex ---
+
+interface KardexBalance {
+  quantity: number;
+  value: number;
+  averageCost: number | null;
+}
+
+interface KardexEntry {
+  movementId: number;
+  date: string | null;
+  type: "IN" | "OUT";
+  locationId: number | null;
+  locationName: string | null;
+  referenceType: string | null;
+  referenceId: number | null;
+  reason: string | null;
+  inQuantity: number;
+  outQuantity: number;
+  unitCost: number;
+  value: number;
+  balanceQuantity: number;
+  balanceValue: number;
+  averageCost: number | null;
+}
+
+interface Kardex {
+  productId: number;
+  productName: string;
+  sku: string;
+  warehouseId: number | null;
+  fromDate: string;
+  toDate: string;
+  opening: KardexBalance;
+  entries: KardexEntry[];
+  totalIn: { quantity: number; value: number };
+  totalOut: { quantity: number; value: number };
+  closing: KardexBalance;
+}
+
+interface KardexParams {
+  productId: number;
+  warehouseId?: number;
+  fromDate?: string;
+  toDate?: string;
 }
 ```
 
@@ -506,9 +655,10 @@ async function getWarehouseSummary(params?: SummaryParams): Promise<ListResponse
 | Rotación      | Tabla con badges de estado  | Rango de fechas, almacén             |
 | Movimientos   | Tabla paginada              | Producto, tipo, fechas, almacén      |
 | Resumen       | Cards por almacén o tabla   | Almacén                              |
+| Kárdex        | Saldos + tabla con saldo acumulado | Producto, almacén, fechas     |
 
-- **Decimales**: Los campos `number` (averageCost, totalValue, turnoverRate) se serializan como float JSON. Formatear con 2 decimales para moneda.
+- **Decimales**: Los campos `number` (averageCost, totalValue, unitCost, turnoverRate) se serializan como float JSON. Formatear con 2 decimales para moneda; los costos unitarios guardan hasta 6.
 - **Paginación**: Solo el historial de movimientos usa paginación. Los demás retornan listas completas.
 - **Fechas**: Las fechas de query params usan formato `YYYY-MM-DD`. Las fechas en respuestas datetime usan ISO 8601.
-- **Valores posibles de `referenceType`**: `"sale"`, `"purchase_order"`, `"adjustment"`, `"transfer"`.
+- **Valores posibles de `referenceType`**: `"sale"`, `"refund"`, `"purchase_order"`, `"adjustment"`, `"transfer"`; `null` en un movimiento manual.
 - **Valores de `type` en movimientos**: Solo `"in"` o `"out"`.
