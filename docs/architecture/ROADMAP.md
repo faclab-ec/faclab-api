@@ -248,6 +248,8 @@
   - El kárdex no se pagina ni se exporta (PDF o Excel); se consulta por producto y rango de fechas.
   - El IVA de compras queda fuera del costo y la devolución a proveedor saldrá al promedio (S5.7); los
     saldos iniciales de la importación (S5.8) envían `unitCost` en los ítems del ajuste.
+  - El movimiento manual de la web no elige ubicación: va al stock sin ubicación (ya era así) y queda
+    fuera del kárdex de una bodega. Agregar el selector de ubicación al formulario.
 - **Crédito y cuentas por cobrar, lo que quedó de S5.5** (2026-11-11):
   - Un abono no se anula ni se corrige: uno equivocado se compensa con una devolución o se deja
     anotado. Anularlo (con permiso propio, bitácora y su efecto en la caja del turno) queda pendiente.
