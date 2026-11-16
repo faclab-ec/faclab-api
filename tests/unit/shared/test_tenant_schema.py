@@ -133,6 +133,7 @@ INTERNAL_FOREIGN_KEYS = {
     ("payables", "purchase_receipt_id"): "the receipt being created",
     ("payable_applications", "supplier_payment_id"): "the payment being recorded",
     ("payable_applications", "supplier_return_id"): "the return being confirmed",
+    ("import_job_rows", "job_id"): "the import being created",
 }
 
 TABLES = Base.metadata.tables
@@ -154,7 +155,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 52
+    assert len(BUSINESS_TABLES) == 54
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

@@ -374,7 +374,23 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     )
     ids["invoice_discrepancy"] = discrepancy["id"]
     ids["credit_note"] = _credit_note(api, ids, tenant_id)
+    ids["import"] = _import(api, ids)
     return ids
+
+
+def _import(api: Api, ids: Ids) -> int:
+    """A validated import of products (S5.8), with an invalid row"""
+    m = ids["marker"]
+    content = (
+        "sku,nombre,unidad,precio_venta\n"
+        f"{m}-IMP-1,{m} Pala,{m}-u,9.50\n"
+        f"{m}-IMP-1,{m} Pala,{m}-u,x\n"
+    )
+    return api.post(
+        "/api/admin/imports",
+        files={"file": (f"{m}-productos.csv", content.encode(), "text/csv")},
+        data={"kind": "PRODUCTS", "mode": "SKIP"},
+    )["id"]
 
 
 def _credit_note(api: Api, ids: Ids, tenant_id: UUID) -> int:

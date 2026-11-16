@@ -25,6 +25,7 @@ from src.catalog.product.infra.routes import CategoryRouter, ProductRouter
 from src.catalog.uom.infra.routes import UnitOfMeasureRouter
 from src.container import create_wireup_container
 from src.customers.infra.routes import CustomerContactRouter, CustomerRouter
+from src.imports.infra.routes import ImportRouter
 from src.inventory.adjustment.infra.routes import AdjustmentItemRouter, AdjustmentRouter
 from src.inventory.alert.infra.routes import AlertRouter
 from src.inventory.location.infra.routes import LocationRouter
@@ -400,6 +401,7 @@ admin_router.include_router(UserAdminRouter().router, prefix="/users", tags=["Us
 admin_router.include_router(
     AuditLogRouter().router, prefix="/audit-log", tags=["Audit Log"]
 )
+admin_router.include_router(ImportRouter().router, prefix="/imports", tags=["Imports"])
 admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
@@ -470,7 +472,10 @@ def add_middlewares(target: FastAPI) -> None:
     # Outside the error handler, so its logs carry the request's tenant
     target.add_middleware(AuthMiddleware, token_service=JwtTokenService())
     target.add_middleware(
-        BodySizeLimitMiddleware, max_bytes=config.MAX_REQUEST_BODY_BYTES
+        BodySizeLimitMiddleware,
+        max_bytes=config.MAX_REQUEST_BODY_BYTES,
+        # The file of a bulk import (S5.8), plus the multipart's envelope
+        limits={"/api/admin/imports": config.IMPORT_MAX_FILE_BYTES + 64 * 1024},
     )
     # Outside the size limit, so a 413 carries the request id too
     target.add_middleware(RequestIdMiddleware)

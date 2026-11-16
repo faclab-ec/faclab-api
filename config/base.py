@@ -170,6 +170,19 @@ class BaseConfig:
     MAX_REQUEST_BODY_BYTES = env.int("MAX_REQUEST_BODY_BYTES", 1_048_576)
 
     #
+    # Bulk import (S5.8): the largest file and number of rows accepted; the
+    # worker runs BATCH_SIZE rows per transaction for up to TICK_SECONDS each
+    # POLL_INTERVAL (its health needs it back within a minute). The rows of an
+    # import are deleted RETENTION_DAYS after it finished
+    #
+    IMPORT_MAX_FILE_BYTES = env.int("IMPORT_MAX_FILE_BYTES", 10 * 1_048_576)
+    IMPORT_MAX_ROWS = env.int("IMPORT_MAX_ROWS", 50_000)
+    IMPORT_BATCH_SIZE = env.int("IMPORT_BATCH_SIZE", 200)
+    IMPORT_POLL_INTERVAL_SECONDS = env.float("IMPORT_POLL_INTERVAL_SECONDS", 2.0)
+    IMPORT_TICK_SECONDS = env.float("IMPORT_TICK_SECONDS", 20.0)
+    IMPORT_RETENTION_DAYS = env.int("IMPORT_RETENTION_DAYS", 30)
+
+    #
     # Idempotency-Key (S3.1): the POS routes that create documents or move money
     # require it; false lets a request without it run as is (rollback switch).
     # The purge deletes the keys older than the retention
@@ -374,6 +387,16 @@ All errors follow a consistent structure with one or more error entries:
                 "Administer system users: create, list, view, update role, "
                 "activate and deactivate, and limit them to some branches. "
                 "Requires the `user:manage` permission."
+            ),
+        },
+        {
+            "name": "Imports",
+            "description": (
+                "Bulk import of initial data from CSV or XLSX: products, "
+                "presentations, price list prices, customers, suppliers and opening "
+                "stock. A file is validated row by row without writing anything; "
+                "once confirmed, the worker imports it in batches. Requires the "
+                "`import:write` permission (admins)."
             ),
         },
         {
@@ -602,7 +625,7 @@ All errors follow a consistent structure with one or more error entries:
     API_TAG_GROUPS: list[dict] = [
         {
             "name": "Administration",
-            "tags": ["Auth", "Users", "Audit Log"],
+            "tags": ["Auth", "Users", "Audit Log", "Imports"],
         },
         {
             "name": "Organization",

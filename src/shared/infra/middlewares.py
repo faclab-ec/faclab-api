@@ -41,6 +41,8 @@ ERROR_CODE_TO_STATUS = {
     "INVALID_IDEMPOTENCY_KEY": 422,
     "IDEMPOTENCY_KEY_REUSED": 422,
     "QUANTITY_PRECISION_EXCEEDED": 422,
+    # A bulk import's file that can't be read as its template (S5.8)
+    "IMPORT_FILE_INVALID": 422,
     "LOGIN_LOCKED": 429,
     # The SMTP server refused or couldn't be reached (S5.4)
     "EMAIL_DELIVERY_FAILED": 502,
@@ -289,27 +291,32 @@ class SecurityHeadersMiddleware:
 
 
 class BodySizeLimitMiddleware:
-    """Answers 413 when the request body is larger than `max_bytes`.
+    """Answers 413 when the request body is larger than `max_bytes`, or than
+    the limit `limits` gives its path (the file of a bulk import).
 
     A declared Content-Length is checked up front. A body without one
     (chunked) is read here up to the limit and then replayed to the app:
     FastAPI turns any error raised while it reads the body into a 400.
     """
 
-    def __init__(self, app: ASGIApp, max_bytes: int):
+    def __init__(
+        self, app: ASGIApp, max_bytes: int, limits: dict[str, int] | None = None
+    ):
         self.app = app
         self.max_bytes = max_bytes
+        self.limits = limits or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        max_bytes = self.limits.get(scope["path"].rstrip("/"), self.max_bytes)
         headers = Headers(scope=scope)
         content_length = headers.get("content-length")
         if content_length is not None:
-            if content_length.isdigit() and int(content_length) > self.max_bytes:
-                await self._reject(scope, receive, send, headers)
+            if content_length.isdigit() and int(content_length) > max_bytes:
+                await self._reject(scope, receive, send, headers, max_bytes)
                 return
             await self.app(scope, receive, send)
             return
@@ -322,8 +329,8 @@ class BodySizeLimitMiddleware:
             if message["type"] != "http.request":
                 break
             size += len(message.get("body", b""))
-            if size > self.max_bytes:
-                await self._reject(scope, receive, send, headers)
+            if size > max_bytes:
+                await self._reject(scope, receive, send, headers, max_bytes)
                 return
             if not message.get("more_body", False):
                 break
@@ -336,11 +343,16 @@ class BodySizeLimitMiddleware:
         await self.app(scope, replay, send)
 
     async def _reject(
-        self, scope: Scope, receive: Receive, send: Send, headers: Headers
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        headers: Headers,
+        max_bytes: int,
     ) -> None:
         body = _build_error_response(
             error_code="REQUEST_TOO_LARGE",
-            message=f"Request body exceeds {self.max_bytes} bytes",
+            message=f"Request body exceeds {max_bytes} bytes",
             request_id=scope.get("state", {}).get("request_id")
             or _valid_request_id(headers.get("x-request-id")),
         )

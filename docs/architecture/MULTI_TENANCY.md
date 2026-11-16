@@ -460,8 +460,13 @@ CI, obligatorio para `master`:
    - Crea la membresía del primer administrador.
 2. **Perfil fiscal y certificado** en facturación, con un token de la empresa: primero el perfil (el RUC),
    después el certificado de ese RUC y su selección; el emisor queda listo según el readiness (S2.8).
-3. **Datos iniciales**: importación de productos, clientes, proveedores y saldos de inventario (S5.8).
-   Los saldos entran como movimientos de ajuste auditados, no como escritura directa de stock.
+3. **Datos iniciales**: importación de productos, presentaciones, precios, clientes, proveedores y
+   saldos de inventario. Hecho en S5.8: **Configuración → Importar datos** (`/api/admin/imports`,
+   `import:write`, solo ADMIN), con plantillas CSV y XLSX que se validan fila por fila sin escribir
+   nada; el worker importa lo confirmado por lotes, en la empresa y a nombre de quien lo subió. Los
+   saldos entran como ajustes confirmados y auditados (`initial_balance`) con su costo, no como
+   escritura directa de stock. `import_jobs` e `import_job_rows` tienen RLS como toda tabla de
+   negocio. Guía en `docs/imports-guide.md`.
 4. **Secuencial inicial** por establecimiento y punto de emisión, para continuar la numeración de un
    sistema anterior: `PUT /api/sequences/{establishment}/{emissionPoint}` en facturación (S2.8), que
    nunca retrocede.

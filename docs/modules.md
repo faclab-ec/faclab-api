@@ -342,7 +342,8 @@ Ajustes de inventario para conteos fisicos, correcciones o bajas.
 **Campos AdjustmentItem:** `id`, `adjustment_id`, `product_id`, `expected_qty`, `actual_qty`, `difference`, `unit_cost`
 
 `unit_cost` (S5.6, opcional) es el costo por unidad base de lo que el conteo agrega sobre el sistema: los
-saldos iniciales (S5.8) lo informan. Sin el, lo agregado entra al promedio de la ubicacion; lo que el
+saldos iniciales (S5.8) lo informan, en ajustes con motivo `initial_balance` que la importacion crea y
+confirma, uno por bodega y por lote. Sin el, lo agregado entra al promedio de la ubicacion; lo que el
 conteo quita sale siempre al promedio.
 
 **Comandos:** `CreateAdjustment`, `UpdateAdjustment`, `CreateAdjustmentItem`, `UpdateAdjustmentItem`, `DeleteAdjustmentItem`
@@ -645,6 +646,18 @@ Consultas analiticas de inventario sin estado propio — leen datos de los modul
 
 ---
 
+## Importacion masiva
+
+Carga de datos iniciales desde CSV o XLSX (`src/imports/`, S5.8): productos, presentaciones, precios
+de las listas, clientes, proveedores y saldos iniciales de inventario con su costo. El archivo se valida
+fila por fila sin escribir nada del negocio (`import_jobs` e `import_job_rows`, con RLS) y, confirmado,
+el worker lo importa por lotes con los comandos de cada modulo a nombre de quien lo subio. Cada fila se
+identifica por su clave natural (SKU, identificacion, codigo): repetir el archivo no duplica nada.
+Permiso `import:write` (solo ADMIN). Especificacion en [imports-spec.md](imports-spec.md) y guia
+para usuarios en [imports-guide.md](imports-guide.md).
+
+---
+
 ## Auditoria
 
 Bitacora inmutable de operaciones sensibles por empresa (`src/audit/`, S3.5). Ruta
@@ -685,6 +698,7 @@ del primer admin (fuera de toda empresa) no deja entrada.
 | Compras (S5.7) | `supplier_return.confirmed` (devolucion a proveedor confirmada), `supplier_payment.recorded` (pago a proveedor) | estado, numero, orden, proveedor, nota de credito, total, acreditado, por reembolsar, items / numero, proveedor, monto, medio, cuentas pagadas |
 | Usuario | `user.created`, `user.role_changed`, `user.branches_changed`, `user.renamed`, `user.activated`, `user.deactivated`, `user.password_reset` | usuario, rol, sucursales, nombre, activo; el restablecimiento de contrasena sin valores |
 | Organizacion | `branch.*`, `emission_point.*`, `pos_terminal.*` (`created`, `updated`, `deleted`) | codigo, nombre, direccion, activo, punto de emision, ubicacion de venta |
+| Importacion (S5.8) | `import.confirmed` (importacion masiva confirmada); lo que el worker escribe lo audita cada comando (`product.created`, `adjustment.confirmed`...) a nombre de quien la subio, con `source=task` y el `request_id` de la confirmacion | estado, tipo, modo, archivo, filas, lo que haria cada fila |
 
 **Regla:** toda accion sensible nueva se audita con `AuditTrail.record` y suma su escenario en
 `tests/integration/postgres/test_audit_log.py`, que falla si una accion del catalogo no lo tiene.

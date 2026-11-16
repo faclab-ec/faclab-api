@@ -63,7 +63,7 @@ Partners: `customer:read`, `customer:write`, `supplier:read`, `supplier:write`
 POS: `pos:operate`, `refund:approve`
 Reports: `report:inventory:read`, `report:pos:read`
 Organization: `organization:read`, `organization:write`
-Admin: `user:manage`, `audit:read`
+Admin: `user:manage`, `audit:read`, `import:write` (S5.8)
 
 ### 2.3 Role → Permission matrix (source of truth for UI guards)
 
@@ -101,6 +101,7 @@ Admin: `user:manage`, `audit:read`
 | organization:write | ✓ |   |   |   |   |
 | user:manage | ✓ |   |   |   |   |
 | audit:read | ✓ |   |   |   |   |
+| import:write | ✓ |   |   |   |   |
 
 > Treat `GET /api/auth/me` as the authoritative list at runtime. The matrix above is for designing static UI route guards.
 

@@ -37,12 +37,22 @@ Body = Callable[[Ids], dict[str, Any]]
 class Route:
     path: tuple[str, ...] = ()
     body: Body | None = None
+    # A multipart body instead: its files and its form fields
+    files: Body | None = None
+    form: Body | None = None
     query: Body | None = None
     headers: Body | None = None
     refs: tuple[str, ...] = ()
     needs_query: bool = False
     created: str | None = None
     exempt: str | None = None
+
+
+def _import_file(ids: Ids) -> tuple[str, bytes, str]:
+    """A file of products of the tenant: its unit, its marker"""
+    m = ids["marker"]
+    content = f"sku,nombre,unidad,precio_venta\n{m}-IMP-2,{m} Pala,{m}-u,9.50\n"
+    return (f"{m}-productos.csv", content.encode(), "text/csv")
 
 
 def _name(suffix: str) -> Body:
@@ -621,6 +631,21 @@ ROUTES: dict[str, Route] = {
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
     f"GET {ADMIN}/audit-log": Route(),
+    # Bulk import (S5.8)
+    f"GET {ADMIN}/imports/templates": Route(),
+    f"GET {ADMIN}/imports/templates/{{kind}}": Route(
+        exempt="the same template for every tenant"
+    ),
+    f"POST {ADMIN}/imports": Route(
+        files=lambda ids: {"file": _import_file(ids)},
+        form=lambda ids: {"kind": "PRODUCTS", "mode": "SKIP"},
+        created=f"{ADMIN}/imports/{{}}",
+    ),
+    f"GET {ADMIN}/imports": Route(),
+    f"GET {ADMIN}/imports/{{id}}": Route(path=("import",)),
+    f"GET {ADMIN}/imports/{{id}}/rows": Route(path=("import",)),
+    f"GET {ADMIN}/imports/{{id}}/errors": Route(path=("import",)),
+    f"POST {ADMIN}/imports/{{id}}/confirm": Route(path=("import",)),
     f"POST {ADMIN}/users": Route(
         body=lambda ids: {
             "username": f"{ids['marker'].lower()}-new",

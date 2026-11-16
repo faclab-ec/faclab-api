@@ -234,6 +234,23 @@
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
     cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Importación masiva, lo que quedó de S5.8** (2026-11-16):
+  - No se importan saldos iniciales de cuentas por cobrar ni por pagar: no hay un comando que abra una
+    cuenta sin su venta o su recepción. Hace falta uno propio (con su documento de origen y su
+    bitácora) antes de una plantilla.
+  - Los saldos iniciales no cargan lotes ni series: se registran después desde sus pantallas.
+  - No se importan productos de proveedor (código y precio del proveedor) ni contactos de clientes y
+    proveedores.
+  - Una importación detenida (`FAILED`) no se reanuda desde la pantalla: se vuelve a subir el archivo
+    corregido, y lo ya importado queda sin cambios. Tampoco se cancela una importación en curso.
+  - Al actualizar, una celda vacía conserva el valor: la importación no borra un valor (un correo, la
+    lista de precios de un cliente). Se borra desde la pantalla del registro.
+  - Las altas y cambios de clientes y proveedores no tienen acción propia en la bitácora, igual que
+    fuera de la importación: los cubre `import.confirmed` y el `recordId` de cada fila.
+  - El reporte de errores repite las celdas del archivo tal como venían: un valor que empieza con `=`
+    se abre como fórmula en Excel (es el archivo del mismo usuario).
+  - La importación corre de una en una por worker (la más antigua primero): una empresa con un archivo
+    grande demora la de otra. Con más volumen, un turno por empresa o más workers.
 - **Compras, devoluciones y cuentas por pagar, lo que quedó de S5.7** (2026-11-12):
   - La devolución a proveedor no toca lotes ni series: el OUT no descuenta el lote ni marca las series
     devueltas. Hacerlo pide elegir el lote (o las series) en cada línea, como al recibir.
@@ -243,7 +260,8 @@
     como `refundDue`, y el reembolso se registra fuera del sistema. Tampoco se cruza con la próxima
     compra.
   - Las recepciones anteriores a S5.7 no tienen cuenta por pagar (la migración solo recalculó sus
-    totales). Cargar los saldos de proveedores llega con la importación (S5.8) si hace falta.
+    totales). Cargar los saldos de proveedores no entró en la importación (S5.8): ver lo que quedó de
+    S5.8.
   - Cuentas por pagar sin antigüedad de saldos ni estado de cuenta del proveedor (los tiene la cartera,
     S5.5), sin retenciones en la fuente (Anexo y comprobante de retención) y sin enlazar la factura
     electrónica del proveedor (se escribe su número a mano en la recepción).
@@ -267,7 +285,8 @@
   - El kárdex no se pagina ni se exporta (PDF o Excel); se consulta por producto y rango de fechas.
   - ~~El IVA de compras queda fuera del costo y la devolución a proveedor saldrá al promedio (S5.7)~~
     (hecho en S5.7: el IVA nunca entra al costo y la devolución sale al promedio de su ubicación). Los
-    saldos iniciales de la importación (S5.8) envían `unitCost` en los ítems del ajuste.
+    saldos iniciales de la importación (S5.8) envían `unitCost` en los ítems del ajuste (hecho en
+    S5.8: ajustes `initial_balance` confirmados, uno por bodega y por lote).
   - El movimiento manual de la web no elige ubicación: va al stock sin ubicación (ya era así) y queda
     fuera del kárdex de una bodega. Agregar el selector de ubicación al formulario.
 - **Crédito y cuentas por cobrar, lo que quedó de S5.5** (2026-11-11):
@@ -305,8 +324,8 @@
     del cliente o de la sucursal. Elegirla sería un descuento disfrazado: si hace falta, con permiso
     propio y en la bitácora.
   - No hay listas definidas como porcentaje sobre el precio general (mayorista = 10% menos): cada
-    precio se carga por producto y presentación. La carga masiva de ítems llega con la importación
-    (S5.8).
+    precio se carga por producto y presentación. ~~La carga masiva de ítems llega con la importación
+    (S5.8)~~ (hecho en S5.8: plantilla de precios por lista).
   - La grilla de productos del POS y el selector de presentaciones muestran el precio general; el
     carrito muestra el de la lista una vez que la resuelve.
   - La línea de venta no guarda qué lista le dio el precio: solo su precio y, si se cambió, el motivo.

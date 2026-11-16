@@ -27,6 +27,7 @@ El modulo de Ajustes de Inventario permite realizar conteos fisicos, correccione
 | `supplier_error` | Error del proveedor            |
 | `correction`     | Correccion general             |
 | `other`          | Otros                          |
+| `initial_balance`| Saldo inicial (S5.8): lo crea la importacion masiva de saldos, uno por bodega, ya confirmado |
 
 ---
 
