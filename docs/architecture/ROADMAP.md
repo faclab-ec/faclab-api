@@ -124,11 +124,13 @@
   del POS por sucursal (`V-001-000123`), desde S3.3 las órdenes de compra con el contador de la
   empresa (`branch_id` nulo, `PO-2026-0001`, continuo) y desde S5.4 las cotizaciones por sucursal
   (`COT-001-000012`). Faltan el formato configurable por empresa (ADR-0012) y pasar a la misma tabla
-  los ajustes, las transferencias y el cierre de caja (S5.9).
+  los ajustes y las transferencias. El cierre Z (S5.9) no la usa: su correlativo es por terminal y lo
+  da la propia tabla `pos_shift_closings` (máximo + 1, con los cierres de una terminal en fila porque
+  el turno queda bloqueado y la restricción única como última barrera).
 - **Turno en una terminal desactivada** (detectado en S2.6). Desactivar una terminal con un turno
   abierto hace que `GET /api/pos/shifts/active` responda `POS_TERMINAL_INACTIVE`; el turno se sigue
   cerrando por id (`POST /api/pos/shifts/{id}/close`). Conviene impedir desactivar una terminal con
-  turno abierto, junto con el cierre de caja (S5.9).
+  turno abierto (S5.9 no lo tocó: no estaba en su ficha).
 - ~~**Disponibilidad en el POS**~~ (resuelto en S3.2: el POS valida contra `available_quantity` y la
   suma de las líneas de cada producto). El POS valida contra `quantity` de la ubicación, no
   contra `available_quantity`: puede vender stock reservado por una transferencia.
@@ -178,7 +180,7 @@
 - **Pagos de devolución por encima del total** (detectado en S3.3). `ProcessRefundCommandHandler`
   solo exige que los pagos cubran la devolución: lo que la supera se guarda como pagado y cuenta en
   `cashRefunds`. Conviene aplicarles la misma regla que a los pagos de venta (sin vuelto, o con él
-  aparte); encaja con S5.9 (S4.5 no lo tocó).
+  aparte). Ni S4.5 ni S5.9 lo tocaron.
 - **Ventas confirmadas antes de S3.3 sin cobertura** (detectado en S3.3). Al reenviarlas a facturación
   responden `INSUFFICIENT_PAYMENT`: hay que registrar el pago que falta antes del reenvío. En la base
   de desarrollo hay 3 (datos del seed). Su `invoice_status` es nulo, así que también se pueden cancelar
@@ -232,8 +234,19 @@
     bitácora~~ (resuelto en S5.3: sin `unitPrice` toma el de su lista; uno distinto exige
     `overrideReason` y queda en la bitácora como en la venta rápida).
   - `Permission.SALE_CANCEL` no se usa: la anulación del POS pide `pos:operate`, así que cualquier
-    cajero anula una venta confirmada (queda en la bitácora). Revisar con el cierre de caja (S5.9).
+    cajero anula una venta confirmada (queda en la bitácora). S5.9 no lo cambió; ver abajo la
+    anulación de ventas de un turno cerrado.
   - No hay retención ni purga de la bitácora: se decide con la protección de datos (S8.7).
+- **Cierre de caja, lo que quedó de S5.9** (2026-11-16):
+  - Anular una venta confirmada de un turno ya cerrado sigue permitido: su cierre Z no cambia, pero el
+    dinero que se devuelve no entra en el arqueo de ningún turno. Evaluar exigir una devolución (que
+    va al turno abierto) en vez de la anulación, junto con `Permission.SALE_CANCEL`.
+  - Una devolución pendiente creada en un turno que se cerró ya no se procesa (`NO_OPEN_SHIFT`): se
+    anula y se crea de nuevo en el turno abierto. Evaluar moverla al turno abierto al procesarla.
+  - El umbral de justificación es de la instalación (`SHIFT_CLOSING_JUSTIFICATION_THRESHOLD`):
+    pasarlo a la empresa o a la sucursal con la consola de plataforma (S8.5).
+  - Sin impresión ni PDF del cierre Z (la pantalla del turno lo muestra). Los turnos cerrados antes
+    de S5.9 no tienen cierre: su Z se sigue calculando.
 - **Importación masiva, lo que quedó de S5.8** (2026-11-16):
   - No se importan saldos iniciales de cuentas por cobrar ni por pagar: no hay un comando que abra una
     cuenta sin su venta o su recepción. Hace falta uno propio (con su documento de origen y su
