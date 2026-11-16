@@ -4,7 +4,8 @@ imported by the worker, measuring both steps.
 
 The measurement of 10,000 products documented in docs/imports-guide.md:
 
-    make test-integration args="-k volume -s" IMPORT_VOLUME_ROWS=10000
+    IMPORT_VOLUME_ROWS=10000 make test-integration \
+        args="tests/integration/postgres/test_imports_volume.py -s"
 """
 
 import os
