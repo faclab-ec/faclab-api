@@ -14,6 +14,7 @@ from src.pos.shift.app.queries.get_shifts import (
 )
 from src.pos.shift.domain.entities import Shift, ShiftStatus
 from src.shared.domain.exceptions import NotFoundError
+from tests.unit.pos.closings import InMemoryShiftClosings, make_closing
 from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
 
 
@@ -73,7 +74,7 @@ def test_get_shift_by_id():
     """Test obtener un turno por ID"""
     shift = _make_shift(id=1)
     repo = _mock_repo(entity=shift)
-    handler = GetShiftByIdQueryHandler(repo)
+    handler = GetShiftByIdQueryHandler(repo, InMemoryShiftClosings())
 
     result = handler.handle(GetShiftByIdQuery(shift_id=1))
 
@@ -84,7 +85,7 @@ def test_get_shift_by_id():
 
 def test_get_shift_by_id_of_a_branch_the_user_cant_enter():
     repo = _mock_repo(entity=_make_shift(branch_id=2))
-    handler = GetShiftByIdQueryHandler(repo)
+    handler = GetShiftByIdQueryHandler(repo, InMemoryShiftClosings())
 
     with pytest.raises(NotFoundError):
         handler.handle(GetShiftByIdQuery(shift_id=1, branch_ids=frozenset({1})))
@@ -93,7 +94,7 @@ def test_get_shift_by_id_of_a_branch_the_user_cant_enter():
 def test_get_shift_by_id_not_found():
     """Test obtener un turno que no existe"""
     repo = _mock_repo()
-    handler = GetShiftByIdQueryHandler(repo)
+    handler = GetShiftByIdQueryHandler(repo, InMemoryShiftClosings())
 
     with pytest.raises(NotFoundError):
         handler.handle(GetShiftByIdQuery(shift_id=999))
@@ -115,7 +116,7 @@ def test_get_all_shifts():
         "offset": None,
         "items": [s.dict() for s in shifts],
     }
-    handler = GetAllShiftsQueryHandler(repo)
+    handler = GetAllShiftsQueryHandler(repo, InMemoryShiftClosings())
 
     result = handler.handle(GetAllShiftsQuery())
 
@@ -136,7 +137,7 @@ def test_get_all_shifts_with_status_filter():
         "offset": None,
         "items": [s.dict() for s in shifts],
     }
-    handler = GetAllShiftsQueryHandler(repo)
+    handler = GetAllShiftsQueryHandler(repo, InMemoryShiftClosings())
 
     result = handler.handle(GetAllShiftsQuery(status="CLOSED"))
 
@@ -156,7 +157,7 @@ def test_get_all_shifts_with_pagination():
         "offset": 0,
         "items": [s.dict() for s in shifts],
     }
-    handler = GetAllShiftsQueryHandler(repo)
+    handler = GetAllShiftsQueryHandler(repo, InMemoryShiftClosings())
 
     result = handler.handle(GetAllShiftsQuery(limit=5, offset=0))
 
@@ -176,7 +177,7 @@ def test_get_all_shifts_empty():
         "offset": None,
         "items": [],
     }
-    handler = GetAllShiftsQueryHandler(repo)
+    handler = GetAllShiftsQueryHandler(repo, InMemoryShiftClosings())
 
     result = handler.handle(GetAllShiftsQuery())
 
@@ -192,7 +193,7 @@ def test_get_all_shifts_of_a_terminal_in_the_users_branches():
         "offset": None,
         "items": [],
     }
-    handler = GetAllShiftsQueryHandler(repo)
+    handler = GetAllShiftsQueryHandler(repo, InMemoryShiftClosings())
 
     handler.handle(GetAllShiftsQuery(terminal_id=3, branch_ids=frozenset({1, 2})))
 
@@ -207,7 +208,33 @@ def test_get_all_shifts_of_a_terminal_in_the_users_branches():
 def test_get_all_shifts_of_a_branch_the_user_cant_enter():
     from src.auth.domain.exceptions import BranchAccessDeniedError
 
-    handler = GetAllShiftsQueryHandler(_mock_repo())
+    handler = GetAllShiftsQueryHandler(_mock_repo(), InMemoryShiftClosings())
 
     with pytest.raises(BranchAccessDeniedError):
         handler.handle(GetAllShiftsQuery(branch_id=5, branch_ids=frozenset({1})))
+
+
+def test_closed_shifts_carry_the_number_of_their_z_closing():
+    """S5.9: the history shows which Z closing each closed shift has"""
+    repo = _mock_repo()
+    repo.paginate_by_spec.return_value = {
+        "items": [
+            _make_shift(id=2).dict(),
+            _make_shift(id=1, status=ShiftStatus.CLOSED).dict(),
+        ],
+        "total": 2,
+        "limit": None,
+        "offset": None,
+    }
+    closings = InMemoryShiftClosings([make_closing(shift_id=1)])
+
+    result = GetAllShiftsQueryHandler(repo, closings).handle(GetAllShiftsQuery())
+    by_id = GetShiftByIdQueryHandler(_mock_repo(_make_shift(id=1)), closings).handle(
+        GetShiftByIdQuery(shift_id=1)
+    )
+
+    assert [item["closing_number"] for item in result["items"]] == [
+        None,
+        "Z-001-CAJA-01-000001",
+    ]
+    assert by_id["closing_number"] == "Z-001-CAJA-01-000001"

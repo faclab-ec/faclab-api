@@ -32,6 +32,8 @@ class ShiftClosed(DomainEvent):
     closing_balance: Decimal = Decimal("0")
     expected_balance: Decimal = Decimal("0")
     discrepancy: Decimal = Decimal("0")
+    # Its Z closing (S5.9)
+    closing_number: str | None = None
 
     def _payload(self) -> dict[str, Any]:
         return {
@@ -40,4 +42,5 @@ class ShiftClosed(DomainEvent):
             "closing_balance": self.closing_balance,
             "expected_balance": self.expected_balance,
             "discrepancy": self.discrepancy,
+            "closing_number": self.closing_number,
         }

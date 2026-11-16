@@ -61,7 +61,7 @@ class _Handler:
             for i in ids
         ]
         self.shifts = MagicMock()
-        self.shifts.first.return_value = shift
+        self.shifts.first_for_share.return_value = shift
         self.numbering = MagicMock()
         self.numbering.next_in_tenant.return_value = "AB-2026-0001"
         self.audit = FakeAuditTrail()
@@ -178,7 +178,8 @@ def test_at_the_pos_it_goes_to_the_terminals_open_shift():
         TERMINAL.id,
         TERMINAL.branch_id,
     )
-    payments.shifts.first.assert_called_once_with(
+    # Locked FOR SHARE: the shift's closing waits for the payment (S5.9)
+    payments.shifts.first_for_share.assert_called_once_with(
         terminal_id=TERMINAL.id, status="OPEN"
     )
     [entry] = payments.audit.entries

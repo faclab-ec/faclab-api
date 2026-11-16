@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from src.pos.shift.domain.entities import ShiftStatus
+from src.sales.domain.entities import PaymentMethod
 from src.shared.infra.validators import DecimalNumber, QueryParams
 
 
@@ -22,13 +23,41 @@ class OpenShiftRequest(BaseModel):
     notes: str | None = Field(None, max_length=512, description="Additional notes")
 
 
-class CloseShiftRequest(BaseModel):
-    """Close the current shift."""
+class MethodCountRequest(BaseModel):
+    """What the cashier counted of one payment method (S5.9)"""
 
-    closing_balance: Decimal = Field(
+    payment_method: PaymentMethod = Field(
+        ...,
+        description="Payment method counted (not CREDIT, which is owed, not in the till)",
+        validation_alias=AliasChoices("paymentMethod", "payment_method"),
+        serialization_alias="paymentMethod",
+    )
+    counted: Decimal = Field(
         ...,
         ge=0,
-        description="Actual closing cash balance (counted)",
+        description="Amount counted: the cash in the drawer, the card batch total, "
+        "the transfers received",
+    )
+    justification: str | None = Field(
+        None,
+        max_length=512,
+        description="Why counted and expected differ; required when the difference "
+        "is over the threshold (SHIFT_CLOSING_JUSTIFICATION_THRESHOLD)",
+    )
+
+
+class CloseShiftRequest(BaseModel):
+    """Close the shift with its count (S5.9): cash always, and every payment
+    method the shift moved except CREDIT."""
+
+    counts: list[MethodCountRequest] = Field(
+        default_factory=list,
+        description="The count of each payment method; CASH may come as closingBalance",
+    )
+    closing_balance: Decimal | None = Field(
+        None,
+        ge=0,
+        description="Cash counted, when counts has no CASH line (clients before S5.9)",
         validation_alias=AliasChoices("closingBalance", "closing_balance"),
         serialization_alias="closingBalance",
     )
@@ -100,6 +129,13 @@ class ShiftResponse(BaseModel):
         description="User who closed the shift",
         validation_alias=AliasChoices("closedBy", "closed_by"),
         serialization_alias="closedBy",
+    )
+    closing_number: str | None = Field(
+        None,
+        description="Number of its Z closing (S5.9); null while open or for a shift "
+        "closed before S5.9",
+        validation_alias=AliasChoices("closingNumber", "closing_number"),
+        serialization_alias="closingNumber",
     )
 
 

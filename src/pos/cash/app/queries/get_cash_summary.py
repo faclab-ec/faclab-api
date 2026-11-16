@@ -1,129 +1,54 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 from wireup import injectable
 
-from src.pos.cash.infra.models import CashMovementModel
-from src.pos.refund.infra.models import RefundModel, RefundPaymentModel
 from src.pos.shift.app.repositories import ShiftRepository
-from src.receivables.infra.models import CustomerPaymentModel
-from src.sales.domain.entities import COMPLETED_SALE_STATUSES
-from src.sales.infra.models import PaymentModel, SaleModel
+from src.pos.shift.app.totals import ShiftTotalsReader
 from src.shared.app.queries import Query, QueryHandler
 from src.shared.domain.exceptions import NotFoundError
-from src.shared.infra.tenant import tenant_criteria
-
-
-def compute_cash_summary(session: Session, shift_id: int) -> dict:
-    """Compute cash summary for a shift. Pure function reusable by CloseShift and reports.
-    Only the context tenant's rows count."""
-
-    # Cash sales: SUM of CASH payments from completed sales in this shift
-    cash_sales = (
-        session.query(func.coalesce(func.sum(PaymentModel.amount), Decimal("0")))
-        .join(SaleModel, SaleModel.id == PaymentModel.sale_id)
-        .filter(
-            SaleModel.shift_id == shift_id, *tenant_criteria(PaymentModel, SaleModel)
-        )
-        .filter(SaleModel.status.in_(COMPLETED_SALE_STATUSES))
-        .filter(PaymentModel.payment_method == "CASH")
-        .scalar()
-    )
-
-    # Cash refunds: SUM of CASH refund payments from COMPLETED refunds in this shift
-    cash_refunds = (
-        session.query(func.coalesce(func.sum(RefundPaymentModel.amount), Decimal("0")))
-        .join(RefundModel, RefundModel.id == RefundPaymentModel.refund_id)
-        .filter(
-            RefundModel.shift_id == shift_id,
-            *tenant_criteria(RefundPaymentModel, RefundModel),
-        )
-        .filter(RefundModel.status == "COMPLETED")
-        .filter(RefundPaymentModel.payment_method == "CASH")
-        .scalar()
-    )
-
-    # Payments on account in cash taken in this shift (S5.5)
-    customer_payments = (
-        session.query(
-            func.coalesce(func.sum(CustomerPaymentModel.amount), Decimal("0"))
-        )
-        .filter(
-            CustomerPaymentModel.shift_id == shift_id,
-            *tenant_criteria(CustomerPaymentModel),
-        )
-        .filter(CustomerPaymentModel.payment_method == "CASH")
-        .scalar()
-    )
-
-    # Cash in: SUM of IN cash movements in this shift
-    cash_in = (
-        session.query(func.coalesce(func.sum(CashMovementModel.amount), Decimal("0")))
-        .filter(
-            CashMovementModel.shift_id == shift_id, *tenant_criteria(CashMovementModel)
-        )
-        .filter(CashMovementModel.type == "IN")
-        .scalar()
-    )
-
-    # Cash out: SUM of OUT cash movements in this shift
-    cash_out = (
-        session.query(func.coalesce(func.sum(CashMovementModel.amount), Decimal("0")))
-        .filter(
-            CashMovementModel.shift_id == shift_id, *tenant_criteria(CashMovementModel)
-        )
-        .filter(CashMovementModel.type == "OUT")
-        .scalar()
-    )
-
-    return {
-        "cash_sales": cash_sales,
-        "cash_refunds": cash_refunds,
-        "customer_payments": customer_payments,
-        "cash_in": cash_in,
-        "cash_out": cash_out,
-    }
-
-
-def expected_cash(opening_balance: Decimal, summary: dict) -> Decimal:
-    """The cash the drawer should have: what it opened with, plus cash sales and
-    payments on account, minus cash refunds, plus and minus the movements"""
-    return (
-        opening_balance
-        + summary["cash_sales"]
-        - summary["cash_refunds"]
-        + summary["customer_payments"]
-        + summary["cash_in"]
-        - summary["cash_out"]
-    )
 
 
 @dataclass
 class GetCashSummaryQuery(Query):
     shift_id: int
+    # SHIFT_CLOSING_JUSTIFICATION_THRESHOLD, for the count screen (S5.9)
+    justification_threshold: Decimal = Decimal("0")
 
 
 @injectable(lifetime="scoped")
 class GetCashSummaryQueryHandler(QueryHandler[GetCashSummaryQuery, dict]):
-    def __init__(self, session: Session, shift_repo: ShiftRepository):
-        self.session = session
+    """The shift's cash and what each payment method should have: the count
+    screen shows it before closing (S5.9), from the same totals the closing
+    keeps"""
+
+    def __init__(self, shift_repo: ShiftRepository, totals: ShiftTotalsReader):
         self.shift_repo = shift_repo
+        self.totals = totals
 
     def _handle(self, query: GetCashSummaryQuery) -> dict:
         shift = self.shift_repo.get_by_id(query.shift_id)
         if shift is None:
             raise NotFoundError(f"Shift with id {query.shift_id} not found")
 
-        summary = compute_cash_summary(self.session, query.shift_id)
-
+        totals = self.totals.of_shift(query.shift_id)
         opening_balance = shift.opening_balance
-        expected_balance = expected_cash(opening_balance, summary)
-
         return {
             "shift_id": query.shift_id,
             "opening_balance": opening_balance,
-            **summary,
-            "expected_balance": expected_balance,
+            **totals.cash_summary(),
+            "expected_balance": totals.expected_cash(opening_balance),
+            # What to count: cash always, every other method the shift moved
+            "by_method": [
+                {
+                    "payment_method": line.payment_method,
+                    "payments_total": line.payments_total,
+                    "customer_payments_total": line.customer_payments_total,
+                    "refunds_total": line.refunds_total,
+                    "expected": line.expected,
+                }
+                for line in totals.lines(opening_balance)
+                if line.countable
+            ],
+            "justification_threshold": query.justification_threshold,
         }

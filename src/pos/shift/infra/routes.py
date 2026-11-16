@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, status
 from wireup import Injected
 
+from config import config
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
 from src.auth.infra.dependencies import get_current_user, require_permission
@@ -121,17 +122,25 @@ class POSShiftRouter:
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[ShiftResponse]:
-        """Close an open shift of the branch by recording the actual closing cash balance.
+        """Close an open shift of the branch with its count and write its Z closing.
 
-        The system calculates the expected balance and the discrepancy automatically.
+        `counts` has what was counted of each payment method: cash always, and every
+        method the shift moved except CREDIT (`CLOSING_COUNT_MISSING`). Each line keeps
+        expected, counted and the difference; one over the threshold needs a
+        justification (`CLOSING_JUSTIFICATION_REQUIRED`). The Z closing is numbered
+        per terminal and never changes: the Z report reads it. Documents that write
+        into the shift wait for the closing and then answer `NO_OPEN_SHIFT`.
         """
         guard.shift(shift_id, branch)
         result = handler.handle(
             CloseShiftCommand(
                 shift_id=shift_id,
+                counts=[count.model_dump() for count in data.counts],
                 closing_balance=data.closing_balance,
+                justification_threshold=config.SHIFT_CLOSING_JUSTIFICATION_THRESHOLD,
                 notes=data.notes,
                 closed_by=user.display_name,
+                closed_by_user_id=user.id,
             )
         )
         return DataResponse(data=ShiftResponse.model_validate(result), meta=meta)

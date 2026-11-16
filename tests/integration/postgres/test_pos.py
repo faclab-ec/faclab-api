@@ -349,8 +349,15 @@ def test_shift_reports_and_close(api, terminal, product, shift):
     daily = api.get("/api/pos/reports/daily")
     assert daily["totalSales"] == 2
 
+    # Cash and every other method the shift moved are counted (S5.9)
     closed = api.post(
-        f"/api/pos/shifts/{shift['id']}/close", {"closingBalance": "111.50"}
+        f"/api/pos/shifts/{shift['id']}/close",
+        {
+            "counts": [
+                {"paymentMethod": "CASH", "counted": "111.50"},
+                {"paymentMethod": "TRANSFER", "counted": "11.50"},
+            ]
+        },
     )
     assert closed["status"] == "CLOSED"
     assert closed["expectedBalance"] == 111.5

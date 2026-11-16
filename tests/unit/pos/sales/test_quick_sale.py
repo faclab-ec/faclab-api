@@ -79,6 +79,7 @@ def _mock_repo(entity=None, entities=None):
         repo.get_by_id.return_value = entity
         repo.first.return_value = entity
         repo.first_for_update.return_value = entity
+        repo.first_for_share.return_value = entity
     if entities is not None:
         repo.filter_by.return_value = entities
     return repo
@@ -285,7 +286,8 @@ class TestQuickSaleHappyPath:
 
         result = handler.handle(_quick_sale_command())
 
-        shift_repo.first.assert_called_once_with(terminal_id=3, status="OPEN")
+        # Locked FOR SHARE: the shift's closing waits for the sale (S5.9)
+        shift_repo.first_for_share.assert_called_once_with(terminal_id=3, status="OPEN")
         created = sale_repo.create.call_args.args[0]
         assert (created.branch_id, created.emission_point_id, created.terminal_id) == (
             1,
@@ -509,7 +511,7 @@ class TestQuickSaleErrors:
     def test_no_open_shift_raises_error(self):
         """Error cuando no hay turno abierto"""
         shift_repo = MagicMock()
-        shift_repo.first.return_value = None
+        shift_repo.first_for_share.return_value = None
 
         handler = _build_handler(shift_repo=shift_repo)
 

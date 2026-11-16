@@ -89,9 +89,10 @@ class QuickSaleCommandHandler(CommandHandler[QuickSaleCommand, dict]):
         self.audit = audit
 
     def _handle(self, command: QuickSaleCommand) -> dict:
-        # 1. Obtener el turno abierto de la terminal
+        # 1. The terminal's open shift, locked FOR SHARE before anything else: its
+        #    closing waits for this sale, or this sale finds it closed (S5.9)
         terminal = self.terminals.terminal(command.terminal)
-        shift = self.shift_repo.first(terminal_id=terminal.id, status="OPEN")
+        shift = self.shift_repo.first_for_share(terminal_id=terminal.id, status="OPEN")
         if shift is None:
             raise NoOpenShiftError()
 

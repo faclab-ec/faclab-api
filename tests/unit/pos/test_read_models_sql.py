@@ -17,7 +17,6 @@ from src.catalog.product.infra.models import (
 )
 from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerModel
-from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
 from src.pos.cash.infra.models import CashMovementModel
 from src.pos.refund.infra.models import RefundItemModel, RefundModel, RefundPaymentModel
 from src.pos.reports.app.queries.by_payment_method import (
@@ -34,13 +33,22 @@ from src.pos.sales.app.queries.generate_receipt import (
     GenerateReceiptQuery,
     GenerateReceiptQueryHandler,
 )
-from src.pos.shift.infra.models import ShiftModel
+from src.pos.shift.domain.closing import ShiftClosingLine
+from src.pos.shift.infra.models import (
+    ShiftClosingLineModel,
+    ShiftClosingModel,
+    ShiftModel,
+)
+from src.pos.shift.infra.repositories import SqlAlchemyShiftClosingRepository
+from src.pos.shift.infra.totals import SqlAlchemyShiftTotalsReader
 from src.receivables.infra.models import CustomerPaymentModel
+from src.sales.domain.entities import PaymentMethod
 from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.tenancy.infra.models import TenantModel
 from tests.sqlite import sqlite_session
+from tests.unit.pos.closings import make_closing
 
 OTHER = TenantContext(UUID("00000000-0000-4000-8000-0000000000b2"), TenantSource.TASK)
 DAY = date(2026, 3, 14)
@@ -60,6 +68,8 @@ _MODELS = (
     RefundPaymentModel,
     CashMovementModel,
     CustomerPaymentModel,
+    ShiftClosingModel,
+    ShiftClosingLineModel,
 )
 
 
@@ -104,8 +114,12 @@ def session() -> Iterator[Session]:
     db.close()
 
 
+def _x(session: Session) -> GetXReportQueryHandler:
+    return GetXReportQueryHandler(session, SqlAlchemyShiftTotalsReader(session))
+
+
 def test_the_x_report_only_sees_the_tenants_sales(session):
-    report = GetXReportQueryHandler(session).handle(GetXReportQuery(shift_id=1))
+    report = _x(session).handle(GetXReportQuery(shift_id=1))
 
     assert report["sales_summary"]["total"] == Decimal("100")
     assert [row["total"] for row in report["payments_by_method"]] == [Decimal("100")]
@@ -113,23 +127,86 @@ def test_the_x_report_only_sees_the_tenants_sales(session):
 
 
 def test_another_tenants_shift_is_not_found(session):
-    x_handler = GetXReportQueryHandler(session)
+    z_handler = GetZReportQueryHandler(
+        session,
+        SqlAlchemyShiftTotalsReader(session),
+        SqlAlchemyShiftClosingRepository(session),
+    )
 
     with pytest.raises(NotFoundError):
-        x_handler.handle(GetXReportQuery(shift_id=2))
+        _x(session).handle(GetXReportQuery(shift_id=2))
     with pytest.raises(NotFoundError):
-        GetZReportQueryHandler(session, x_handler).handle(GetZReportQuery(shift_id=2))
+        z_handler.handle(GetZReportQuery(shift_id=2))
 
 
-def test_the_cash_summary_of_another_tenants_shift_is_empty(session):
-    assert compute_cash_summary(session, 1)["cash_sales"] == Decimal("100")
-    assert compute_cash_summary(session, 2) == {
+def test_the_totals_of_another_tenants_shift_are_empty(session):
+    totals = SqlAlchemyShiftTotalsReader(session)
+
+    assert totals.of_shift(1).cash_summary() == {
+        "cash_sales": Decimal("100"),
+        "cash_refunds": 0,
+        "customer_payments": 0,
+        "cash_in": Decimal("5"),
+        "cash_out": 0,
+    }
+    assert totals.of_shift(2).cash_summary() == {
         "cash_sales": 0,
         "cash_refunds": 0,
         "customer_payments": 0,
         "cash_in": 0,
         "cash_out": 0,
     }
+    assert totals.of_shift(2).items_sold == []
+
+
+def test_a_closing_is_kept_and_read_back_only_in_its_tenant(session):
+    """S5.9: the Z closing and its lines round-trip; another tenant's closing
+    and numbers are not seen, and each terminal has its own correlative"""
+    closings = SqlAlchemyShiftClosingRepository(session)
+    totals = SqlAlchemyShiftTotalsReader(session).of_shift(1)
+    with use_tenant(OTHER):
+        SqlAlchemyShiftClosingRepository(session).add(
+            make_closing(shift_id=2, sequence=1, number="Z-B-000001")
+        )
+
+    saved = closings.add(
+        make_closing(
+            shift_id=1,
+            terminal_id=None,
+            branch_id=None,
+            sequence=closings.next_sequence(None),
+            number="Z-000001",
+            items_sold=totals.items_sold,
+            lines=[
+                ShiftClosingLine(
+                    payment_method=PaymentMethod.CASH,
+                    payments_count=1,
+                    payments_total=Decimal("100"),
+                    expected=Decimal("105"),
+                    counted=Decimal("100"),
+                    difference=Decimal("-5"),
+                    justification="Faltante",
+                ),
+                ShiftClosingLine(payment_method=PaymentMethod.CREDIT),
+            ],
+        )
+    )
+    session.commit()
+
+    read = closings.of_shift(1)
+    assert read is not None and read.id == saved.id
+    assert read.number == "Z-000001"
+    assert [(i.sku, i.quantity, i.total) for i in read.items_sold] == [
+        ("MAR-01", Decimal("1"), Decimal("100"))
+    ]
+    assert [
+        (str(line.payment_method), line.counted, line.justification)
+        for line in read.lines
+    ] == [("CASH", Decimal("100"), "Faltante"), ("CREDIT", None, None)]
+    assert closings.of_shift(2) is None
+    assert closings.numbers_of([1, 2]) == {1: "Z-000001"}
+    assert closings.next_sequence(None) == 2
+    assert closings.next_sequence(3) == 1
 
 
 def test_daily_reports_only_add_up_the_tenants_sales(session):
