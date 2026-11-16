@@ -639,6 +639,17 @@ def _supplier_payment_recorded(w):
     )["id"]
 
 
+def _import_confirmed(w):
+    unit_id(w.admin.api)
+    content = b"sku,nombre,unidad,precio_venta\nIMP-1,Martillo,und,9.50\n"
+    uploaded = w.admin.api.post(
+        "/api/admin/imports",
+        files={"file": ("productos.csv", content, "text/csv")},
+        data={"kind": "PRODUCTS", "mode": "SKIP"},
+    )
+    return w.send(w.admin, "POST", f"/api/admin/imports/{uploaded['id']}/confirm")["id"]
+
+
 def _shift_opened(w):
     path = "/api/pos/shifts/open"
     return w.send(w.cashier, "POST", path, {"openingBalance": "50.00"})["id"]
@@ -828,6 +839,7 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.POS_TERMINAL_CREATED: _pos_terminal_created,
     AuditAction.POS_TERMINAL_UPDATED: _pos_terminal_updated,
     AuditAction.POS_TERMINAL_DELETED: _pos_terminal_deleted,
+    AuditAction.IMPORT_CONFIRMED: _import_confirmed,
 }
 
 

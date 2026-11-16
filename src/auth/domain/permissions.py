@@ -60,6 +60,9 @@ class Permission(StrEnum):
     # Admin
     USER_MANAGE = "user:manage"
     AUDIT_READ = "audit:read"
+    # Bulk import of initial data (S5.8): catalog, prices, customers,
+    # suppliers and opening stock at once
+    IMPORT_WRITE = "import:write"
 
 
 _ALL_READS = frozenset(
@@ -79,14 +82,15 @@ _ALL_READS = frozenset(
     }
 )
 
-# The structure (SRI establishments and emission points) and the audit log
-# are the admin's
+# The structure (SRI establishments and emission points), the audit log and
+# the bulk import are the admin's
 _MANAGER_PERMS = frozenset(Permission) - frozenset(
     {
         Permission.USER_MANAGE,
         Permission.POS_OPERATE,
         Permission.ORGANIZATION_WRITE,
         Permission.AUDIT_READ,
+        Permission.IMPORT_WRITE,
     }
 )
 

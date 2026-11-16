@@ -18,7 +18,7 @@ test:  ## Run tests
 	docker compose run --no-deps --rm api pytest --cov='src'
 
 test-integration:  ## Run the Postgres integration tests on a throwaway <db>_test database, with the roles of .env
-	docker compose run --rm api sh -c 'DB="$${DATABASE_URL##*/}_test"; \
+	docker compose run --rm -e IMPORT_VOLUME_ROWS api sh -c 'DB="$${DATABASE_URL##*/}_test"; \
 		TEST_DATABASE_URL="$${DATABASE_URL_ADMIN%/*}/$$DB" \
 		TEST_DATABASE_URL_APP="$${DATABASE_URL%/*}/$$DB" \
 		TEST_DATABASE_URL_WORKER="$${DATABASE_URL_WORKER%/*}/$$DB" \

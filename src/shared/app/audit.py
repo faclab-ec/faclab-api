@@ -80,6 +80,9 @@ class AuditAction(StrEnum):
     POS_TERMINAL_CREATED = "pos_terminal.created"
     POS_TERMINAL_UPDATED = "pos_terminal.updated"
     POS_TERMINAL_DELETED = "pos_terminal.deleted"
+    # A bulk import confirmed (S5.8); what the worker writes is audited by each
+    # command (product.created, adjustment.confirmed...) in the importer's name
+    IMPORT_CONFIRMED = "import.confirmed"
 
     @property
     def resource(self) -> str:

@@ -94,6 +94,10 @@ class Tenant:
         kwargs: dict[str, Any] = {}
         if route.body:
             kwargs["json"] = route.body(ids)
+        if route.files:
+            kwargs["files"] = route.files(ids)
+        if route.form:
+            kwargs["data"] = route.form(ids)
         if route.query and query:
             kwargs["params"] = route.query(ids)
         headers = {**self.api.headers, **(route.headers(ids) if route.headers else {})}

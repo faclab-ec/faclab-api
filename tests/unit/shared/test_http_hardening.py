@@ -80,7 +80,7 @@ def test_responses_carry_security_headers():
 # Body size limit
 
 
-def _limited_app(max_bytes: int = 10):
+def _limited_app(max_bytes: int = 10, limits: dict[str, int] | None = None):
     class Body(BaseModel):
         text: str
 
@@ -90,13 +90,17 @@ def _limited_app(max_bytes: int = 10):
     def echo(body: Body) -> dict:
         return {"text": body.text}
 
+    @app.post("/upload")
+    def upload(body: Body) -> dict:
+        return {"text": body.text}
+
     app.add_middleware(ErrorHandlingMiddleware)
-    app.add_middleware(BodySizeLimitMiddleware, max_bytes=max_bytes)
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=max_bytes, limits=limits)
     app.add_middleware(SecurityHeadersMiddleware)
     return app
 
 
-def _send(app, chunks: list[bytes], content_length: int | None):
+def _send(app, chunks: list[bytes], content_length: int | None, path: str = "/echo"):
     """Raw ASGI request, so the body can arrive in chunks without a length."""
     headers = [(b"content-type", b"application/json")]
     if content_length is not None:
@@ -105,8 +109,8 @@ def _send(app, chunks: list[bytes], content_length: int | None):
         "type": "http",
         "http_version": "1.1",
         "method": "POST",
-        "path": "/echo",
-        "raw_path": b"/echo",
+        "path": path,
+        "raw_path": path.encode(),
         "query_string": b"",
         "headers": headers,
         "scheme": "http",
@@ -160,3 +164,29 @@ def test_a_body_within_the_limit_reaches_the_app(content_length):
 
     assert status == 200
     assert body == {"text": "ok"}
+
+
+@pytest.mark.parametrize("content_length", [True, False], ids=["declared", "chunked"])
+def test_a_route_with_its_own_limit_takes_a_larger_body(content_length):
+    """The file of a bulk import (S5.8) goes over the general limit"""
+    payload = json.dumps({"text": "a larger file"}).encode()
+    app = _limited_app(limits={"/upload": 100})
+    size = len(payload) if content_length else None
+
+    status, body, _ = _send(app, [payload], size, path="/upload")
+    elsewhere, _, _ = _send(app, [payload], size)
+
+    assert status == 200
+    assert body == {"text": "a larger file"}
+    assert elsewhere == 413
+
+
+def test_a_route_with_its_own_limit_still_has_one():
+    payload = json.dumps({"text": "x" * 200}).encode()
+
+    status, body, _ = _send(
+        _limited_app(limits={"/upload": 100}), [payload], len(payload), path="/upload"
+    )
+
+    assert status == 413
+    assert body["errors"][0]["message"] == "Request body exceeds 100 bytes"

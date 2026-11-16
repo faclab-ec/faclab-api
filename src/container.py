@@ -9,6 +9,7 @@ def create_wireup_container():
     from src.catalog.product.infra.container import INJECTABLES as CATALOG_INJECTABLES
     from src.catalog.uom.infra.container import INJECTABLES as UOM_INJECTABLES
     from src.customers.infra.container import INJECTABLES as CUSTOMER_INJECTABLES
+    from src.imports.infra.container import INJECTABLES as IMPORT_INJECTABLES
     from src.inventory.adjustment.infra.container import ADJUSTMENT_INJECTABLES
     from src.inventory.alert.infra.container import ALERT_INJECTABLES
     from src.inventory.location.infra.container import (
@@ -95,6 +96,7 @@ def create_wireup_container():
             *POS_REFUND_INJECTABLES,
             *POS_CASH_INJECTABLES,
             *POS_REPORT_INJECTABLES,
+            *IMPORT_INJECTABLES,
         ]
     )
 

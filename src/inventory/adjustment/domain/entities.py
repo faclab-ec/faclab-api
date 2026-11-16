@@ -21,6 +21,8 @@ class AdjustmentReason(StrEnum):
     SUPPLIER_ERROR = "supplier_error"
     CORRECTION = "correction"
     OTHER = "other"
+    # Opening balances of a bulk import (S5.8), each line with its cost
+    INITIAL_BALANCE = "initial_balance"
 
 
 @dataclass
