@@ -36,8 +36,10 @@ def _mock_repo(entity=None):
         repo.update.return_value = entity
         repo.get_by_id.return_value = entity
         repo.first.return_value = entity
+        repo.first_for_share.return_value = entity
     else:
         repo.first.return_value = None
+        repo.first_for_share.return_value = None
         repo.get_by_id.return_value = None
     return repo
 

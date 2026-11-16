@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from wireup import injectable
 
-from src.pos.shift.app.repositories import ShiftRepository
+from src.pos.shift.app.repositories import ShiftClosingRepository, ShiftRepository
 from src.pos.shift.domain.specifications import (
     ShiftsByStatus,
     ShiftsByTerminal,
@@ -51,14 +51,16 @@ class GetShiftByIdQuery(Query):
 class GetShiftByIdQueryHandler(QueryHandler[GetShiftByIdQuery, dict]):
     """Handler para obtener un turno por ID"""
 
-    def __init__(self, repo: ShiftRepository):
+    def __init__(self, repo: ShiftRepository, closings: ShiftClosingRepository):
         self.repo = repo
+        self.closings = closings
 
     def _handle(self, query: GetShiftByIdQuery) -> dict:
         shift = self.repo.get_by_id(query.shift_id)
         if shift is None or not in_scope(shift.branch_id, query.branch_ids):
             raise NotFoundError(f"Shift with id {query.shift_id} not found")
-        return shift.dict()
+        numbers = self.closings.numbers_of([shift.require_id()])
+        return {**shift.dict(), "closing_number": numbers.get(shift.require_id())}
 
 
 @dataclass
@@ -78,8 +80,9 @@ class GetAllShiftsQuery(Query):
 class GetAllShiftsQueryHandler(QueryHandler[GetAllShiftsQuery, dict]):
     """Handler para obtener todos los turnos"""
 
-    def __init__(self, repo: ShiftRepository):
+    def __init__(self, repo: ShiftRepository, closings: ShiftClosingRepository):
         self.repo = repo
+        self.closings = closings
 
     def _handle(self, query: GetAllShiftsQuery) -> dict:
         specs: list[Specification] = []
@@ -91,10 +94,17 @@ class GetAllShiftsQueryHandler(QueryHandler[GetAllShiftsQuery, dict]):
         if scope is not None:
             specs.append(ShiftsInBranches(scope))
         # Newest first: this is the shift history
-        return self.repo.paginate_by_spec(
+        page = self.repo.paginate_by_spec(
             all_of(specs),
             limit=query.limit,
             offset=query.offset,
             order_by="id",
             desc_order=True,
         )
+        # The Z number of each closed one (S5.9)
+        numbers = self.closings.numbers_of(item["id"] for item in page["items"])
+        page["items"] = [
+            {**item, "closing_number": numbers.get(item["id"])}
+            for item in page["items"]
+        ]
+        return page

@@ -43,7 +43,9 @@ class RegisterCashMovementCommandHandler(
         if command.amount <= 0:
             raise InvalidCashMovementAmountError()
 
-        shift = self.shift_repo.get_by_id(command.shift_id)
+        # Locked FOR SHARE: the shift's closing waits for the movement, or the
+        # movement finds it closed (S5.9)
+        shift = self.shift_repo.first_for_share(id=command.shift_id)
         if shift is None:
             raise NotFoundError(f"Shift with id {command.shift_id} not found")
 

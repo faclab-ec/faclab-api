@@ -523,7 +523,13 @@ class TestCreateRefund:
 
 class TestProcessRefund:
     def _make_handler(
-        self, refund=None, refund_items=None, sale=None, notes=None, credit=None
+        self,
+        refund=None,
+        refund_items=None,
+        sale=None,
+        notes=None,
+        credit=None,
+        shift=None,
     ):
         refund_repo = _mock_repo(refund)
         refund_item_repo = MagicMock()
@@ -546,6 +552,11 @@ class TestProcessRefund:
         credit_notes = MagicMock()
         credit_notes.of_refunds.return_value = notes or []
         session = MagicMock()
+        # The refund's shift, still open unless a test says otherwise
+        shift_repo = MagicMock()
+        shift_repo.first_for_share.return_value = shift or Shift(
+            id=1, cashier_name="Juan", status=ShiftStatus.OPEN
+        )
 
         handler = ProcessRefundCommandHandler(
             refund_repo,
@@ -560,6 +571,7 @@ class TestProcessRefund:
             FakeAuditTrail(),
             session,
             credit or customer_credit(),
+            shift_repo,
         )
         return handler, movement_repo, stock_repo, event_publisher
 
@@ -772,6 +784,23 @@ class TestProcessRefund:
         )
         with pytest.raises(InvalidRefundStatusError):
             handler.handle(command)
+
+    def test_a_refund_of_a_closed_shift_is_not_processed(self):
+        """Its money would leave the cash of a shift whose Z is already kept (S5.9)"""
+        closed = Shift(id=1, cashier_name="Juan", status=ShiftStatus.CLOSED)
+        handler, movement_repo, _, _ = self._make_handler(
+            refund=_make_refund(), refund_items=[_make_refund_item()], shift=closed
+        )
+
+        with pytest.raises(NoOpenShiftError):
+            handler.handle(
+                ProcessRefundCommand(
+                    refund_id=1,
+                    payments=[{"amount": "46.00", "payment_method": "CASH"}],
+                )
+            )
+        handler.shift_repo.first_for_share.assert_called_once_with(id=1)
+        movement_repo.create.assert_not_called()
 
     def test_insufficient_payment(self):
         refund = _make_refund(total=Decimal("100.00"))

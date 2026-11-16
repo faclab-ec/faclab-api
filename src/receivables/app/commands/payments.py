@@ -89,9 +89,10 @@ class RecordCustomerPaymentCommandHandler(
             branch_id=command.branch_id,
         )
         if command.terminal is not None:
-            # At the POS: in the cash of the terminal's open shift
+            # At the POS: in the cash of the terminal's open shift, locked FOR
+            # SHARE before the customer: its closing waits for it (S5.9)
             terminal = self.terminals.terminal(command.terminal)
-            shift = self.shifts.first(terminal_id=terminal.id, status="OPEN")
+            shift = self.shifts.first_for_share(terminal_id=terminal.id, status="OPEN")
             if shift is None:
                 raise NoOpenShiftError()
             payment.terminal_id = terminal.id

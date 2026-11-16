@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from wireup import Injected
 
+from config import config
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
 from src.auth.infra.dependencies import get_current_user, require_permission
@@ -142,7 +143,14 @@ class POSCashRouter:
         branch: TerminalRequest = Depends(pos_branch),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[CashSummaryResponse]:
-        """Get a summary of cash activity for a shift of the branch, including totals by payment method and net cash."""
+        """Get a summary of cash activity for a shift of the branch: its cash, what each
+        payment method should have at the count (`byMethod`) and the threshold over
+        which a difference needs a justification."""
         guard.shift(shift_id, branch)
-        result = handler.handle(GetCashSummaryQuery(shift_id=shift_id))
+        result = handler.handle(
+            GetCashSummaryQuery(
+                shift_id=shift_id,
+                justification_threshold=config.SHIFT_CLOSING_JUSTIFICATION_THRESHOLD,
+            )
+        )
         return DataResponse(data=CashSummaryResponse.model_validate(result), meta=meta)

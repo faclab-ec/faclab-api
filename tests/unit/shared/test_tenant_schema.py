@@ -61,6 +61,9 @@ COMPOSITE_FOREIGN_KEYS = {
     ("pos_terminals", "default_location_id"),
     ("pos_shifts", "terminal_id"),
     ("pos_shifts", "branch_id"),
+    # The Z closing keeps its shift's terminal and branch (S5.9)
+    ("pos_shift_closings", "terminal_id"),
+    ("pos_shift_closings", "branch_id"),
     ("sales", "branch_id"),
     ("sales", "emission_point_id"),
     ("sales", "terminal_id"),
@@ -100,6 +103,8 @@ INTERNAL_FOREIGN_KEYS = {
     ("sale_items", "sale_id"): "the sale loaded by id",
     ("payments", "sale_id"): "the sale loaded by id",
     ("pos_cash_movements", "shift_id"): "the shift loaded by id",
+    ("pos_shift_closings", "shift_id"): "the shift being closed, locked by id",
+    ("pos_shift_closing_lines", "closing_id"): "the closing being written",
     ("pos_refunds", "original_sale_id"): "the sale loaded by id",
     ("pos_refunds", "shift_id"): "the terminal's open shift",
     ("pos_refund_items", "refund_id"): "the refund being created",
@@ -155,7 +160,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 54
+    assert len(BUSINESS_TABLES) == 56
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

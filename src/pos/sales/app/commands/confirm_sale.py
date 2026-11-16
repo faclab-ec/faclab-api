@@ -59,9 +59,10 @@ class POSConfirmSaleCommandHandler(CommandHandler[POSConfirmSaleCommand, dict]):
         if not sale:
             raise NotFoundError(f"Sale with id {command.sale_id} not found")
 
-        # Validar que el turno sigue abierto
+        # Its shift is still open, locked FOR SHARE before anything else: its
+        # closing waits for this sale, or this sale finds it closed (S5.9)
         if sale.shift_id is not None:
-            shift = self.shift_repo.first(id=sale.shift_id)
+            shift = self.shift_repo.first_for_share(id=sale.shift_id)
             if shift is None or shift.status != ShiftStatus.OPEN:
                 raise NoOpenShiftError()
 

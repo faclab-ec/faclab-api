@@ -19,6 +19,9 @@ from src.pos.refund.domain.exceptions import (
     FinalConsumerRefundNotAllowedError,
     SaleNotConfirmedError,
 )
+from src.pos.shift.app.repositories import ShiftRepository
+from src.pos.shift.domain.entities import ShiftStatus
+from src.pos.shift.domain.exceptions import NoOpenShiftError
 from src.pos.terminal.app.stock import TerminalStock
 from src.receivables.app.credit import CustomerCredit
 from src.receivables.domain.exceptions import CreditPaymentNotAllowedError
@@ -55,8 +58,10 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
         audit: AuditTrail,
         session: Session,
         credit: CustomerCredit,
+        shift_repo: ShiftRepository,
     ):
         self.credit = credit
+        self.shift_repo = shift_repo
         self.refund_repo = refund_repo
         self.refund_item_repo = refund_item_repo
         self.refund_payment_repo = refund_payment_repo
@@ -76,6 +81,14 @@ class ProcessRefundCommandHandler(CommandHandler[ProcessRefundCommand, dict]):
 
         refund.ensure_pending("complete")
         before_status = refund.status
+
+        # The money leaves the cash of the refund's shift: it must still be open,
+        # locked FOR SHARE before anything else so its closing waits for this
+        # refund or this refund finds it closed (S5.9)
+        if refund.shift_id is not None:
+            shift = self.shift_repo.first_for_share(id=refund.shift_id)
+            if shift is None or shift.status != ShiftStatus.OPEN:
+                raise NoOpenShiftError()
 
         # It may have changed since the refund was created: cancelled, or
         # invoiced after a resend

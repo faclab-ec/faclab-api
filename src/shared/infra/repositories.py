@@ -183,13 +183,24 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
         """
         return self._first(kwargs, for_update=True)
 
-    def _first(self, filters: dict[str, Any], for_update: bool) -> E | None:
+    def first_for_share(self, **kwargs) -> E | None:
+        """
+        Like first(), but locks the row FOR SHARE until the transaction ends:
+        other FOR SHARE readers go on, a FOR UPDATE (or an update of the row)
+        waits for them and they wait for it. After waiting, PostgreSQL reads the
+        row again and checks the filters against its new version.
+        """
+        return self._first(kwargs, for_update=True, read=True)
+
+    def _first(
+        self, filters: dict[str, Any], for_update: bool, read: bool = False
+    ) -> E | None:
         criteria = [
             getattr(self.__model__, key) == value for key, value in filters.items()
         ]
         query = self._query().filter(*criteria)
         if for_update:
-            query = query.with_for_update()
+            query = query.with_for_update(read=read)
         return self.mapper.to_entity(query.first())
 
     def filter(

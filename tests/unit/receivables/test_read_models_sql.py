@@ -10,11 +10,17 @@ from uuid import UUID
 import pytest
 from sqlalchemy.orm import Session
 
+from src.catalog.product.infra.models import (
+    CategoryModel,
+    ProductModel,
+    ProductPresentationModel,
+)
+from src.catalog.uom.infra.models import UnitOfMeasureModel
 from src.customers.infra.models import CustomerModel
-from src.pos.cash.app.queries.get_cash_summary import compute_cash_summary
 from src.pos.cash.infra.models import CashMovementModel
 from src.pos.refund.infra.models import RefundModel, RefundPaymentModel
 from src.pos.shift.infra.models import ShiftModel
+from src.pos.shift.infra.totals import SqlAlchemyShiftTotalsReader
 from src.receivables.app.queries.receivables import (
     GetCustomerAccountQuery,
     GetCustomerAccountQueryHandler,
@@ -34,7 +40,7 @@ from src.receivables.infra.models import (
     ReceivableApplicationModel,
     ReceivableModel,
 )
-from src.sales.infra.models import PaymentModel, SaleModel
+from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 from src.tenancy.infra.models import TenantModel
@@ -45,9 +51,14 @@ TODAY = date.today()
 NOV = datetime(2026, 11, 1, 9)
 
 _MODELS = (
+    CategoryModel,
+    UnitOfMeasureModel,
+    ProductModel,
+    ProductPresentationModel,
     CustomerModel,
     ShiftModel,
     SaleModel,
+    SaleItemModel,
     PaymentModel,
     RefundModel,
     RefundPaymentModel,
@@ -312,10 +323,11 @@ def test_a_payment_shows_what_it_paid(session):
 
 
 def test_cash_payments_on_account_count_in_the_shifts_cash(session):
+    totals = SqlAlchemyShiftTotalsReader(session)
     # The transfer doesn't
-    assert compute_cash_summary(session, 1)["customer_payments"] == Decimal("50")
+    assert totals.of_shift(1).cash_customer_payments == Decimal("50")
     # Nor another tenant's shift
-    assert compute_cash_summary(session, 9)["customer_payments"] == 0
+    assert totals.of_shift(9).cash_customer_payments == 0
 
 
 def test_another_tenants_portfolio_is_not_seen(session):

@@ -93,6 +93,7 @@ un 502/503/504.
 | status | enum | `OPEN` \| `CLOSED` |
 | notes | string? | Notas opcionales |
 | closedBy | string? | Usuario autenticado que cerró el turno (no se envía en el cuerpo) |
+| closingNumber | string? | Número de su cierre Z (S5.9); `null` abierto o cerrado antes de S5.9 |
 
 ### Regla clave
 
@@ -100,6 +101,40 @@ Cada terminal tiene como máximo **un turno OPEN** (lo garantiza un índice úni
 una segunda apertura, incluso concurrente, responde `SHIFT_ALREADY_OPEN`). Dos terminales de la misma
 sucursal pueden tener turnos abiertos a la vez. Las ventas y devoluciones van al turno abierto de su
 terminal.
+
+Un turno cerrado no recibe nada más (S5.9): confirmar una venta estacionada o la venta rápida,
+procesar una devolución y registrar un abono responden `NO_OPEN_SHIFT`, y un movimiento de caja
+`SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT`. Esto vale también con solicitudes simultáneas: el cierre bloquea
+el turno (`FOR UPDATE`) antes de leer lo que movió y cada uno de esos documentos lo bloquea
+`FOR SHARE` antes que todo lo demás, así que un documento en curso termina antes del cierre (y entra
+en su Z) o espera al cierre y encuentra el turno cerrado. Anular una venta confirmada de un turno
+cerrado sigue permitido: su cierre Z no cambia.
+
+### Cierre Z (S5.9)
+
+Al cerrar el turno se escribe, en la misma transacción, su **cierre Z**: inmutable (la aplicación
+no puede modificarlo ni borrarlo; la base le revoca `UPDATE` y `DELETE`) y numerado por terminal,
+`Z-<establecimiento>-<código de la terminal>-<correlativo de 6 dígitos>` (`Z-001-CAJA-01-000012`,
+con los códigos que tienen al cerrar; un turno anterior a S2.6, sin terminal, `Z-000012`). Guarda lo
+que el turno movió (ventas, pagos por medio, abonos, devoluciones, efectivo y sus componentes,
+productos vendidos), quién cerró, las notas, el umbral aplicado y el **arqueo** de cada medio de
+pago:
+
+| Campo | Descripción |
+|-------|-------------|
+| paymentMethod | `CASH`, `CREDIT_CARD`, `DEBIT_CARD`, `TRANSFER` u `OTHER` |
+| expected | Efectivo: el saldo esperado. Otros: pagos aplicados de las ventas + abonos − lo devuelto en ese medio |
+| counted | Lo que contó el cajero (efectivo, lote del datáfono, transferencias recibidas) |
+| difference | `counted − expected` |
+| justification | Por qué difieren; obligatoria si `|difference|` supera el umbral |
+
+Se cuenta el efectivo siempre y cada medio que el turno movió (`CLOSING_COUNT_MISSING`); un medio sin
+movimiento puede contarse contra 0. `CREDIT` no se cuenta: lo debe el cliente, no está en la caja
+(`CLOSING_COUNT_INVALID`, igual que un medio repetido). El umbral es
+`SHIFT_CLOSING_JUSTIFICATION_THRESHOLD` (USD 1,00 por defecto; 0 = cualquier diferencia): una
+diferencia mayor que él, en valor absoluto, sin justificación responde
+`CLOSING_JUSTIFICATION_REQUIRED` y el turno sigue abierto; igual al umbral no la pide. El arqueo y
+las justificaciones quedan en la bitácora (`shift.closed`, con el número y cada línea).
 
 ### Endpoints
 
@@ -113,17 +148,30 @@ terminal.
 { "data": { "id": 1, "cashierName": "Juan", "openedAt": "...", "openingBalance": 100.00, "status": "OPEN", ... } }
 ```
 
-**POST `/shifts/{shiftId}/close`** — Cerrar turno
+**POST `/shifts/{shiftId}/close`** — Cerrar turno con su arqueo y escribir su cierre Z
 
 ```json
 // Request
-{ "closingBalance": 350.00, "notes": "Sin novedad" }
+{
+  "counts": [
+    { "paymentMethod": "CASH", "counted": 340.50, "justification": "Billete falso retirado" },
+    { "paymentMethod": "CREDIT_CARD", "counted": 120.00 }
+  ],
+  "notes": "Sin novedad"
+}
 
-// Response — incluye expectedBalance y discrepancy calculados
-{ "data": { "closingBalance": 350.00, "expectedBalance": 345.50, "discrepancy": 4.50, "status": "CLOSED" } }
+// Response — el turno, con la línea del efectivo y el número de su cierre
+{ "data": { "closingBalance": 340.50, "expectedBalance": 345.50, "discrepancy": -5.00,
+            "status": "CLOSED", "closingNumber": "Z-001-CAJA-01-000012" } }
 ```
 
-Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + customerPayments + cashIn - cashOut`
+Fórmula del efectivo: `expectedBalance = openingBalance + cashSales - cashRefunds + customerPayments + cashIn - cashOut`.
+`closingBalance`, `expectedBalance` y `discrepancy` del turno son los de la línea `CASH`. Un cliente
+anterior a S5.9 puede enviar el efectivo contado como `closingBalance` (sin la línea `CASH` en
+`counts`); si el turno movió otro medio, responde `CLOSING_COUNT_MISSING`.
+
+Lo que hay que contar sale de `GET /shifts/{shiftId}/cash-summary` (`byMethod` y
+`justificationThreshold`, §4).
 
 **GET `/shifts/active`** — Turno abierto de la terminal (retorna `null` en `data` si no hay)
 
@@ -669,12 +717,22 @@ Efectos:
     "customerPayments": 40.00,
     "cashIn": 200.00,
     "cashOut": 50.00,
-    "expectedBalance": 760.00
+    "expectedBalance": 760.00,
+    "byMethod": [
+      { "paymentMethod": "CASH", "paymentsTotal": 500.00, "customerPaymentsTotal": 40.00, "refundsTotal": 30.00, "expected": 760.00 },
+      { "paymentMethod": "CREDIT_CARD", "paymentsTotal": 120.00, "customerPaymentsTotal": 0, "refundsTotal": 0, "expected": 120.00 }
+    ],
+    "justificationThreshold": 1.00
   }
 }
 ```
 
 Fórmula: `expectedBalance = openingBalance + cashSales - cashRefunds + customerPayments + cashIn - cashOut`
+
+`byMethod` (S5.9) es lo que se cuenta al cerrar: el efectivo siempre y cada otro medio que el turno
+movió (no `CREDIT`), con lo que debería tener (pagos aplicados de las ventas + abonos − lo devuelto;
+el efectivo, `expectedBalance`). `justificationThreshold` es el umbral sobre el que una diferencia
+pide justificación (§1, Cierre Z). Salen de los mismos totales que guarda el cierre.
 
 `customerPayments` (S5.5) son los abonos de clientes en efectivo recibidos en el turno
 (`POST /customer-payments`, §6).
@@ -712,6 +770,10 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
 
 **GET `/reports/z-report?shiftId=1`** — Reporte Z (cierre de turno)
 
+Un turno cerrado con su cierre Z (S5.9) responde **lo que el cierre guardó**, sin recalcular: no
+cambia aunque después se anule una venta o se modifique un pago del turno. Un turno abierto, o uno
+cerrado antes de S5.9, se calcula con sus datos y trae `closing: null`.
+
 ```json
 // Incluye todo del X-Report más:
 {
@@ -726,6 +788,18 @@ y el de método de pago cubren las sucursales del usuario y aceptan `branchId` y
     "expectedBalance": 760,
     "closingBalance": 755,
     "discrepancy": -5
+  },
+  "closing": {
+    "id": 3,
+    "number": "Z-001-CAJA-01-000012",
+    "closedAt": "2026-03-14T22:00:00",
+    "closedBy": "Juan",
+    "justificationThreshold": 1.00,
+    "notes": null,
+    "counts": [
+      { "paymentMethod": "CASH", "expected": 760, "counted": 755, "difference": -5, "justification": "Billete falso retirado" },
+      { "paymentMethod": "CREDIT_CARD", "expected": 530, "counted": 530, "difference": 0, "justification": null }
+    ]
   }
 }
 ```
@@ -874,7 +948,7 @@ abierto, `Idempotency-Key`). FIFO por vencimiento o con `applications` por cuent
 | `REFUND_OUTSIDE_BRANCH` | 400 | La venta se hizo en otra sucursal |
 | `SHIFT_ALREADY_OPEN` | 400 | La terminal ya tiene un turno abierto |
 | `SHIFT_ALREADY_CLOSED` | 400 | El turno ya está cerrado |
-| `NO_OPEN_SHIFT` | 400 | No hay turno activo |
+| `NO_OPEN_SHIFT` | 400 | No hay turno activo, o el turno del documento (venta estacionada, devolución) ya se cerró |
 | `SALE_HAS_NO_ITEMS` | 400 | Venta sin items al confirmar |
 | `INSUFFICIENT_PAYMENT` | 400 | Los pagos no cubren el total al confirmar (también en la venta rápida) |
 | `PAYMENT_EXCEEDS_BALANCE` | 400 | Un pago que no es en efectivo se pasa de lo que falta, o la venta ya está cubierta |
@@ -896,6 +970,10 @@ abierto, `Idempotency-Key`). FIFO por vencimiento o con `applications` por cuent
 | `REFUND_ITEM_NOT_IN_SALE` | 400 | Item no pertenece a la venta |
 | `INVALID_CASH_MOVEMENT_AMOUNT` | 400 | Monto debe ser > 0 |
 | `SHIFT_NOT_OPEN_FOR_CASH_MOVEMENT` | 400 | Turno debe estar abierto |
+| `CLOSING_COUNT_MISSING` | 400 | El cierre no cuenta el efectivo o un medio que el turno movió (S5.9) |
+| `CLOSING_COUNT_INVALID` | 400 | El cierre cuenta `CREDIT`, o un medio dos veces |
+| `CLOSING_JUSTIFICATION_REQUIRED` | 400 | Una diferencia supera el umbral sin justificación; `message` nombra los medios |
+| `SHIFT_CLOSING_ALREADY_EXISTS` | 409 | El turno ya tiene su cierre Z (no debería verse: el cierre bloquea el turno) |
 | `OVERRIDE_REASON_REQUIRED` | 400 | Una línea a otro precio que el de su lista sin `overrideReason` |
 | `PRODUCT_WITHOUT_PRICE` | 400 | Ni una lista ni el producto le dan precio a la línea y no se envió `unitPrice` |
 | `QUOTE_EXPIRED` | 400 | La cotización de la venta rápida venció: se renueva antes |
@@ -942,7 +1020,7 @@ Formato de error estándar:
 
 8. **Recibo**: Disponible después de confirmar. Incluye número, sucursal, terminal, cajero, desglose de impuestos, lo entregado y el vuelto de cada pago (guardados al cobrar), y toda la información para impresión.
 
-9. **Cierre de caja**: El Z-Report da la reconciliación completa. La discrepancia (diferencia entre esperado y declarado) se registra automáticamente.
+9. **Cierre de caja (S5.9)**: La pantalla de arqueo toma de `GET /shifts/{id}/cash-summary` lo que debe contarse (`byMethod`) y el umbral, pide lo contado de cada medio y la justificación de cada diferencia mayor que el umbral, y cierra con `counts`. El cierre Z queda guardado y numerado; el Z-Report de un turno cerrado lo lee, no lo recalcula.
 
 10. **Campos camelCase**: La API usa camelCase en JSON (ej: `cashierName`, `paymentMethod`, `taxCode`).
 
@@ -961,7 +1039,7 @@ Formato de error estándar:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/open` | Abrir turno |
-| POST | `/{id}/close` | Cerrar turno |
+| POST | `/{id}/close` | Cerrar turno con su arqueo; escribe el cierre Z (S5.9) |
 | GET | `/active` | Turno activo |
 | GET | `/{id}` | Obtener turno |
 | GET | `/` | Listar turnos |
@@ -972,7 +1050,7 @@ Formato de error estándar:
 |--------|------|-------------|
 | POST | `/cash-movements` | Registrar movimiento (`Idempotency-Key`) |
 | GET | `/cash-movements` | Listar movimientos |
-| GET | `/cash-summary` | Resumen de caja |
+| GET | `/cash-summary` | Resumen de caja y lo que se cuenta al cerrar (`byMethod`) |
 
 ### Sales (`/sales`)
 
@@ -1018,7 +1096,7 @@ Formato de error estándar:
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/x-report` | Reporte X |
-| GET | `/z-report` | Reporte Z |
+| GET | `/z-report` | Reporte Z (el cierre guardado, si lo hay) |
 | GET | `/daily` | Resumen diario |
 | GET | `/by-payment-method` | Por método de pago |
 

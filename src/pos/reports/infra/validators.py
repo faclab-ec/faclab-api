@@ -79,6 +79,38 @@ class CashReconciliation(BaseModel):
     )
 
 
+class ClosingCount(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    payment_method: str = Field(description="Payment method counted")
+    expected: DecimalNumber = Field(description="What the method should have had")
+    counted: DecimalNumber = Field(description="What the cashier counted")
+    difference: DecimalNumber = Field(description="Counted minus expected")
+    justification: str | None = Field(
+        None, description="Why they differ; required over the threshold"
+    )
+
+
+class ClosingInfo(BaseModel):
+    """The Z closing kept when the shift closed (S5.9)"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    id: int = Field(description="Closing ID")
+    number: str = Field(
+        description="Z number: establishment, terminal and correlative per terminal"
+    )
+    closed_at: dt.datetime = Field(description="When the shift closed")
+    closed_by: str | None = Field(None, description="Who closed it")
+    justification_threshold: DecimalNumber = Field(
+        description="A difference over this needed a justification"
+    )
+    notes: str | None = Field(None, description="Notes of the closing")
+    counts: list[ClosingCount] = Field(
+        description="The count of each payment method (CREDIT is not counted)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # X-Report
 # ---------------------------------------------------------------------------
@@ -114,7 +146,11 @@ class XReportQueryParams(BaseModel):
 
 
 class ZReportResponse(BaseModel):
-    """End-of-shift closing report. Includes cash reconciliation and refund data."""
+    """End-of-shift closing report. Includes cash reconciliation and refund data.
+
+    A shift closed with its Z closing (S5.9) answers what the closing kept, never
+    recalculated; an open shift, or one closed before S5.9, is calculated and has
+    no `closing`."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -132,6 +168,9 @@ class ZReportResponse(BaseModel):
     refund_summary: RefundSummary = Field(description="Refund totals for the shift")
     cash_reconciliation: CashReconciliation = Field(
         description="Cash drawer reconciliation"
+    )
+    closing: ClosingInfo | None = Field(
+        None, description="Its Z closing, with the count of each method (S5.9)"
     )
 
 

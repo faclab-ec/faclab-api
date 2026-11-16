@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import Decimal
 
 from environs import Env
 
@@ -103,6 +104,16 @@ class BaseConfig:
     # true lets it through, as an internal refund without a credit note (D-4).
     CREDIT_NOTES_ENABLED = env.bool("CREDIT_NOTES_ENABLED", True)
     FINAL_CONSUMER_REFUNDS_ALLOWED = env.bool("FINAL_CONSUMER_REFUNDS_ALLOWED", False)
+
+    # Shift closing (S5.9): a difference between what was counted and what was
+    # expected of a payment method needs a justification when it is over this
+    # amount (absolute value; 0 = any difference). Each Z closing keeps the one it
+    # was closed with
+    SHIFT_CLOSING_JUSTIFICATION_THRESHOLD = env.decimal(
+        "SHIFT_CLOSING_JUSTIFICATION_THRESHOLD",
+        Decimal("1.00"),
+        validate=lambda value: value >= 0,
+    )
 
     # Reconciliation with faclab-invoicing (S4.3, only with KAFKA_ENABLED): every
     # INTERVAL it opens a discrepancy for each confirmed sale still without an

@@ -1,10 +1,11 @@
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
+from src.organization.domain.entities import Branch
 from src.pos.shift.app.commands.close_shift import (
     CloseShiftCommand,
     CloseShiftCommandHandler,
@@ -13,22 +14,20 @@ from src.pos.shift.app.commands.open_shift import (
     OpenShiftCommand,
     OpenShiftCommandHandler,
 )
+from src.pos.shift.domain.closing import ItemSold, MethodTotal, ShiftTotals
 from src.pos.shift.domain.entities import Shift, ShiftStatus
+from src.pos.shift.domain.events import ShiftClosed
 from src.pos.shift.domain.exceptions import (
+    ClosingCountMissingError,
+    ClosingJustificationRequiredError,
     ShiftAlreadyClosedError,
     ShiftAlreadyOpenError,
 )
+from src.shared.app.audit import AuditAction
 from src.shared.domain.exceptions import NotFoundError
 from tests.audit import FakeAuditTrail
+from tests.unit.pos.closings import FakeShiftTotals, InMemoryShiftClosings, make_closing
 from tests.unit.pos.terminals import AT_TERMINAL, TERMINAL, terminal_resolver
-
-_ZERO_SUMMARY = {
-    "cash_sales": Decimal("0"),
-    "cash_refunds": Decimal("0"),
-    "customer_payments": Decimal("0"),
-    "cash_in": Decimal("0"),
-    "cash_out": Decimal("0"),
-}
 
 
 def _make_shift(**overrides) -> Shift:
@@ -130,91 +129,206 @@ def test_open_shift_fails_if_already_open():
 # --- CloseShift ---
 
 
-@patch("src.pos.shift.app.commands.close_shift.compute_cash_summary")
-def test_close_shift_command_handler(mock_summary):
-    """Test cerrar un turno exitosamente"""
-    mock_summary.return_value = _ZERO_SUMMARY
-    shift = _make_shift()
-    repo = _mock_repo(entity=shift)
-    event_publisher = MagicMock()
-    session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, event_publisher, session, FakeAuditTrail())
-
-    command = CloseShiftCommand(
-        shift_id=1,
-        closing_balance=Decimal("600.00"),
-        closed_by="Maria",
+def _cash_sales(amount: str, card: str | None = None) -> ShiftTotals:
+    """A shift that sold `amount` in cash and, optionally, `card` by card"""
+    payments = [MethodTotal("CASH", 1, Decimal(amount))]
+    if card is not None:
+        payments.append(MethodTotal("CREDIT_CARD", 1, Decimal(card)))
+    total = sum((p.total for p in payments), Decimal("0"))
+    return ShiftTotals(
+        sales_count=len(payments),
+        sales_subtotal=total,
+        sales_total=total,
+        payments=payments,
+        items_sold=[ItemSold("Martillo", "MAR-01", Decimal("2"), total)],
     )
-    result = handler.handle(command)
 
-    repo.get_by_id.assert_called_once_with(1)
-    repo.update.assert_called_once()
+
+class _Closer:
+    def __init__(
+        self,
+        shift: Shift | None = None,
+        totals: ShiftTotals | None = None,
+        closings: InMemoryShiftClosings | None = None,
+    ):
+        self.repo = _mock_repo(entity=shift)
+        self.repo.first_for_update.return_value = shift
+        self.closings = closings or InMemoryShiftClosings()
+        self.event_publisher = MagicMock()
+        self.audit = FakeAuditTrail()
+        terminals = MagicMock()
+        terminals.get_by_id.return_value = TERMINAL
+        branches = MagicMock()
+        branches.get_by_id.return_value = Branch(
+            id=1, establishment_code="001", name="Matriz"
+        )
+        self.handler = CloseShiftCommandHandler(
+            self.repo,
+            self.closings,
+            FakeShiftTotals(totals),
+            terminals,
+            branches,
+            self.event_publisher,
+            self.audit,
+        )
+
+    def close(self, *counts: tuple, **kwargs) -> dict:
+        command = CloseShiftCommand(
+            shift_id=1,
+            counts=[
+                {
+                    "payment_method": method,
+                    "counted": Decimal(counted),
+                    "justification": rest[0] if rest else None,
+                }
+                for method, counted, *rest in counts
+            ],
+            justification_threshold=Decimal("1.00"),
+            **kwargs,
+        )
+        return self.handler.handle(command)
+
+
+def _open_at_terminal(**overrides) -> Shift:
+    return _make_shift(terminal_id=TERMINAL.id, branch_id=1, **overrides)
+
+
+def test_closing_writes_its_numbered_z_closing():
+    closer = _Closer(_open_at_terminal(), _cash_sales("100.00", card="40.00"))
+
+    result = closer.close(
+        ("CASH", "600.00"),
+        ("CREDIT_CARD", "40.00"),
+        closed_by="Maria",
+        closed_by_user_id=9,
+    )
+
+    # Locked before reading what it moved
+    closer.repo.first_for_update.assert_called_once_with(id=1)
+    [closing] = closer.closings.closings
+    assert (closing.number, closing.sequence) == ("Z-001-CAJA-01-000001", 1)
+    assert (closing.closed_by, closing.closed_by_user_id) == ("Maria", 9)
+    assert closing.sales_total == Decimal("140.00")
+    assert closing.cash_sales == Decimal("100.00")
+    assert closing.justification_threshold == Decimal("1.00")
+    assert [i.product_name for i in closing.items_sold] == ["Martillo"]
+    assert [
+        (str(line.payment_method), line.expected, line.counted, line.difference)
+        for line in closing.lines
+    ] == [
+        ("CASH", Decimal("600.00"), Decimal("600.00"), Decimal("0.00")),
+        ("CREDIT_CARD", Decimal("40.00"), Decimal("40.00"), Decimal("0.00")),
+    ]
+    # The shift keeps the cash line, as before S5.9
     assert result["status"] == "CLOSED"
-    assert result["closing_balance"] == Decimal("600.00")
-    assert result["closed_by"] == "Maria"
+    assert result["closing_number"] == "Z-001-CAJA-01-000001"
+    assert (result["closing_balance"], result["expected_balance"]) == (
+        Decimal("600.00"),
+        Decimal("600.00"),
+    )
+    assert result["discrepancy"] == Decimal("0.00")
+    closer.repo.update.assert_called_once()
 
 
-@patch("src.pos.shift.app.commands.close_shift.compute_cash_summary")
-def test_close_shift_publishes_event(mock_summary):
-    """Test que cerrar un turno publica evento"""
-    mock_summary.return_value = _ZERO_SUMMARY
-    from src.pos.shift.domain.events import ShiftClosed
+def test_the_z_number_is_a_correlative_of_the_terminal():
+    earlier = make_closing(shift_id=7, terminal_id=TERMINAL.id, sequence=4)
+    elsewhere = make_closing(shift_id=8, terminal_id=99, sequence=9)
+    closer = _Closer(
+        _open_at_terminal(),
+        closings=InMemoryShiftClosings([earlier, elsewhere]),
+    )
 
-    shift = _make_shift()
-    repo = _mock_repo(entity=shift)
-    event_publisher = MagicMock()
-    session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, event_publisher, session, FakeAuditTrail())
+    result = closer.close(("CASH", "500.00"))
 
-    handler.handle(CloseShiftCommand(shift_id=1, closing_balance=Decimal("600.00")))
+    assert result["closing_number"] == "Z-001-CAJA-01-000005"
 
-    event_publisher.publish.assert_called_once()
-    published_event = event_publisher.publish.call_args[0][0]
-    assert isinstance(published_event, ShiftClosed)
-    assert published_event.shift_id == 1
+
+def test_a_difference_over_the_threshold_needs_a_justification():
+    closer = _Closer(_open_at_terminal(), _cash_sales("100.00"))
+
+    with pytest.raises(ClosingJustificationRequiredError) as error:
+        closer.close(("CASH", "590.00"))
+
+    assert error.value.methods == ["CASH"]
+    assert closer.closings.closings == []
+    closer.repo.update.assert_not_called()
+
+
+def test_a_justified_difference_is_kept_and_audited():
+    closer = _Closer(_open_at_terminal(), _cash_sales("100.00"))
+
+    closer.close(("CASH", "590.00", "  Cambio mal dado  "))
+
+    [closing] = closer.closings.closings
+    assert closing.cash_line.difference == Decimal("-10.00")
+    assert closing.cash_line.justification == "Cambio mal dado"
+    [entry] = closer.audit.entries
+    assert entry.action == AuditAction.SHIFT_CLOSED
+    assert entry.after is not None
+    assert entry.after["closing_number"] == "Z-001-CAJA-01-000001"
+    assert entry.after["justification_threshold"] == Decimal("1.00")
+    assert entry.after["counts"] == [
+        {
+            "payment_method": "CASH",
+            "expected": Decimal("600.00"),
+            "counted": Decimal("590.00"),
+            "difference": Decimal("-10.00"),
+            "justification": "Cambio mal dado",
+        }
+    ]
+
+
+def test_every_method_the_shift_moved_must_be_counted():
+    closer = _Closer(_open_at_terminal(), _cash_sales("100.00", card="40.00"))
+
+    with pytest.raises(ClosingCountMissingError) as error:
+        closer.close(("CASH", "600.00"))
+
+    assert error.value.methods == ["CREDIT_CARD"]
+
+
+def test_a_client_before_s5_9_sends_the_cash_as_closing_balance():
+    closer = _Closer(_open_at_terminal())
+
+    result = closer.close(closing_balance=Decimal("500.00"), notes="Sin novedad")
+
+    assert result["closing_balance"] == Decimal("500.00")
+    assert result["notes"] == "Sin novedad"
+    assert closer.closings.closings[0].notes == "Sin novedad"
+
+
+def test_close_shift_publishes_event():
+    closer = _Closer(_open_at_terminal())
+
+    closer.close(("CASH", "500.00"))
+
+    closer.event_publisher.publish.assert_called_once()
+    published = closer.event_publisher.publish.call_args[0][0]
+    assert isinstance(published, ShiftClosed)
+    assert (published.shift_id, published.closing_number) == (
+        1,
+        "Z-001-CAJA-01-000001",
+    )
 
 
 def test_close_shift_not_found():
-    """Test que falla si el turno no existe"""
-    repo = _mock_repo()
-    session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
-
-    command = CloseShiftCommand(shift_id=999, closing_balance=Decimal("500.00"))
+    closer = _Closer(None)
 
     with pytest.raises(NotFoundError):
-        handler.handle(command)
+        closer.close(("CASH", "500.00"))
 
 
-@patch("src.pos.shift.app.commands.close_shift.compute_cash_summary")
-def test_close_shift_already_closed(mock_summary):
-    """Test que falla si el turno ya esta cerrado"""
-    mock_summary.return_value = _ZERO_SUMMARY
-    shift = _make_shift(status=ShiftStatus.CLOSED)
-    repo = _mock_repo(entity=shift)
-    session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
-
-    command = CloseShiftCommand(shift_id=1, closing_balance=Decimal("500.00"))
+def test_close_shift_already_closed():
+    closer = _Closer(_open_at_terminal(status=ShiftStatus.CLOSED))
 
     with pytest.raises(ShiftAlreadyClosedError):
-        handler.handle(command)
+        closer.close(("CASH", "500.00"))
+    assert closer.closings.closings == []
 
 
-@patch("src.pos.shift.app.commands.close_shift.compute_cash_summary")
-def test_close_shift_with_notes(mock_summary):
-    """Test cerrar turno con notas"""
-    mock_summary.return_value = _ZERO_SUMMARY
-    shift = _make_shift()
-    repo = _mock_repo(entity=shift)
-    session = MagicMock()
-    handler = CloseShiftCommandHandler(repo, MagicMock(), session, FakeAuditTrail())
+def test_a_shift_from_before_s2_6_closes_without_codes_in_its_number():
+    closer = _Closer(_make_shift())
 
-    command = CloseShiftCommand(
-        shift_id=1,
-        closing_balance=Decimal("500.00"),
-        notes="Turno sin novedades",
-    )
-    result = handler.handle(command)
+    result = closer.close(("CASH", "500.00"))
 
-    assert result["notes"] == "Turno sin novedades"
+    assert result["closing_number"] == "Z-000001"
