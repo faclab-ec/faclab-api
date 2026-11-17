@@ -1,6 +1,6 @@
 # Auth Spec — Faclab Core
 
-JWT-based authentication with role-based authorization. All admin and POS routes require a valid access token. Login, select-tenant, refresh and logout are public.
+JWT-based authentication (Ed25519-signed tokens, public keys at `/.well-known/jwks.json`) with role-based authorization. All admin and POS routes require a valid access token. Login, select-tenant, refresh and logout are public.
 
 ## Tenants and memberships
 
@@ -76,6 +76,38 @@ An access token without `tid` (issued before tenants existed) is rejected with 4
 - **Authors from the token.** Shifts, POS sales, cash movements, refunds, adjustments and transfers are signed with the authenticated user's `fullName`, or the username when it has none. Request bodies don't accept author fields.
 - **No internals in responses or logs.** JWT errors answer the generic "invalid token" and unexpected `ValueError`s "Invalid value" (the detail stays in the server log). Request validation errors are logged without the rejected `input`, and a structlog processor masks passwords, tokens, secrets, cookies and `Authorization` values.
 - **HTTP hardening.** Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY`; bodies over `MAX_REQUEST_BODY_BYTES` (1 MiB) get 413 `REQUEST_TOO_LARGE`.
+
+## Token signing and JWKS (S6.1)
+
+Tokens are signed with an **Ed25519** key (`alg: EdDSA`). The header names the key in `kid`, the RFC 7638 thumbprint of its public JWK, so nothing about it is configured and two keys never share one. The public keys are published, without authentication, at:
+
+```
+GET /.well-known/jwks.json      Cache-Control: public, max-age=300
+{"keys": [{"kty": "OKP", "crv": "Ed25519", "x": "…", "kid": "…", "alg": "EdDSA", "use": "sig"}]}
+```
+
+faclab-invoicing verifies access tokens with that set (cached in memory, fetched again after 10 minutes and for an unknown `kid`). It holds nothing that could issue a token, so compromising it doesn't compromise the core (G-48). The core accepts a token only when its `kid` is one of the published keys, its signature verifies with that key, and its `iss` is `JWT_ISSUER` and its `aud` lists `JWT_AUDIENCE` (`faclab-core`). Another `alg` (`HS256` keyed with the public key, `none`), an unknown or missing `kid`, or a missing `aud` answer 401 `INVALID_TOKEN`.
+
+**Audiences.** Refresh and selection tokens are for the core only: `aud: "faclab-core"`. Access tokens also name the services that accept them (`JWT_SERVICE_AUDIENCES`, default `faclab-invoicing`): `aud: ["faclab-core", "faclab-invoicing"]`. faclab-invoicing requires its own name, so a refresh token is no good there.
+
+**Keys.** The signing key is a PEM (PKCS#8) Ed25519 private key in `JWT_PRIVATE_KEY` or in the file named by `JWT_PRIVATE_KEY_FILE` (a mounted secret), never both. A variable that can't hold newlines may carry them as `\n`. `JWT_PUBLIC_KEYS` / `JWT_PUBLIC_KEYS_FILE` hold more public keys, PEM blocks one after the other, that are also accepted and published. Locally, without a key, a fixed development key derived from a seed in the code signs, so tokens survive a hot reload. Staging and production refuse to start without a key, with a key that isn't Ed25519 or can't be read, or with the development key, whether signing or published. The messages name the variable, never its value.
+
+```bash
+openssl genpkey -algorithm ed25519 -out jwt-2026-11.pem      # private: the secret manager only
+openssl pkey -in jwt-2026-11.pem -pubout -out jwt-2026-11.pub.pem
+```
+
+### Rotating the key
+
+Two keys are active during a rotation, so it closes no session:
+
+1. **Generate** the new key K2. Optionally, publish it first by deploying with `JWT_PUBLIC_KEYS` = the public key of K2. Nothing signs with it yet.
+2. **Switch.** Deploy with K2 as the signing key and `JWT_PUBLIC_KEYS` = the public key of K1. New tokens carry the `kid` of K2. The access and refresh tokens of K1 keep working in the core and in faclab-invoicing, which fetches the JWKS again as soon as it sees the new `kid`.
+3. **Retire.** After `JWT_REFRESH_TTL_SECONDS` (7 days by default) from step 2, no valid token was signed with K1: remove it from `JWT_PUBLIC_KEYS`, deploy, and destroy K1. faclab-invoicing drops it at its next fetch (10 minutes at most).
+
+If K1 leaked, skip the wait: switch and retire in one deploy, which logs everyone out.
+
+Changing from HS256 to EdDSA (this release) invalidates every session once. To roll it back, deploy the previous images, faclab-invoicing first, with the old `JWT_SECRET`, which stays in the secret manager for one release.
 
 ## Role × Permission matrix
 
@@ -173,7 +205,7 @@ The RUC must be a valid 13-digit one. The password goes in the environment, neve
 
 ## Production checklist
 
-- `JWT_SECRET` must be set (config `production.py` raises on missing / short secret).
+- `JWT_PRIVATE_KEY_FILE` (or `JWT_PRIVATE_KEY`) must hold the Ed25519 signing key; staging and production refuse to start without it, with an unreadable one or with the development key. faclab-invoicing needs `JWT_JWKS_URL` pointing at `/.well-known/jwks.json` (internal network), and no secret of the core.
 - Seed the first tenant and its admin: `AUTH_SEED_USERNAME=... AUTH_SEED_EMAIL=... AUTH_SEED_PASSWORD=... AUTH_SEED_TENANT_RUC=... AUTH_SEED_TENANT_NAME=... python -m src.auth.seed` (locally the tenant defaults to a made-up RUC); further tenants with `python -m src.tenancy.provision`.
-- Rotate `JWT_SECRET` invalidates all active tokens (users must log in again).
+- Rotate the signing key with the two-key procedure in [Rotating the key](#rotating-the-key); removing the previous key early logs everyone out.
 - Rate limiting on `/api/auth/login` is NOT implemented — put it at the reverse proxy if exposed publicly.

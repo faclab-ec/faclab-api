@@ -17,8 +17,10 @@ import src
 from config import config
 from src.audit.infra.routes import AuditLogRouter
 from src.auth.infra.admin_routes import UserAdminRouter
+from src.auth.infra.jwks_routes import JwksRouter
 from src.auth.infra.middleware import AuthMiddleware
 from src.auth.infra.routes import AuthRouter
+from src.auth.infra.signing_keys import jwt_keys
 from src.auth.infra.token_service import JwtTokenService
 from src.background.messaging import create_messaging
 from src.catalog.product.infra.routes import CategoryRouter, ProductRouter
@@ -470,7 +472,8 @@ def add_middlewares(target: FastAPI) -> None:
     )
     target.add_middleware(ErrorHandlingMiddleware)
     # Outside the error handler, so its logs carry the request's tenant
-    target.add_middleware(AuthMiddleware, token_service=JwtTokenService())
+    # Reads the signing keys now, so a bad one stops the startup
+    target.add_middleware(AuthMiddleware, token_service=JwtTokenService(jwt_keys()))
     target.add_middleware(
         BodySizeLimitMiddleware,
         max_bytes=config.MAX_REQUEST_BODY_BYTES,
@@ -511,6 +514,9 @@ health_router = HealthRouter(
 )
 app.include_router(health_router.router)
 logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())
+
+# The public keys of the tokens (S6.1), for the services that check them
+app.include_router(JwksRouter(jwt_keys()).router)
 
 # ---------------------------------------------------------------------------
 # Doc endpoints and root redirect (only registered when DOCS_ENABLED=true)

@@ -12,12 +12,12 @@ from sqlalchemy.orm import Session
 from main import app  # noqa: F401  # registers every event handler
 from src.auth.domain.entities import Role, User
 from src.auth.infra.models import AuthSessionModel, UserModel
-from src.auth.infra.token_service import JwtTokenService
 from src.shared.infra.database import Base
 from src.shared.infra.events.event_bus import EventBus
 from src.tenancy.domain.entities import Membership
 from src.tenancy.infra.models import MembershipModel
 from tests.integration.postgres.tenants import ensure_tenant
+from tests.tokens import token_service
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -92,7 +92,7 @@ def issue_headers(
         )
     membership = Membership(tenant_id=tenant_id, user_id=model.id, role=role)
     token = (
-        JwtTokenService()
+        token_service()
         .issue_pair(user, membership, session_id, "test-jti", branch_ids=branch_ids)
         .access_token
     )

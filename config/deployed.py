@@ -1,15 +1,10 @@
-from .base import BaseConfig, env
-
-_DEV_JWT_SECRET = "dev-only-change-me"
-_MIN_JWT_SECRET_LENGTH = 32
+from .base import BaseConfig
 
 
 class DeployedConfig(BaseConfig):
     """Settings for staging and production: no development fallbacks, so a
     missing variable stops the startup instead of running on SQLite or with the
-    development secret."""
-
-    JWT_SECRET = env.str("JWT_SECRET", "")
+    development signing key."""
 
     def __init__(self):
         super().__init__()
@@ -20,21 +15,17 @@ class DeployedConfig(BaseConfig):
             "DATABASE_URL": self.DB_CONNECTION_STRING,
             "DATABASE_URL_WORKER": self.DB_WORKER_URL,
             "CORS_ORIGINS": self.CORS_ORIGINS,
-            "JWT_SECRET": self.JWT_SECRET,
+            # The key that signs the tokens (S6.1); JwtKeys checks it is an
+            # Ed25519 key and not the development one
+            "JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_FILE": (
+                self.JWT_PRIVATE_KEY or self.JWT_PRIVATE_KEY_FILE
+            ),
         }
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError(
                 f"Missing required settings for {self.ENVIRONMENT}: "
                 f"{', '.join(missing)}. Set them as environment variables."
-            )
-        if (
-            self.JWT_SECRET == _DEV_JWT_SECRET
-            or len(self.JWT_SECRET) < _MIN_JWT_SECRET_LENGTH
-        ):
-            raise RuntimeError(
-                "JWT_SECRET must be unique and at least "
-                f"{_MIN_JWT_SECRET_LENGTH} characters in {self.ENVIRONMENT}"
             )
         # Quotes go out by email (S5.4): without a server or a sender, sending
         # one would fail on every request instead of at startup

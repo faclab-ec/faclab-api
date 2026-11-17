@@ -11,6 +11,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from src.auth.infra.signing_keys import development_key
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -21,7 +25,10 @@ _SETTINGS = (
     "DATABASE_URL_MIGRATIONS",
     "DATABASE_URL_ADMIN",
     "CORS_ORIGINS",
-    "JWT_SECRET",
+    "JWT_PRIVATE_KEY",
+    "JWT_PRIVATE_KEY_FILE",
+    "JWT_PUBLIC_KEYS",
+    "JWT_PUBLIC_KEYS_FILE",
     "DOCS_ENABLED",
     "KAFKA_ENABLED",
     "RUN_BACKGROUND",
@@ -55,11 +62,20 @@ with TestClient(main.app):
 print(json.dumps({"messaging": main.messaging is not None, "threads": names}))
 """
 
+
+def _pem(key: Ed25519PrivateKey) -> str:
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+
+
 DEPLOYED = {
     "DATABASE_URL": "postgresql://faclab@db:5432/faclab",
     "DATABASE_URL_WORKER": "postgresql://faclab_worker@db:5432/faclab",
     "CORS_ORIGINS": "https://app.faclab.ec,https://admin.faclab.ec",
-    "JWT_SECRET": "x" * 40,
+    "JWT_PRIVATE_KEY": _pem(Ed25519PrivateKey.generate()),
 }
 
 
@@ -90,7 +106,8 @@ def test_deployed_environment_refuses_to_start_without_required_settings(
     assert result.returncode != 0
     assert (
         f"Missing required settings for {environment}: "
-        "DATABASE_URL, DATABASE_URL_WORKER, CORS_ORIGINS, JWT_SECRET"
+        "DATABASE_URL, DATABASE_URL_WORKER, CORS_ORIGINS, "
+        "JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_FILE"
     ) in result.stderr
 
 
@@ -137,15 +154,28 @@ def test_production_rejects_a_wildcard_cors_origin():
     assert "CORS_ORIGINS must list explicit origins" in result.stderr
 
 
-def test_production_rejects_a_short_jwt_secret():
+@pytest.mark.parametrize(
+    ("key", "message"),
+    [
+        (_pem(development_key()), "The development JWT key can't be used"),
+        ("not a key", "JWT_PRIVATE_KEY is not an unencrypted PEM private key"),
+    ],
+    ids=["development", "garbage"],
+)
+def test_the_production_api_refuses_a_bad_signing_key(tmp_path, key, message):
     result = _run(
-        _PRINT_CONFIG,
+        _PRINT_ROUTES,
         ENVIRONMENT="production",
-        **{**DEPLOYED, "JWT_SECRET": "short"},
+        **{
+            **DEPLOYED,
+            "DATABASE_URL": f"sqlite:///{tmp_path}/app.db",
+            "JWT_PRIVATE_KEY": key,
+        },
     )
 
     assert result.returncode != 0
-    assert "JWT_SECRET must be unique" in result.stderr
+    assert message in result.stderr
+    assert "PRIVATE KEY-----" not in result.stderr
 
 
 def test_local_keeps_development_defaults():
@@ -168,7 +198,7 @@ def test_production_app_has_health_but_no_docs(tmp_path):
         )
     )
 
-    assert {"/health/live", "/health/ready"} <= set(routes)
+    assert {"/health/live", "/health/ready", "/.well-known/jwks.json"} <= set(routes)
     assert not {"/", "/docs", "/openapi.json", "/openapi/admin.json"} & set(routes)
 
 

@@ -145,10 +145,26 @@ class BaseConfig:
     #
     # Auth / JWT config
     #
-    JWT_SECRET = env("JWT_SECRET", "dev-only-change-me")
+    # Tokens are signed with an Ed25519 key (EdDSA, S6.1) and its public part is
+    # published in /.well-known/jwks.json, where other services (faclab-invoicing)
+    # check them. The signing key goes as PEM (PKCS#8) in JWT_PRIVATE_KEY or in
+    # the file of JWT_PRIVATE_KEY_FILE, never both. JWT_PUBLIC_KEYS(_FILE) holds
+    # more public keys (PEM blocks one after the other) that are also accepted
+    # and published: the previous key during a rotation, or the next one before
+    # it signs. Locally, without a key, a fixed development key signs
+    JWT_PRIVATE_KEY = env.str("JWT_PRIVATE_KEY", "")
+    JWT_PRIVATE_KEY_FILE = env.str("JWT_PRIVATE_KEY_FILE", "")
+    JWT_PUBLIC_KEYS = env.str("JWT_PUBLIC_KEYS", "")
+    JWT_PUBLIC_KEYS_FILE = env.str("JWT_PUBLIC_KEYS_FILE", "")
     JWT_ACCESS_TTL_SECONDS = env.int("JWT_ACCESS_TTL_SECONDS", 900)
     JWT_REFRESH_TTL_SECONDS = env.int("JWT_REFRESH_TTL_SECONDS", 604800)
     JWT_ISSUER = env("JWT_ISSUER", "faclab-core")
+    # Every token names this service in `aud`; access tokens also name the
+    # other services that accept them
+    JWT_AUDIENCE = env.str("JWT_AUDIENCE", "faclab-core")
+    JWT_SERVICE_AUDIENCES: list[str] = env.list(
+        "JWT_SERVICE_AUDIENCES", ["faclab-invoicing"]
+    )
     # A refresh token used again within this many seconds after it was rotated
     # (two tabs refreshing at once, a lost response) gets the current session
     # instead of revoking it. 0 makes every reuse revoke the session
@@ -232,7 +248,7 @@ Authentication endpoints live under `/api/auth` and are included in **all three 
 
 ## Authentication
 
-All endpoints — except `POST /api/auth/login`, `POST /api/auth/select-tenant`, `POST /api/auth/refresh` and `POST /api/auth/logout` — require a **JWT Bearer token** (`HS256`) in the `Authorization` header:
+All endpoints — except `POST /api/auth/login`, `POST /api/auth/select-tenant`, `POST /api/auth/refresh` and `POST /api/auth/logout` — require a **JWT Bearer token** (`EdDSA`, Ed25519) in the `Authorization` header:
 
 ```
 Authorization: Bearer <accessToken>
@@ -258,7 +274,7 @@ Browsers must send these three auth calls with credentials (`withCredentials` / 
 | Refresh | 7 days | `JWT_REFRESH_TTL_SECONDS` |
 | Tenant selection | 5 minutes | `JWT_SELECTION_TTL_SECONDS` |
 
-The signing secret is `JWT_SECRET` and the issuer claim is `JWT_ISSUER` (default `faclab-core`).
+Tokens are signed with Ed25519 (`EdDSA`); the public keys, by `kid`, are at `GET /.well-known/jwks.json`. The issuer claim is `JWT_ISSUER` (default `faclab-core`) and `aud` names `faclab-core` (access tokens also `faclab-invoicing`).
 
 ### Roles & permissions
 

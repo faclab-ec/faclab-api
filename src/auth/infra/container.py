@@ -24,6 +24,7 @@ from src.auth.infra.repositories import (
     SqlAlchemyLoginFailureRepository,
     SqlAlchemyUserRepository,
 )
+from src.auth.infra.signing_keys import jwt_keys
 from src.auth.infra.token_service import JwtTokenService
 
 INJECTABLES = [
@@ -32,6 +33,7 @@ INJECTABLES = [
     LoginFailureMapper,
     login_lockout_policy,
     BcryptPasswordHasher,
+    jwt_keys,
     JwtTokenService,
     SqlAlchemyUserRepository,
     SqlAlchemyAuthSessionRepository,

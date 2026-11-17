@@ -19,6 +19,7 @@ from tests.integration.postgres.tenants import (
     OTHER_TENANT_RUC,
     ensure_tenant,
 )
+from tests.tokens import sign_token
 
 PASSWORD = "secret-pass-1"
 
@@ -284,7 +285,7 @@ def test_the_password_of_a_user_in_another_tenant_cannot_be_reset_here(
 
 def test_a_token_without_tenant_must_log_in_again(client, admin):
     now = datetime.now(UTC)
-    legacy = jwt.encode(
+    legacy = sign_token(
         {
             "sub": "1",
             "username": "admin-test",
@@ -293,9 +294,8 @@ def test_a_token_without_tenant_must_log_in_again(client, admin):
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(minutes=5)).timestamp()),
             "iss": config.JWT_ISSUER,
-        },
-        config.JWT_SECRET,
-        algorithm="HS256",
+            "aud": config.JWT_AUDIENCE,
+        }
     )
 
     response = client.get("/api/auth/me", headers=_bearer(legacy))

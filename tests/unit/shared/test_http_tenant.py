@@ -10,14 +10,13 @@ from fastapi.testclient import TestClient
 from opentelemetry.trace import SpanKind
 
 import main
-from config import config
 from src.auth.domain.entities import AuthenticatedUser, Role, User
 from src.auth.infra.dependencies import get_current_user
-from src.auth.infra.token_service import JwtTokenService
 from src.shared.domain.exceptions import NotFoundError
 from src.shared.domain.tenant import TenantSource, current_tenant
 from src.shared.infra.adapters.telemetry import instrument_fastapi
 from src.tenancy.domain.entities import Membership
+from tests.tokens import sign_token, token_service
 
 TENANT_ID = UUID("00000000-0000-4000-8000-0000000000a1")
 
@@ -55,7 +54,7 @@ def _app() -> FastAPI:
 def _token(role: Role = Role.CASHIER) -> str:
     user = User(id=5, username="caja", email="caja@test.local", password_hash="x")
     membership = Membership(tenant_id=TENANT_ID, user_id=5, role=role)
-    return JwtTokenService().issue_pair(user, membership, 1, "jti").access_token
+    return token_service().issue_pair(user, membership, 1, "jti").access_token
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -93,7 +92,7 @@ def test_the_request_logs_and_span_carry_the_tenant(span_exporter, json_logs):
 
 def test_a_token_with_an_unknown_role_is_invalid():
     claims = jwt.decode(_token(), options={"verify_signature": False})
-    forged = jwt.encode({**claims, "role": 99}, config.JWT_SECRET, algorithm="HS256")
+    forged = sign_token({**claims, "role": 99})
 
     response = TestClient(_app()).get("/me", headers=_bearer(forged))
 

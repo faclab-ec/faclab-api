@@ -432,7 +432,7 @@ Since there is no email-based self-service reset yet, the procedure for a user w
 | Refresh | 604800 s (7 days) | `JWT_REFRESH_TTL_SECONDS` |
 | Tenant selection | 300 s (5 min) | `JWT_SELECTION_TTL_SECONDS` |
 
-- Tokens are JWT HS256 (opaque to the frontend; do **not** parse claims client-side for auth decisions — rely on `/me`).
+- Tokens are JWT signed with Ed25519 (`EdDSA`, public keys at `/.well-known/jwks.json`; opaque to the frontend; do **not** parse claims client-side for auth decisions — rely on `/me`).
 - On login, `expiresIn` is the access TTL in seconds.
 - Login (one tenant) or select-tenant opens a **session** (`auth_sessions`) in one tenant; both tokens carry its id in the `sid` claim and the tenant in `tid`. `/refresh` only works while the session is active and pushes its expiry forward, so an active user stays signed in.
 - An access token without `tid` answers 401 `TENANT_REQUIRED` on every protected route: log in again.

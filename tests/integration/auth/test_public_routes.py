@@ -13,6 +13,8 @@ from src.auth.infra.dependencies import get_current_user
 HEALTH_ROUTES = {"GET /health/live", "GET /health/ready"}
 
 PUBLIC_ROUTES = HEALTH_ROUTES | {
+    # The public keys that verify the tokens (S6.1)
+    "GET /.well-known/jwks.json",
     "POST /api/auth/login",
     # Authenticates itself with the login's selection token or an access token
     "POST /api/auth/select-tenant",
