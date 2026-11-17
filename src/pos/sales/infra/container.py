@@ -1,3 +1,4 @@
+from src.pos.sales.app.checkout import SaleCheckout
 from src.pos.sales.app.commands import (
     POSCancelSaleCommandHandler,
     POSConfirmSaleCommandHandler,
@@ -19,6 +20,7 @@ INJECTABLES = [
     POSResumeSaleCommandHandler,
     ApplySaleDiscountCommandHandler,
     QuickSaleCommandHandler,
+    SaleCheckout,
     GetParkedSalesQueryHandler,
     OverrideItemPriceCommandHandler,
     GenerateReceiptQueryHandler,

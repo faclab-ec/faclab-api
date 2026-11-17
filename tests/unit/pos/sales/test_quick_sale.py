@@ -8,6 +8,7 @@ import pytest
 
 from src.catalog.product.domain.entities import ProductPresentation
 from src.inventory.stock.domain.entities import Stock
+from src.pos.sales.app.checkout import SaleCheckout
 from src.pos.sales.app.commands.quick_sale import (
     QuickSaleCommand,
     QuickSaleCommandHandler,
@@ -145,25 +146,31 @@ def _build_handler(
     quotes=None,
     credit=None,
 ):
+    quotes = quotes or QuoteConversion(_mock_repo(), _mock_repo())
     return QuickSaleCommandHandler(
-        sale_repo=sale_repo or _mock_repo(),
-        sale_item_repo=sale_item_repo or _mock_repo(),
-        product_repo=product_repo or _mock_repo(),
-        stock=TerminalStock(
-            stock_repo or _mock_repo(), movement_repo or _mock_repo(), inventory_costs()
-        ),
-        payment_repo=payment_repo or _mock_repo(),
         shift_repo=shift_repo or _mock_repo(),
         terminals=terminal_resolver(),
-        numbering=numbering(),
-        event_publisher=event_publisher or MagicMock(),
-        session=MagicMock(),
-        audit=audit or FakeAuditTrail(),
-        quantities=FakeProductQuantities(),
-        presentations=presentations or FakeProductPresentations(),
-        prices=prices or price_resolver(),
-        quotes=quotes or QuoteConversion(_mock_repo(), _mock_repo()),
-        credit=credit or customer_credit(),
+        quotes=quotes,
+        checkout=SaleCheckout(
+            sale_repo=sale_repo or _mock_repo(),
+            sale_item_repo=sale_item_repo or _mock_repo(),
+            product_repo=product_repo or _mock_repo(),
+            stock=TerminalStock(
+                stock_repo or _mock_repo(),
+                movement_repo or _mock_repo(),
+                inventory_costs(),
+            ),
+            payment_repo=payment_repo or _mock_repo(),
+            numbering=numbering(),
+            event_publisher=event_publisher or MagicMock(),
+            session=MagicMock(),
+            audit=audit or FakeAuditTrail(),
+            quantities=FakeProductQuantities(),
+            presentations=presentations or FakeProductPresentations(),
+            prices=prices or price_resolver(),
+            quotes=quotes,
+            credit=credit or customer_credit(),
+        ),
     )
 
 
