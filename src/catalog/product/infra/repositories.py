@@ -1,5 +1,7 @@
 from collections.abc import Iterable
+from datetime import datetime
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from wireup import injectable
 
@@ -25,6 +27,7 @@ from src.catalog.product.infra.models import (
     ProductPresentationModel,
 )
 from src.shared.infra.repositories import SqlAlchemyRepository
+from src.shared.infra.tenant import tenant_criteria
 
 
 @injectable(lifetime="scoped", as_type=CategoryRepository)
@@ -60,6 +63,32 @@ class SqlAlchemyProductPresentationRepository(
 
     def __init__(self, session: Session, mapper: ProductPresentationMapper):
         super().__init__(session, mapper)
+
+    # A product's presentations are part of it in the public API (S6.3): every
+    # write of one marks its product as updated, so `updatedSince` returns it
+
+    def create(self, entity: ProductPresentation) -> ProductPresentation:
+        created = super().create(entity)
+        self._touch_product(created.product_id)
+        return created
+
+    def update(self, entity: ProductPresentation) -> ProductPresentation:
+        updated = super().update(entity)
+        self._touch_product(updated.product_id)
+        return updated
+
+    def delete(self, id: int) -> None:
+        presentation = self.get_by_id(id)
+        super().delete(id)
+        if presentation is not None:
+            self._touch_product(presentation.product_id)
+
+    def _touch_product(self, product_id: int) -> None:
+        self.session.execute(
+            update(ProductModel)
+            .where(*tenant_criteria(ProductModel), ProductModel.id == product_id)
+            .values(updated_at=datetime.now())
+        )
 
     def for_products(self, product_ids: Iterable[int]) -> list[ProductPresentation]:
         ids = set(product_ids)

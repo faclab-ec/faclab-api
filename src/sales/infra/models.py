@@ -57,6 +57,14 @@ class SaleModel(TenantScoped, Base):
             name="fk_sales_quote_tenant",
         ),
         UniqueConstraint("tenant_id", "quote_id", name="uq_sales_tenant_quote_id"),
+        # The integration client that created it through the public API (S6.3)
+        ForeignKeyConstraint(
+            ["tenant_id", "integration_client_id"],
+            ["integration_clients.tenant_id", "integration_clients.id"],
+            name="fk_sales_integration_client_tenant",
+        ),
+        # The public API syncs by `updatedSince`, ordered by updated_at and id
+        Index("ix_sales_tenant_updated_at", "tenant_id", "updated_at", "id"),
         # The number is a correlative per branch (document_sequences)
         UniqueConstraint(
             "tenant_id", "branch_id", "number", name="uq_sales_tenant_branch_number"
@@ -115,10 +123,19 @@ class SaleModel(TenantScoped, Base):
     invoice_rejection_reason: Mapped[str | None] = mapped_column(String(1000))
     # When it was last sent to faclab-invoicing (S4.3)
     invoice_requested_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Where it was sold (S6.3): `pos` at a terminal, `api` by an integration
+    # client, with the order id of the system that sent it
+    channel: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pos", server_default="pos"
+    )
+    external_reference: Mapped[str | None] = mapped_column(String(100))
+    integration_client_id: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+    )
 
     # Relationships
     items: Mapped[list["SaleItemModel"]] = relationship(

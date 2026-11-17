@@ -36,6 +36,14 @@ class SaleStatus(StrEnum):
 COMPLETED_SALE_STATUSES = (SaleStatus.CONFIRMED.value, SaleStatus.INVOICED.value)
 
 
+class SaleChannel(StrEnum):
+    """Dónde se vendió (S6.3): en una terminal del POS o por la API pública,
+    con un cliente de integración"""
+
+    POS = "pos"
+    API = "api"
+
+
 class PaymentStatus(StrEnum):
     """Estado de pago de una venta"""
 
@@ -131,6 +139,11 @@ class Sale(Entity):
     terminal_id: int | None = None
     # The quote it converted (S5.4), charged at the POS with its items
     quote_id: int | None = None
+    # Where it was sold (S6.3); by the API, the integration client that sent
+    # it and the order id of its system
+    channel: SaleChannel = SaleChannel.POS
+    external_reference: str | None = None
+    integration_client_id: int | None = None
     # Correlative per branch (`V-001-000123`), given when it is confirmed
     number: str | None = None
     status: SaleStatus = SaleStatus.DRAFT

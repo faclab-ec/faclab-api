@@ -234,6 +234,12 @@ class SqlAlchemyRepository(Repository[E], Generic[E]):
             else:
                 query = query.order_by(asc(order_by))
 
+        # A stable order (G-73): the id breaks ties, and is the order without
+        # one, so a page never repeats nor skips rows of the previous one
+        model_id = getattr(self.__model__, "id", None)
+        if model_id is not None:
+            query = query.order_by(desc(model_id) if desc_order else asc(model_id))
+
         if limit is not None:
             query = query.limit(limit)
 

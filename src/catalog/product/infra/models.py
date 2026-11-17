@@ -58,6 +58,8 @@ class ProductModel(TenantScoped, Base):
             ["units_of_measure.tenant_id", "units_of_measure.id"],
             name="fk_products_unit_of_measure_tenant",
         ),
+        # The public API syncs by `updatedSince`, ordered by updated_at and id
+        Index("ix_products_tenant_updated_at", "tenant_id", "updated_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -80,6 +82,11 @@ class ProductModel(TenantScoped, Base):
     lead_time_days: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
+    )
+    # Every change of the product or of its presentations (S6.3): the public
+    # API's `updatedSince` reads it
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
     )
 
     category_id: Mapped[int | None] = mapped_column(nullable=True, index=True)
