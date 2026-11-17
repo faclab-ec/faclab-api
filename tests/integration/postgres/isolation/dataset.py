@@ -26,7 +26,9 @@ from tests.integration.postgres.api import (
     make_supplier,
     make_warehouse,
     national_id,
+    with_key,
 )
+from tests.integration.postgres.public_api import integration_headers
 
 # An id no sequence reaches: what a row of another tenant must look like
 MISSING = 2_000_000_000
@@ -376,6 +378,9 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
             "paymentMethod": "CASH",
         },
     )["id"]
+    # An integration client with every scope (S6.3) and a sale it made through
+    # the public API, before the reconciliation looks at the confirmed sales
+    ids["api_headers"], ids["api_sale"] = _public_api(api, ids)
     # A reconciliation discrepancy of the confirmed sale: with the threshold in
     # the future, every confirmed sale without an invoice result is overdue
     with pytest.MonkeyPatch.context() as patch:
@@ -388,6 +393,24 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     ids["credit_note"] = _credit_note(api, ids, tenant_id)
     ids["import"] = _import(api, ids)
     return ids
+
+
+def _public_api(api: Api, ids: Ids) -> tuple[dict[str, str], int]:
+    headers = integration_headers(api, api.client, name=f"{ids['marker']} API")
+    # 1 × 10.00 + VAT 15 %
+    sale = api.client.post(
+        "/api/v1/sales",
+        headers=with_key(headers) | {"X-Branch-Id": str(ids["branch"])},
+        json={
+            "emissionPointId": ids["emission_point"],
+            "locationId": ids["location"],
+            "externalReference": f"{ids['marker']}-WEB-1",
+            "items": [{"productId": ids["product"], "quantity": "1"}],
+            "payments": [{"method": "TRANSFER", "amount": "11.50"}],
+        },
+    )
+    assert sale.status_code == 201, sale.text
+    return headers, sale.json()["data"]["id"]
 
 
 def _import(api: Api, ids: Ids) -> int:

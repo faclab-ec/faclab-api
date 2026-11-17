@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -134,7 +135,12 @@ class SaleModel(TenantScoped, Base):
         DateTime, nullable=False, default=datetime.now
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        # Also for the rows SQL inserts by itself
+        server_default=func.now(),
     )
 
     # Relationships

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -86,7 +87,12 @@ class ProductModel(TenantScoped, Base):
     # Every change of the product or of its presentations (S6.3): the public
     # API's `updatedSince` reads it
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        # Also for the rows SQL inserts by itself
+        server_default=func.now(),
     )
 
     category_id: Mapped[int | None] = mapped_column(nullable=True, index=True)

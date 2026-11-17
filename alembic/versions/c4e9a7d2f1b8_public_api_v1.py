@@ -6,7 +6,8 @@ The public API `/api/v1` (S6.3, G-72, G-73, G-42):
   `sales`: integrations sync with `updatedSince`, ordered by `updated_at` and
   `id` (an index per table). Existing products and customers take their
   `created_at`, stock rows the moment of the migration and sales their
-  `created_at` when they were never updated. Written with FORCE turned off on
+  `created_at` when they were never updated; new rows take `now()` when SQL
+  inserts them without one. Written with FORCE turned off on
   each table (faclab_owner, the owner, then skips the policy).
 - `sales.channel` (`pos`, every existing sale, or `api`),
   `sales.external_reference` (the order id of the integrator's system) and
@@ -78,7 +79,11 @@ def upgrade() -> None:
     for table in (*BACKFILL, "sales"):
         with op.batch_alter_table(table) as batch:
             batch.alter_column(
-                "updated_at", existing_type=sa.DateTime(), nullable=False
+                "updated_at",
+                existing_type=sa.DateTime(),
+                nullable=False,
+                # Also for the rows SQL inserts by itself
+                server_default=sa.func.now(),
             )
         op.create_index(
             f"ix_{table}_tenant_updated_at", table, ["tenant_id", "updated_at", "id"]
@@ -131,7 +136,12 @@ def downgrade() -> None:
 
     op.drop_index("ix_sales_tenant_updated_at", table_name="sales")
     with op.batch_alter_table("sales") as batch:
-        batch.alter_column("updated_at", existing_type=sa.DateTime(), nullable=True)
+        batch.alter_column(
+            "updated_at",
+            existing_type=sa.DateTime(),
+            nullable=True,
+            server_default=None,
+        )
 
     for table in BACKFILL:
         op.drop_index(f"ix_{table}_tenant_updated_at", table_name=table)

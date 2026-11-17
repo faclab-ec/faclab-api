@@ -128,7 +128,7 @@ class ApiSaleRouter:
         or the general one); another `unitPrice` needs `overrideReason`
         (`OVERRIDE_REASON_REQUIRED`) and is audited. The stock must cover it
         (`INSUFFICIENT_STOCK`). The sale arrives paid online: `CREDIT_CARD`,
-        `DEBIT_CARD`, `TRANSFER` or `OTHER` (`PAYMENT_METHOD_NOT_ALLOWED`),
+        `DEBIT_CARD`, `TRANSFER` or `OTHER`, never cash nor credit,
         adding up to its total with VAT exactly (`INSUFFICIENT_PAYMENT`,
         `PAYMENT_EXCEEDS_BALANCE`). Without `customer`, it is sold to the final
         consumer. Requires `Idempotency-Key`: a retry with it gets the same

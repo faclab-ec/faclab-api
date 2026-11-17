@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -69,7 +70,12 @@ class StockModel(TenantScoped, Base):
     )
     # Every change of the row (S6.3): the public API's `updatedSince`
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        # Also for the rows SQL inserts by itself
+        server_default=func.now(),
     )
 
     product: Mapped["ProductModel"] = relationship(back_populates="stocks")

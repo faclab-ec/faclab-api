@@ -1736,7 +1736,7 @@
           "Sales"
         ],
         "summary": "Create and confirm a sale",
-        "description": "Create a sale of channel `api` and confirm it in one step, in the\nbranch of `X-Branch-Id`, at its emission point `emissionPointId` and\ntaking the stock of its location `locationId` (see `GET /branches`).\nIt is numbered in its branch and sent to be invoiced.\n\nEach line takes the price its lists give (the customer's, the branch's\nor the general one); another `unitPrice` needs `overrideReason`\n(`OVERRIDE_REASON_REQUIRED`) and is audited. The stock must cover it\n(`INSUFFICIENT_STOCK`). The sale arrives paid online: `CREDIT_CARD`,\n`DEBIT_CARD`, `TRANSFER` or `OTHER` (`PAYMENT_METHOD_NOT_ALLOWED`),\nadding up to its total with VAT exactly (`INSUFFICIENT_PAYMENT`,\n`PAYMENT_EXCEEDS_BALANCE`). Without `customer`, it is sold to the final\nconsumer. Requires `Idempotency-Key`: a retry with it gets the same\nsale, made once.",
+        "description": "Create a sale of channel `api` and confirm it in one step, in the\nbranch of `X-Branch-Id`, at its emission point `emissionPointId` and\ntaking the stock of its location `locationId` (see `GET /branches`).\nIt is numbered in its branch and sent to be invoiced.\n\nEach line takes the price its lists give (the customer's, the branch's\nor the general one); another `unitPrice` needs `overrideReason`\n(`OVERRIDE_REASON_REQUIRED`) and is audited. The stock must cover it\n(`INSUFFICIENT_STOCK`). The sale arrives paid online: `CREDIT_CARD`,\n`DEBIT_CARD`, `TRANSFER` or `OTHER`, never cash nor credit,\nadding up to its total with VAT exactly (`INSUFFICIENT_PAYMENT`,\n`PAYMENT_EXCEEDS_BALANCE`). Without `customer`, it is sold to the final\nconsumer. Requires `Idempotency-Key`: a retry with it gets the same\nsale, made once.",
         "operationId": "create_api_v1_sales_post",
         "parameters": [
           {
@@ -2594,6 +2594,7 @@
           "id",
           "code",
           "name",
+          "address",
           "isMain",
           "emissionPoints",
           "locations"
@@ -2756,6 +2757,12 @@
           "name",
           "identificationType",
           "identification",
+          "email",
+          "phone",
+          "address",
+          "city",
+          "state",
+          "country",
           "isActive",
           "createdAt",
           "updatedAt"
@@ -2947,7 +2954,8 @@
         "type": "object",
         "required": [
           "id",
-          "code"
+          "code",
+          "name"
         ],
         "title": "EmissionPoint"
       },
@@ -3372,8 +3380,11 @@
         "required": [
           "id",
           "name",
+          "description",
           "isDefault",
           "isActive",
+          "validFrom",
+          "validTo",
           "createdAt"
         ],
         "title": "PriceList"
@@ -3562,11 +3573,17 @@
           "id",
           "sku",
           "name",
+          "description",
+          "categoryId",
           "unitOfMeasureId",
+          "unitSymbol",
           "quantityDecimals",
           "taxCode",
+          "constructionMaterialCode",
+          "salePrice",
           "isActive",
           "isService",
+          "barcode",
           "presentations",
           "createdAt",
           "updatedAt"
@@ -3746,8 +3763,10 @@
           "id",
           "name",
           "factor",
+          "barcode",
           "isBase",
           "isActive",
+          "salePrice",
           "quantityDecimals"
         ],
         "title": "ProductPresentation",
@@ -3936,13 +3955,21 @@
         "type": "object",
         "required": [
           "id",
+          "number",
           "channel",
+          "externalReference",
           "status",
+          "branchId",
+          "emissionPointId",
+          "customerId",
+          "saleDate",
           "subtotal",
           "tax",
           "discount",
           "total",
           "paymentStatus",
+          "invoiceStatus",
+          "invoiceId",
           "items",
           "payments",
           "createdAt",
@@ -4172,6 +4199,8 @@
         "required": [
           "id",
           "productId",
+          "presentationId",
+          "presentationName",
           "quantity",
           "unitFactor",
           "baseQuantity",
@@ -4337,7 +4366,8 @@
         "type": "object",
         "required": [
           "method",
-          "amount"
+          "amount",
+          "reference"
         ],
         "title": "SalePayment"
       },

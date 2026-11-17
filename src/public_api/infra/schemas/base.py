@@ -13,8 +13,14 @@ from src.public_api.infra.types import utc_naive
 
 
 class PublicModel(BaseModel):
+    """A response: every field is always sent (null when it has no value), so
+    the OpenAPI marks them all required and removing one is a breaking change"""
+
     model_config = ConfigDict(
-        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+        alias_generator=to_camel,
+        populate_by_name=True,
+        from_attributes=True,
+        json_schema_serialization_defaults_required=True,
     )
 
 
