@@ -18,7 +18,14 @@ class AuditEntryResponse(BaseModel):
         None, description="User who did it (null for a message or a task)"
     )
     actor_name: str | None = Field(
-        None, description="The user's full name or username at the time"
+        None,
+        description="The user's full name or username at the time, or the "
+        "integration client's name",
+    )
+    actor_integration_id: int | None = Field(
+        None,
+        description="Integration client that did it with its token (S6.2); "
+        "then actorUserId is null",
     )
     action: AuditAction = Field(description="Audited action")
     resource_type: str = Field(description="Kind of resource (product, sale, user…)")
@@ -43,6 +50,9 @@ class AuditLogQueryParams(QueryParams):
     from_date: date | None = Field(None, description="Start date (inclusive)")
     to_date: date | None = Field(None, description="End date (inclusive)")
     actor_id: int | None = Field(None, ge=1, description="Filter by user ID")
+    actor_integration_id: int | None = Field(
+        None, ge=1, description="Filter by integration client ID"
+    )
     action: AuditAction | None = Field(None, description="Filter by action")
     resource_type: str | None = Field(
         None, max_length=32, description="Filter by kind of resource"

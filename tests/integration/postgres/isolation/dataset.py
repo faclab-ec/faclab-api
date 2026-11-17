@@ -284,6 +284,18 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
         },
     )["id"]
 
+    # An integration client (S6.2) limited to the branch
+    integration = api.post(
+        "/api/admin/integrations",
+        {
+            "name": f"{m} Tienda web",
+            "scopes": ["stock:read", "sales:write"],
+            "branchIds": [ids["branch"]],
+        },
+    )
+    ids["integration"] = integration["id"]
+    ids["integration_secret"] = integration["secrets"][0]["id"]
+
     # Quotes (S5.4): a draft of the customer in the branch with the product
     ids["quote"] = api.post(
         "/api/admin/quotes",

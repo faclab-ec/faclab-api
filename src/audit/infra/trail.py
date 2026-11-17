@@ -41,6 +41,7 @@ class SqlAlchemyAuditTrail(AuditTrail):
                 tenant_id=context.tenant_id,
                 actor_user_id=context.user_id,
                 actor_name=context.user_name,
+                actor_integration_id=context.integration_id,
                 action=action.value,
                 resource_type=action.resource,
                 resource_id=resource_id,

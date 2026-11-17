@@ -20,6 +20,8 @@ CROSS_TENANT_TABLES = {
     "user_branch_access",
     "auth_sessions",
     "outbox_messages",
+    # client_id -> tenant: the token endpoint reads it before knowing the tenant
+    "integration_client_directory",
 }
 # Relations the database keeps within one tenant: (table, column). PostgreSQL
 # checks foreign keys without row-level security, so a single-column key would
@@ -139,6 +141,8 @@ INTERNAL_FOREIGN_KEYS = {
     ("payable_applications", "supplier_payment_id"): "the payment being recorded",
     ("payable_applications", "supplier_return_id"): "the return being confirmed",
     ("import_job_rows", "job_id"): "the import being created",
+    ("integration_client_secrets", "client_id"): "the client loaded by id",
+    ("integration_client_usage", "client_id"): "the client of the token",
 }
 
 TABLES = Base.metadata.tables
@@ -160,7 +164,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 56
+    assert len(BUSINESS_TABLES) == 59
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

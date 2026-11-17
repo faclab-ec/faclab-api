@@ -1,14 +1,15 @@
 """Guard test: the only routes without authentication are the ones declared here.
 
 Health checks, login and refresh must stay public; any other route that loses
-its require_permission/get_current_user dependency fails here.
+its require_permission/get_current_user dependency (or, for the routes of the
+integrations, require_scope/get_principal) fails here.
 """
 
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute
 
 from main import app
-from src.auth.infra.dependencies import get_current_user
+from src.auth.infra.dependencies import get_current_user, get_principal
 
 HEALTH_ROUTES = {"GET /health/live", "GET /health/ready"}
 
@@ -21,6 +22,8 @@ PUBLIC_ROUTES = HEALTH_ROUTES | {
     "POST /api/auth/refresh",
     # Ends the session of the refresh token in the body
     "POST /api/auth/logout",
+    # An integration client authenticates with its client_id and secret (S6.2)
+    "POST /api/oauth/token",
     # Only registered when DOCS_ENABLED is on
     "GET /",
     "GET /docs",
@@ -43,6 +46,7 @@ def _public_routes() -> set[str]:
         for route in app.routes
         if isinstance(route, APIRoute)
         and not _tree_contains_call(route.dependant, get_current_user)
+        and not _tree_contains_call(route.dependant, get_principal)
         for method in route.methods or []
     }
 

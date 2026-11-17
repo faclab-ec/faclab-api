@@ -787,6 +787,46 @@ def _pos_terminal_deleted(w):
     return terminal["id"]
 
 
+def _integration(w: World) -> dict:
+    return w.admin.api.post(
+        "/api/admin/integrations", {"name": "Tienda web", "scopes": ["stock:read"]}
+    )
+
+
+def _integration_created(w):
+    body = {"name": "Tienda web", "scopes": ["stock:read", "sales:write"]}
+    return w.send(w.admin, "POST", "/api/admin/integrations", body)["id"]
+
+
+def _integration_updated(w):
+    client = _integration(w)
+    body = {"name": "Tienda web", "scopes": ["stock:read", "sales:read"]}
+    return w.send(w.admin, "PUT", f"/api/admin/integrations/{client['id']}", body)["id"]
+
+
+def _integration_secret_created(w):
+    client = _integration(w)
+    w.send(w.admin, "POST", f"/api/admin/integrations/{client['id']}/secrets", {})
+    return client["id"]
+
+
+def _integration_secret_revoked(w):
+    client = _integration(w)
+    secret_id = client["secrets"][0]["id"]
+    w.send(
+        w.admin,
+        "POST",
+        f"/api/admin/integrations/{client['id']}/secrets/{secret_id}/revoke",
+    )
+    return client["id"]
+
+
+def _integration_revoked(w):
+    client = _integration(w)
+    path = f"/api/admin/integrations/{client['id']}/revoke"
+    return w.send(w.admin, "POST", path)["id"]
+
+
 SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.PRODUCT_CREATED: _product_created,
     AuditAction.PRODUCT_UPDATED: _product_updated,
@@ -840,6 +880,11 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.POS_TERMINAL_UPDATED: _pos_terminal_updated,
     AuditAction.POS_TERMINAL_DELETED: _pos_terminal_deleted,
     AuditAction.IMPORT_CONFIRMED: _import_confirmed,
+    AuditAction.INTEGRATION_CREATED: _integration_created,
+    AuditAction.INTEGRATION_UPDATED: _integration_updated,
+    AuditAction.INTEGRATION_SECRET_CREATED: _integration_secret_created,
+    AuditAction.INTEGRATION_SECRET_REVOKED: _integration_secret_revoked,
+    AuditAction.INTEGRATION_REVOKED: _integration_revoked,
 }
 
 
@@ -898,6 +943,27 @@ def test_a_user_entry_has_no_password_nor_email(world, db_session):
         assert "Temporal-123" not in stored
         assert "Otra-Clave-456" not in stored
         assert "@test.local" not in stored
+
+
+def test_an_integration_entry_has_no_secret_nor_its_hash(world, db_session):
+    client = world.admin.api.post(
+        "/api/admin/integrations", {"name": "Tienda web", "scopes": ["stock:read"]}
+    )
+    rotated = world.admin.api.post(
+        f"/api/admin/integrations/{client['id']}/secrets", {}
+    )
+    hashes = [
+        row[0]
+        for row in db_session.execute(
+            text("SELECT secret_hash FROM integration_client_secrets")
+        )
+    ]
+
+    for entry in db_session.scalars(select(AuditLogModel)):
+        stored = f"{entry.before} {entry.after}"
+        assert client["clientSecret"] not in stored
+        assert rotated["clientSecret"] not in stored
+        assert not any(hashed in stored for hashed in hashes)
 
 
 # The operation's transaction

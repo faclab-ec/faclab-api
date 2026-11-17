@@ -63,6 +63,9 @@ class Permission(StrEnum):
     # Bulk import of initial data (S5.8): catalog, prices, customers,
     # suppliers and opening stock at once
     IMPORT_WRITE = "import:write"
+    # Integration clients (S6.2): create them, change their scopes, rotate and
+    # revoke their secrets, see their usage
+    INTEGRATION_MANAGE = "integration:manage"
 
 
 _ALL_READS = frozenset(
@@ -82,8 +85,8 @@ _ALL_READS = frozenset(
     }
 )
 
-# The structure (SRI establishments and emission points), the audit log and
-# the bulk import are the admin's
+# The structure (SRI establishments and emission points), the audit log, the
+# bulk import and the integration clients are the admin's
 _MANAGER_PERMS = frozenset(Permission) - frozenset(
     {
         Permission.USER_MANAGE,
@@ -91,6 +94,7 @@ _MANAGER_PERMS = frozenset(Permission) - frozenset(
         Permission.ORGANIZATION_WRITE,
         Permission.AUDIT_READ,
         Permission.IMPORT_WRITE,
+        Permission.INTEGRATION_MANAGE,
     }
 )
 

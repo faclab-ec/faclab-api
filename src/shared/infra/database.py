@@ -76,6 +76,17 @@ def worker_session_maker() -> sessionmaker[Session]:
     return create_session_maker(config.DB_WORKER_CONNECTION_STRING)
 
 
+@functools.cache
+def app_session_maker() -> sessionmaker[Session]:
+    """Sessions as faclab_app, under row-level security, outside the request's
+    unit of work: short transactions of their own that commit or fail apart
+    from the request, like the state and the usage of an integration client
+    that `AuthMiddleware` reads and records (S6.2). One engine per process."""
+    from config import config
+
+    return create_session_maker(config.DB_CONNECTION_STRING)
+
+
 def set_tenant_setting(
     _session: Session, _transaction: SessionTransaction, connection: Connection
 ) -> None:

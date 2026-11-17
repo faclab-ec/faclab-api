@@ -9,6 +9,8 @@ from wireup import injectable
 
 from config import config
 from src.auth.app.services.token_service import (
+    ClientToken,
+    ClientTokenClaims,
     SelectionToken,
     TokenClaims,
     TokenPair,
@@ -22,10 +24,14 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
 )
 from src.auth.domain.permissions import permissions_for
+from src.auth.domain.scopes import Scope, format_scopes
 from src.auth.infra.signing_keys import ALGORITHM, JwtKeys
 from src.tenancy.domain.entities import Membership
 
 logger = structlog.get_logger(__name__)
+
+# `sub` of an integration client's token; a user's is its numeric id
+CLIENT_SUBJECT_PREFIX = "client:"
 
 
 @injectable(lifetime="singleton", as_type=TokenService)
@@ -95,7 +101,48 @@ class JwtTokenService(TokenService):
         )
 
     def decode_access(self, token: str) -> TokenClaims:
-        claims = self._decode(token, accepted=("access",))
+        return self._user_access(self._decode(token, accepted=("access",)))
+
+    def decode_bearer(self, token: str) -> TokenClaims | ClientTokenClaims:
+        payload = self._verified(token, accepted=("access",))
+        if _is_client(payload):
+            return _client_claims(payload)
+        return self._user_access(_user_claims(payload))
+
+    def issue_client_access(
+        self,
+        *,
+        public_id: str,
+        tenant_id: UUID,
+        secret_id: int,
+        scopes: Collection[Scope],
+        branch_ids: Collection[int] | None = None,
+    ) -> ClientToken:
+        now = datetime.now(UTC)
+        granted = frozenset(scopes)
+        payload: dict[str, Any] = {
+            "sub": f"{CLIENT_SUBJECT_PREFIX}{public_id}",
+            "azp": public_id,
+            "tid": str(tenant_id),
+            "cred": secret_id,
+            "scope": format_scopes(granted),
+            "typ": "access",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(seconds=self._access_ttl)).timestamp()),
+            "iss": self._issuer,
+            # Only this service until the public API of faclab-invoicing checks
+            # scopes (S6.3): its internal routes authorize with `perms`
+            "aud": self._audience,
+        }
+        if branch_ids is not None:
+            payload["bids"] = sorted(set(branch_ids))
+        return ClientToken(
+            access_token=self._encode(payload),
+            expires_in=self._access_ttl,
+            scopes=granted,
+        )
+
+    def _user_access(self, claims: TokenClaims) -> TokenClaims:
         if claims.tid is None:
             raise TenantRequiredError()
         if claims.role is None:
@@ -160,6 +207,16 @@ class JwtTokenService(TokenService):
         )
 
     def _decode(self, token: str, accepted: tuple[TokenType, ...]) -> TokenClaims:
+        """A user's token: an integration's never passes as one"""
+        payload = self._verified(token, accepted)
+        if _is_client(payload):
+            logger.info("token_rejected", reason="integration token as a user's")
+            raise InvalidTokenError("invalid token")
+        return _user_claims(payload)
+
+    def _verified(self, token: str, accepted: tuple[TokenType, ...]) -> dict[str, Any]:
+        """The claims of a token signed by a published key, for this service,
+        not expired and of one of the `accepted` types"""
         try:
             kid = jwt.get_unverified_header(token).get("kid")
             key = self._keys.verification_key(kid) if isinstance(kid, str) else None
@@ -188,26 +245,64 @@ class JwtTokenService(TokenService):
                 reason=f"expected {'/'.join(accepted)} token, got {payload.get('typ')}",
             )
             raise InvalidTokenError("invalid token")
+        return payload
 
-        try:
-            return TokenClaims(
-                sub=int(payload["sub"]),
-                username=payload["username"],
-                typ=payload["typ"],
-                iat=int(payload["iat"]),
-                exp=int(payload["exp"]),
-                iss=payload["iss"],
-                role=_optional(payload, "role", int),
-                tid=_optional(payload, "tid", lambda value: UUID(str(value))),
-                must_change_password=bool(payload.get("mcp", False)),
-                sid=_optional(payload, "sid", int),
-                jti=_optional(payload, "jti", str),
-                name=payload.get("name") or None,
-                bids=_optional(payload, "bids", _branch_ids),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            logger.info("token_rejected", reason="malformed claims")
-            raise InvalidTokenError("invalid token") from exc
+
+def _is_client(payload: dict[str, Any]) -> bool:
+    return str(payload.get("sub", "")).startswith(CLIENT_SUBJECT_PREFIX)
+
+
+def _user_claims(payload: dict[str, Any]) -> TokenClaims:
+    try:
+        return TokenClaims(
+            sub=int(payload["sub"]),
+            username=payload["username"],
+            typ=payload["typ"],
+            iat=int(payload["iat"]),
+            exp=int(payload["exp"]),
+            iss=payload["iss"],
+            role=_optional(payload, "role", int),
+            tid=_optional(payload, "tid", lambda value: UUID(str(value))),
+            must_change_password=bool(payload.get("mcp", False)),
+            sid=_optional(payload, "sid", int),
+            jti=_optional(payload, "jti", str),
+            name=payload.get("name") or None,
+            bids=_optional(payload, "bids", _branch_ids),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.info("token_rejected", reason="malformed claims")
+        raise InvalidTokenError("invalid token") from exc
+
+
+def _client_claims(payload: dict[str, Any]) -> ClientTokenClaims:
+    try:
+        public_id = payload["azp"]
+        if not isinstance(public_id, str) or payload["sub"] != (
+            f"{CLIENT_SUBJECT_PREFIX}{public_id}"
+        ):
+            raise ValueError("sub and azp name different clients")
+        return ClientTokenClaims(
+            public_id=public_id,
+            tid=UUID(str(payload["tid"])),
+            secret_id=int(payload["cred"]),
+            scopes=_scopes(payload["scope"]),
+            iat=int(payload["iat"]),
+            exp=int(payload["exp"]),
+            iss=payload["iss"],
+            bids=_optional(payload, "bids", _branch_ids),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.info("token_rejected", reason="malformed integration claims")
+        raise InvalidTokenError("invalid token") from exc
+
+
+def _scopes(value: Any) -> frozenset[Scope]:
+    """The scopes it names that still exist: one retired after the token was
+    issued gives nothing"""
+    if not isinstance(value, str):
+        raise TypeError("scope must be a string")
+    known = {scope.value for scope in Scope}
+    return frozenset(Scope(name) for name in value.split() if name in known)
 
 
 def _branch_ids(value: Any) -> frozenset[int]:

@@ -673,6 +673,30 @@ ROUTES: dict[str, Route] = {
     f"POST {ADMIN}/users/{{user_id}}/reset-password": Route(
         path=("user",), body=lambda ids: {"newPassword": "Reset-Pass-2026!"}
     ),
+    # Integration clients (S6.2)
+    f"POST {ADMIN}/integrations": Route(
+        body=lambda ids: {"name": f"{ids['marker']} ERP", "scopes": ["sales:read"]},
+        created=f"{ADMIN}/integrations/{{}}",
+    ),
+    f"GET {ADMIN}/integrations": Route(),
+    f"GET {ADMIN}/integrations/{{id}}": Route(path=("integration",)),
+    f"PUT {ADMIN}/integrations/{{id}}": Route(
+        path=("integration",),
+        body=lambda ids: {
+            "name": f"{ids['marker']} Tienda web",
+            "scopes": ["stock:read"],
+            "branchIds": [ids["branch"]],
+        },
+        refs=("branch",),
+    ),
+    f"POST {ADMIN}/integrations/{{id}}/revoke": Route(path=("integration",)),
+    f"POST {ADMIN}/integrations/{{id}}/secrets": Route(
+        path=("integration",), body=lambda ids: {}
+    ),
+    f"POST {ADMIN}/integrations/{{id}}/secrets/{{secret_id}}/revoke": Route(
+        path=("integration", "integration_secret")
+    ),
+    f"GET {ADMIN}/integrations/{{id}}/usage": Route(path=("integration",)),
     # Reports
     f"GET {ADMIN}/reports/inventory/valuation": Route(
         query=_warehouse, refs=("warehouse",)
@@ -928,6 +952,10 @@ ROUTES: dict[str, Route] = {
     "GET /health/live": Route(exempt="no data"),
     "GET /health/ready": Route(exempt="no data"),
     "GET /.well-known/jwks.json": Route(exempt="no data"),
+    "POST /api/oauth/token": Route(
+        exempt="authenticates with the client's credentials; the client_id says "
+        "its tenant (test_integrations.py)"
+    ),
     "GET /": Route(exempt="docs"),
     "GET /docs": Route(exempt="docs"),
     "GET /docs/admin": Route(exempt="docs"),

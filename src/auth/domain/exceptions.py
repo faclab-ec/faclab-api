@@ -52,6 +52,26 @@ class PermissionDeniedError(ApplicationError):
     error_code = "PERMISSION_DENIED"
 
 
+class IntegrationNotAllowedError(ApplicationError):
+    """An integration's access token on a route of the frontend (/api/admin,
+    /api/pos, /api/auth): those are the internal contract, integrations use the
+    public API (S6.2, ADR-0008)"""
+
+    error_code = "INTEGRATION_NOT_ALLOWED"
+
+    def __init__(self, message: str = "integration clients can't use the internal API"):
+        super().__init__(message)
+
+
+class InsufficientScopeError(ApplicationError):
+    """The integration's token lacks a scope the route needs"""
+
+    error_code = "INSUFFICIENT_SCOPE"
+
+    def __init__(self, missing: list[str]):
+        super().__init__(f"missing scopes: {missing}")
+
+
 class PasswordChangeRequiredError(ApplicationError):
     error_code = "PASSWORD_CHANGE_REQUIRED"
 

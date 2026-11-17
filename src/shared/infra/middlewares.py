@@ -35,12 +35,18 @@ ERROR_CODE_TO_STATUS = {
     "NO_ACTIVE_TENANT": 403,
     "TENANT_ACCESS_DENIED": 403,
     "BRANCH_ACCESS_DENIED": 403,
+    # An integration's token on the internal API, or without the scope (S6.2)
+    "INTEGRATION_NOT_ALLOWED": 403,
+    "INSUFFICIENT_SCOPE": 403,
     "INVALID_BRANCH_HEADER": 422,
     "INVALID_TERMINAL_HEADER": 422,
     "IDEMPOTENCY_KEY_REQUIRED": 422,
     "INVALID_IDEMPOTENCY_KEY": 422,
     "IDEMPOTENCY_KEY_REUSED": 422,
     "QUANTITY_PRECISION_EXCEEDED": 422,
+    # A reference checked by a command, not by a foreign key (an integration
+    # client's branches, S6.2); a foreign key's answers the same
+    "REFERENCE_NOT_FOUND": 422,
     # A bulk import's file that can't be read as its template (S5.8)
     "IMPORT_FILE_INVALID": 422,
     "LOGIN_LOCKED": 429,

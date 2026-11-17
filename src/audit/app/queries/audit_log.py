@@ -14,6 +14,7 @@ class ListAuditLogQuery(Query):
     from_date: date | None = None
     to_date: date | None = None
     actor_id: int | None = None
+    actor_integration_id: int | None = None
     action: str | None = None
     resource_type: str | None = None
     resource_id: int | None = None
@@ -43,6 +44,10 @@ class ListAuditLogQueryHandler(QueryHandler[ListAuditLogQuery, dict]):
             )
         if query.actor_id is not None:
             q = q.filter(AuditLogModel.actor_user_id == query.actor_id)
+        if query.actor_integration_id is not None:
+            q = q.filter(
+                AuditLogModel.actor_integration_id == query.actor_integration_id
+            )
         if query.action is not None:
             q = q.filter(AuditLogModel.action == query.action)
         if query.resource_type is not None:
@@ -70,6 +75,7 @@ class ListAuditLogQueryHandler(QueryHandler[ListAuditLogQuery, dict]):
                     "occurred_at": row.occurred_at,
                     "actor_user_id": row.actor_user_id,
                     "actor_name": row.actor_name,
+                    "actor_integration_id": row.actor_integration_id,
                     "action": row.action,
                     "resource_type": row.resource_type,
                     "resource_id": row.resource_id,

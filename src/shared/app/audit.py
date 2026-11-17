@@ -83,6 +83,14 @@ class AuditAction(StrEnum):
     # A bulk import confirmed (S5.8); what the worker writes is audited by each
     # command (product.created, adjustment.confirmed...) in the importer's name
     IMPORT_CONFIRMED = "import.confirmed"
+    # Integration clients (S6.2): created (with its first secret), its name,
+    # scopes, branches or addresses changed, a secret added (rotation) or
+    # revoked, the client revoked. Never the secret nor its hash
+    INTEGRATION_CREATED = "integration.created"
+    INTEGRATION_UPDATED = "integration.updated"
+    INTEGRATION_SECRET_CREATED = "integration.secret_created"
+    INTEGRATION_SECRET_REVOKED = "integration.secret_revoked"
+    INTEGRATION_REVOKED = "integration.revoked"
 
     @property
     def resource(self) -> str:

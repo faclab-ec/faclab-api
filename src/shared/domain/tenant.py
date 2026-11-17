@@ -36,6 +36,9 @@ class TenantContext:
     branch_id: int | None = None  # Sucursal, desde S2.5
     # Nombre del actor (nombre completo o usuario) para la bitácora, desde S3.5
     user_name: str | None = None
+    # Cliente de integración que hace la solicitud (S6.2); entonces `user_id`
+    # es None y `user_name` es el nombre del cliente
+    integration_id: int | None = None
 
 
 class TenantContextRequiredError(RuntimeError):

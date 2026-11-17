@@ -25,8 +25,11 @@ class AuditLogModel(TenantScoped, Base):
     )
     # The token's user; null for a message or a task
     actor_user_id: Mapped[int | None] = mapped_column(index=True)
-    # Full name or username at the time
+    # Full name or username at the time; an integration client's name
     actor_name: Mapped[str | None] = mapped_column(String(64))
+    # The integration client that did it with its token (S6.2); then the user
+    # is null
+    actor_integration_id: Mapped[int | None] = mapped_column(index=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
     resource_id: Mapped[int | None] = mapped_column()

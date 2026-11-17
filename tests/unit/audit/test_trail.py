@@ -52,6 +52,31 @@ def _entries(session: Session) -> list[AuditLogModel]:
     return list(session.scalars(select(AuditLogModel).order_by(AuditLogModel.id)))
 
 
+def test_an_integration_is_the_actor_of_what_it_does(session):
+    """Writes made with an integration client's token (S6.2): no user, the
+    client's id and name"""
+    integration = TenantContext(
+        TEST_TENANT_ID,
+        TenantSource.REQUEST,
+        branch_id=3,
+        user_name="Tienda web",
+        integration_id=9,
+    )
+    with use_tenant(integration):
+        SqlAlchemyAuditTrail(session).record(
+            AuditAction.SALE_CANCELLED, 41, after={"status": "CANCELLED"}
+        )
+        listed = ListAuditLogQueryHandler(session).handle(
+            ListAuditLogQuery(actor_integration_id=9)
+        )
+
+    (entry,) = _entries(session)
+    assert (entry.actor_user_id, entry.actor_integration_id) == (None, 9)
+    assert entry.actor_name == "Tienda web"
+    assert entry.source == "request"
+    assert [item["actor_integration_id"] for item in listed["items"]] == [9]
+
+
 def test_the_actor_source_branch_and_request_come_from_the_context(session):
     with (
         use_tenant(CASHIER),
