@@ -98,6 +98,7 @@ def test_the_issuing_point_is_the_tenant_and_the_sale_emission_point(in_tenant):
         establishment_code="003",
         establishment_address="Av. Norte",
         emission_point_code="004",
+        branch_id=2,
     )
     # The branch is the emission point's
     repos[1].get_by_id.assert_called_once_with(2)

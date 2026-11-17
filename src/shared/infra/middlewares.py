@@ -1,11 +1,13 @@
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
+from pydantic.alias_generators import to_camel
 from sqlalchemy.exc import IntegrityError
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -50,6 +52,9 @@ ERROR_CODE_TO_STATUS = {
     # A bulk import's file that can't be read as its template (S5.8)
     "IMPORT_FILE_INVALID": 422,
     "LOGIN_LOCKED": 429,
+    # The public API (S6.3): over a rate limit, or turned off
+    "RATE_LIMITED": 429,
+    "PUBLIC_API_DISABLED": 503,
     # The SMTP server refused or couldn't be reached (S5.4)
     "EMAIL_DELIVERY_FAILED": 502,
 }
@@ -100,22 +105,38 @@ def _integrity_error(exc: IntegrityError) -> tuple[int, str, str]:
     return 409, "INTEGRITY_ERROR", "The operation violates a data integrity rule"
 
 
-def _build_error_response(
+def build_error_response(
     error_code: str,
     message: str,
     request_id: str,
     field: str | None = None,
     detail: str | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> dict:
-    error = {"code": error_code, "message": message}
+    """The error envelope with one error. `extra` adds fields to its entry
+    (snake_case keys, sent in camelCase)"""
+    error: dict[str, Any] = {"code": error_code, "message": message}
     if field is not None:
         error["field"] = field
     if detail is not None:
         error["detail"] = detail
+    for key, value in (extra or {}).items():
+        error[to_camel(key)] = value
     return {
         "errors": [error],
         "meta": _build_meta(request_id),
     }
+
+
+def public_error_code(request: Request, code: str, status: int) -> str:
+    """The code the response gives: a path with its own error catalog (the
+    public API, S6.3) translates the codes outside it. The translators are
+    `app.state.error_translators`: path prefix -> f(code, status)"""
+    translators = getattr(request.app.state, "error_translators", None) or {}
+    for prefix, translate in translators.items():
+        if request.url.path.startswith(prefix):
+            return translate(code, status)
+    return code
 
 
 def _build_validation_error_response(
@@ -171,8 +192,8 @@ async def http_exception_handler(
         status_code=exc.status_code,
         detail=exc.detail,
     )
-    body = _build_error_response(
-        error_code="HTTP_ERROR",
+    body = build_error_response(
+        error_code=public_error_code(request, "HTTP_ERROR", exc.status_code),
         message=str(exc.detail),
         request_id=_request_id(request),
     )
@@ -231,25 +252,28 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
                 error_code=exc.error_code,
                 message=exc.message,
             )
-            body = _build_error_response(
-                error_code=exc.error_code,
+            body = build_error_response(
+                error_code=public_error_code(request, exc.error_code, status),
                 message=exc.message,
                 request_id=request_id,
                 detail=exc.detail,
+                extra=exc.extra,
             )
             return JSONResponse(status_code=status, content=body)
         except IntegrityError as exc:
             logger.warning("integrity_error", message=str(exc.orig))
             status, code, message = _integrity_error(exc)
-            body = _build_error_response(
-                error_code=code, message=message, request_id=request_id
+            body = build_error_response(
+                error_code=public_error_code(request, code, status),
+                message=message,
+                request_id=request_id,
             )
             return JSONResponse(status_code=status, content=body)
         except ValueError as exc:
             # The text of an unexpected ValueError is internal: only the log
             # gets it. Expected ones are InvalidValueError (a BaseError above)
             logger.warning("value_error", message=str(exc))
-            body = _build_error_response(
+            body = build_error_response(
                 error_code="VALIDATION_ERROR",
                 message="Invalid value",
                 request_id=request_id,
@@ -260,7 +284,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             span = trace.get_current_span()
             span.record_exception(exc)
             span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
-            body = _build_error_response(
+            body = build_error_response(
                 error_code="INTERNAL_ERROR",
                 message="Internal Server Error",
                 request_id=request_id,
@@ -356,7 +380,7 @@ class BodySizeLimitMiddleware:
         headers: Headers,
         max_bytes: int,
     ) -> None:
-        body = _build_error_response(
+        body = build_error_response(
             error_code="REQUEST_TOO_LARGE",
             message=f"Request body exceeds {max_bytes} bytes",
             request_id=scope.get("state", {}).get("request_id")

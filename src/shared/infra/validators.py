@@ -93,6 +93,8 @@ class PaginatedDataResponse(BaseModel, Generic[T]):
 class ErrorDetail(BaseModel):
     """Individual error entry within an error response."""
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     code: str = Field(
         description="Machine-readable error code (e.g. NOT_FOUND, DOMAIN_ERROR, VALIDATION_ERROR)"
     )
@@ -103,6 +105,13 @@ class ErrorDetail(BaseModel):
     )
     detail: str | None = Field(
         None, description="Extra context for the error (e.g. the current status)"
+    )
+    existing_id: int | None = Field(
+        None,
+        description=(
+            "The id of the record that already exists, on a conflict that names "
+            "it (e.g. `CUSTOMER_ALREADY_EXISTS` in the public API)"
+        ),
     )
 
 

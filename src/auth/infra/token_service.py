@@ -130,9 +130,10 @@ class JwtTokenService(TokenService):
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=self._access_ttl)).timestamp()),
             "iss": self._issuer,
-            # Only this service until the public API of faclab-invoicing checks
-            # scopes (S6.3): its internal routes authorize with `perms`
-            "aud": self._audience,
+            # Also the services with a public API (S6.3): faclab-invoicing's
+            # `/api/v1/invoices` checks its scopes, and its internal routes
+            # refuse it (they authorize with `perms`, which it doesn't carry)
+            "aud": self._access_audience,
         }
         if branch_ids is not None:
             payload["bids"] = sorted(set(branch_ids))

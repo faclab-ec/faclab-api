@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class BaseError(Exception):
     error_code: str = "INTERNAL_ERROR"
     # The request transaction commits the changes flushed before this error
@@ -5,9 +8,17 @@ class BaseError(Exception):
     # counted even though the request fails
     commit_transaction: bool = False
 
-    def __init__(self, message: str, detail: str | None = None):
+    def __init__(
+        self,
+        message: str,
+        detail: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ):
         self.message = message
         self.detail = detail
+        # More fields of the error's entry in the response, snake_case (the
+        # field it is about, the id of the record that already exists)
+        self.extra = extra or {}
         super().__init__(message)
 
     def __str__(self):

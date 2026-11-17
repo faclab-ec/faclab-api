@@ -74,8 +74,8 @@ def test_the_token_carries_tenant_client_scope_and_secret():
     assert claims["bids"] == [12, 15]
     assert claims["cred"] == 7
     assert claims["typ"] == "access"
-    # Only the core until faclab-invoicing's public API checks scopes (S6.3)
-    assert claims["aud"] == "faclab-core"
+    # Also faclab-invoicing, whose public API checks its scopes (S6.3)
+    assert claims["aud"] == ["faclab-core", "faclab-invoicing"]
     assert claims["exp"] - claims["iat"] == 900 == issued.expires_in
     # No role nor permissions: what it may do is its scopes
     assert "role" not in claims and "perms" not in claims

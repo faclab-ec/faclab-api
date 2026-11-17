@@ -24,11 +24,14 @@ PUBLIC_ROUTES = HEALTH_ROUTES | {
     "POST /api/auth/logout",
     # An integration client authenticates with its client_id and secret (S6.2)
     "POST /api/oauth/token",
+    # The public API's contract (S6.3), while PUBLIC_API_ENABLED is on
+    "GET /openapi/public.json",
     # Only registered when DOCS_ENABLED is on
     "GET /",
     "GET /docs",
     "GET /docs/admin",
     "GET /docs/pos",
+    "GET /docs/public",
     "GET /openapi/admin.json",
     "GET /openapi/pos.json",
 }

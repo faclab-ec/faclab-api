@@ -50,6 +50,7 @@ POINT = IssuingPoint(
     establishment_code="002",
     establishment_address="Av. de la Prensa N58-12, Quito",
     emission_point_code="003",
+    branch_id=2,
 )
 
 CUSTOMER = Customer(
@@ -177,6 +178,8 @@ def _written(
         # A sale confirmed before S2.6 has no number
         (_event(7, number=None), CUSTOMER, PRODUCTS),
         (_event(7), CUSTOMER, WITH_MATERIAL),
+        # A sale of the public API (S6.3)
+        (_event(7, source="api"), CUSTOMER, PRODUCTS),
     ],
     ids=[
         "full-customer",
@@ -187,6 +190,7 @@ def _written(
         "resend",
         "sale-without-number",
         "construction-material",
+        "api-sale",
     ],
 )
 def test_written_messages_match_the_contract(session, event, customer, products):
@@ -209,6 +213,7 @@ def test_the_message_says_who_issues_and_from_where(session):
             "establishment_code",
             "establishment_address",
             "emission_point_code",
+            "branch_id",
         )
     } == {
         "sale_number": "V-002-000017",
@@ -216,6 +221,7 @@ def test_the_message_says_who_issues_and_from_where(session):
         "establishment_code": "002",
         "establishment_address": "Av. de la Prensa N58-12, Quito",
         "emission_point_code": "003",
+        "branch_id": 2,
     }
 
 
@@ -306,6 +312,7 @@ def test_the_edge_cases_have_examples():
         "construction-material",
         "decimal-quantity",
         "credit-sale",
+        "api-sale",
     }
 
 

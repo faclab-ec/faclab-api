@@ -52,6 +52,7 @@ POINT = IssuingPoint(
     establishment_code="002",
     establishment_address="Av. de la Prensa N58-12, Quito",
     emission_point_code="003",
+    branch_id=2,
 )
 PRODUCTS = [
     Product(id=10, sku="MART-16OZ", name="Martillo de uña 16 oz"),
@@ -185,6 +186,8 @@ def test_a_refund_written_to_the_outbox_matches_the_contract(session):
         "002",
         "003",
     )
+    # The branch, for the public API's invoices by branch (S6.3)
+    assert payload["branch_id"] == 2
     assert payload["reason"] == "Defecto"
 
 
