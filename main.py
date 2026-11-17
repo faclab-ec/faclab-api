@@ -28,6 +28,9 @@ from src.catalog.uom.infra.routes import UnitOfMeasureRouter
 from src.container import create_wireup_container
 from src.customers.infra.routes import CustomerContactRouter, CustomerRouter
 from src.imports.infra.routes import ImportRouter
+from src.integrations.infra.access import integration_access
+from src.integrations.infra.oauth_routes import OAuthRouter
+from src.integrations.infra.routes import IntegrationRouter
 from src.inventory.adjustment.infra.routes import AdjustmentItemRouter, AdjustmentRouter
 from src.inventory.alert.infra.routes import AlertRouter
 from src.inventory.location.infra.routes import LocationRouter
@@ -405,6 +408,9 @@ admin_router.include_router(
 )
 admin_router.include_router(ImportRouter().router, prefix="/imports", tags=["Imports"])
 admin_router.include_router(
+    IntegrationRouter().router, prefix="/integrations", tags=["Integrations"]
+)
+admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
     tags=["Inventory Reports"],
@@ -473,7 +479,13 @@ def add_middlewares(target: FastAPI) -> None:
     target.add_middleware(ErrorHandlingMiddleware)
     # Outside the error handler, so its logs carry the request's tenant
     # Reads the signing keys now, so a bad one stops the startup
-    target.add_middleware(AuthMiddleware, token_service=JwtTokenService(jwt_keys()))
+    # Integration clients' tokens check their client's state (S6.2); with
+    # INTEGRATIONS_ENABLED=false they are all invalid
+    target.add_middleware(
+        AuthMiddleware,
+        token_service=JwtTokenService(jwt_keys()),
+        integrations=integration_access() if config.INTEGRATIONS_ENABLED else None,
+    )
     target.add_middleware(
         BodySizeLimitMiddleware,
         max_bytes=config.MAX_REQUEST_BODY_BYTES,
@@ -501,6 +513,8 @@ otel.instrument_app(app)
 app.include_router(admin_router)
 app.include_router(pos_router)
 app.include_router(auth_router)
+# OAuth 2.0 client credentials of the integration clients (S6.2), public
+app.include_router(OAuthRouter(integration_access()).router)
 
 # ---------------------------------------------------------------------------
 # Health (public, outside the docs and the access log)

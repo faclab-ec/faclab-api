@@ -662,12 +662,14 @@ para usuarios en [imports-guide.md](imports-guide.md).
 
 Bitacora inmutable de operaciones sensibles por empresa (`src/audit/`, S3.5). Ruta
 `GET /api/admin/audit-log` (`audit:read`, solo ADMIN), paginada (por defecto 50, maximo 500)
-y con filtros `fromDate`/`toDate` (dias completos), `actorId`, `action`, `resourceType`,
-`resourceId` y `branchId`; el orden es de la mas reciente a la mas antigua. La sucursal se
+y con filtros `fromDate`/`toDate` (dias completos), `actorId`, `actorIntegrationId` (S6.2),
+`action`, `resourceType`, `resourceId` y `branchId`; el orden es de la mas reciente a la mas
+antigua. La sucursal se
 filtra solo con `branchId`, no con `X-Branch-Id`.
 
 **Entrada (`audit_log`):** `occurred_at`, actor (`actor_user_id` y `actor_name`, el nombre
-completo o usuario del token en ese momento), `action` (`<recurso>.<verbo>`),
+completo o usuario del token en ese momento; con el token de un cliente de integracion, S6.2,
+`actor_integration_id` y el nombre del cliente, sin usuario), `action` (`<recurso>.<verbo>`),
 `resource_type`/`resource_id`, `branch_id` (la del recurso; si no la tiene, la de
 `X-Branch-Id`), `source` (`request`, `message`, `task`), `request_id` (el `X-Request-Id`) y
 `before`/`after` con solo los campos relevantes (dinero como texto decimal; nunca contrasenas,
@@ -698,6 +700,7 @@ del primer admin (fuera de toda empresa) no deja entrada.
 | Compras (S5.7) | `supplier_return.confirmed` (devolucion a proveedor confirmada), `supplier_payment.recorded` (pago a proveedor) | estado, numero, orden, proveedor, nota de credito, total, acreditado, por reembolsar, items / numero, proveedor, monto, medio, cuentas pagadas |
 | Usuario | `user.created`, `user.role_changed`, `user.branches_changed`, `user.renamed`, `user.activated`, `user.deactivated`, `user.password_reset` | usuario, rol, sucursales, nombre, activo; el restablecimiento de contrasena sin valores |
 | Organizacion | `branch.*`, `emission_point.*`, `pos_terminal.*` (`created`, `updated`, `deleted`) | codigo, nombre, direccion, activo, punto de emision, ubicacion de venta |
+| Integracion (S6.2) | `integration.created`, `integration.updated`, `integration.secret_created` (rotacion), `integration.secret_revoked`, `integration.revoked`; recurso el cliente | client_id, entorno, nombre, scopes, sucursales, IPs / id del secreto y vencimiento de los anteriores / estado; nunca el secreto ni su hash |
 | Importacion (S5.8) | `import.confirmed` (importacion masiva confirmada); lo que el worker escribe lo audita cada comando (`product.created`, `adjustment.confirmed`...) a nombre de quien la subio, con `source=task` y el `request_id` de la confirmacion | estado, tipo, modo, archivo, filas, lo que haria cada fila |
 
 **Regla:** toda accion sensible nueva se audita con `AuditTrail.record` y suma su escenario en

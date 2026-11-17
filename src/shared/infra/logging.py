@@ -55,6 +55,8 @@ _SENSITIVE_KEYS = frozenset(
         "secret",
         "jwtsecret",
         "clientsecret",
+        # An integration client's secret is stored as a hash (S6.2)
+        "secrethash",
         "token",
         "accesstoken",
         "refreshtoken",

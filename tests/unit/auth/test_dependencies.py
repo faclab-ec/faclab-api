@@ -5,6 +5,9 @@ import pytest
 
 from src.auth.domain.entities import AuthenticatedUser, Role
 from src.auth.domain.exceptions import (
+    BranchAccessDeniedError,
+    InsufficientScopeError,
+    IntegrationNotAllowedError,
     InvalidTokenError,
     PasswordChangeRequiredError,
     PermissionDeniedError,
@@ -12,10 +15,14 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
 )
 from src.auth.domain.permissions import Permission
+from src.auth.domain.principals import IntegrationPrincipal
+from src.auth.domain.scopes import Scope
 from src.auth.infra.dependencies import (
     get_current_user,
     get_optional_user,
+    get_principal,
     require_permission,
+    require_scope,
 )
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
@@ -100,3 +107,51 @@ def test_require_permission_blocks_when_must_change_password():
     dep = require_permission(Permission.POS_OPERATE)
     with pytest.raises(PasswordChangeRequiredError):
         dep(user=user)
+
+
+def _integration(*scopes: Scope) -> IntegrationPrincipal:
+    return IntegrationPrincipal(
+        client_id=9,
+        public_id="fl_test_0123456789ab",
+        name="Tienda web",
+        tenant_id=TENANT,
+        scopes=frozenset(scopes),
+    )
+
+
+def test_get_principal_returns_the_integration():
+    integration = _integration(Scope.STOCK_READ)
+
+    assert get_principal(_request(current_user=None, integration=integration)) is (
+        integration
+    )
+
+
+def test_get_principal_rejects_a_branch_the_integration_cant_use():
+    request = _request(
+        current_user=None, integration=_integration(), branch_error="denied"
+    )
+
+    with pytest.raises(BranchAccessDeniedError):
+        get_principal(request)
+
+
+def test_get_current_user_rejects_an_integration():
+    request = _request(current_user=None, integration=_integration(*Scope))
+
+    with pytest.raises(IntegrationNotAllowedError):
+        get_current_user(request)
+
+
+def test_require_scope_needs_every_scope():
+    dep = require_scope(Scope.SALES_WRITE, Scope.STOCK_READ)
+    integration = _integration(Scope.SALES_WRITE, Scope.STOCK_READ)
+
+    assert dep(integration) is integration
+    with pytest.raises(InsufficientScopeError):
+        dep(_integration(Scope.SALES_WRITE))
+
+
+def test_require_scope_rejects_a_user():
+    with pytest.raises(PermissionDeniedError):
+        require_scope(Scope.STOCK_READ)(_admin())

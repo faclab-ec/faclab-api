@@ -135,7 +135,8 @@ def missing(name: str, ids: Ids) -> Any:
 
 def tenant_rows(engine: Engine, tenant_id: UUID) -> dict[str, tuple]:
     """Count and hash of the tenant's rows in every table that has them, plus
-    its members' users"""
+    its members' users. Ordered by the row itself: not every table's key is an
+    `id` (integration_client_directory's is the client_id)"""
     tables = [t.name for t in Base.metadata.sorted_tables if "tenant_id" in t.c]
     rows = {}
     with engine.connect() as conn:
@@ -143,7 +144,7 @@ def tenant_rows(engine: Engine, tenant_id: UUID) -> dict[str, tuple]:
             rows[table] = tuple(
                 conn.execute(
                     text(
-                        f"SELECT count(*), md5(coalesce(string_agg(t::text, '|' ORDER BY t.id), '')) FROM \"{table}\" t WHERE t.tenant_id = :tenant"
+                        f"SELECT count(*), md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM \"{table}\" t WHERE t.tenant_id = :tenant"
                     ),
                     {"tenant": tenant_id},
                 ).one()

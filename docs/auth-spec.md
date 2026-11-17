@@ -144,6 +144,7 @@ The role is per membership: a user's permissions are those of their role in the 
 | `report:inventory:read` | ✓ | ✓ | ✓ | ✓ |   |
 | `report:pos:read` | ✓ | ✓ |   | ✓ | ✓ |
 | `user:manage` | ✓ |   |   |   |   |
+| `integration:manage` | ✓ |   |   |   |   |
 
 Role numeric codes (persisted in DB):
 
@@ -190,6 +191,72 @@ Tokens carry the membership's `role`; the API re-derives the permissions on ever
 - The password and the full name are the same in every tenant: `reset-password` and `profile` answer 409 `USER_IN_OTHER_TENANTS` when the user also has an active membership elsewhere, so the admin of one company can't take over the user's access to another.
 - The last active admin of a tenant can't be deactivated or demoted; another tenant's admins don't count.
 
+## Integration clients (S6.2)
+
+An **integration client** is a system of the tenant (an ecommerce, an ERP) that calls the API with OAuth 2.0 *client credentials*, without a person's account. It is a service principal of its tenant: what it may do is its **scopes**, not a role. Decisions in [ADR-0008](architecture/ADR/0008-api-publica-versionada-y-credenciales-de-integracion.md) and [PUBLIC_API.md §3](architecture/PUBLIC_API.md).
+
+**Managing them.** `/api/admin/integrations` (permission `integration:manage`, ADMIN only) creates, lists, changes and revokes the tenant's clients:
+
+| Route | What it does | Audited as |
+|---|---|---|
+| `POST /api/admin/integrations` | `name`, `scopes`, optional `branchIds` and `allowedIps` (CIDR). Answers the `clientId` and its first `clientSecret`, **shown only in this response** | `integration.created` |
+| `GET /api/admin/integrations`, `GET …/{id}` | The clients with their secrets' metadata (prefix, created, expires, revoked, last used), never their value | — |
+| `PUT …/{id}` | Name, scopes, branches, addresses | `integration.updated` |
+| `POST …/{id}/secrets` | Rotation: a new secret (shown once) next to the current one, at most two active (`INTEGRATION_SECRET_LIMIT_REACHED`, 409); `previousExpiresInDays` makes the current ones expire (0: now) | `integration.secret_created` |
+| `POST …/{id}/secrets/{secretId}/revoke` | Revokes a secret | `integration.secret_revoked` |
+| `POST …/{id}/revoke` | Revokes the client for good, and its secrets | `integration.revoked` |
+| `GET …/{id}/usage` | Per day: tokens obtained and refused, requests, errors, last source address (`fromDate`/`toDate`, the last 30 days by default) | — |
+
+No branches (or no addresses) means all of them. A branch that isn't the tenant's answers `REFERENCE_NOT_FOUND` (422), a scope outside the tenant's plan `SCOPE_NOT_IN_PLAN` (409; every plan has every scope until S8.4), a revoked client `INTEGRATION_CLIENT_REVOKED` (409).
+
+**Secrets.** The `clientId` is public and says the environment: `fl_live_…` in production, `fl_test_…` in a sandbox. The environment is the deployment's (`INTEGRATION_ENVIRONMENT`: `production` in production, `sandbox` elsewhere): clients are created in it and only those get tokens, so the credentials of a production database restored in staging don't work there. The secret is 256 random bits (`secrets.token_urlsafe(32)`); only its SHA-256 and its first six characters are kept. A slow hash (bcrypt) protects passwords people choose; a random 256-bit secret can't be guessed either way, and a fast hash keeps the token endpoint from spending CPU on every attempt. Comparisons are constant time, and an unknown `clientId` costs the same. Neither the secret nor its hash reaches the audit log, a response after its creation or a log (`secret_hash` is one of the redacted keys).
+
+**Token.** `POST /api/oauth/token` (public), `application/x-www-form-urlencoded`, credentials with HTTP Basic (`client_secret_basic`) or in the form (`client_id`, `client_secret`), never both:
+
+```bash
+curl -s http://localhost:3000/api/oauth/token \
+  -u "$FACLAB_CLIENT_ID:$FACLAB_CLIENT_SECRET" \
+  -d grant_type=client_credentials -d scope="stock:read sales:write"
+# {"access_token": "eyJ…", "token_type": "Bearer", "expires_in": 900, "scope": "sales:write stock:read"}
+```
+
+The answers follow RFC 6749, not the API's envelope, so OAuth libraries understand them: `{"error", "error_description"}` with 400 `invalid_request` / `unsupported_grant_type` / `invalid_scope`, 401 `invalid_client` (with `WWW-Authenticate: Basic`; a wrong secret, an unknown, revoked or other environment's client, an address it isn't allowed from or a suspended tenant all look the same, the log says which), and 503 `temporarily_unavailable` with `INTEGRATIONS_ENABLED=false`. Without `scope` the token gets every scope of the client. It lasts `JWT_ACCESS_TTL_SECONDS` and has no refresh: the client asks again.
+
+```json
+{"sub": "client:fl_live_3f2a9c1b0d4e", "azp": "fl_live_3f2a9c1b0d4e", "tid": "8d1c…",
+ "scope": "sales:write stock:read", "bids": [12], "cred": 41, "typ": "access",
+ "iss": "faclab-core", "aud": "faclab-core", "iat": 1763380000, "exp": 1763380900}
+```
+
+`bids` only when the client is limited to some branches; `cred` is the secret it was obtained with. `aud` is only `faclab-core` until faclab-invoicing's public API checks scopes (S6.3): no `perms`, so its internal routes refuse it. The user methods of the token service (access, refresh, selection) never take an integration's token, and `decode_bearer` tells them apart by `sub`.
+
+**Using it.** `AuthMiddleware` reads an integration's token into `request.state.integration` (an `IntegrationPrincipal`) and runs the request in its tenant with `TenantContext.integration_id` and the client's name as `user_name`, so an audited write records `actor_integration_id` and the name with no user (`GET /api/admin/audit-log?actorIntegrationId=`). Before that it checks the client's current state through `IntegrationAccess` (`src/integrations/infra/access.py`), read with a session of its own and cached per process at most `INTEGRATION_STATUS_CACHE_SECONDS` (30, between 0 and 60):
+
+- a revoked client, a revoked or expired secret (`cred`), another environment or an address outside `allowedIps` make the token invalid (401 `INVALID_TOKEN`): **revoking takes effect within a minute**;
+- its scopes and branches are those of the token narrowed to the client's current ones, so taking one away applies before the token expires.
+
+Each request of an integration counts in its usage of the day (one upsert in a transaction of its own) and updates its `lastUsedAt`; a failure there is logged and never breaks the response.
+
+The routes of the frontend (`/api/admin`, `/api/pos`, `/api/auth`) are the internal contract: `get_current_user`, and so every `require_permission`, answers 403 `INTEGRATION_NOT_ALLOWED` to an integration. Its routes (the public API `/api/v1`, S6.3) declare what they need with `require_scope(Scope.X)` (`src/auth/infra/dependencies.py`): a missing scope answers 403 `INSUFFICIENT_SCOPE`, a user's token 403 `PERMISSION_DENIED`. `require_branch` works for both, so a client limited to a branch gets `BRANCH_ACCESS_DENIED` in another.
+
+**Scopes.** Each scope stands for the permissions that guard the same resources for a user (`PERMISSIONS_BY_SCOPE`, `src/auth/domain/scopes.py`); `IntegrationPrincipal.permissions` is their union. `tests/unit/auth/test_scopes.py` spells out the whole table and checks that no scope reaches an admin permission.
+
+| Scope | Permissions |
+|---|---|
+| `products:read` | `product:read` |
+| `products:write` | `product:write`, `category:write`, `uom:write` |
+| `prices:read` | `product:read` (price lists) |
+| `prices:write` | `product:write` (price lists) |
+| `stock:read` | `stock:read` |
+| `inventory:write` | `adjustment:write`, `transfer:write` |
+| `customers:read` / `customers:write` | `customer:read` / `customer:write` |
+| `sales:read` | `sale:read` |
+| `sales:write` | `sale:write`, `sale:cancel` |
+| `invoices:read` | `sale:read` |
+| `webhooks:manage` | none yet (S6.4) |
+
+**Rollback.** `INTEGRATIONS_ENABLED=false` makes the token endpoint answer 503 and every integration token invalid; the clients and their secrets stay.
+
 ## Provisioning tenants
 
 Tenants are created from the platform CLI, idempotently: running it again reuses the tenant (by RUC), the user (by username) and the membership, which ends up as an active ADMIN.
@@ -208,4 +275,5 @@ The RUC must be a valid 13-digit one. The password goes in the environment, neve
 - `JWT_PRIVATE_KEY_FILE` (or `JWT_PRIVATE_KEY`) must hold the Ed25519 signing key; staging and production refuse to start without it, with an unreadable one or with the development key. faclab-invoicing needs `JWT_JWKS_URL` pointing at `/.well-known/jwks.json` (internal network), and no secret of the core.
 - Seed the first tenant and its admin: `AUTH_SEED_USERNAME=... AUTH_SEED_EMAIL=... AUTH_SEED_PASSWORD=... AUTH_SEED_TENANT_RUC=... AUTH_SEED_TENANT_NAME=... python -m src.auth.seed` (locally the tenant defaults to a made-up RUC); further tenants with `python -m src.tenancy.provision`.
 - Rotate the signing key with the two-key procedure in [Rotating the key](#rotating-the-key); removing the previous key early logs everyone out.
+- `INTEGRATION_ENVIRONMENT` is `production` in production (its default there) and `sandbox` in every other deployment, so integration credentials only work where they were created. `INTEGRATION_STATUS_CACHE_SECONDS` (at most 60) bounds how long a revoked integration client keeps working.
 - Rate limiting on `/api/auth/login` is NOT implemented — put it at the reverse proxy if exposed publicly.

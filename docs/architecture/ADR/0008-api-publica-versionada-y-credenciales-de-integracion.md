@@ -1,7 +1,8 @@
 # ADR-0008: API pública versionada, OAuth 2.0 *client credentials* y tokens asimétricos
 
 - **Estado:** propuesto (2026-10-14); el punto 3, la firma asimétrica, aceptado e implementado en
-  S6.1 (2026-11-17)
+  S6.1 (2026-11-17); el punto 2, la autenticación de integraciones, aceptado e implementado en S6.2
+  (2026-11-17)
 - **Relacionado:** [PUBLIC_API.md](../PUBLIC_API.md), [ADR-0003](0003-identidad-global-y-contexto-de-sucursal.md)
 
 ## Contexto
@@ -26,6 +27,15 @@ se firman (G-48).
      `webhooks:manage`…) y restricción opcional por sucursal.
    - El token lleva `tid`, `azp` (cliente), `scope` y `bids`.
    - La integración es un principal de servicio de la empresa: RLS y los permisos se aplican igual.
+   - Decidido en S6.2:
+     - Los secretos se guardan con SHA-256, no con bcrypt ni argon2: son 256 bits aleatorios, no
+       contraseñas.
+     - El entorno (`fl_live_` o `fl_test_`) lo fija el despliegue y el endpoint de token rechaza
+       clientes de otro.
+     - Las respuestas del endpoint de token siguen RFC 6749.
+     - Las rutas internas rechazan los tokens de integración (`INTEGRATION_NOT_ALLOWED`); las que los
+       aceptan declaran `require_scope`.
+     - El estado del cliente se cachea como máximo 60 s, así una revocación rige en ese plazo.
 3. **Firma de tokens asimétrica** (decidida en S6.1: **EdDSA con Ed25519**):
    - El core publica `/.well-known/jwks.json` y facturación valida con la clave pública.
    - Se rota con `kid` y conviven dos claves durante la rotación.

@@ -89,6 +89,12 @@ def test_only_the_admin_imports_data_in_bulk():
         assert (Permission.IMPORT_WRITE in perms) == (role == Role.ADMIN)
 
 
+def test_only_the_admin_manages_the_integration_clients():
+    for role in Role:
+        perms = permissions_for(role)
+        assert (Permission.INTEGRATION_MANAGE in perms) == (role == Role.ADMIN)
+
+
 def test_the_back_office_reads_the_portfolio_and_the_cashier_takes_payments_at_the_pos():
     readers = {r for r in Role if Permission.RECEIVABLE_READ in permissions_for(r)}
     writers = {r for r in Role if Permission.RECEIVABLE_WRITE in permissions_for(r)}

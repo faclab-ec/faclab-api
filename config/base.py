@@ -176,6 +176,27 @@ class BaseConfig:
     AUTH_SESSION_RETENTION_DAYS = env.int("AUTH_SESSION_RETENTION_DAYS", 30)
 
     #
+    # Integration clients (S6.2): OAuth 2.0 client credentials at
+    # POST /api/oauth/token. false refuses new tokens (503) and the ones already
+    # issued (rollback switch). Clients belong to the deployment's environment
+    # (fl_live_ in production, fl_test_ in a sandbox) and a token is only given
+    # to one of it, so the credentials of a database copied elsewhere don't
+    # work there. A token checks its client's state (revoked, scopes, branches)
+    # cached at most this many seconds: revoking takes effect within it
+    #
+    INTEGRATIONS_ENABLED = env.bool("INTEGRATIONS_ENABLED", True)
+    INTEGRATION_ENVIRONMENT = env.str(
+        "INTEGRATION_ENVIRONMENT",
+        "sandbox",
+        validate=lambda value: value in ("sandbox", "production"),
+    )
+    INTEGRATION_STATUS_CACHE_SECONDS = env.int(
+        "INTEGRATION_STATUS_CACHE_SECONDS",
+        30,
+        validate=lambda value: 0 <= value <= 60,
+    )
+
+    #
     # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)
     #
     AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", True)
@@ -427,6 +448,25 @@ All errors follow a consistent structure with one or more error entries:
             ),
         },
         {
+            "name": "Integrations",
+            "description": (
+                "Integration clients of the tenant (S6.2): external systems that "
+                "call the API with OAuth 2.0 client credentials. Each has scopes, "
+                "optional branches and source networks, and up to two active "
+                "secrets (rotation); a secret is shown only when it is created. "
+                "Requires the `integration:manage` permission (admins)."
+            ),
+        },
+        {
+            "name": "OAuth",
+            "description": (
+                "`POST /api/oauth/token`: the access token of an integration "
+                "client (client credentials, RFC 6749 §4.4). Public: the client "
+                "authenticates with its client_id and secret. Answers follow RFC "
+                "6749, not the API envelope."
+            ),
+        },
+        {
             "name": "Audit Log",
             "description": (
                 "Sensitive operations of the tenant (prices, stock, cancellations, "
@@ -652,7 +692,14 @@ All errors follow a consistent structure with one or more error entries:
     API_TAG_GROUPS: list[dict] = [
         {
             "name": "Administration",
-            "tags": ["Auth", "Users", "Audit Log", "Imports"],
+            "tags": [
+                "Auth",
+                "OAuth",
+                "Users",
+                "Integrations",
+                "Audit Log",
+                "Imports",
+            ],
         },
         {
             "name": "Organization",
