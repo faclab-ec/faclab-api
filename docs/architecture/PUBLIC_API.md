@@ -2,10 +2,11 @@
 
 > Decisiones: [ADR-0008](ADR/0008-api-publica-versionada-y-credenciales-de-integracion.md) (fachada
 > `/api/v1`, OAuth 2.0 *client credentials*, tokens asimétricos) y
-> [ADR-0009](ADR/0009-webhooks-firmados.md) (webhooks). Hoy solo existen las rutas internas del
-> frontend (G-72). Se implementa en la Etapa 6, después de multiempresa (Etapa 2) e idempotencia (S3.1,
-> terminada: el POS ya exige `Idempotency-Key` con el mecanismo que reutilizará `/api/v1`, ver
-> `docs/pos-api-spec.md` §0.1).
+> [ADR-0009](ADR/0009-webhooks-firmados.md) (webhooks). Se implementa en la Etapa 6, después de
+> multiempresa (Etapa 2) e idempotencia (S3.1, terminada: el POS ya exige `Idempotency-Key` con el
+> mecanismo que reutilizará `/api/v1`, ver `docs/pos-api-spec.md` §0.1). Las credenciales de
+> integración (§3) están implementadas desde S6.2; la fachada `/api/v1` (S6.3) y los webhooks (S6.4)
+> todavía no.
 
 ## 1. Principios
 
@@ -35,6 +36,10 @@
 
 ## 3. Autenticación y autorización
 
+> **Implementado en S6.2** (2026-11-17). Detalle operativo en `docs/auth-spec.md` (sección
+> *Integration clients*). Lo que sigue describe lo implementado; las diferencias con el diseño inicial
+> se indican en cada punto.
+
 ### 3.1 Tipos de credencial
 
 | Credencial | Uso | Emisión | Duración |
@@ -48,39 +53,67 @@ alcance inicial).
 
 ### 3.2 Cliente de integración
 
-- Lo crea un administrador de la empresa en el portal (S6.5), que elige:
+- Lo crea un administrador de la empresa con `POST /api/admin/integrations` (permiso
+  `integration:manage`, solo ADMIN; las pantallas del portal son de S6.5), que elige:
   - Nombre del cliente.
   - Scopes.
-  - Sucursales permitidas (opcional).
-  - IPs permitidas (opcional).
-  - Entorno: sandbox o producción.
-- El secreto se muestra **una sola vez**. Se guarda como hash (argon2 o bcrypt) y se identifica por un
-  prefijo visible (`fl_live_abc…`, `fl_test_abc…`).
-- **Rotación:** se pueden tener dos secretos activos a la vez; el anterior se revoca manualmente o
-  expira en N días.
-- **Revocación inmediata:** los tokens emitidos dejan de valer al consultar el estado del cliente. Se
-  cachea 60 s como máximo.
-- **Registro de uso:** última vez usado, solicitudes por día, errores, y la IP de origen agregada sin
-  guardar el detalle de cada IP. Cada escritura queda en la bitácora de auditoría (S3.5) con
-  `actor = cliente de integración`.
+  - Sucursales permitidas (opcional; ninguna = todas).
+  - IPs o redes permitidas en CIDR (opcional; ninguna = cualquiera).
+- **Entorno:** lo fija el despliegue (`INTEGRATION_ENVIRONMENT`: `production` en producción, `sandbox`
+  en los demás), no el administrador. El `client_id` lo dice (`fl_live_…` o `fl_test_…`) y el
+  endpoint de token rechaza un cliente de otro entorno, así las credenciales de una base de producción
+  restaurada en staging no sirven allí.
+- El secreto (256 bits aleatorios) se muestra **una sola vez**, al crear el cliente o un secreto nuevo.
+  Se guarda su **SHA-256** y sus primeros seis caracteres, que lo identifican en los listados. Cambio
+  respecto del diseño inicial (argon2 o bcrypt): un hash lento protege contraseñas que una persona
+  elige y que se adivinan con diccionario; un secreto aleatorio de 256 bits no se adivina con ninguno
+  de los dos, y un hash rápido evita que el endpoint de token gaste CPU en cada intento (es la
+  práctica de las claves de API de GitHub o Stripe). La comparación es en tiempo constante.
+- **Rotación:** hasta dos secretos activos a la vez (`POST …/{id}/secrets`); el anterior se revoca
+  manualmente o expira en N días (`previousExpiresInDays`).
+- **Revocación:** revocar el cliente o uno de sus secretos invalida sus tokens al consultar el estado
+  del cliente, que cada proceso cachea `INTEGRATION_STATUS_CACHE_SECONDS` (30 s; como máximo 60).
+  Quitarle un scope o una sucursal también rige en ese plazo: el token vale por la intersección.
+- **Registro de uso:** por día, tokens obtenidos y rechazados, solicitudes, errores (4xx y 5xx) y la
+  última IP de origen, sin una fila por solicitud (`GET …/{id}/usage`); el cliente guarda su último
+  uso. Cada escritura queda en la bitácora de auditoría (S3.5) con el cliente como actor
+  (`actor_integration_id` y su nombre, sin usuario).
+- **Plan:** un scope que el plan de la empresa no incluye se rechaza (`SCOPE_NOT_IN_PLAN`). Hoy todos
+  los planes incluyen todos los scopes; S8.4 implementa los planes en el puerto `IntegrationPlan`.
 
 ### 3.3 Token
 
 ```json
 {
-  "iss": "https://api.faclab.ec",
-  "sub": "client:3f2a…",
-  "azp": "fl_live_3f2a",
+  "iss": "faclab-core",
+  "aud": "faclab-core",
+  "sub": "client:fl_live_3f2a9c1b0d4e",
+  "azp": "fl_live_3f2a9c1b0d4e",
   "tid": "8d1c…",
-  "scope": "products:read stock:read sales:write invoices:read",
+  "scope": "invoices:read products:read sales:write stock:read",
   "bids": [12, 15],
+  "cred": 41,
   "typ": "access",
-  "exp": 1760000000,
-  "kid": "2026-10"
+  "iat": 1760000000,
+  "exp": 1760000900
 }
 ```
 
-Lo firma el core con una clave asimétrica y facturación lo valida con `/.well-known/jwks.json` (S6.1).
+Lo firma el core con su clave Ed25519 (el `kid` va en el encabezado) y se valida con
+`/.well-known/jwks.json` (S6.1). `bids` solo cuando el cliente está limitado a algunas sucursales;
+`cred` es el secreto con el que se obtuvo. No lleva `role` ni `perms`. Hasta que la API pública de
+facturación valide scopes (S6.3), `aud` es solo `faclab-core`.
+
+En el core, las rutas internas (`/api/admin`, `/api/pos`, `/api/auth`) responden 403
+`INTEGRATION_NOT_ALLOWED` a un token de integración; las rutas que lo aceptan declaran el scope con
+`require_scope` (403 `INSUFFICIENT_SCOPE` sin él). Un token revocado, de un secreto revocado o desde una
+IP no permitida responde 401 `INVALID_TOKEN`.
+
+El endpoint de token sigue RFC 6749 en sus respuestas, no el envelope de la API, para que sirva
+cualquier biblioteca OAuth: errores `{"error", "error_description"}` con 400 (`invalid_request`,
+`unsupported_grant_type`, `invalid_scope`), 401 (`invalid_client`, sin decir si el secreto, el cliente
+o la IP es lo que falla) o 503 (`temporarily_unavailable`, con `INTEGRATIONS_ENABLED=false`). Las
+credenciales van con HTTP Basic o en el formulario, nunca de las dos formas.
 
 ### 3.4 Scopes iniciales
 
@@ -95,8 +128,25 @@ Lo firma el core con una clave asimétrica y facturación lo valida con `/.well-
 | `invoices:read` | Comprobantes, XML y RIDE |
 | `webhooks:manage` | Suscripciones de webhooks |
 
-Cada scope se traduce a los `Permission` existentes (`src/auth/domain/permissions.py`). Una integración
-nunca puede tener más permisos que el plan de la empresa permite.
+Cada scope se traduce a los `Permission` existentes (`PERMISSIONS_BY_SCOPE` en
+`src/auth/domain/scopes.py`, con una prueba que fija la tabla completa):
+
+| Scope | Permisos |
+|---|---|
+| `products:read` | `product:read` |
+| `products:write` | `product:write`, `category:write`, `uom:write` |
+| `prices:read` / `prices:write` | `product:read` / `product:write` (las listas de precios usan los permisos de producto) |
+| `stock:read` | `stock:read` |
+| `inventory:write` | `adjustment:write`, `transfer:write` |
+| `customers:read` / `customers:write` | `customer:read` / `customer:write` |
+| `sales:read` | `sale:read` |
+| `sales:write` | `sale:write`, `sale:cancel` |
+| `invoices:read` | `sale:read` |
+| `webhooks:manage` | ninguno todavía (S6.4) |
+
+Ningún scope da permisos de administración (`user:manage`, `audit:read`, `organization:write`,
+`import:write`, `integration:manage`) ni de operación de caja (`pos:operate`, `refund:approve`). Una
+integración nunca puede tener más scopes que el plan de la empresa permite.
 
 ## 4. Convenciones
 
