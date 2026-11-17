@@ -12,10 +12,10 @@ from opentelemetry.trace import SpanKind
 import main
 from src.auth.domain.entities import AuthenticatedUser, Role, User
 from src.auth.infra.dependencies import get_current_user, require_branch
-from src.auth.infra.token_service import JwtTokenService
 from src.shared.domain.tenant import current_tenant
 from src.shared.infra.adapters.telemetry import instrument_fastapi
 from src.tenancy.domain.entities import Membership
+from tests.tokens import token_service
 
 TENANT_ID = UUID("00000000-0000-4000-8000-0000000000b1")
 
@@ -48,9 +48,7 @@ def _app() -> FastAPI:
 def _token(branch_ids: list[int] | None = None) -> str:
     user = User(id=5, username="caja", email="caja@test.local", password_hash="x")
     membership = Membership(tenant_id=TENANT_ID, user_id=5, role=Role.CASHIER)
-    pair = JwtTokenService().issue_pair(
-        user, membership, 1, "jti", branch_ids=branch_ids
-    )
+    pair = token_service().issue_pair(user, membership, 1, "jti", branch_ids=branch_ids)
     return pair.access_token
 
 

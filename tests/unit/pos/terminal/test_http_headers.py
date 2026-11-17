@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 
 import main
 from src.auth.domain.entities import Role, User
-from src.auth.infra.token_service import JwtTokenService
 from src.pos.terminal.app.resolver import TerminalRequest
 from src.pos.terminal.infra.dependencies import pos_branch, pos_terminal
 from src.tenancy.domain.entities import Membership
+from tests.tokens import token_service
 
 TENANT_ID = UUID("00000000-0000-4000-8000-0000000000b2")
 
@@ -37,7 +37,7 @@ def _headers(branch: str | None = None, terminal: str | None = None) -> dict:
     user = User(id=5, username="caja", email="caja@test.local", password_hash="x")
     membership = Membership(tenant_id=TENANT_ID, user_id=5, role=Role.CASHIER)
     token = (
-        JwtTokenService()
+        token_service()
         .issue_pair(user, membership, 1, "jti", branch_ids=[1, 2])
         .access_token
     )

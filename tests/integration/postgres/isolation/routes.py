@@ -927,6 +927,7 @@ ROUTES: dict[str, Route] = {
     "POST /api/auth/change-password": Route(exempt="the caller's own password"),
     "GET /health/live": Route(exempt="no data"),
     "GET /health/ready": Route(exempt="no data"),
+    "GET /.well-known/jwks.json": Route(exempt="no data"),
     "GET /": Route(exempt="docs"),
     "GET /docs": Route(exempt="docs"),
     "GET /docs/admin": Route(exempt="docs"),

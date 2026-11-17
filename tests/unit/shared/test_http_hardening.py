@@ -4,7 +4,6 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,24 +12,24 @@ from pydantic import BaseModel
 import main  # configures logging at import, so caplog's handler comes after it
 from config import config
 from src.auth.domain.entities import Role, User
-from src.auth.infra.token_service import JwtTokenService
 from src.shared.infra.middlewares import (
     BodySizeLimitMiddleware,
     ErrorHandlingMiddleware,
     SecurityHeadersMiddleware,
 )
 from src.tenancy.domain.entities import Membership
+from tests.tokens import sign_token, token_service
 
 
 def _access_token() -> str:
     user = User(id=1, username="ana", email="ana@example.com", password_hash="h")
     membership = Membership(tenant_id=uuid4(), user_id=1, role=Role.ADMIN)
-    return JwtTokenService().issue_pair(user, membership, 1, "jti").access_token
+    return token_service().issue_pair(user, membership, 1, "jti").access_token
 
 
 def test_a_token_without_tenant_must_log_in_again():
     now = datetime.now(UTC)
-    legacy = jwt.encode(
+    legacy = sign_token(
         {
             "sub": "1",
             "sid": 1,
@@ -40,9 +39,8 @@ def test_a_token_without_tenant_must_log_in_again():
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(minutes=5)).timestamp()),
             "iss": config.JWT_ISSUER,
-        },
-        config.JWT_SECRET,
-        algorithm="HS256",
+            "aud": config.JWT_AUDIENCE,
+        }
     )
 
     response = TestClient(main.app).get(

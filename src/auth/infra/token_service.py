@@ -22,21 +22,30 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
 )
 from src.auth.domain.permissions import permissions_for
+from src.auth.infra.signing_keys import ALGORITHM, JwtKeys
 from src.tenancy.domain.entities import Membership
-
-_ALGORITHM = "HS256"
 
 logger = structlog.get_logger(__name__)
 
 
 @injectable(lifetime="singleton", as_type=TokenService)
 class JwtTokenService(TokenService):
-    def __init__(self):
-        self._secret = config.JWT_SECRET
+    """Signs with the Ed25519 key of `JwtKeys` (EdDSA, its `kid` in the header)
+    and accepts tokens of any key it publishes, so a rotation keeps the
+    sessions signed with the previous key (S6.1)"""
+
+    def __init__(self, keys: JwtKeys):
+        self._keys = keys
         self._access_ttl = config.JWT_ACCESS_TTL_SECONDS
         self._refresh_ttl = config.JWT_REFRESH_TTL_SECONDS
         self._selection_ttl = config.JWT_SELECTION_TTL_SECONDS
         self._issuer = config.JWT_ISSUER
+        self._audience = config.JWT_AUDIENCE
+        # Access tokens also go to these services (faclab-invoicing)
+        self._access_audience = [
+            self._audience,
+            *(aud for aud in config.JWT_SERVICE_AUDIENCES if aud != self._audience),
+        ]
         self._reuse_grace = config.JWT_REFRESH_REUSE_GRACE_SECONDS
 
     @property
@@ -81,7 +90,7 @@ class JwtTokenService(TokenService):
     def issue_selection(self, user: User) -> SelectionToken:
         payload = self._payload(user, "selection", self._selection_ttl)
         return SelectionToken(
-            token=jwt.encode(payload, self._secret, algorithm=_ALGORITHM),
+            token=self._encode(payload),
             expires_in=self._selection_ttl,
         )
 
@@ -109,6 +118,7 @@ class JwtTokenService(TokenService):
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
             "iss": self._issuer,
+            "aud": self._audience,
             "mcp": bool(user.must_change_password),
         }
 
@@ -127,6 +137,7 @@ class JwtTokenService(TokenService):
         payload["tid"] = str(membership.tenant_id)
         payload["role"] = int(membership.role)
         if typ == "access":
+            payload["aud"] = self._access_audience
             # Other services (faclab-invoicing) authorize with these, so they
             # don't need their own copy of the role -> permissions table
             payload["perms"] = sorted(p.value for p in permissions_for(membership.role))
@@ -138,16 +149,31 @@ class JwtTokenService(TokenService):
                 payload["bids"] = sorted(set(branch_ids))
         if jti is not None:
             payload["jti"] = jti
-        return jwt.encode(payload, self._secret, algorithm=_ALGORITHM)
+        return self._encode(payload)
+
+    def _encode(self, payload: dict[str, Any]) -> str:
+        return jwt.encode(
+            payload,
+            self._keys.signing_key,
+            algorithm=ALGORITHM,
+            headers={"kid": self._keys.signing_kid},
+        )
 
     def _decode(self, token: str, accepted: tuple[TokenType, ...]) -> TokenClaims:
         try:
+            kid = jwt.get_unverified_header(token).get("kid")
+            key = self._keys.verification_key(kid) if isinstance(kid, str) else None
+            if key is None:
+                # Signed with a key that isn't published (or none): no one
+                # should trust it
+                raise jwt.InvalidKeyError("unknown signing key")
             payload = jwt.decode(
                 token,
-                self._secret,
-                algorithms=[_ALGORITHM],
+                key,
+                algorithms=[ALGORITHM],
                 issuer=self._issuer,
-                options={"require": ["exp", "iat", "iss", "sub", "typ"]},
+                audience=self._audience,
+                options={"require": ["exp", "iat", "iss", "sub", "typ", "aud"]},
             )
         except jwt.ExpiredSignatureError as exc:
             raise TokenExpiredError("token expired") from exc
