@@ -237,7 +237,8 @@ Variables principales (la lista completa esta en `config/base.py`):
 | `DATABASE_URL_MIGRATIONS` | Por defecto la de `DATABASE_URL` | El rol `faclab_owner`; solo la usa Alembic |
 | `DATABASE_URL_ADMIN` | Superusuario para `make db-roles` y `make test-integration` | Solo para crear los roles (`python -m src.shared.infra.db_roles`) |
 | `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
-| `JWT_SECRET` | Por defecto un valor de desarrollo | **Obligatoria**, unica y de 32 caracteres o mas |
+| `JWT_PRIVATE_KEY_FILE` o `JWT_PRIVATE_KEY` | Por defecto una clave Ed25519 de desarrollo, fija | **Obligatoria**: la clave privada Ed25519 en PEM que firma los tokens (`openssl genpkey -algorithm ed25519`); se rechaza la de desarrollo |
+| `JWT_PUBLIC_KEYS_FILE` o `JWT_PUBLIC_KEYS` | Vacia | Solo durante una rotacion: la clave publica anterior (o la siguiente), que se sigue aceptando y publicando en `/.well-known/jwks.json` (ver `docs/auth-spec.md`) |
 | `DOCS_ENABLED` | Por defecto `true` | Por defecto `false` |
 | `OTEL_ENABLED`, `OTEL_OTLP_ENDPOINT` | `.env.example` apunta a SigNoz local (`http://signoz-otel-collector:4317`, levantado con `faclab-infra/scripts/signoz.sh up`) | Endpoint del collector |
 | `OTEL_EXPORTER_OTLP_INSECURE` | Por defecto `true` (sin TLS) | Por defecto `false` (TLS) |
@@ -348,7 +349,8 @@ El `Dockerfile` tiene cuatro etapas:
 ```bash
 docker build --target production -t faclab-core .
 docker run --rm -p 8080:8080 \
-  -e ENVIRONMENT=production -e DATABASE_URL=... -e CORS_ORIGINS=... -e JWT_SECRET=... \
+  -e ENVIRONMENT=production -e DATABASE_URL=... -e CORS_ORIGINS=... \
+  -e JWT_PRIVATE_KEY_FILE=/run/secrets/jwt.pem -v ./jwt.pem:/run/secrets/jwt.pem:ro \
   faclab-core                                  # API en :8080
 docker run --rm -e DATABASE_URL_ADMIN=... -e DATABASE_URL=... -e DATABASE_URL_WORKER=... \
   -e DATABASE_URL_MIGRATIONS=... faclab-core python -m src.shared.infra.db_roles   # roles, una vez

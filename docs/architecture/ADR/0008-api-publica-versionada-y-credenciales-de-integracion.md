@@ -1,6 +1,7 @@
 # ADR-0008: API pública versionada, OAuth 2.0 *client credentials* y tokens asimétricos
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** propuesto (2026-10-14); el punto 3, la firma asimétrica, aceptado e implementado en
+  S6.1 (2026-11-17)
 - **Relacionado:** [PUBLIC_API.md](../PUBLIC_API.md), [ADR-0003](0003-identidad-global-y-contexto-de-sucursal.md)
 
 ## Contexto
@@ -25,9 +26,22 @@ se firman (G-48).
      `webhooks:manage`…) y restricción opcional por sucursal.
    - El token lleva `tid`, `azp` (cliente), `scope` y `bids`.
    - La integración es un principal de servicio de la empresa: RLS y los permisos se aplican igual.
-3. **Firma de tokens asimétrica** (EdDSA o RS256, se decide en S6.1):
+3. **Firma de tokens asimétrica** (decidida en S6.1: **EdDSA con Ed25519**):
    - El core publica `/.well-known/jwks.json` y facturación valida con la clave pública.
    - Se rota con `kid` y conviven dos claves durante la rotación.
+   - Se eligió EdDSA porque lo soportan las dos partes sin dependencias pesadas: PyJWT con
+     `cryptography` en el core y el módulo `crypto` de Node en facturación, sin bibliotecas nuevas.
+     Además, sus claves y firmas son cortas y no admiten parámetros débiles. RS256 quedaba como
+     alternativa si alguna parte no lo soportaba.
+   - El `kid` es la huella RFC 7638 de la clave pública: no se configura y dos claves nunca
+     comparten uno.
+   - Los tokens llevan `aud`: refresh y selección solo `faclab-core`, y el access también los
+     servicios que lo aceptan (`faclab-invoicing`). Así facturación rechaza un refresh token aunque
+     su firma sea válida.
+   - Facturación guarda el JWKS en memoria. Lo vuelve a pedir a los 10 minutos y, como máximo cada
+     30 s, cuando llega un `kid` que no conoce; si el core no responde, sigue con las claves que ya
+     tiene.
+   - Procedimiento de rotación en `docs/auth-spec.md`.
 4. **Versionado**:
    - Mayor en la URL (`/api/v1`). Los cambios aditivos no rompen.
    - Un cambio incompatible crea `/api/v2`, con al menos 6 meses de convivencia y encabezados
