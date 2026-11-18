@@ -225,10 +225,10 @@ The answers follow RFC 6749, not the API's envelope, so OAuth libraries understa
 ```json
 {"sub": "client:fl_live_3f2a9c1b0d4e", "azp": "fl_live_3f2a9c1b0d4e", "tid": "8d1c…",
  "scope": "sales:write stock:read", "bids": [12], "cred": 41, "typ": "access",
- "iss": "faclab-core", "aud": "faclab-core", "iat": 1763380000, "exp": 1763380900}
+ "iss": "faclab-core", "aud": ["faclab-core", "faclab-invoicing"], "iat": 1763380000, "exp": 1763380900}
 ```
 
-`bids` only when the client is limited to some branches; `cred` is the secret it was obtained with. `aud` is only `faclab-core` until faclab-invoicing's public API checks scopes (S6.3): no `perms`, so its internal routes refuse it. The user methods of the token service (access, refresh, selection) never take an integration's token, and `decode_bearer` tells them apart by `sub`.
+`bids` only when the client is limited to some branches; `cred` is the secret it was obtained with. `aud` lists the services with a public API, like a user's access token (S6.3): faclab-invoicing's `/api/v1/invoices` checks `invoices:read`, and its internal routes refuse the token (`INTEGRATION_NOT_ALLOWED`; it carries no `perms`). faclab-invoicing can't see a revocation: there a token works until it expires (15 minutes at most). The user methods of the token service (access, refresh, selection) never take an integration's token, and `decode_bearer` tells them apart by `sub`.
 
 **Using it.** `AuthMiddleware` reads an integration's token into `request.state.integration` (an `IntegrationPrincipal`) and runs the request in its tenant with `TenantContext.integration_id` and the client's name as `user_name`, so an audited write records `actor_integration_id` and the name with no user (`GET /api/admin/audit-log?actorIntegrationId=`). Before that it checks the client's current state through `IntegrationAccess` (`src/integrations/infra/access.py`), read with a session of its own and cached per process at most `INTEGRATION_STATUS_CACHE_SECONDS` (30, between 0 and 60):
 
@@ -237,7 +237,7 @@ The answers follow RFC 6749, not the API's envelope, so OAuth libraries understa
 
 Each request of an integration counts in its usage of the day (one upsert in a transaction of its own) and updates its `lastUsedAt`; a failure there is logged and never breaks the response.
 
-The routes of the frontend (`/api/admin`, `/api/pos`, `/api/auth`) are the internal contract: `get_current_user`, and so every `require_permission`, answers 403 `INTEGRATION_NOT_ALLOWED` to an integration. Its routes (the public API `/api/v1`, S6.3) declare what they need with `require_scope(Scope.X)` (`src/auth/infra/dependencies.py`): a missing scope answers 403 `INSUFFICIENT_SCOPE`, a user's token 403 `PERMISSION_DENIED`. `require_branch` works for both, so a client limited to a branch gets `BRANCH_ACCESS_DENIED` in another.
+The routes of the frontend (`/api/admin`, `/api/pos`, `/api/auth`) are the internal contract: `get_current_user`, and so every `require_permission`, answers 403 `INTEGRATION_NOT_ALLOWED` to an integration. Its routes (the public API `/api/v1`, S6.3, `docs/architecture/PUBLIC_API.md`) declare what they need with `require_scope(Scope.X)` (`src/auth/infra/dependencies.py`, through `src/public_api/infra/dependencies.py`'s `guarded`): a missing scope answers 403 `INSUFFICIENT_SCOPE`, a user's token 403 `PERMISSION_DENIED`. `require_branch` works for both, so a client limited to a branch gets `BRANCH_ACCESS_DENIED` in another.
 
 **Scopes.** Each scope stands for the permissions that guard the same resources for a user (`PERMISSIONS_BY_SCOPE`, `src/auth/domain/scopes.py`); `IntegrationPrincipal.permissions` is their union. `tests/unit/auth/test_scopes.py` spells out the whole table and checks that no scope reaches an admin permission.
 
