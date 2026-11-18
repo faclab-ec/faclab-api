@@ -49,7 +49,8 @@ PERMISSIONS_BY_SCOPE: dict[Scope, frozenset[Permission]] = {
     Scope.SALES_WRITE: frozenset({Permission.SALE_WRITE, Permission.SALE_CANCEL}),
     # The invoices and credit notes of the sales
     Scope.INVOICES_READ: frozenset({Permission.SALE_READ}),
-    # Webhook subscriptions (S6.4) have no permission of their own yet
+    # Its webhook endpoints (S6.4): the /api/v1/webhook-endpoints routes require
+    # the scope itself; no internal route is opened with it
     Scope.WEBHOOKS_MANAGE: frozenset(),
 }
 

@@ -253,9 +253,11 @@ The routes of the frontend (`/api/admin`, `/api/pos`, `/api/auth`) are the inter
 | `sales:read` | `sale:read` |
 | `sales:write` | `sale:write`, `sale:cancel` |
 | `invoices:read` | `sale:read` |
-| `webhooks:manage` | none yet (S6.4) |
+| `webhooks:manage` | none: `/api/v1/webhook-endpoints` (S6.4) requires the scope itself |
 
 **Rollback.** `INTEGRATIONS_ENABLED=false` makes the token endpoint answer 503 and every integration token invalid; the clients and their secrets stay.
+
+**Webhooks (S6.4).** An integration client with `webhooks:manage` manages its own webhook endpoints at `/api/v1/webhook-endpoints`; the admin manages every endpoint of the tenant at `/api/admin/webhook-endpoints` (`integration:manage`) and may give one an integration client. A client's endpoint only receives the events its client may read now (the read scope of each type and its branches), and revoking the client disables its endpoints (`disabledReason: client_revoked`). The signing secrets are encrypted with `SECRET_ENCRYPTION_KEYS` (Fernet, required outside local; put a new key first and keep the old one to rotate it). Detail in `docs/architecture/PUBLIC_API.md` §7.
 
 ## Provisioning tenants
 

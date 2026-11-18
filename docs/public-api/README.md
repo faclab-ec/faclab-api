@@ -11,6 +11,7 @@ web. Diseño y decisiones en [PUBLIC_API.md](../architecture/PUBLIC_API.md) y
 | [Ventas desde un ecommerce](ventas-desde-ecommerce.md) | Crear una venta pagada en línea, reintentos, anulación y su factura |
 | [Errores](errores.md) | El catálogo de códigos y qué hacer con cada uno |
 | [Límites de solicitudes](limites.md) | Encabezados `RateLimit-*`, 429 y `Retry-After` |
+| [Webhooks](webhooks.md) | Registrar endpoints, los eventos, verificar la firma, reintentos y reenvío |
 | [Cambios](CHANGELOG.md) | Qué cambió en cada versión del contrato |
 
 ## El contrato
@@ -18,11 +19,13 @@ web. Diseño y decisiones en [PUBLIC_API.md](../architecture/PUBLIC_API.md) y
 - [`openapi-v1.json`](openapi-v1.json): los recursos del core (sucursales, productos, listas de
   precios, stock, clientes y ventas) y el endpoint de token. La API lo sirve en
   `GET /openapi/public.json` y, en local, como referencia interactiva en `/docs/public`.
+- [`webhooks/v1/`](webhooks/v1/): el JSON Schema de cada evento que se envía por webhook (S6.4).
 - Los comprobantes (`/api/v1/invoices`, facturas y notas de crédito con su XML y RIDE) los sirve
   faclab-invoicing bajo el mismo dominio y con el mismo token: su contrato está en
   `faclab-invoicing/docs/public-api/openapi-v1.json`.
 
-`make public-openapi` regenera el archivo desde el código y una prueba falla mientras difieran. El CI
+`make public-openapi` regenera el archivo y los esquemas de los webhooks desde el código, y una
+prueba falla mientras difieran. El CI
 compara la versión de cada PR con la de `master` (`oasdiff`): quitar o renombrar un campo, cambiar
 un tipo o volver obligatorio un campo de entrada hace fallar el job `public-api-compat`. Un cambio así
 necesita `/api/v2` y al menos seis meses de convivencia (PUBLIC_API.md §8).

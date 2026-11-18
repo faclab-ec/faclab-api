@@ -1,6 +1,6 @@
 # ADR-0009: Webhooks firmados con entregas desde un outbox
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-11-18, implementado en S6.4)
 - **Relacionado:** [PUBLIC_API.md](../PUBLIC_API.md), [ADR-0006](0006-contratos-de-eventos-versionados.md)
 
 ## Contexto
@@ -36,3 +36,20 @@ cada pocos segundos.
 - `stock.changed` se agrupa (por ejemplo, un evento por producto y sucursal cada 30 s) para no saturar
   a los receptores.
 - El volumen de entregas entra en las métricas y dashboards (S7.1).
+
+## Implementación (S6.4)
+
+- Módulo `src/webhooks/` y tablas `webhook_endpoints`, `webhook_messages`, `webhook_deliveries` y
+  `webhook_stock_changes`, todas con RLS (migración `e5b8c1d4a7f2`). El cuerpo usa camelCase
+  (`occurredAt`, `tenantId`) como la API, y agrega `originClientId`.
+- Los secretos (`whsec_` + 32 bytes, Standard Webhooks) se cifran con Fernet bajo
+  `SECRET_ENCRYPTION_KEYS`: firmar necesita el secreto, así que no se puede guardar un hash como en
+  los clientes de integración. Se leen con `GET …/{id}/secret` y nunca van en una respuesta que
+  guarde la idempotencia.
+- El worker envía con la biblioteca estándar (`http.client`), conectándose a la dirección que
+  validó: no se agregó ninguna dependencia.
+- Una entrega a la vez por endpoint, con *lease*, y un pool de `WEBHOOK_CONCURRENCY` hilos.
+- El endpoint se desactiva cuando una entrega agota sus 9 intentos sin que haya respondido bien a
+  ninguna desde que se creó. Se avisa por correo a los administradores.
+- Pendiente: número, clave de acceso y fecha de autorización en `invoice.*`, que requieren ampliar el
+  mensaje `invoices` de faclab-invoicing.
