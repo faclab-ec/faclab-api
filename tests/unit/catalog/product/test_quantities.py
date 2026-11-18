@@ -83,7 +83,12 @@ def _create_handler() -> CreateProductCommandHandler:
     repo = Mock()
     repo.create.side_effect = lambda product: replace(product, id=1)
     return CreateProductCommandHandler(
-        repo, MagicMock(), FakeAuditTrail(), _quantities(), FakeProductPresentations()
+        repo,
+        MagicMock(),
+        FakeAuditTrail(),
+        _quantities(),
+        FakeProductPresentations(),
+        MagicMock(),
     )
 
 

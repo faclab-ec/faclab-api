@@ -102,7 +102,11 @@ def _build_confirm_handler(sale=None, items=None, stock=None, payments=None):
     handler.movement_repo = MagicMock()
     handler.stock_repo = MagicMock()
     handler.stock = TerminalStock(
-        handler.stock_repo, handler.movement_repo, inventory_costs()
+        handler.stock_repo,
+        handler.movement_repo,
+        inventory_costs(),
+        MagicMock(),
+        MagicMock(),
     )
     handler.terminal_repo = MagicMock()
     handler.terminal_repo.get_by_id.return_value = TERMINAL
@@ -140,13 +144,18 @@ def _build_cancel_handler(sale=None, items=None, stock=None):
     handler.movement_repo.filter_by.return_value = []
     handler.stock_repo = MagicMock()
     handler.stock = TerminalStock(
-        handler.stock_repo, handler.movement_repo, inventory_costs()
+        handler.stock_repo,
+        handler.movement_repo,
+        inventory_costs(),
+        MagicMock(),
+        MagicMock(),
     )
     handler.terminal_repo = MagicMock()
     handler.terminal_repo.get_by_id.return_value = TERMINAL
     handler.event_publisher = MagicMock()
     handler.audit = FakeAuditTrail()
     handler.credit = customer_credit()
+    handler.session = MagicMock()
 
     if sale is not None:
         handler.sale_repo.get_by_id.return_value = sale
@@ -531,6 +540,10 @@ class TestPOSCancelSaleCommandHandler:
         published_event = handler.event_publisher.publish.call_args[0][0]
         assert isinstance(published_event, SaleCancelled)
         assert published_event.source == "pos"
+        # In the cancellation's transaction: its webhook goes with it (S6.4)
+        assert handler.event_publisher.publish.call_args.kwargs["session"] is (
+            handler.session
+        )
         assert published_event.was_confirmed is True
 
     def test_cancel_draft_publishes_event_with_pos_source(self):

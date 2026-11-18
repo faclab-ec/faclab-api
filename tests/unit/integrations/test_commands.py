@@ -19,6 +19,7 @@ from src.integrations.app.queries.clients import (
 from src.integrations.app.settings import IntegrationSettings
 from src.integrations.domain.credentials import IntegrationEnvironment, hash_secret
 from src.integrations.domain.entities import IntegrationClientStatus
+from src.integrations.domain.events import IntegrationClientRevoked
 from src.integrations.domain.exceptions import (
     IntegrationBranchNotFoundError,
     IntegrationClientRevokedError,
@@ -180,6 +181,16 @@ def test_revoking_a_client_revokes_its_secrets(kit):
         kit.rotate(created["id"])
     with pytest.raises(IntegrationClientRevokedError):
         kit.update(created["id"])
+    # Its webhook endpoints stop with it (S6.4), in the same transaction
+    [call] = kit.publisher.publish.call_args_list
+    assert call.args[0] == IntegrationClientRevoked(
+        aggregate_id=created["id"],
+        client_id=created["id"],
+        event_id=call.args[0].event_id,
+        occurred_at=call.args[0].occurred_at,
+        tenant_id=call.args[0].tenant_id,
+    )
+    assert call.kwargs["session"] is kit.session
 
 
 def test_listing_shows_the_clients_with_their_secrets(kit):

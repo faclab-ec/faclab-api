@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.sales.app.repositories import SaleRepository
+from src.sales.domain.events import SaleInvoiceRejected
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
 
 
@@ -26,8 +29,15 @@ class RejectSaleInvoiceCommandHandler(CommandHandler[RejectSaleInvoiceCommand, d
     pendiente, o el rechazo es de la factura que ya se rechazó, no hace nada.
     """
 
-    def __init__(self, sale_repo: SaleRepository):
+    def __init__(
+        self,
+        sale_repo: SaleRepository,
+        event_publisher: EventPublisher,
+        session: Session,
+    ):
         self.sale_repo = sale_repo
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: RejectSaleInvoiceCommand) -> dict:
         sale = self.sale_repo.get_by_id(command.sale_id)
@@ -36,4 +46,13 @@ class RejectSaleInvoiceCommandHandler(CommandHandler[RejectSaleInvoiceCommand, d
 
         if sale.reject_invoice(command.invoice_id, command.reason):
             self.sale_repo.update(sale)
+            self.event_publisher.publish(
+                SaleInvoiceRejected(
+                    aggregate_id=sale.require_id(),
+                    sale_id=sale.require_id(),
+                    invoice_id=command.invoice_id,
+                    reason=command.reason,
+                ),
+                session=self.session,
+            )
         return sale.dict()

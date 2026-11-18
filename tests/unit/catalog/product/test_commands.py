@@ -36,6 +36,7 @@ def test_create_product_command_handler():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
     command = CreateProductCommand(
         sku="TEST-001", name="Test Product", category_id=1, unit_of_measure_id=1
@@ -62,6 +63,7 @@ def test_create_product_publishes_event():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
     handler.handle(
         CreateProductCommand(sku="TEST-001", name="Test Product", unit_of_measure_id=1)
@@ -88,6 +90,7 @@ def test_update_product_command_handler():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
     command = UpdateProductCommand(
         product_id=1, sku="NEW-001", name="New Name", unit_of_measure_id=1

@@ -3,7 +3,7 @@ decimal factor to the base unit, its own barcode and its own price."""
 
 from dataclasses import replace
 from decimal import Decimal
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -18,6 +18,7 @@ from src.catalog.product.app.commands.presentations import (
 from src.catalog.product.app.presentations import ProductPresentations
 from src.catalog.product.app.quantities import ProductQuantities
 from src.catalog.product.domain.entities import Product, ProductPresentation
+from src.catalog.product.domain.events import ProductPresentationChanged
 from src.catalog.product.domain.exceptions import (
     BasePresentationFixedError,
     InvalidPresentationFactorError,
@@ -318,8 +319,9 @@ def _products() -> Mock:
 
 def test_a_presentation_is_added_and_audited():
     audit = FakeAuditTrail()
+    publisher, session = MagicMock(), MagicMock()
     handler = CreateProductPresentationCommandHandler(
-        _products(), _repo(), _quantities(), audit
+        _products(), _repo(), _quantities(), audit, publisher, session
     )
 
     result = handler.handle(
@@ -334,11 +336,16 @@ def test_a_presentation_is_added_and_audited():
     assert entry.resource_id == 10
     assert entry.after is not None
     assert entry.after["factor"] == Decimal(100)
+    # Its product changed for the integrations (product.updated, S6.4)
+    [call] = publisher.publish.call_args_list
+    assert isinstance(call.args[0], ProductPresentationChanged)
+    assert (call.args[0].product_id, call.args[0].presentation_id) == (10, 200)
+    assert call.kwargs["session"] is session
 
 
 def test_a_factor_must_fit_the_unit():
     handler = CreateProductPresentationCommandHandler(
-        _products(), _repo(), _quantities(), FakeAuditTrail()
+        _products(), _repo(), _quantities(), FakeAuditTrail(), MagicMock(), MagicMock()
     )
 
     with pytest.raises(QuantityPrecisionError):
@@ -351,7 +358,7 @@ def test_a_factor_must_fit_the_unit():
 
 def test_a_presentation_of_an_unknown_product_is_not_found():
     handler = CreateProductPresentationCommandHandler(
-        _products(), _repo(), _quantities(), FakeAuditTrail()
+        _products(), _repo(), _quantities(), FakeAuditTrail(), MagicMock(), MagicMock()
     )
 
     with pytest.raises(NotFoundError):
@@ -365,7 +372,7 @@ def test_a_presentation_of_an_unknown_product_is_not_found():
 def test_an_update_audits_only_what_changed():
     audit = FakeAuditTrail()
     handler = UpdateProductPresentationCommandHandler(
-        _products(), _repo(replace(BOX)), _quantities(), audit
+        _products(), _repo(replace(BOX)), _quantities(), audit, MagicMock(), MagicMock()
     )
 
     handler.handle(
@@ -396,7 +403,7 @@ def test_an_update_audits_only_what_changed():
 def test_an_update_that_changes_nothing_leaves_no_entry():
     audit = FakeAuditTrail()
     UpdateProductPresentationCommandHandler(
-        _products(), _repo(replace(BOX)), _quantities(), audit
+        _products(), _repo(replace(BOX)), _quantities(), audit, MagicMock(), MagicMock()
     ).handle(
         UpdateProductPresentationCommand(
             product_id=10,
@@ -413,7 +420,12 @@ def test_an_update_that_changes_nothing_leaves_no_entry():
 
 def test_a_presentation_of_another_product_is_not_found():
     handler = UpdateProductPresentationCommandHandler(
-        _products(), _repo(replace(BOX)), _quantities(), FakeAuditTrail()
+        _products(),
+        _repo(replace(BOX)),
+        _quantities(),
+        FakeAuditTrail(),
+        MagicMock(),
+        MagicMock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -429,7 +441,7 @@ def test_a_presentation_of_another_product_is_not_found():
 
 def test_the_base_presentation_isnt_deleted():
     handler = DeleteProductPresentationCommandHandler(
-        _repo(SCREW_BASE), FakeAuditTrail()
+        _repo(SCREW_BASE), FakeAuditTrail(), MagicMock(), MagicMock()
     )
 
     with pytest.raises(BasePresentationFixedError, match="can't be deleted"):
@@ -444,7 +456,9 @@ def test_a_deleted_presentation_is_audited():
     audit = FakeAuditTrail()
     repo = _repo(BOX)
 
-    DeleteProductPresentationCommandHandler(repo, audit).handle(
+    DeleteProductPresentationCommandHandler(
+        repo, audit, MagicMock(), MagicMock()
+    ).handle(
         DeleteProductPresentationCommand(
             product_id=10, presentation_id=BOX.require_id()
         )

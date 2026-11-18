@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/sale.confirmed.schema.json",
+  "$defs": {
+    "InvoiceStatus": {
+      "description": "Factura de la venta en faclab-invoicing; sin valor, no se envió.\n\nPENDING desde que su `sales.confirmed` llega al outbox (al confirmar o\nreenviar), REJECTED cuando el SRI la rechaza (con el motivo), AUTHORIZED\ncuando la autoriza (la venta pasa a INVOICED) y CREDITED cuando sus notas de\ncrédito la acreditan por completo (S4.5).",
+      "enum": [
+        "PENDING",
+        "AUTHORIZED",
+        "REJECTED",
+        "CREDITED"
+      ],
+      "type": "string"
+    },
+    "PaymentStatus": {
+      "description": "Estado de pago de una venta",
+      "enum": [
+        "PENDING",
+        "PARTIAL",
+        "PAID"
+      ],
+      "type": "string"
+    },
+    "Sale": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Of its branch: V-001-000123"
+        },
+        "channel": {
+          "$ref": "#/$defs/SaleChannel"
+        },
+        "externalReference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/SaleStatus"
+        },
+        "branchId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "emissionPointId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "customerId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None: the final consumer"
+        },
+        "saleDate": {
+          "anyOf": [
+            {
+              "description": "ISO 8601 in UTC",
+              "examples": [
+                "2026-11-17T15:04:05.000Z"
+              ],
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subtotal": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "tax": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "discount": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "total": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "paymentStatus": {
+          "$ref": "#/$defs/PaymentStatus"
+        },
+        "invoiceStatus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InvoiceStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "PENDING while faclab-invoicing has it, AUTHORIZED, REJECTED or CREDITED; none if it was never sent"
+        },
+        "invoiceId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Its invoice in /invoices"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SaleItem"
+          },
+          "type": "array"
+        },
+        "payments": {
+          "items": {
+            "$ref": "#/$defs/SalePayment"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "description": "ISO 8601 in UTC",
+          "examples": [
+            "2026-11-17T15:04:05.000Z"
+          ],
+          "format": "date-time",
+          "type": "string"
+        },
+        "updatedAt": {
+          "description": "ISO 8601 in UTC",
+          "examples": [
+            "2026-11-17T15:04:05.000Z"
+          ],
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "channel",
+        "externalReference",
+        "status",
+        "branchId",
+        "emissionPointId",
+        "customerId",
+        "saleDate",
+        "subtotal",
+        "tax",
+        "discount",
+        "total",
+        "paymentStatus",
+        "invoiceStatus",
+        "invoiceId",
+        "items",
+        "payments",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "SaleChannel": {
+      "description": "Dónde se vendió (S6.3): en una terminal del POS o por la API pública,\ncon un cliente de integración",
+      "enum": [
+        "pos",
+        "api"
+      ],
+      "type": "string"
+    },
+    "SaleItem": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "productId": {
+          "type": "integer"
+        },
+        "presentationId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "presentationName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quantity": {
+          "description": "In its presentation",
+          "examples": [
+            "2.5"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "unitFactor": {
+          "description": "Base units in one of its presentation",
+          "examples": [
+            "2.5"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "baseQuantity": {
+          "description": "What left the stock",
+          "examples": [
+            "2.5"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "unitPrice": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "discountPercent": {
+          "description": "Percentage as a decimal string (0-100)",
+          "examples": [
+            "10"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "taxCode": {
+          "$ref": "#/$defs/TaxCode"
+        },
+        "taxAmount": {
+          "description": "Amount in USD as a decimal string",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "subtotal": {
+          "description": "Before VAT, after its discount",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "productId",
+        "presentationId",
+        "presentationName",
+        "quantity",
+        "unitFactor",
+        "baseQuantity",
+        "unitPrice",
+        "discountPercent",
+        "taxCode",
+        "taxAmount",
+        "subtotal"
+      ],
+      "type": "object"
+    },
+    "SalePayment": {
+      "properties": {
+        "method": {
+          "description": "CASH, CREDIT_CARD, DEBIT_CARD, TRANSFER, CREDIT or OTHER",
+          "type": "string"
+        },
+        "amount": {
+          "description": "What it applied to the sale",
+          "examples": [
+            "12.50"
+          ],
+          "pattern": "^\\d+(\\.\\d{1,6})?$",
+          "type": "string"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "method",
+        "amount",
+        "reference"
+      ],
+      "type": "object"
+    },
+    "SaleStatus": {
+      "description": "Estado de una venta",
+      "enum": [
+        "DRAFT",
+        "CONFIRMED",
+        "INVOICED",
+        "CANCELLED"
+      ],
+      "type": "string"
+    },
+    "TaxCode": {
+      "description": "Código semántico de IVA.\n\nEl porcentaje por sí solo es ambiguo: 0%, exento y no objeto de impuesto\ncomparten tarifa 0. El código resuelve esa ambigüedad para que el servicio\nde facturación lo traduzca a la nomenclatura del SRI.",
+      "enum": [
+        "VAT_0",
+        "VAT_5",
+        "VAT_8_TOURISM",
+        "VAT_12",
+        "VAT_13",
+        "VAT_14",
+        "VAT_15",
+        "EXEMPT",
+        "NOT_TAXED"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "sale.confirmed",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/Sale"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "sale.confirmed v1"
+}

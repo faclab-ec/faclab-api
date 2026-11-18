@@ -112,4 +112,7 @@ def create_wireup_container():
     import src.invoicing.infra.event_handlers  # noqa: F401
     import src.purchasing.infra.event_handlers  # noqa: F401
 
+    # After invoicing's: a sale.confirmed already shows its invoice PENDING
+    import src.webhooks.infra.event_handlers  # noqa: F401
+
     return container

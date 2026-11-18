@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/product.updated.schema.json",
+  "$defs": {
+    "ProductUpdatedData": {
+      "properties": {
+        "productId": {
+          "type": "integer"
+        },
+        "sku": {
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "created",
+            "updated"
+          ],
+          "type": "string"
+        },
+        "changedFields": {
+          "description": "The fields of the product (GET /api/v1/products/{id}) that changed; empty when it was created",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "productId",
+        "sku",
+        "action",
+        "changedFields"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "product.updated",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/ProductUpdatedData"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "product.updated v1"
+}

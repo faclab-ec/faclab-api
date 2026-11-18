@@ -98,7 +98,9 @@ def test_confirm_sale_with_open_shift():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo, inventory_costs()),
+        TerminalStock(
+            stock_repo, movement_repo, inventory_costs(), MagicMock(), MagicMock()
+        ),
         shift_repo,
         MagicMock(),
         _paid_in_full(),
@@ -129,7 +131,9 @@ def test_confirm_sale_shift_closed_raises_error():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo, inventory_costs()),
+        TerminalStock(
+            stock_repo, movement_repo, inventory_costs(), MagicMock(), MagicMock()
+        ),
         shift_repo,
         MagicMock(),
         _mock_repo(entities=[]),
@@ -159,7 +163,9 @@ def test_confirm_sale_no_shift_linked():
     handler = POSConfirmSaleCommandHandler(
         sale_repo,
         sale_item_repo,
-        TerminalStock(stock_repo, movement_repo, inventory_costs()),
+        TerminalStock(
+            stock_repo, movement_repo, inventory_costs(), MagicMock(), MagicMock()
+        ),
         shift_repo,
         MagicMock(),
         _paid_in_full(),

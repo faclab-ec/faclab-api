@@ -3,6 +3,7 @@ from collections.abc import Iterable, Mapping
 from decimal import Decimal
 from typing import Protocol
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.inventory.movement.app.repositories import MovementRepository
@@ -11,7 +12,9 @@ from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.app.costs import InventoryCosts
 from src.inventory.stock.app.repositories import StockRepository
 from src.inventory.stock.domain.entities import Stock
+from src.inventory.stock.domain.events import StockCreated, StockUpdated
 from src.sales.domain.exceptions import InsufficientStockError
+from src.shared.app.events import EventPublisher
 
 
 class StockLine(Protocol):
@@ -43,10 +46,14 @@ class TerminalStock:
         stock_repo: StockRepository,
         movement_repo: MovementRepository,
         costs: InventoryCosts,
+        event_publisher: EventPublisher,
+        session: Session,
     ):
         self.stock_repo = stock_repo
         self.movement_repo = movement_repo
         self.costs = costs
+        self.event_publisher = event_publisher
+        self.session = session
 
     def take(
         self,
@@ -86,8 +93,9 @@ class TerminalStock:
                         unit_cost=unit_cost,
                     )
                 )
+            before = stock.quantity
             stock.update_quantity(-total)
-            self.stock_repo.update(stock)
+            self._updated(self.stock_repo.update(stock), before)
 
     def put_back(
         self,
@@ -129,10 +137,37 @@ class TerminalStock:
                     location_id=location_id,
                 )
                 stock.update_quantity(quantity, unit_cost)
-                self.stock_repo.create(stock)
+                self._created(self.stock_repo.create(stock))
             else:
+                before = stock.quantity
                 stock.update_quantity(quantity, unit_cost)
-                self.stock_repo.update(stock)
+                self._updated(self.stock_repo.update(stock), before)
+
+    # The stock events, like the movements' handler: whoever follows the stock
+    # (the webhooks' stock.changed, S6.4) hears the POS too, in its transaction
+
+    def _created(self, stock: Stock) -> None:
+        self.event_publisher.publish(
+            StockCreated(
+                aggregate_id=stock.require_id(),
+                product_id=stock.product_id,
+                quantity=stock.quantity,
+                location_id=stock.location_id,
+            ),
+            session=self.session,
+        )
+
+    def _updated(self, stock: Stock, before: Decimal) -> None:
+        self.event_publisher.publish(
+            StockUpdated(
+                aggregate_id=stock.require_id(),
+                product_id=stock.product_id,
+                old_quantity=before,
+                new_quantity=stock.quantity,
+                location_id=stock.location_id,
+            ),
+            session=self.session,
+        )
 
     def costs_of(self, reference_type: str, reference_id: int) -> dict[int, Decimal]:
         """The cost per base unit each product left at in a document's OUT

@@ -7,13 +7,17 @@ from src.sales.app.commands import (
     RejectSaleInvoiceCommandHandler,
 )
 from src.sales.domain.entities import InvoiceStatus, Sale, SaleStatus
+from src.sales.domain.events import SaleInvoiceRejected
 from src.shared.domain.exceptions import NotFoundError
+
+SESSION = MagicMock()
+PUBLISHER = MagicMock()
 
 
 def _handler(sale: Sale | None) -> tuple[RejectSaleInvoiceCommandHandler, MagicMock]:
     sale_repo = MagicMock()
     sale_repo.get_by_id.return_value = sale
-    return RejectSaleInvoiceCommandHandler(sale_repo), sale_repo
+    return RejectSaleInvoiceCommandHandler(sale_repo, PUBLISHER, SESSION), sale_repo
 
 
 def _command() -> RejectSaleInvoiceCommand:
@@ -78,3 +82,19 @@ def test_a_repeated_rejection_after_a_resend_is_ignored():
 
     assert sale.invoice_status == InvoiceStatus.PENDING
     sale_repo.update.assert_not_called()
+
+
+def test_a_rejection_is_published_in_its_transaction_once():
+    """Its webhook, invoice.rejected (S6.4): only when it changed something"""
+    sale = Sale(id=1, status=SaleStatus.CONFIRMED, invoice_status=InvoiceStatus.PENDING)
+    PUBLISHER.reset_mock()
+    handler, _ = _handler(sale)
+
+    handler.handle(_command())
+    handler.handle(_command())
+
+    [call] = PUBLISHER.publish.call_args_list
+    event = call.args[0]
+    assert isinstance(event, SaleInvoiceRejected)
+    assert (event.sale_id, event.invoice_id, event.reason) == (1, "inv-1", "CLAVE")
+    assert call.kwargs["session"] is SESSION

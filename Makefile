@@ -28,8 +28,9 @@ test-integration:  ## Run the Postgres integration tests on a throwaway <db>_tes
 lint:  ## Fix linter errors
 	source .venv/bin/activate && ruff check --fix . && ruff format .
 
-public-openapi:  ## Write docs/public-api/openapi-v1.json, the public API's contract, from the routes
+public-openapi:  ## Write docs/public-api/openapi-v1.json and the webhooks' JSON Schemas, the public contract, from the code
 	OTEL_ENABLED=false .venv/bin/python -m src.public_api.infra.openapi
+	OTEL_ENABLED=false .venv/bin/python -m src.webhooks.infra.contracts
 
 typecheck:  ## Type check with ty
 	source .venv/bin/activate && ty check
