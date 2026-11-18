@@ -18,6 +18,8 @@ from src.shared.domain.exceptions import NotFoundError
 class POSCancelSaleCommand(Command):
     sale_id: int
     reason: str | None = None
+    # `SaleCancelled.source`: the public API cancels its sales with "api"
+    source: str = "pos"
 
 
 @injectable(lifetime="scoped")
@@ -91,7 +93,7 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 items=items_data,
                 reason=command.reason or "",
                 was_confirmed=was_confirmed,
-                source="pos",
+                source=command.source,
             )
         )
 

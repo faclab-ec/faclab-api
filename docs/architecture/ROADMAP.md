@@ -117,8 +117,7 @@
   movimientos de caja. No la piden la edición del borrador (ítems, descuento, precio, aparcar y
   reanudar), abrir y cerrar turno ni las anulaciones: las protege el estado o un índice único, pero un
   reintento de "agregar ítem" al retener una venta desde la web puede duplicar una línea del borrador.
-  Tampoco la piden las rutas de administración; la API v1 (S6.3) la exige en todos sus POST de
-  creación. La purga de claves vencidas la corre el worker cada hora desde S3.4;
+  Tampoco la piden las rutas de administración; la API v1 (S6.3) la exige en todos sus POST. La purga de claves vencidas la corre el worker cada hora desde S3.4;
   `make purge-idempotency-keys` queda para correrla a mano.
 - **Más documentos con `document_sequences`** (detectado en S2.6). Hoy numera ventas y devoluciones
   del POS por sucursal (`V-001-000123`), desde S3.3 las órdenes de compra con el contador de la
@@ -448,6 +447,24 @@
     el lease.
   - `INVOICE_LOCK_TIMEOUT_MS` debe ser al menos tres veces `SMTP_TIMEOUT_MS`, y las ranuras de los dos
     workers no pasan de 8: un despliegue con 7 u 8 ranuras de facturas debe bajarlas.
+- **API pública, lo que quedó de S6.3** (2026-11-17):
+  - `POST /api/v1/sales/{id}/payments` y las ventas a crédito o pendientes de pago por la API: v1
+    solo recibe ventas pagadas en línea (decisión de la sesión). Se agregan como cambio compatible si
+    un integrador los necesita.
+  - Enrutar `/api/v1/invoices*` a faclab-invoicing en Caddy bajo el mismo dominio: S8.1.
+  - Límite por cliente en `POST /api/oauth/token` (hoy solo el del proxy por IP) y límites por plan
+    (S8.4). Core y facturación cuentan cada uno sus rutas; no hay un límite compartido.
+  - Facturación no ve la revocación de un cliente: allí su token vale hasta que vence (15 minutos).
+    Si hace falta antes, consultar el estado al core o acortar la vida del token.
+  - OpenAPI público unificado (core más facturación) y portal para integradores: S6.5. Ejemplos en
+    `curl`, Python y JavaScript que se ejecuten en CI contra el sandbox: S6.5.
+  - faclab-web no muestra el canal ni la referencia externa de una venta (`channel`,
+    `externalReference`): las respuestas internas de ventas no los incluyen todavía.
+  - `sort` en los listados internos: hoy solo tienen el orden estable por id (G-73).
+  - Los comprobantes recibidos antes de S6.3 no tienen sucursal: solo los ve un cliente sin límite
+    de sucursales.
+  - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
+    squash-merge del core: la copia apunta al commit local de la rama.
 
 ## 2. Dependencias
 

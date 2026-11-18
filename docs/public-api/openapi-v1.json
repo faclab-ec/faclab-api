@@ -1,0 +1,4613 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Faclab API",
+    "description": "The public API of Faclab for integrations: a contract of its own, versioned in\nthe URL, that doesn't change with the application's frontend.\n\n- **Authentication:** OAuth 2.0 client credentials at `POST /api/oauth/token`\n  with the client's id and secret; the access token lasts 15 minutes. Each\n  route requires a scope.\n- **Tenant and branch:** the company comes from the token. A client may be\n  limited to some branches; `X-Branch-Id` names the branch of an operation.\n- **Format:** JSON in camelCase. Money and quantities are decimal strings\n  (`\"12.50\"`), never floating point numbers; timestamps are ISO 8601 in UTC.\n- **Lists:** `limit` (up to 200) and `offset`, always in a stable order (the id\n  breaks ties), `sort` among the fields of each resource, and `updatedSince`\n  to sync.\n- **Retries:** every POST requires `Idempotency-Key` (a UUID per operation):\n  repeating it returns the same response, with `Idempotent-Replayed: true`.\n- **Limits:** per client and per company; over them, 429 `RATE_LIMITED` with\n  `Retry-After`. Every response carries `RateLimit-Limit`,\n  `RateLimit-Remaining`, `RateLimit-Reset` and `RateLimit-Policy`.\n- **Errors:** `{\"errors\": [{\"code\", \"message\", \"field\"?}], \"meta\"}` with codes\n  of a stable catalog. Clients must ignore fields they don't know: new ones\n  are added without a new version.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/branches": {
+      "get": {
+        "tags": [
+          "Branches"
+        ],
+        "summary": "List branches",
+        "description": "The active branches this client may operate in (any scope), each with\nits active emission points and the active locations of its warehouses:\na sale names one of each (`emissionPointId`, `locationId`) and the\nbranch in `X-Branch-Id`.",
+        "operationId": "list_api_v1_branches_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListResponse_Branch_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": []
+          }
+        ]
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "List products",
+        "description": "Products with their unit and presentations. Sync the catalog with\n`updatedSince` (a change of a presentation updates its product). `sort`:\n`id`, `name`, `sku`, `createdAt`, `updatedAt`.",
+        "operationId": "list_api_v1_products_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          },
+          {
+            "name": "updatedSince",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id",
+              "examples": [
+                "2026-11-17T00:00:00Z"
+              ],
+              "title": "Updatedsince"
+            },
+            "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id"
+          },
+          {
+            "name": "sku",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sku"
+            }
+          },
+          {
+            "name": "barcode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Of any of its presentations",
+              "title": "Barcode"
+            },
+            "description": "Of any of its presentations"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "In the name or SKU, or an active presentation's barcode",
+              "title": "Search"
+            },
+            "description": "In the name or SKU, or an active presentation's barcode"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_Product_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "products:read"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "Create a product",
+        "description": "Create a product with its base presentation (its unit, factor 1 and\n`barcode`). A SKU or barcode already taken: `PRODUCT_SKU_ALREADY_EXISTS`\nor `PRODUCT_BARCODE_ALREADY_EXISTS` (409); a construction material with\nanother VAT than 5%: `CONSTRUCTION_MATERIAL_TAX_MISMATCH`. Requires\n`Idempotency-Key`.",
+        "operationId": "create_api_v1_products_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Product_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "products:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/products/{product_id}": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "Get a product",
+        "description": "A product with its presentations.",
+        "operationId": "get_api_v1_products__product_id__get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Product_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "products:read"
+            ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "Replace a product's editable fields",
+        "description": "Replace every editable field of the product (what the body leaves\nout takes its default). The cost and the stock thresholds, outside the\npublic API, stay as they are.",
+        "operationId": "update_api_v1_products__product_id__put",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Product_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "products:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/price-lists": {
+      "get": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "List price lists",
+        "description": "The price lists, the general one included. A sale is priced with\nthe customer's list, else its branch's, else the general one; the first\nwith a price wins. `sort`: `id`, `name`, `createdAt`.",
+        "operationId": "list_api_v1_price_lists_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_PriceList_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "prices:read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/price-lists/{price_list_id}/items": {
+      "get": {
+        "tags": [
+          "Price Lists"
+        ],
+        "summary": "List the prices of a list",
+        "description": "The prices of a list, per product, presentation and quantity tier:\na line takes the item of its presentation with the highest\n`minQuantity` up to its quantity. `sort`: `id`, `productId`,\n`minQuantity`.",
+        "operationId": "items_api_v1_price_lists__price_list_id__items_get",
+        "parameters": [
+          {
+            "name": "price_list_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Price List Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Productid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_PriceListItem_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "prices:read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/stock": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "summary": "List the stock of a branch",
+        "description": "The stock of a branch, one row per product and location of its\nwarehouses, in base units. `branchId` is required unless the client\nmay operate in a single branch (`BRANCH_REQUIRED`). Sync it with\n`updatedSince`. `sort`: `id`, `productId`, `updatedAt`.",
+        "operationId": "list_api_v1_stock_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          },
+          {
+            "name": "updatedSince",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id",
+              "examples": [
+                "2026-11-17T00:00:00Z"
+              ],
+              "title": "Updatedsince"
+            },
+            "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id"
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required unless the client may operate in a single branch",
+              "title": "Branchid"
+            },
+            "description": "Required unless the client may operate in a single branch"
+          },
+          {
+            "name": "productId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Productid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_StockRow_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "stock:read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/customers": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "List customers",
+        "description": "Customers; `identification` finds one by its RUC, cédula or\npassport. `sort`: `id`, `name`, `createdAt`, `updatedAt`.",
+        "operationId": "list_api_v1_customers_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          },
+          {
+            "name": "updatedSince",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id",
+              "examples": [
+                "2026-11-17T00:00:00Z"
+              ],
+              "title": "Updatedsince"
+            },
+            "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id"
+          },
+          {
+            "name": "identification",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact RUC, cédula or id",
+              "title": "Identification"
+            },
+            "description": "Exact RUC, cédula or id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_Customer_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "customers:read"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Create a customer",
+        "description": "Create a customer. A RUC or cédula is validated. If a customer with\nthat identification exists: `CUSTOMER_ALREADY_EXISTS` (409) with its id\nin `existingId`. Requires `Idempotency-Key`.",
+        "operationId": "create_api_v1_customers_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Customer_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "customers:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/customers/{customer_id}": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Get a customer",
+        "description": "A customer.",
+        "operationId": "get_api_v1_customers__customer_id__get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Customer_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "customers:read"
+            ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Replace a customer's editable fields",
+        "description": "Replace every editable field of the customer. Its credit, outside\nthe public API, stays as it is.",
+        "operationId": "update_api_v1_customers__customer_id__put",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Customer_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "customers:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/sales": {
+      "post": {
+        "tags": [
+          "Sales"
+        ],
+        "summary": "Create and confirm a sale",
+        "description": "Create a sale of channel `api` and confirm it in one step, in the\nbranch of `X-Branch-Id`, at its emission point `emissionPointId` and\ntaking the stock of its location `locationId` (see `GET /branches`).\nIt is numbered in its branch and sent to be invoiced.\n\nEach line takes the price its lists give (the customer's, the branch's\nor the general one); another `unitPrice` needs `overrideReason`\n(`OVERRIDE_REASON_REQUIRED`) and is audited. The stock must cover it\n(`INSUFFICIENT_STOCK`). The sale arrives paid online: `CREDIT_CARD`,\n`DEBIT_CARD`, `TRANSFER` or `OTHER`, never cash nor credit,\nadding up to its total with VAT exactly (`INSUFFICIENT_PAYMENT`,\n`PAYMENT_EXCEEDS_BALANCE`). Without `customer`, it is sold to the final\nconsumer. Requires `Idempotency-Key`: a retry with it gets the same\nsale, made once.",
+        "operationId": "create_api_v1_sales_post",
+        "parameters": [
+          {
+            "name": "X-Branch-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "examples": [
+                "12"
+              ]
+            },
+            "description": "The branch of the operation: one the client may operate in (`BRANCH_ACCESS_DENIED`, 403; `BRANCH_REQUIRED` without it)"
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Sale_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "sales:write"
+            ]
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Sales"
+        ],
+        "summary": "List sales",
+        "description": "The sales of the branches this client may operate in, of every\nchannel, with their items, payments and invoice status. `from` and\n`to` filter by the moment they were sold. Sync them with\n`updatedSince`. `sort`: `id`, `saleDate`, `createdAt`, `updatedAt`.",
+        "operationId": "list_api_v1_sales_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties",
+              "examples": [
+                "-updatedAt"
+              ],
+              "title": "Sort"
+            },
+            "description": "One field of the resource's list, ascending or with a leading `-` descending. The id always breaks ties"
+          },
+          {
+            "name": "updatedSince",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id",
+              "examples": [
+                "2026-11-17T00:00:00Z"
+              ],
+              "title": "Updatedsince"
+            },
+            "description": "Only the rows changed at or after this moment (ISO 8601). Without `sort` they come ordered by `updatedAt`, then id"
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branchid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SaleStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "invoiceStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InvoiceStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Invoicestatus"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SaleChannel"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Channel"
+            }
+          },
+          {
+            "name": "externalReference",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Externalreference"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sold at or after (ISO 8601)",
+              "title": "From"
+            },
+            "description": "Sold at or after (ISO 8601)"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sold before (ISO 8601)",
+              "title": "To"
+            },
+            "description": "Sold before (ISO 8601)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_Sale_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "sales:read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/sales/{sale_id}": {
+      "get": {
+        "tags": [
+          "Sales"
+        ],
+        "summary": "Get a sale",
+        "description": "A sale of a branch this client may operate in.",
+        "operationId": "get_api_v1_sales__sale_id__get",
+        "parameters": [
+          {
+            "name": "sale_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sale Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Sale_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "sales:read"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/sales/{sale_id}/cancel": {
+      "post": {
+        "tags": [
+          "Sales"
+        ],
+        "summary": "Cancel a sale",
+        "description": "Cancel a sale this client created (`PERMISSION_DENIED` for any\nother): its stock goes back where it left from. Only before its invoice\nis on its way: while faclab-invoicing has it, `INVOICE_IN_PROGRESS`;\nonce invoiced, it needs a credit note (`CREDIT_NOTE_REQUIRED`), which\nthe public API doesn't issue yet. Requires `Idempotency-Key`.",
+        "operationId": "cancel_api_v1_sales__sale_id__cancel_post",
+        "parameters": [
+          {
+            "name": "sale_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Sale Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelSaleInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_Sale_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "sales:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/oauth/token": {
+      "post": {
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Integration access token (OAuth 2.0 client credentials)",
+        "description": "An access token for an integration client: 15 minutes, no refresh\n(it asks again with its credentials). Its claims carry the tenant\n(`tid`), the client (`azp`), the `scope` granted and the branches it is\nlimited to (`bids`). Answers follow RFC 6749, not the API envelope.",
+        "operationId": "token_api_oauth_token_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Basic base64(client_id:client_secret)",
+              "title": "Authorization"
+            },
+            "description": "Basic base64(client_id:client_secret)"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_token_api_oauth_token_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "access_token, token_type, expires_in, scope",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request, unsupported_grant_type, invalid_scope"
+          },
+          "401": {
+            "description": "invalid_client"
+          },
+          "503": {
+            "description": "temporarily_unavailable: integrations disabled"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiPaymentMethod": {
+        "type": "string",
+        "enum": [
+          "CREDIT_CARD",
+          "DEBIT_CARD",
+          "TRANSFER",
+          "OTHER"
+        ],
+        "title": "ApiPaymentMethod",
+        "description": "How a sale of the API was paid: online, outside any cash drawer"
+      },
+      "Body_token_api_oauth_token_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type",
+            "description": "client_credentials"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope",
+            "description": "Scopes wanted, separated by spaces; default all of the client's"
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id",
+            "description": "Only without HTTP Basic (client_secret_post)"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Secret",
+            "description": "Only without HTTP Basic (client_secret_post)"
+          }
+        },
+        "type": "object",
+        "title": "Body_token_api_oauth_token_post"
+      },
+      "Branch": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "isMain": {
+            "type": "boolean",
+            "title": "Ismain"
+          },
+          "emissionPoints": {
+            "items": {
+              "$ref": "#/components/schemas/EmissionPoint"
+            },
+            "type": "array",
+            "title": "Emissionpoints"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/components/schemas/SaleLocation"
+            },
+            "type": "array",
+            "title": "Locations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "address",
+          "isMain",
+          "emissionPoints",
+          "locations"
+        ],
+        "title": "Branch"
+      },
+      "CancelSaleInput": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CancelSaleInput"
+      },
+      "ConstructionMaterialCode": {
+        "type": "string",
+        "enum": [
+          "F010101",
+          "F010201",
+          "F010202",
+          "F010203",
+          "F010204",
+          "F010205",
+          "F010301",
+          "F010401",
+          "F010402",
+          "F010501",
+          "F010601",
+          "F010701",
+          "F010702",
+          "F010703",
+          "F010801",
+          "F010802",
+          "F010803",
+          "F010804"
+        ],
+        "title": "ConstructionMaterialCode",
+        "description": "Subcategoría de material de construcción: Tabla 31 del Anexo 23 de la ficha\ntécnica offline (versión 2.34), para los materiales de la Res.\nNAC-DGERCGC24-00000013. Va exacto en `codigoAuxiliar` de la factura."
+      },
+      "Customer": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "identificationType": {
+            "$ref": "#/components/schemas/IdentificationType"
+          },
+          "identification": {
+            "type": "string",
+            "title": "Identification"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "identificationType",
+          "identification",
+          "email",
+          "phone",
+          "address",
+          "city",
+          "state",
+          "country",
+          "isActive",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Customer"
+      },
+      "CustomerInput": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "identificationType": {
+            "$ref": "#/components/schemas/IdentificationType"
+          },
+          "identification": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Identification",
+            "description": "Validated as a RUC or cédula for those types"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "identificationType",
+          "identification"
+        ],
+        "title": "CustomerInput",
+        "description": "Every editable field: a PUT replaces them all"
+      },
+      "DataResponse_Customer_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Customer",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[Customer]"
+      },
+      "DataResponse_Product_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Product",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[Product]"
+      },
+      "DataResponse_Sale_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Sale",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[Sale]"
+      },
+      "EmissionPoint": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "title": "EmissionPoint"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Machine-readable error code (e.g. NOT_FOUND, DOMAIN_ERROR, VALIDATION_ERROR)"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable error description"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field",
+            "description": "Dot-path to the field that caused the error, if applicable"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail",
+            "description": "Extra context for the error (e.g. the current status)"
+          },
+          "existingId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Existingid",
+            "description": "The id of the record that already exists, on a conflict that names it (e.g. `CUSTOMER_ALREADY_EXISTS` in the public API)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "description": "Individual error entry within an error response."
+      },
+      "ErrorResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "List of error details"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "errors",
+          "meta"
+        ],
+        "title": "ErrorResponse",
+        "description": "Standard error response returned by all endpoints on failure.\n\nExample:\n```json\n{\n  \"errors\": [\n    {\"code\": \"NOT_FOUND\", \"message\": \"Product with id 99 not found\"}\n  ],\n  \"meta\": {\n    \"requestId\": \"550e8400-e29b-41d4-a716-446655440000\",\n    \"timestamp\": \"2025-01-15T10:30:00Z\"\n  }\n}\n```"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IdentificationType": {
+        "type": "string",
+        "enum": [
+          "RUC",
+          "NATIONAL_ID",
+          "PASSPORT",
+          "FOREIGN_ID"
+        ],
+        "title": "IdentificationType",
+        "description": "The SRI's kind of identification of a customer"
+      },
+      "InvoiceStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "AUTHORIZED",
+          "REJECTED",
+          "CREDITED"
+        ],
+        "title": "InvoiceStatus",
+        "description": "Factura de la venta en faclab-invoicing; sin valor, no se envió.\n\nPENDING desde que su `sales.confirmed` llega al outbox (al confirmar o\nreenviar), REJECTED cuando el SRI la rechaza (con el motivo), AUTHORIZED\ncuando la autoriza (la venta pasa a INVOICED) y CREDITED cuando sus notas de\ncrédito la acreditan por completo (S4.5)."
+      },
+      "ListResponse_Branch_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Branch"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "ListResponse[Branch]"
+      },
+      "Meta": {
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "title": "Requestid",
+            "description": "Unique identifier for this request (UUID v4)"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO 8601 timestamp of the response"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requestId",
+          "timestamp"
+        ],
+        "title": "Meta",
+        "description": "Metadata included in every API response."
+      },
+      "PaginatedDataResponse_Customer_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Customer"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[Customer]"
+      },
+      "PaginatedDataResponse_PriceListItem_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PriceListItem"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[PriceListItem]"
+      },
+      "PaginatedDataResponse_PriceList_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PriceList"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[PriceList]"
+      },
+      "PaginatedDataResponse_Product_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[Product]"
+      },
+      "PaginatedDataResponse_Sale_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Sale"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[Sale]"
+      },
+      "PaginatedDataResponse_StockRow_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/StockRow"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[StockRow]"
+      },
+      "PaginatedMeta": {
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "title": "Requestid",
+            "description": "Unique identifier for this request (UUID v4)"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "ISO 8601 timestamp of the response"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationMeta",
+            "description": "Pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requestId",
+          "timestamp",
+          "pagination"
+        ],
+        "title": "PaginatedMeta",
+        "description": "Response metadata with pagination information."
+      },
+      "PaginationMeta": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of records matching the query"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "description": "Maximum records per page (as requested)"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset",
+            "description": "Number of records skipped (as requested)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "PaginationMeta",
+        "description": "Pagination details returned in paginated list responses."
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "PARTIAL",
+          "PAID"
+        ],
+        "title": "PaymentStatus",
+        "description": "Estado de pago de una venta"
+      },
+      "PriceList": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "isDefault": {
+            "type": "boolean",
+            "title": "Isdefault",
+            "description": "The general list: quantity tiers over the product's price"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "validFrom": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validfrom"
+          },
+          "validTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "isDefault",
+          "isActive",
+          "validFrom",
+          "validTo",
+          "createdAt"
+        ],
+        "title": "PriceList"
+      },
+      "PriceListItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "priceListId": {
+            "type": "integer",
+            "title": "Pricelistid"
+          },
+          "productId": {
+            "type": "integer",
+            "title": "Productid"
+          },
+          "presentationId": {
+            "type": "integer",
+            "title": "Presentationid"
+          },
+          "minQuantity": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Minquantity",
+            "description": "From this quantity of the presentation on; 0 is its base price",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Price",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "priceListId",
+          "productId",
+          "presentationId",
+          "minQuantity",
+          "price"
+        ],
+        "title": "PriceListItem"
+      },
+      "Product": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "sku": {
+            "type": "string",
+            "title": "Sku"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "categoryId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoryid"
+          },
+          "unitOfMeasureId": {
+            "type": "integer",
+            "title": "Unitofmeasureid"
+          },
+          "unitSymbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitsymbol"
+          },
+          "quantityDecimals": {
+            "type": "integer",
+            "title": "Quantitydecimals",
+            "description": "Decimals a base quantity takes"
+          },
+          "taxCode": {
+            "$ref": "#/components/schemas/TaxCode"
+          },
+          "constructionMaterialCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConstructionMaterialCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "salePrice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,6})?$",
+                "description": "Amount in USD as a decimal string",
+                "examples": [
+                  "12.50"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saleprice"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "isService": {
+            "type": "boolean",
+            "title": "Isservice"
+          },
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode",
+            "description": "The base presentation's"
+          },
+          "presentations": {
+            "items": {
+              "$ref": "#/components/schemas/ProductPresentation"
+            },
+            "type": "array",
+            "title": "Presentations"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sku",
+          "name",
+          "description",
+          "categoryId",
+          "unitOfMeasureId",
+          "unitSymbol",
+          "quantityDecimals",
+          "taxCode",
+          "constructionMaterialCode",
+          "salePrice",
+          "isActive",
+          "isService",
+          "barcode",
+          "presentations",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Product"
+      },
+      "ProductInput": {
+        "properties": {
+          "sku": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Sku"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "categoryId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoryid"
+          },
+          "unitOfMeasureId": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Unitofmeasureid"
+          },
+          "salePrice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,6})?$",
+                "description": "Amount in USD as a decimal string, up to 6 decimals",
+                "examples": [
+                  "12.50"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saleprice"
+          },
+          "taxCode": {
+            "$ref": "#/components/schemas/TaxCode",
+            "default": "VAT_15"
+          },
+          "constructionMaterialCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConstructionMaterialCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode",
+            "description": "The base presentation's"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive",
+            "default": true
+          },
+          "isService": {
+            "type": "boolean",
+            "title": "Isservice",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sku",
+          "name",
+          "unitOfMeasureId"
+        ],
+        "title": "ProductInput",
+        "description": "Every editable field: a PUT replaces them all"
+      },
+      "ProductPresentation": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "factor": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Factor",
+            "description": "Base units in one of it",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "barcode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Barcode"
+          },
+          "isBase": {
+            "type": "boolean",
+            "title": "Isbase"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          },
+          "salePrice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,6})?$",
+                "description": "Amount in USD as a decimal string",
+                "examples": [
+                  "12.50"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saleprice",
+            "description": "Its own sale price, or the product's times its factor"
+          },
+          "quantityDecimals": {
+            "type": "integer",
+            "title": "Quantitydecimals",
+            "description": "Decimals a quantity in it takes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "factor",
+          "barcode",
+          "isBase",
+          "isActive",
+          "salePrice",
+          "quantityDecimals"
+        ],
+        "title": "ProductPresentation",
+        "description": "A way the product is sold: the base unit, a box of 100, a roll of 50 m"
+      },
+      "Sale": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number",
+            "description": "Of its branch: V-001-000123"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/SaleChannel"
+          },
+          "externalReference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Externalreference"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SaleStatus"
+          },
+          "branchId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branchid"
+          },
+          "emissionPointId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emissionpointid"
+          },
+          "customerId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customerid",
+            "description": "None: the final consumer"
+          },
+          "saleDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saledate"
+          },
+          "subtotal": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Subtotal",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "tax": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Tax",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "discount": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Discount",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Total",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "paymentStatus": {
+            "$ref": "#/components/schemas/PaymentStatus"
+          },
+          "invoiceStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvoiceStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PENDING while faclab-invoicing has it, AUTHORIZED, REJECTED or CREDITED; none if it was never sent"
+          },
+          "invoiceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoiceid",
+            "description": "Its invoice in /invoices"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SaleItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/SalePayment"
+            },
+            "type": "array",
+            "title": "Payments"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "channel",
+          "externalReference",
+          "status",
+          "branchId",
+          "emissionPointId",
+          "customerId",
+          "saleDate",
+          "subtotal",
+          "tax",
+          "discount",
+          "total",
+          "paymentStatus",
+          "invoiceStatus",
+          "invoiceId",
+          "items",
+          "payments",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "Sale"
+      },
+      "SaleChannel": {
+        "type": "string",
+        "enum": [
+          "pos",
+          "api"
+        ],
+        "title": "SaleChannel",
+        "description": "Dónde se vendió (S6.3): en una terminal del POS o por la API pública,\ncon un cliente de integración"
+      },
+      "SaleCustomerInput": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "identification": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identification"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SaleCustomerInput",
+        "description": "The customer by its id or by its identification, one of them"
+      },
+      "SaleInput": {
+        "properties": {
+          "emissionPointId": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Emissionpointid",
+            "description": "Of the branch in X-Branch-Id"
+          },
+          "locationId": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Locationid",
+            "description": "Where its stock leaves from, of the branch"
+          },
+          "externalReference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Externalreference",
+            "description": "The order in the integrator's system"
+          },
+          "customer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaleCustomerInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Without it, the final consumer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SaleItemInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/SalePaymentInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Payments",
+            "description": "They must add up to the total exactly"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "emissionPointId",
+          "locationId",
+          "items",
+          "payments"
+        ],
+        "title": "SaleInput"
+      },
+      "SaleItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "productId": {
+            "type": "integer",
+            "title": "Productid"
+          },
+          "presentationId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentationid"
+          },
+          "presentationName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentationname"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Quantity",
+            "description": "In its presentation",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "unitFactor": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Unitfactor",
+            "description": "Base units in one of its presentation",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "baseQuantity": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Basequantity",
+            "description": "What left the stock",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "unitPrice": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Unitprice",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "discountPercent": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Discountpercent",
+            "description": "Percentage as a decimal string (0-100)",
+            "examples": [
+              "10"
+            ]
+          },
+          "taxCode": {
+            "$ref": "#/components/schemas/TaxCode"
+          },
+          "taxAmount": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Taxamount",
+            "description": "Amount in USD as a decimal string",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "subtotal": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Subtotal",
+            "description": "Before VAT, after its discount",
+            "examples": [
+              "12.50"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "productId",
+          "presentationId",
+          "presentationName",
+          "quantity",
+          "unitFactor",
+          "baseQuantity",
+          "unitPrice",
+          "discountPercent",
+          "taxCode",
+          "taxAmount",
+          "subtotal"
+        ],
+        "title": "SaleItem"
+      },
+      "SaleItemInput": {
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Productid"
+          },
+          "presentationId": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentationid",
+            "description": "The base unit by default"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Quantity",
+            "description": "Quantity as a decimal string, up to 6 decimals",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "unitPrice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,6})?$",
+                "description": "Amount in USD as a decimal string, up to 6 decimals",
+                "examples": [
+                  "12.50"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitprice",
+            "description": "Without it, the price its lists give (the customer's, the branch's or the general one); another one needs `overrideReason`"
+          },
+          "overrideReason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overridereason"
+          },
+          "discountPercent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,2})?$",
+                "description": "Percentage as a decimal string (0-100)",
+                "examples": [
+                  "10"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discountpercent",
+            "description": "Discount of the line, in percent"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "productId",
+          "quantity"
+        ],
+        "title": "SaleItemInput"
+      },
+      "SaleLocation": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "warehouseId": {
+            "type": "integer",
+            "title": "Warehouseid"
+          },
+          "warehouseCode": {
+            "type": "string",
+            "title": "Warehousecode"
+          },
+          "warehouseName": {
+            "type": "string",
+            "title": "Warehousename"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "name",
+          "warehouseId",
+          "warehouseCode",
+          "warehouseName"
+        ],
+        "title": "SaleLocation",
+        "description": "A location stock can leave from: a sale names it (`locationId`)"
+      },
+      "SalePayment": {
+        "properties": {
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "CASH, CREDIT_CARD, DEBIT_CARD, TRANSFER, CREDIT or OTHER"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Amount",
+            "description": "What it applied to the sale",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          }
+        },
+        "type": "object",
+        "required": [
+          "method",
+          "amount",
+          "reference"
+        ],
+        "title": "SalePayment"
+      },
+      "SalePaymentInput": {
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/ApiPaymentMethod"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Amount",
+            "description": "Amount in USD as a decimal string, up to 6 decimals",
+            "examples": [
+              "12.50"
+            ]
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference",
+            "description": "The payment gateway's transaction"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "method",
+          "amount"
+        ],
+        "title": "SalePaymentInput"
+      },
+      "SaleStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "CONFIRMED",
+          "INVOICED",
+          "CANCELLED"
+        ],
+        "title": "SaleStatus",
+        "description": "Estado de una venta"
+      },
+      "StockRow": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "productId": {
+            "type": "integer",
+            "title": "Productid"
+          },
+          "sku": {
+            "type": "string",
+            "title": "Sku"
+          },
+          "branchId": {
+            "type": "integer",
+            "title": "Branchid"
+          },
+          "warehouseId": {
+            "type": "integer",
+            "title": "Warehouseid"
+          },
+          "locationId": {
+            "type": "integer",
+            "title": "Locationid"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Quantity",
+            "description": "Quantity as a decimal string",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "reserved": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Reserved",
+            "description": "Reserved by confirmed transfers",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "available": {
+            "type": "string",
+            "pattern": "^\\d+(\\.\\d{1,6})?$",
+            "title": "Available",
+            "description": "What a sale can take",
+            "examples": [
+              "2.5"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "productId",
+          "sku",
+          "branchId",
+          "warehouseId",
+          "locationId",
+          "quantity",
+          "reserved",
+          "available",
+          "updatedAt"
+        ],
+        "title": "StockRow",
+        "description": "A product in a location of the branch, in base units"
+      },
+      "TaxCode": {
+        "type": "string",
+        "enum": [
+          "VAT_0",
+          "VAT_5",
+          "VAT_8_TOURISM",
+          "VAT_12",
+          "VAT_13",
+          "VAT_14",
+          "VAT_15",
+          "EXEMPT",
+          "NOT_TAXED"
+        ],
+        "title": "TaxCode",
+        "description": "Código semántico de IVA.\n\nEl porcentaje por sí solo es ambiguo: 0%, exento y no objeto de impuesto\ncomparten tarifa 0. El código resuelve esa ambigüedad para que el servicio\nde facturación lo traduzca a la nomenclatura del SRI."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "clientCredentials": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 client credentials: the client's id and secret with HTTP Basic (or in the form) at the token endpoint",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "/api/oauth/token",
+            "scopes": {
+              "products:read": "Read products, categories, units and presentations",
+              "products:write": "Create and update products",
+              "prices:read": "Read price lists",
+              "prices:write": "Change price lists",
+              "stock:read": "Read stock by branch and warehouse",
+              "inventory:write": "Inventory documents (adjustments, transfers)",
+              "customers:read": "Read customers",
+              "customers:write": "Create and update customers",
+              "sales:read": "Read sales",
+              "sales:write": "Create and cancel sales",
+              "invoices:read": "Read invoices and credit notes, their XML and RIDE",
+              "webhooks:manage": "Webhook subscriptions"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "OAuth",
+      "description": "Access tokens of the integration clients."
+    },
+    {
+      "name": "Branches",
+      "description": "Where the client operates: emission points and locations."
+    },
+    {
+      "name": "Products",
+      "description": "Catalog: products and presentations."
+    },
+    {
+      "name": "Price Lists",
+      "description": "Price lists and their prices."
+    },
+    {
+      "name": "Stock",
+      "description": "Stock by branch, warehouse and location."
+    },
+    {
+      "name": "Customers",
+      "description": "Customers by identification."
+    },
+    {
+      "name": "Sales",
+      "description": "Sales of every channel; sales of the API."
+    }
+  ]
+}

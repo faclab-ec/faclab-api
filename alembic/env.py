@@ -51,6 +51,7 @@ from src.pos.refund.infra.models import (  # noqa: F401
 )
 from src.pos.shift.infra.models import ShiftModel  # noqa: F401
 from src.pricing.infra.models import PriceListItemModel, PriceListModel  # noqa: F401
+from src.public_api.infra.models import ApiRateLimitModel  # noqa: F401
 from src.purchasing.infra.models import (  # noqa: F401
     PurchaseOrderItemModel,
     PurchaseOrderModel,

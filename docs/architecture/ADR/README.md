@@ -13,7 +13,7 @@ Cada ADR documenta el contexto, las alternativas, la decisión y sus consecuenci
 | [0005](0005-kafka-outbox-y-consumidores-idempotentes.md) | Kafka con outbox y consumidores idempotentes; sin Saga | Aceptado | S3.4, S4.2, S4.3 |
 | [0006](0006-contratos-de-eventos-versionados.md) | Contratos de eventos versionados | Aceptado | S1.6, S2.8 |
 | [0007](0007-worker-para-procesos-en-segundo-plano.md) | Contenedor `worker` para procesos en segundo plano | Aceptado | S3.4, S4.2 |
-| [0008](0008-api-publica-versionada-y-credenciales-de-integracion.md) | API pública versionada y credenciales de integración | Propuesto | S6.1–S6.3 |
+| [0008](0008-api-publica-versionada-y-credenciales-de-integracion.md) | API pública versionada y credenciales de integración | Aceptado | S6.1–S6.3 |
 | [0009](0009-webhooks-firmados.md) | Webhooks firmados | Propuesto | S6.4 |
 | [0010](0010-observabilidad-con-otel-collector-y-signoz.md) | OpenTelemetry, Collector y SigNoz | Propuesto | S1.5, S7.x |
 | [0011](0011-despliegue-en-vps-con-docker-compose.md) | Despliegue en VPS con Docker Compose y Caddy | Propuesto | S1.2, S8.1–S8.3 |

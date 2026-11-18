@@ -5,9 +5,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,6 +30,7 @@ class CustomerModel(TenantScoped, Base):
             ["price_lists.tenant_id", "price_lists.id"],
             name="fk_customers_price_list_tenant",
         ),
+        Index("ix_customers_tenant_updated_at", "tenant_id", "updated_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -47,6 +50,15 @@ class CustomerModel(TenantScoped, Base):
     price_list_id: Mapped[int | None] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
+    )
+    # The public API's `updatedSince` (S6.3)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        # Also for the rows SQL inserts by itself
+        server_default=func.now(),
     )
 
     contacts: Mapped[list["CustomerContactModel"]] = relationship(

@@ -197,6 +197,29 @@ class BaseConfig:
     )
 
     #
+    # Public API /api/v1 (S6.3): false answers 503 PUBLIC_API_DISABLED on every
+    # route (rollback switch). Each integration client and each tenant has a
+    # rate limit (GCRA, counters in PostgreSQL, D-6): requests per minute,
+    # with bursts of up to BURST at once; over it, 429 with Retry-After
+    #
+    PUBLIC_API_ENABLED = env.bool("PUBLIC_API_ENABLED", True)
+    PUBLIC_API_RATE_LIMIT_ENABLED = env.bool("PUBLIC_API_RATE_LIMIT_ENABLED", True)
+    PUBLIC_API_RATE_LIMIT_PER_MINUTE = env.int(
+        "PUBLIC_API_RATE_LIMIT_PER_MINUTE", 600, validate=lambda value: value > 0
+    )
+    PUBLIC_API_RATE_LIMIT_BURST = env.int(
+        "PUBLIC_API_RATE_LIMIT_BURST", 50, validate=lambda value: value > 0
+    )
+    PUBLIC_API_TENANT_RATE_LIMIT_PER_MINUTE = env.int(
+        "PUBLIC_API_TENANT_RATE_LIMIT_PER_MINUTE",
+        1200,
+        validate=lambda value: value > 0,
+    )
+    PUBLIC_API_TENANT_RATE_LIMIT_BURST = env.int(
+        "PUBLIC_API_TENANT_RATE_LIMIT_BURST", 100, validate=lambda value: value > 0
+    )
+
+    #
     # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)
     #
     AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", True)

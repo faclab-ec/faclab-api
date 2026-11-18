@@ -1,11 +1,14 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
+    DateTime,
     ForeignKeyConstraint,
     Index,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -52,6 +55,7 @@ class StockModel(TenantScoped, Base):
         CheckConstraint(
             "average_cost >= 0", name="ck_stocks_average_cost_non_negative"
         ),
+        Index("ix_stocks_tenant_updated_at", "tenant_id", "updated_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -63,6 +67,15 @@ class StockModel(TenantScoped, Base):
     # recalculates it under this row's lock, every OUT takes it
     average_cost: Mapped[Decimal] = mapped_column(
         MoneyColumn, nullable=False, default=Decimal(0)
+    )
+    # Every change of the row (S6.3): the public API's `updatedSince`
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.now,
+        onupdate=datetime.now,
+        # Also for the rows SQL inserts by itself
+        server_default=func.now(),
     )
 
     product: Mapped["ProductModel"] = relationship(back_populates="stocks")

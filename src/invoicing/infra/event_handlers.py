@@ -102,6 +102,8 @@ class IssuingPoint:
     establishment_code: str
     establishment_address: str | None
     emission_point_code: str
+    # The branch's id in core: the public API filters invoices by it (S6.3)
+    branch_id: int | None = None
 
 
 def issuing_point(
@@ -144,6 +146,7 @@ def _issuing_point(
         establishment_code=branch.establishment_code,
         establishment_address=branch.address,
         emission_point_code=point.code,
+        branch_id=branch.id,
     )
 
 
@@ -236,6 +239,7 @@ def build_sale_confirmed_message(
         "payload": {
             "sale_id": event.sale_id,
             "sale_number": event.number,
+            "branch_id": point.branch_id,
             "source": event.source,
             "issuer_ruc": point.issuer_ruc,
             "establishment_code": point.establishment_code,
@@ -380,6 +384,7 @@ def build_credit_note_message(
             "invoice_id": note.invoice_id,
             "refund_id": note.refund_id,
             "refund_number": refund.number if refund else None,
+            "branch_id": point.branch_id,
             "issuer_ruc": point.issuer_ruc,
             "establishment_code": point.establishment_code,
             "establishment_address": point.establishment_address,

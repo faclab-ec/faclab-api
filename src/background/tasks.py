@@ -8,6 +8,7 @@ from config import config
 from src.auth.infra import session_purge
 from src.imports.infra import purge as import_purge, runner as import_runner
 from src.invoicing.infra import reconciliation
+from src.public_api.infra import rate_limit as public_api_rate_limit
 from src.quotes.infra import expiration as quote_expiration
 from src.shared.infra.idempotency import purge as idempotency_purge
 from src.shared.infra.outbox import purge as outbox_purge
@@ -28,6 +29,8 @@ def periodic_tasks() -> list[PeriodicTask]:
             "imports", config.IMPORT_POLL_INTERVAL_SECONDS, import_runner.run_imports
         ),
         PeriodicTask("import_rows_purge", interval, import_purge.purge),
+        # The public API's rate limit counters whose bucket is full (S6.3)
+        PeriodicTask("api_rate_limits_purge", interval, public_api_rate_limit.purge),
     ]
     # Without Kafka nothing is sent to faclab-invoicing, so nothing to reconcile
     if config.KAFKA_ENABLED and config.INVOICE_RECONCILIATION_ENABLED:

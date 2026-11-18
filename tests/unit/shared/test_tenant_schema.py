@@ -12,7 +12,15 @@ load_all_models()
 
 # Platform tables: no tenant at all, or one that may be missing (a dead letter
 # keeps the tenant of its message, when the message carried one)
-PLATFORM_TABLES = {"tenants", "users", "login_failures", "dead_letters"}
+PLATFORM_TABLES = {
+    "tenants",
+    "users",
+    "login_failures",
+    "dead_letters",
+    # The public API's rate limit counters: their key names the client or the
+    # tenant, and the middleware checks them before the request's transaction
+    "api_rate_limits",
+}
 # They carry their tenant, but auth, provisioning and the outbox relay read them
 # across tenants, so the base repository doesn't filter them
 CROSS_TENANT_TABLES = {
@@ -85,6 +93,7 @@ COMPOSITE_FOREIGN_KEYS = {
     ("quote_items", "product_id"),
     ("quote_items", "presentation_id"),
     ("sales", "quote_id"),
+    ("sales", "integration_client_id"),
     ("receivables", "customer_id"),
     ("receivables", "branch_id"),
     ("customer_payments", "customer_id"),

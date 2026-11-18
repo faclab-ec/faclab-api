@@ -58,6 +58,20 @@ from src.pos.reports.infra.routes import POSReportRouter
 from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
 from src.pricing.infra.routes import POSPriceRouter, PriceListRouter
+from src.public_api.app.rate_limit import RateLimit
+from src.public_api.infra.errors import public_error_code
+from src.public_api.infra.openapi import public_openapi, security_scheme
+from src.public_api.infra.rate_limit import (
+    PUBLIC_API_PREFIX,
+    PgRateLimiter,
+    PublicApiRateLimitMiddleware,
+)
+from src.public_api.infra.routes.branches import ApiBranchRouter
+from src.public_api.infra.routes.customers import ApiCustomerRouter
+from src.public_api.infra.routes.prices import ApiPriceListRouter
+from src.public_api.infra.routes.products import ApiProductRouter
+from src.public_api.infra.routes.sales import ApiSaleRouter
+from src.public_api.infra.routes.stock import ApiStockRouter
 from src.purchasing.infra.routes import (
     POItemRouter,
     PurchaseOrderRouter,
@@ -76,6 +90,7 @@ from src.reports.dashboard.infra.routes import DashboardRouter
 from src.reports.inventory.infra.routes import ReportRouter
 from src.sales.infra.routes import SaleRouter
 from src.shared.infra.adapters import OpenTelemetry
+from src.shared.infra.database import app_session_maker
 from src.shared.infra.health import (
     HealthCheckAccessFilter,
     HealthRouter,
@@ -168,7 +183,9 @@ def _custom_openapi() -> dict:
             "type": "http",
             "scheme": "bearer",
             "bearerFormat": "JWT",
-        }
+        },
+        # The public API's routes declare their scopes with it (S6.3)
+        "clientCredentials": security_scheme(),
     }
     schema["security"] = [{"bearerAuth": []}]
     for public_path in (
@@ -458,6 +475,25 @@ pos_router.include_router(
 auth_router = APIRouter(prefix="/api/auth")
 auth_router.include_router(AuthRouter().router, tags=["Auth"])
 
+# Public API for integrations (S6.3): its own contract and OpenAPI
+public_router = APIRouter(prefix=PUBLIC_API_PREFIX)
+public_router.include_router(
+    ApiBranchRouter().router, prefix="/branches", tags=["v1 Branches"]
+)
+public_router.include_router(
+    ApiProductRouter().router, prefix="/products", tags=["v1 Products"]
+)
+public_router.include_router(
+    ApiPriceListRouter().router, prefix="/price-lists", tags=["v1 Price Lists"]
+)
+public_router.include_router(
+    ApiStockRouter().router, prefix="/stock", tags=["v1 Stock"]
+)
+public_router.include_router(
+    ApiCustomerRouter().router, prefix="/customers", tags=["v1 Customers"]
+)
+public_router.include_router(ApiSaleRouter().router, prefix="/sales", tags=["v1 Sales"])
+
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
@@ -477,6 +513,24 @@ def add_middlewares(target: FastAPI) -> None:
         http_exception_handler,  # ty: ignore[invalid-argument-type]
     )
     target.add_middleware(ErrorHandlingMiddleware)
+    # The public API answers only the codes of its catalog (S6.3)
+    target.state.error_translators = {PUBLIC_API_PREFIX: public_error_code}
+    # Inside AuthMiddleware, which finds the integration client it counts
+    target.add_middleware(
+        PublicApiRateLimitMiddleware,
+        limiter=(
+            PgRateLimiter(app_session_maker)
+            if config.PUBLIC_API_RATE_LIMIT_ENABLED
+            else None
+        ),
+        client_limit=RateLimit(
+            config.PUBLIC_API_RATE_LIMIT_PER_MINUTE, config.PUBLIC_API_RATE_LIMIT_BURST
+        ),
+        tenant_limit=RateLimit(
+            config.PUBLIC_API_TENANT_RATE_LIMIT_PER_MINUTE,
+            config.PUBLIC_API_TENANT_RATE_LIMIT_BURST,
+        ),
+    )
     # Outside the error handler, so its logs carry the request's tenant
     # Reads the signing keys now, so a bad one stops the startup
     # Integration clients' tokens check their client's state (S6.2); with
@@ -513,6 +567,7 @@ otel.instrument_app(app)
 app.include_router(admin_router)
 app.include_router(pos_router)
 app.include_router(auth_router)
+app.include_router(public_router)
 # OAuth 2.0 client credentials of the integration clients (S6.2), public
 app.include_router(OAuthRouter(integration_access()).router)
 
@@ -531,6 +586,14 @@ logging.getLogger("uvicorn.access").addFilter(HealthCheckAccessFilter())
 
 # The public keys of the tokens (S6.1), for the services that check them
 app.include_router(JwksRouter(jwt_keys()).router)
+
+# The public API's contract (S6.3): public while the API is on, docs or not
+if config.PUBLIC_API_ENABLED:
+
+    @app.get("/openapi/public.json", include_in_schema=False)
+    async def public_openapi_schema():
+        return JSONResponse(public_openapi(app))
+
 
 # ---------------------------------------------------------------------------
 # Doc endpoints and root redirect (only registered when DOCS_ENABLED=true)
@@ -552,6 +615,11 @@ if _docs.enabled:
     async def scalar_pos_docs():
         """Interactive API reference — POS endpoints only."""
         return _scalar_response(f"{_docs.title} — POS", "/openapi/pos.json")
+
+    @app.get("/docs/public", include_in_schema=False)
+    async def scalar_public_docs():
+        """Interactive API reference — the public API for integrations."""
+        return _scalar_response(f"{_docs.title} — Public API", "/openapi/public.json")
 
     @app.get("/openapi/admin.json", include_in_schema=False)
     async def admin_openapi_schema():

@@ -1,8 +1,8 @@
 # ADR-0008: API pública versionada, OAuth 2.0 *client credentials* y tokens asimétricos
 
-- **Estado:** propuesto (2026-10-14); el punto 3, la firma asimétrica, aceptado e implementado en
-  S6.1 (2026-11-17); el punto 2, la autenticación de integraciones, aceptado e implementado en S6.2
-  (2026-11-17)
+- **Estado:** aceptado. Propuesto el 2026-10-14; el punto 3, la firma asimétrica, implementado en
+  S6.1 (2026-11-17); el punto 2, la autenticación de integraciones, en S6.2 (2026-11-17); los puntos
+  1, 4, 5 y 6 (fachada, versionado, escrituras y límites) en S6.3 (2026-11-17)
 - **Relacionado:** [PUBLIC_API.md](../PUBLIC_API.md), [ADR-0003](0003-identidad-global-y-contexto-de-sucursal.md)
 
 ## Contexto
@@ -20,6 +20,15 @@ se firman (G-48).
      validadores internos.
    - Tiene su propio OpenAPI (`/openapi/public.json`).
    - Las rutas internas no se versionan y pueden cambiar con el frontend.
+   - Decidido en S6.3:
+     - El módulo `src/public_api/` es una capa de composición, como el POS: sus lecturas son read
+       models con `tenant_criteria` y sus escrituras llaman a los comandos existentes (la venta, al
+       mismo checkout del POS, `SaleCheckout`).
+     - Un código de error fuera del catálogo público se traduce al genérico de su estado.
+     - Cada campo de una respuesta se envía siempre y el OpenAPI lo marca requerido: quitarlo es un
+       cambio incompatible que el CI detecta.
+     - Una venta de la API indica su punto de emisión y su ubicación, no tiene turno ni caja y llega
+       pagada en línea (sin efectivo ni crédito).
 2. **Autenticación de integraciones**:
    - OAuth 2.0 *client credentials* (`POST /api/oauth/token`) con `client_id` y secreto (guardado como
      hash).
@@ -54,14 +63,17 @@ se firman (G-48).
    - Procedimiento de rotación en `docs/auth-spec.md`.
 4. **Versionado**:
    - Mayor en la URL (`/api/v1`). Los cambios aditivos no rompen.
+   - Cada servicio guarda su OpenAPI público en `docs/public-api/openapi-v1.json` y el CI lo compara
+     con el de la rama base con `oasdiff` (S6.3).
    - Un cambio incompatible crea `/api/v2`, con al menos 6 meses de convivencia y encabezados
      `Deprecation` y `Sunset`. Se acompaña con un changelog público.
 5. **Escrituras**:
    - Siempre por comandos de negocio (crear venta, registrar cliente), nunca actualizaciones genéricas
      de tablas.
    - `Idempotency-Key` obligatorio en los POST que crean documentos.
-6. **Límites de solicitudes**: por cliente y por empresa (almacén según D-6), más límites por IP en el
-   proxy.
+6. **Límites de solicitudes**: por cliente y por empresa, más límites por IP en el proxy. D-6
+   resuelta en S6.3: PostgreSQL con GCRA (un upsert por clave), detrás de un puerto para pasar a
+   Redis si el volumen lo pide.
 
 ## Consecuencias
 

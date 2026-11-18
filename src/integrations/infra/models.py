@@ -17,6 +17,8 @@ class IntegrationClientModel(TenantScoped, Base):
         UniqueConstraint(
             "tenant_id", "public_id", name="uq_integration_clients_tenant_public_id"
         ),
+        # Target of the composite foreign key from the sales it creates (S6.3)
+        UniqueConstraint("tenant_id", "id", name="uq_integration_clients_tenant_id_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

@@ -74,6 +74,19 @@ def _product(sku: str) -> Body:
     }
 
 
+def _public_product(ids: Ids) -> dict:
+    # The dataset's product through the public API: its cost and thresholds
+    # aren't in it and stay as they are
+    return {
+        "sku": ids["sku"],
+        "name": f"{ids['marker']} Martillo",
+        "categoryId": ids["category"],
+        "unitOfMeasureId": ids["uom"],
+        "salePrice": "10.00",
+        "barcode": f"{ids['seed']}786100000001",
+    }
+
+
 def _presentation(ids: Ids) -> dict:
     # The dataset's box: a PUT replaces every field
     return {
@@ -149,6 +162,7 @@ def _placement(ids: Ids) -> dict:
 
 ADMIN = "/api/admin"
 POS = "/api/pos"
+V1 = "/api/v1"
 
 ROUTES: dict[str, Route] = {
     # Organization
@@ -952,10 +966,67 @@ ROUTES: dict[str, Route] = {
     "GET /health/live": Route(exempt="no data"),
     "GET /health/ready": Route(exempt="no data"),
     "GET /.well-known/jwks.json": Route(exempt="no data"),
+    # Public API (S6.3): with the tenant's integration client
+    f"GET {V1}/branches": Route(),
+    f"GET {V1}/products": Route(),
+    f"GET {V1}/products/{{product_id}}": Route(path=("product",)),
+    f"POST {V1}/products": Route(
+        body=lambda ids: {
+            "sku": f"{ids['marker']}-API-1",
+            "name": f"{ids['marker']} Pala",
+            "unitOfMeasureId": ids["uom"],
+            "salePrice": "15.00",
+        },
+        created=f"{V1}/products/{{}}",
+    ),
+    f"PUT {V1}/products/{{product_id}}": Route(
+        path=("product",), body=_public_product, refs=("category", "uom")
+    ),
+    f"GET {V1}/price-lists": Route(),
+    f"GET {V1}/price-lists/{{price_list_id}}/items": Route(path=("price_list",)),
+    f"GET {V1}/stock": Route(
+        query=lambda ids: {"branchId": ids["branch"], "productId": ids["product"]},
+        refs=("branch", "product"),
+        needs_query=True,
+    ),
+    f"GET {V1}/customers": Route(),
+    f"GET {V1}/customers/{{customer_id}}": Route(path=("customer",)),
+    f"POST {V1}/customers": Route(
+        body=lambda ids: {
+            "name": f"{ids['marker']} Cliente web",
+            "identificationType": "NATIONAL_ID",
+            "identification": customer_tax_id(ids["seed"] + 20),
+        },
+        created=f"{V1}/customers/{{}}",
+    ),
+    f"PUT {V1}/customers/{{customer_id}}": Route(
+        path=("customer",),
+        body=lambda ids: {
+            "name": f"{ids['marker']} Cliente",
+            "identificationType": "NATIONAL_ID",
+            "identification": ids["tax_id"],
+        },
+    ),
+    f"POST {V1}/sales": Route(
+        headers=lambda ids: {"X-Branch-Id": str(ids["branch"])},
+        body=lambda ids: {
+            "emissionPointId": ids["emission_point"],
+            "locationId": ids["location"],
+            "customer": {"id": ids["customer"]},
+            "items": [{"productId": ids["product"], "quantity": "1"}],
+            "payments": [{"method": "TRANSFER", "amount": "11.50"}],
+        },
+        refs=("branch", "emission_point", "location", "customer", "product"),
+    ),
+    f"GET {V1}/sales": Route(),
+    f"GET {V1}/sales/{{sale_id}}": Route(path=("sale",)),
+    f"POST {V1}/sales/{{sale_id}}/cancel": Route(path=("api_sale",)),
     "POST /api/oauth/token": Route(
         exempt="authenticates with the client's credentials; the client_id says "
         "its tenant (test_integrations.py)"
     ),
+    "GET /openapi/public.json": Route(exempt="the same contract for every tenant"),
+    "GET /docs/public": Route(exempt="docs"),
     "GET /": Route(exempt="docs"),
     "GET /docs": Route(exempt="docs"),
     "GET /docs/admin": Route(exempt="docs"),

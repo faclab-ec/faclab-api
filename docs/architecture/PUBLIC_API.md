@@ -4,9 +4,10 @@
 > `/api/v1`, OAuth 2.0 *client credentials*, tokens asimétricos) y
 > [ADR-0009](ADR/0009-webhooks-firmados.md) (webhooks). Se implementa en la Etapa 6, después de
 > multiempresa (Etapa 2) e idempotencia (S3.1, terminada: el POS ya exige `Idempotency-Key` con el
-> mecanismo que reutilizará `/api/v1`, ver `docs/pos-api-spec.md` §0.1). Las credenciales de
-> integración (§3) están implementadas desde S6.2; la fachada `/api/v1` (S6.3) y los webhooks (S6.4)
-> todavía no.
+> mecanismo que reutiliza `/api/v1`, ver `docs/pos-api-spec.md` §0.1). Las credenciales de
+> integración (§3) están implementadas desde S6.2 y la fachada `/api/v1` con sus límites (§4, §5, §9)
+> desde S6.3; los webhooks (S6.4) y el portal (S6.5) todavía no. La guía para integradores está en
+> [`docs/public-api/`](../public-api/README.md).
 
 ## 1. Principios
 
@@ -101,8 +102,11 @@ alcance inicial).
 
 Lo firma el core con su clave Ed25519 (el `kid` va en el encabezado) y se valida con
 `/.well-known/jwks.json` (S6.1). `bids` solo cuando el cliente está limitado a algunas sucursales;
-`cred` es el secreto con el que se obtuvo. No lleva `role` ni `perms`. Hasta que la API pública de
-facturación valide scopes (S6.3), `aud` es solo `faclab-core`.
+`cred` es el secreto con el que se obtuvo. No lleva `role` ni `perms`. Desde S6.3 `aud` es
+`["faclab-core", "faclab-invoicing"]`, como el access token de un usuario: `/api/v1/invoices` de
+facturación valida el scope `invoices:read` y sus rutas internas rechazan el token
+(`INTEGRATION_NOT_ALLOWED`). Facturación no consulta el estado del cliente: allí un token revocado
+vale hasta que vence (15 minutos como máximo).
 
 En el core, las rutas internas (`/api/admin`, `/api/pos`, `/api/auth`) responden 403
 `INTEGRATION_NOT_ALLOWED` a un token de integración; las rutas que lo aceptan declaran el scope con
@@ -156,16 +160,18 @@ integración nunca puede tener más scopes que el plan de la empresa permite.
 | Recursos | Sustantivos en plural, kebab-case: `/products`, `/price-lists`, `/webhook-endpoints` |
 | Formato | JSON con camelCase (igual que la API interna) |
 | Fechas | ISO 8601 en UTC con `Z` |
-| Dinero | **String decimal** (`"12.50"`), nunca número de punto flotante; la moneda es USD |
-| Cantidades | String decimal (`"2.500"`) a partir de S5.1 |
-| Paginación | `limit` (máx. 200) y `offset`, con orden estable obligatorio. Para sincronización, `updatedSince` + orden por `updatedAt, id`. Paginación por cursor si el volumen lo exige |
+| Dinero | **String decimal** (`"12.50"`: al menos dos decimales, hasta seis en precios de línea), nunca número de punto flotante; la moneda es USD. En las solicitudes se acepta string o entero; un número JSON con decimales se rechaza (422) |
+| Cantidades | String decimal sin ceros sobrantes (`"2.5"`, `"3"`), con los decimales que admite la unidad |
+| Paginación | `limit` (1 a 200, 50 por defecto) y `offset`, siempre en orden estable: el id desempata en la misma dirección. Para sincronizar, `updatedSince` (inclusivo) y, sin `sort`, orden por `updatedAt, id`. Paginación por cursor si el volumen lo exige |
 | Filtros | Parámetros explícitos por recurso (`sku`, `barcode`, `branchId`, `status`, `from`, `to`) |
-| Orden | `sort=campo` o `sort=-campo` sobre una lista blanca por recurso |
+| Orden | `sort=campo` o `sort=-campo` sobre una lista blanca por recurso (otro campo: 422 `VALIDATION_ERROR` con `field: "sort"`) |
 | Envelope | `{data, meta}` y `{errors:[{code, message, field?}], meta}`, el mismo que la API interna (`src/shared/infra/validators.py`) |
-| Códigos de error | Catálogo público estable (`NOT_FOUND`, `VALIDATION_ERROR`, `INSUFFICIENT_STOCK`, `IDEMPOTENCY_KEY_REUSED`, `RATE_LIMITED`…); nunca textos internos |
-| Idempotencia | `Idempotency-Key` (UUID) en POST de creación; misma clave y mismo cuerpo devuelven la misma respuesta durante 24 h (con `Idempotent-Replayed: true`); misma clave con otro cuerpo devuelve 422 `IDEMPOTENCY_KEY_REUSED`; una solicitud con la clave en curso espera su respuesta o, tras 10 s, 409 `IDEMPOTENCY_IN_PROGRESS`; los errores no se guardan. Implementado en el POS en S3.1 (`src/shared/infra/idempotency/`): la v1 aplica la misma dependencia a sus rutas |
+| Códigos de error | Catálogo público estable (`PUBLIC_ERROR_CODES` en `src/public_api/infra/errors.py`, documentado en `docs/public-api/errores.md`): un código interno fuera de él se traduce al genérico de su estado (`BUSINESS_RULE_VIOLATION` 400, `CONFLICT` 409, `VALIDATION_ERROR` 422…) y el original queda en el log |
+| Respuestas | Cada campo del esquema se envía siempre (`null` sin valor): el OpenAPI los marca requeridos, así quitar uno es un cambio incompatible. Ningún campo interno sale: los esquemas públicos son propios (`src/public_api/infra/schemas/`) |
+| Idempotencia | `Idempotency-Key` (UUID) en **todo POST** de `/api/v1`; misma clave y mismo cuerpo devuelven la misma respuesta durante 24 h (con `Idempotent-Replayed: true`); misma clave con otro cuerpo devuelve 422 `IDEMPOTENCY_KEY_REUSED`; una solicitud con la clave en curso espera su respuesta o, tras 10 s, 409 `IDEMPOTENCY_IN_PROGRESS`; los errores no se guardan. Implementado en el POS en S3.1 (`src/shared/infra/idempotency/`): la v1 aplica la misma dependencia a sus rutas |
 | Correlación | `X-Request-Id` en la respuesta, que aparece en el soporte y en los logs |
-| Límites | 429 con `Retry-After`; encabezados `RateLimit-Limit`, `RateLimit-Remaining` y `RateLimit-Reset` |
+| Límites | 429 `RATE_LIMITED` con `Retry-After`; encabezados `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` y `RateLimit-Policy` en cada respuesta (§9) |
+| Apagado | `PUBLIC_API_ENABLED=false` responde 503 `PUBLIC_API_DISABLED` en todas las rutas (la vuelta atrás) |
 
 ## 5. Catálogo inicial de endpoints
 
@@ -173,28 +179,36 @@ integración nunca puede tener más scopes que el plan de la empresa permite.
 |---|---|---|---|
 | `POST /api/oauth/token` | — | core | *Client credentials* |
 | `GET /.well-known/jwks.json` | — | core | Claves públicas |
-| `GET /api/v1/branches` | cualquiera | core | Sucursales permitidas para el cliente |
-| `GET /api/v1/products` | `products:read` | core | Filtros `sku`, `barcode`, `search`, `updatedSince` |
-| `GET /api/v1/products/{id}` | `products:read` | core | Incluye presentaciones |
-| `POST /api/v1/products` | `products:write` | core | Idempotente |
-| `PUT /api/v1/products/{id}` | `products:write` | core | Reemplazo de campos editables |
-| `GET /api/v1/price-lists`, `GET /api/v1/price-lists/{id}/items` | `prices:read` | core | Etapa 5 |
-| `GET /api/v1/stock` | `stock:read` | core | `branchId` obligatorio si el cliente tiene varias sucursales; `productId`, `updatedSince` |
+| `GET /api/v1/branches` | cualquiera | core | Sucursales activas permitidas para el cliente, con sus puntos de emisión y ubicaciones activos (lo que nombra una venta) |
+| `GET /api/v1/products` | `products:read` | core | Filtros `sku`, `barcode` (de cualquier presentación), `search`, `updatedSince`; `sort`: `id`, `name`, `sku`, `createdAt`, `updatedAt`. Cambiar una presentación actualiza su producto |
+| `GET /api/v1/products/{id}` | `products:read` | core | Incluye presentaciones con su precio de venta. El costo de compra no es público |
+| `POST /api/v1/products` | `products:write` | core | Idempotente; crea la presentación base |
+| `PUT /api/v1/products/{id}` | `products:write` | core | Reemplazo de campos editables; costo y umbrales de stock quedan como están |
+| `GET /api/v1/price-lists`, `GET /api/v1/price-lists/{id}/items` | `prices:read` | core | Listas (con la general) e ítems por producto, presentación y escala |
+| `GET /api/v1/stock` | `stock:read` | core | Filas por producto y ubicación de las bodegas de una sucursal; `branchId` obligatorio salvo que el cliente opere en una sola sucursal (`BRANCH_REQUIRED`); `productId`, `updatedSince` |
 | `GET /api/v1/customers` | `customers:read` | core | Filtro `identification` |
-| `POST /api/v1/customers` | `customers:write` | core | Si existe la identificación, devuelve 409 con el id existente |
-| `PUT /api/v1/customers/{id}` | `customers:write` | core | |
-| `POST /api/v1/sales` | `sales:write` | core | Crea y confirma una venta de canal `api` en la sucursal y punto de emisión indicados; valida stock; idempotente |
-| `GET /api/v1/sales`, `GET /api/v1/sales/{id}` | `sales:read` | core | Incluye estado de facturación |
-| `POST /api/v1/sales/{id}/payments` | `sales:write` | core | Idempotente |
-| `POST /api/v1/sales/{id}/cancel` | `sales:write` | core | Según reglas: antes de facturar o con nota de crédito |
-| `GET /api/v1/invoices` | `invoices:read` | invoicing | Filtros `saleId`, `status`, `from`, `to`, `branchId` |
-| `GET /api/v1/invoices/{id}` | `invoices:read` | invoicing | Número, clave de acceso, autorización |
+| `GET /api/v1/customers/{id}` | `customers:read` | core | Agregado en S6.3 |
+| `POST /api/v1/customers` | `customers:write` | core | Si existe la identificación, 409 `CUSTOMER_ALREADY_EXISTS` con el id en `existingId`; idempotente |
+| `PUT /api/v1/customers/{id}` | `customers:write` | core | El crédito (cupo, plazo) no es público y queda como está |
+| `POST /api/v1/sales` | `sales:write` | core | Crea y confirma una venta de canal `api` en la sucursal de `X-Branch-Id`, en el punto de emisión `emissionPointId` y con el stock de la ubicación `locationId`; pagada en línea (`CREDIT_CARD`, `DEBIT_CARD`, `TRANSFER`, `OTHER`, por el total exacto); valida stock; idempotente |
+| `GET /api/v1/sales`, `GET /api/v1/sales/{id}` | `sales:read` | core | Ventas de todos los canales de las sucursales del cliente, con ítems, pagos y estado de facturación; filtros `branchId`, `status`, `invoiceStatus`, `channel`, `externalReference`, `from`, `to`, `updatedSince` |
+| `POST /api/v1/sales/{id}/cancel` | `sales:write` | core | Solo ventas del mismo cliente (`PERMISSION_DENIED` para las demás); según reglas: antes de facturar (`INVOICE_IN_PROGRESS`) o con nota de crédito (`CREDIT_NOTE_REQUIRED`) |
+| `GET /api/v1/invoices` | `invoices:read` | invoicing | Facturas y notas de crédito (`documentType`) de las sucursales del cliente; filtros `saleId`, `status` (`PROCESSING`, `AUTHORIZED`, `REJECTED`), `documentType`, `from`, `to`, `branchId`, `updatedSince`; `sort`: `createdAt`, `updatedAt`, `id` |
+| `GET /api/v1/invoices/{id}` | `invoices:read` | invoicing | Número, clave de acceso, autorización, motivo del rechazo, total |
 | `GET /api/v1/invoices/{id}/xml`, `/ride` | `invoices:read` | invoicing | XML autorizado y PDF. Ya existen en la API interna (S4.1 y S4.4): `GET /api/invoices/{id}/authorized-xml` y `GET /api/invoices/{id}/ride`, adjuntos con la clave de acceso como nombre, 404 hasta que la factura esté autorizada; v1 los expone con otro prefijo y el scope |
 | `GET/POST/DELETE /api/v1/webhook-endpoints` | `webhooks:manage` | core | |
 | `POST /api/v1/webhook-endpoints/{id}/test` | `webhooks:manage` | core | Envía un evento de prueba |
 | `GET /api/v1/webhook-endpoints/{id}/deliveries` | `webhooks:manage` | core | Últimos 30 días; reenvío con `POST .../{deliveryId}/retry` |
 
-Caddy enruta `/api/v1/invoices*` a invoicing y el resto a core, bajo un solo dominio y un solo token.
+Caddy enruta `/api/v1/invoices*` a invoicing y el resto a core, bajo un solo dominio y un solo token
+(S8.1). Cada documento de facturación guarda la sucursal de su venta (`branch_id` de
+`sales.confirmed` v3 y `credit_notes.requested` v2, desde S6.3): los recibidos antes no la tienen y
+solo los ve un cliente sin límite de sucursales.
+
+**Pagos.** La venta de la API llega pagada en línea: no entra en ninguna caja ni queda a crédito
+(`CASH` y `CREDIT` no se aceptan). `POST /api/v1/sales/{id}/payments`, previsto en el diseño
+inicial, queda fuera de v1 (decisión de S6.3): se agregará como cambio compatible si hacen falta
+ventas a crédito o pagos posteriores.
 
 El RIDE se genera desde el XML autorizado la primera vez que se pide o cuando la factura se entrega
 al comprador, y se guarda junto al XML (S4.4). El reenvío por correo (`POST /api/invoices/{id}/email`)
@@ -243,10 +257,12 @@ const res = await fetch("https://api.faclab.ec/api/v1/sales", {
     "X-Branch-Id": "12",
   },
   body: JSON.stringify({
+    emissionPointId: 31, // GET /api/v1/branches
+    locationId: 44,
     externalReference: "WEB-100234",
-    customer: { identificationType: "NATIONAL_ID", identification: "1712345678" },
-    items: [{ productId: 501, quantity: "3", unitPrice: "4.25" }],
-    payments: [{ method: "TRANSFER", amount: "14.28" }],
+    customer: { identification: "1712345678" }, // o { id }; sin customer, consumidor final
+    items: [{ productId: 501, quantity: "3" }], // al precio de sus listas
+    payments: [{ method: "TRANSFER", amount: "14.28", reference: "pasarela-7f3a" }],
   }),
 });
 if (res.status === 409) {
@@ -328,10 +344,22 @@ def verify(secret: bytes, msg_id: str, ts: str, body: bytes, header: str) -> boo
 ## 9. Límites de solicitudes y protección
 
 - Por IP en Caddy (protección básica).
-- Por cliente y por empresa en la aplicación: por ejemplo, 600 solicitudes por minuto por cliente y
-  ráfagas de 50. Son valores iniciales que se ajustan por plan.
-- Almacén de contadores: decisión D-6. Redis cuando exista la API pública; PostgreSQL es aceptable si el
-  volumen es bajo.
+- Por cliente y por empresa en la aplicación (S6.3): 600 solicitudes por minuto por cliente con
+  ráfagas de 50 y 1200 por minuto por empresa con ráfagas de 100 (`PUBLIC_API_RATE_LIMIT_*` y
+  `PUBLIC_API_TENANT_RATE_LIMIT_*`). Son valores iniciales que se ajustarán por plan (S8.4). Cada
+  servicio cuenta las solicitudes a sus rutas: core las de su `/api/v1`, facturación las de
+  `/api/v1/invoices`.
+- Algoritmo GCRA: cada clave guarda un solo número, el momento en que su balde vuelve a estar vacío.
+  `RateLimit-Limit` es la ráfaga, `RateLimit-Remaining` lo que queda de ella, `RateLimit-Reset` los
+  segundos hasta que se llena otra vez y `RateLimit-Policy` la ráfaga y su ventana (`50;w=5`). Al
+  exceder: 429 `RATE_LIMITED` con `Retry-After`.
+- Almacén de contadores: **decisión D-6 resuelta en S6.3: PostgreSQL**. Tabla de plataforma
+  `api_rate_limits` (sin RLS) con un `INSERT … ON CONFLICT … DO UPDATE … WHERE … RETURNING` por
+  clave, atómico y compartido entre procesos, en una transacción propia antes de la ruta; el worker
+  purga las claves vencidas. Detrás del puerto `RateLimiter`, así pasar a Redis no toca las rutas. Si
+  el almacén falla, la solicitud sigue (se registra en el log). Sin infraestructura nueva para el
+  piloto; Redis cuando el volumen lo pida.
+- `POST /api/oauth/token` no tiene límite por cliente todavía: solo el del proxy por IP.
 - Tamaño máximo de cuerpo de 1 MB y timeouts de lectura en Caddy.
 - Endpoints de exportación masiva fuera del alcance inicial; se usa paginación con `updatedSince`.
 

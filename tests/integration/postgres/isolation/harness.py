@@ -1,7 +1,7 @@
 """How the isolation suite calls the app and compares what it answers."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -84,6 +84,9 @@ class Tenant:
     id: UUID
     api: Api
     ids: Ids
+    # The headers of an integration client with every scope: the public API's
+    # routes (/api/v1, S6.3) take only its token
+    integration: dict[str, str] = field(default_factory=dict)
 
     def call(self, key: str, route: Route, ids: Ids, query: bool = True) -> Outcome:
         """Calls the route as this tenant, with the path, body and query built
@@ -100,7 +103,8 @@ class Tenant:
             kwargs["data"] = route.form(ids)
         if route.query and query:
             kwargs["params"] = route.query(ids)
-        headers = {**self.api.headers, **(route.headers(ids) if route.headers else {})}
+        base = self.integration if path.startswith("/api/v1") else self.api.headers
+        headers = {**base, **(route.headers(ids) if route.headers else {})}
         if method == "POST":
             headers = with_key(headers)
         response = self.api.client.request(method, path, headers=headers, **kwargs)
