@@ -52,3 +52,11 @@ reconciliation_discrepancies = _meter.create_gauge(
     "faclab.reconciliation.discrepancies",
     description="Open invoice discrepancies of every tenant, by kind (S4.3)",
 )
+
+webhook_deliveries = _meter.create_counter(
+    "faclab.webhooks.deliveries",
+    description=(
+        "Webhook attempts by result: delivered, retry (it fails and waits for "
+        "the next one) or failed (it spent its attempts) (S6.4)"
+    ),
+)

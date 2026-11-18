@@ -1,9 +1,6 @@
 """The signatures of the webhooks (S6.4): the Standard Webhooks scheme, checked
 with the receiver of PUBLIC_API.md §7.2 as it is published."""
 
-import base64
-import hashlib
-import hmac
 import time
 
 from src.webhooks.domain.signing import (
@@ -14,18 +11,7 @@ from src.webhooks.domain.signing import (
     signature,
     signature_header,
 )
-
-
-def verify(secret: bytes, msg_id: str, ts: str, body: bytes, header: str) -> bool:
-    """PUBLIC_API.md §7.2, as an integrator copies it"""
-    if abs(time.time() - int(ts)) > 300:
-        return False
-    expected = base64.b64encode(
-        hmac.new(secret, f"{msg_id}.{ts}.".encode() + body, hashlib.sha256).digest()
-    ).decode()
-    return any(
-        hmac.compare_digest(expected, sig.split(",", 1)[1]) for sig in header.split(" ")
-    )
+from tests.webhook_receiver import verify
 
 
 def test_the_signature_is_the_one_of_the_standard_webhooks_specification():
