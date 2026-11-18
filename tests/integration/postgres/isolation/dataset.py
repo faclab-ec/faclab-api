@@ -381,6 +381,10 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     # An integration client with every scope (S6.3) and a sale it made through
     # the public API, before the reconciliation looks at the confirmed sales
     ids["api_headers"], ids["api_sale"] = _public_api(api, ids)
+    # A webhook endpoint of that client (S6.4) with a test delivery
+    ids["webhook_endpoint"], ids["webhook_delivery"] = _webhook(
+        api, ids, ids["api_headers"]
+    )
     # A reconciliation discrepancy of the confirmed sale: with the threshold in
     # the future, every confirmed sale without an invoice result is overdue
     with pytest.MonkeyPatch.context() as patch:
@@ -411,6 +415,26 @@ def _public_api(api: Api, ids: Ids) -> tuple[dict[str, str], int]:
     )
     assert sale.status_code == 201, sale.text
     return headers, sale.json()["data"]["id"]
+
+
+def webhook_url(ids: Ids) -> str:
+    """A public address, so the URL needs no DNS"""
+    return f"https://93.184.215.14/{ids['marker']}/hooks"
+
+
+def _webhook(api: Api, ids: Ids, headers: dict[str, str]) -> tuple[int, int]:
+    created = api.client.post(
+        "/api/v1/webhook-endpoints",
+        headers=with_key(headers),
+        json={"url": webhook_url(ids), "eventTypes": ["sale.confirmed"]},
+    )
+    assert created.status_code == 201, created.text
+    endpoint_id = created.json()["data"]["id"]
+    delivery = api.client.post(
+        f"/api/v1/webhook-endpoints/{endpoint_id}/test", headers=with_key(headers)
+    )
+    assert delivery.status_code == 201, delivery.text
+    return endpoint_id, delivery.json()["data"]["id"]
 
 
 def _import(api: Api, ids: Ids) -> int:

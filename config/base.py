@@ -220,6 +220,40 @@ class BaseConfig:
     )
 
     #
+    # Webhooks (S6.4, ADR-0009). WEBHOOKS_ENABLED=false enqueues nothing and
+    # answers 503 WEBHOOKS_DISABLED on their routes (rollback switch);
+    # WEBHOOK_DELIVERY_ENABLED=false only pauses the sending: the worker keeps
+    # the pending deliveries. Each attempt has TIMEOUT_SECONDS in all; the
+    # worker sends up to CONCURRENCY at once, one per endpoint, and groups
+    # stock.changed every STOCK_BATCH_SECONDS. The history keeps
+    # RETENTION_DAYS. WEBHOOK_ALLOW_PRIVATE_URLS lets an endpoint use http and
+    # private addresses, for a receiver on this machine: local only
+    #
+    WEBHOOKS_ENABLED = env.bool("WEBHOOKS_ENABLED", True)
+    WEBHOOK_DELIVERY_ENABLED = env.bool("WEBHOOK_DELIVERY_ENABLED", True)
+    WEBHOOK_TIMEOUT_SECONDS = env.float(
+        "WEBHOOK_TIMEOUT_SECONDS", 10.0, validate=lambda value: 1 <= value <= 30
+    )
+    WEBHOOK_CONCURRENCY = env.int(
+        "WEBHOOK_CONCURRENCY", 8, validate=lambda value: 1 <= value <= 64
+    )
+    WEBHOOK_POLL_INTERVAL_SECONDS = env.float(
+        "WEBHOOK_POLL_INTERVAL_SECONDS", 1.0, validate=lambda value: value > 0
+    )
+    WEBHOOK_STOCK_BATCH_SECONDS = env.float(
+        "WEBHOOK_STOCK_BATCH_SECONDS", 30.0, validate=lambda value: value > 0
+    )
+    WEBHOOK_RETENTION_DAYS = env.int(
+        "WEBHOOK_RETENTION_DAYS", 30, validate=lambda value: value > 0
+    )
+    WEBHOOK_ALLOW_PRIVATE_URLS = env.bool("WEBHOOK_ALLOW_PRIVATE_URLS", False)
+    # The master key of the secrets kept in the database (the webhooks'):
+    # Fernet keys separated by commas, the first one encrypts. Required outside
+    # local, in the variable or in the file
+    SECRET_ENCRYPTION_KEYS = env.str("SECRET_ENCRYPTION_KEYS", "")
+    SECRET_ENCRYPTION_KEYS_FILE = env.str("SECRET_ENCRYPTION_KEYS_FILE", "")
+
+    #
     # Refresh token cookie (HttpOnly, SameSite=Strict, Path=/api/auth)
     #
     AUTH_COOKIE_SECURE = env.bool("AUTH_COOKIE_SECURE", True)
@@ -481,6 +515,17 @@ All errors follow a consistent structure with one or more error entries:
             ),
         },
         {
+            "name": "Webhooks",
+            "description": (
+                "Webhook endpoints of the tenant (S6.4): HTTPS URLs that receive "
+                "the events they subscribe to (sales, invoices, credit notes, "
+                "stock, products), signed with the Standard Webhooks scheme. "
+                "Retries for about three days; an endpoint that keeps failing is "
+                "disabled. History of 30 days, test event and manual resend. "
+                "Requires the `integration:manage` permission (admins)."
+            ),
+        },
+        {
             "name": "OAuth",
             "description": (
                 "`POST /api/oauth/token`: the access token of an integration "
@@ -720,6 +765,7 @@ All errors follow a consistent structure with one or more error entries:
                 "OAuth",
                 "Users",
                 "Integrations",
+                "Webhooks",
                 "Audit Log",
                 "Imports",
             ],

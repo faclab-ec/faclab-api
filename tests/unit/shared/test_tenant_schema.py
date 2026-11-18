@@ -94,6 +94,8 @@ COMPOSITE_FOREIGN_KEYS = {
     ("quote_items", "presentation_id"),
     ("sales", "quote_id"),
     ("sales", "integration_client_id"),
+    # The integration client a webhook endpoint belongs to (S6.4)
+    ("webhook_endpoints", "integration_client_id"),
     ("receivables", "customer_id"),
     ("receivables", "branch_id"),
     ("customer_payments", "customer_id"),
@@ -152,6 +154,8 @@ INTERNAL_FOREIGN_KEYS = {
     ("import_job_rows", "job_id"): "the import being created",
     ("integration_client_secrets", "client_id"): "the client loaded by id",
     ("integration_client_usage", "client_id"): "the client of the token",
+    ("webhook_deliveries", "message_id"): "the message the server enqueued",
+    ("webhook_deliveries", "endpoint_id"): "the endpoint loaded by id",
 }
 
 TABLES = Base.metadata.tables
@@ -173,7 +177,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 59
+    assert len(BUSINESS_TABLES) == 63
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

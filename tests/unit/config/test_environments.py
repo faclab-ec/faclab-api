@@ -11,10 +11,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from src.auth.infra.signing_keys import development_key
+from src.webhooks.infra.secrets import DEVELOPMENT_KEY
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -32,6 +34,10 @@ _SETTINGS = (
     "DOCS_ENABLED",
     "KAFKA_ENABLED",
     "RUN_BACKGROUND",
+    "SECRET_ENCRYPTION_KEYS",
+    "SECRET_ENCRYPTION_KEYS_FILE",
+    "WEBHOOKS_ENABLED",
+    "WEBHOOK_ALLOW_PRIVATE_URLS",
 )
 
 _PRINT_CONFIG = """
@@ -76,6 +82,7 @@ DEPLOYED = {
     "DATABASE_URL_WORKER": "postgresql://faclab_worker@db:5432/faclab",
     "CORS_ORIGINS": "https://app.faclab.ec,https://admin.faclab.ec",
     "JWT_PRIVATE_KEY": _pem(Ed25519PrivateKey.generate()),
+    "SECRET_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
 }
 
 
@@ -107,7 +114,8 @@ def test_deployed_environment_refuses_to_start_without_required_settings(
     assert (
         f"Missing required settings for {environment}: "
         "DATABASE_URL, DATABASE_URL_WORKER, CORS_ORIGINS, "
-        "JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_FILE"
+        "JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_FILE, "
+        "SECRET_ENCRYPTION_KEYS or SECRET_ENCRYPTION_KEYS_FILE"
     ) in result.stderr
 
 
@@ -176,6 +184,52 @@ def test_the_production_api_refuses_a_bad_signing_key(tmp_path, key, message):
     assert result.returncode != 0
     assert message in result.stderr
     assert "PRIVATE KEY-----" not in result.stderr
+
+
+def test_without_webhooks_production_needs_no_encryption_key():
+    deployed = {k: v for k, v in DEPLOYED.items() if k != "SECRET_ENCRYPTION_KEYS"}
+
+    result = _run(
+        _PRINT_CONFIG, ENVIRONMENT="production", WEBHOOKS_ENABLED="false", **deployed
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_production_refuses_webhooks_towards_private_addresses():
+    result = _run(
+        _PRINT_CONFIG,
+        ENVIRONMENT="production",
+        WEBHOOK_ALLOW_PRIVATE_URLS="true",
+        **DEPLOYED,
+    )
+
+    assert result.returncode != 0
+    assert "WEBHOOK_ALLOW_PRIVATE_URLS can't be on in production" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("key", "message"),
+    [
+        (DEVELOPMENT_KEY, "The development secret encryption key can't be used"),
+        ("not a key", "SECRET_ENCRYPTION_KEYS holds a key that is not a Fernet key"),
+    ],
+    ids=["development", "garbage"],
+)
+def test_the_production_api_refuses_a_bad_encryption_key(tmp_path, key, message):
+    result = _run(
+        _PRINT_ROUTES,
+        ENVIRONMENT="production",
+        **{
+            **DEPLOYED,
+            "DATABASE_URL": f"sqlite:///{tmp_path}/app.db",
+            "SECRET_ENCRYPTION_KEYS": key,
+        },
+    )
+
+    assert result.returncode != 0
+    assert message in result.stderr
+    assert key not in result.stderr.replace(message, "")
 
 
 def test_local_keeps_development_defaults():

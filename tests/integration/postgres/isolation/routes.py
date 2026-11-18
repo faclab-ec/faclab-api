@@ -28,6 +28,7 @@ from tests.integration.postgres.isolation.dataset import (
     Ids,
     customer_tax_id,
     supplier_tax_id,
+    webhook_url,
 )
 
 Body = Callable[[Ids], dict[str, Any]]
@@ -95,6 +96,11 @@ def _presentation(ids: Ids) -> dict:
         "barcode": ids["presentation_barcode"],
         "salePrice": "95.00",
     }
+
+
+def _webhook_endpoint(ids: Ids) -> dict:
+    # The dataset's endpoint: a PUT replaces every field
+    return {"url": webhook_url(ids), "eventTypes": ["sale.confirmed"]}
 
 
 def _location(code: str) -> Body:
@@ -711,6 +717,35 @@ ROUTES: dict[str, Route] = {
         path=("integration", "integration_secret")
     ),
     f"GET {ADMIN}/integrations/{{id}}/usage": Route(path=("integration",)),
+    # Webhook endpoints (S6.4)
+    f"POST {ADMIN}/webhook-endpoints": Route(
+        body=lambda ids: {
+            "url": webhook_url(ids),
+            "eventTypes": ["stock.changed"],
+            "integrationClientId": ids["integration"],
+        },
+        refs=("integration",),
+        created=f"{ADMIN}/webhook-endpoints/{{}}",
+    ),
+    f"GET {ADMIN}/webhook-endpoints": Route(),
+    f"GET {ADMIN}/webhook-endpoints/{{id}}": Route(path=("webhook_endpoint",)),
+    f"PUT {ADMIN}/webhook-endpoints/{{id}}": Route(
+        path=("webhook_endpoint",), body=_webhook_endpoint
+    ),
+    f"DELETE {ADMIN}/webhook-endpoints/{{id}}": Route(path=("webhook_endpoint",)),
+    f"POST {ADMIN}/webhook-endpoints/{{id}}/enable": Route(path=("webhook_endpoint",)),
+    f"POST {ADMIN}/webhook-endpoints/{{id}}/disable": Route(path=("webhook_endpoint",)),
+    f"GET {ADMIN}/webhook-endpoints/{{id}}/secret": Route(path=("webhook_endpoint",)),
+    f"POST {ADMIN}/webhook-endpoints/{{id}}/rotate-secret": Route(
+        path=("webhook_endpoint",), body=lambda ids: {}
+    ),
+    f"POST {ADMIN}/webhook-endpoints/{{id}}/test": Route(path=("webhook_endpoint",)),
+    f"GET {ADMIN}/webhook-endpoints/{{id}}/deliveries": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"POST {ADMIN}/webhook-endpoints/{{id}}/deliveries/{{delivery_id}}/retry": Route(
+        path=("webhook_endpoint", "webhook_delivery")
+    ),
     # Reports
     f"GET {ADMIN}/reports/inventory/valuation": Route(
         query=_warehouse, refs=("warehouse",)
@@ -1021,6 +1056,36 @@ ROUTES: dict[str, Route] = {
     f"GET {V1}/sales": Route(),
     f"GET {V1}/sales/{{sale_id}}": Route(path=("sale",)),
     f"POST {V1}/sales/{{sale_id}}/cancel": Route(path=("api_sale",)),
+    f"GET {V1}/webhook-endpoints": Route(),
+    f"POST {V1}/webhook-endpoints": Route(
+        body=_webhook_endpoint, created=f"{V1}/webhook-endpoints/{{}}"
+    ),
+    f"GET {V1}/webhook-endpoints/{{endpoint_id}}": Route(path=("webhook_endpoint",)),
+    f"PUT {V1}/webhook-endpoints/{{endpoint_id}}": Route(
+        path=("webhook_endpoint",), body=_webhook_endpoint
+    ),
+    f"DELETE {V1}/webhook-endpoints/{{endpoint_id}}": Route(path=("webhook_endpoint",)),
+    f"POST {V1}/webhook-endpoints/{{endpoint_id}}/enable": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"POST {V1}/webhook-endpoints/{{endpoint_id}}/disable": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"GET {V1}/webhook-endpoints/{{endpoint_id}}/secret": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"POST {V1}/webhook-endpoints/{{endpoint_id}}/rotate-secret": Route(
+        path=("webhook_endpoint",), body=lambda ids: {}
+    ),
+    f"POST {V1}/webhook-endpoints/{{endpoint_id}}/test": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"GET {V1}/webhook-endpoints/{{endpoint_id}}/deliveries": Route(
+        path=("webhook_endpoint",)
+    ),
+    f"POST {V1}/webhook-endpoints/{{endpoint_id}}/deliveries/{{delivery_id}}/retry": (
+        Route(path=("webhook_endpoint", "webhook_delivery"))
+    ),
     "POST /api/oauth/token": Route(
         exempt="authenticates with the client's credentials; the client_id says "
         "its tenant (test_integrations.py)"

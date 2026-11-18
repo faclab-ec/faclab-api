@@ -51,10 +51,15 @@ ERROR_CODE_TO_STATUS = {
     "REFERENCE_NOT_FOUND": 422,
     # A bulk import's file that can't be read as its template (S5.8)
     "IMPORT_FILE_INVALID": 422,
+    # A webhook URL the server may not call (SSRF), or exclude_own_changes
+    # without the endpoint's integration client (S6.4)
+    "WEBHOOK_URL_NOT_ALLOWED": 422,
+    "WEBHOOK_OWNER_REQUIRED": 422,
     "LOGIN_LOCKED": 429,
     # The public API (S6.3): over a rate limit, or turned off
     "RATE_LIMITED": 429,
     "PUBLIC_API_DISABLED": 503,
+    "WEBHOOKS_DISABLED": 503,
     # The SMTP server refused or couldn't be reached (S5.4)
     "EMAIL_DELIVERY_FAILED": 502,
 }

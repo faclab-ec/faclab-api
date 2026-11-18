@@ -827,6 +827,51 @@ def _integration_revoked(w):
     return w.send(w.admin, "POST", path)["id"]
 
 
+# A public address: the URL needs no DNS
+WEBHOOK_URL = "https://93.184.215.14/hooks?token=receptor"
+WEBHOOKS = "/api/admin/webhook-endpoints"
+
+
+def _webhook_endpoint(w: World) -> dict:
+    return w.admin.api.post(
+        WEBHOOKS, {"url": WEBHOOK_URL, "eventTypes": ["sale.confirmed"]}
+    )
+
+
+def _webhook_endpoint_created(w):
+    body = {"url": WEBHOOK_URL, "eventTypes": ["sale.confirmed", "stock.changed"]}
+    return w.send(w.admin, "POST", WEBHOOKS, body)["id"]
+
+
+def _webhook_endpoint_updated(w):
+    endpoint = _webhook_endpoint(w)
+    body = {"url": WEBHOOK_URL, "eventTypes": ["sale.cancelled"]}
+    return w.send(w.admin, "PUT", f"{WEBHOOKS}/{endpoint['id']}", body)["id"]
+
+
+def _webhook_endpoint_deleted(w):
+    endpoint = _webhook_endpoint(w)
+    w.send(w.admin, "DELETE", f"{WEBHOOKS}/{endpoint['id']}")
+    return endpoint["id"]
+
+
+def _webhook_endpoint_enabled(w):
+    endpoint = _webhook_endpoint(w)
+    w.admin.api.post(f"{WEBHOOKS}/{endpoint['id']}/disable")
+    return w.send(w.admin, "POST", f"{WEBHOOKS}/{endpoint['id']}/enable")["id"]
+
+
+def _webhook_endpoint_disabled(w):
+    endpoint = _webhook_endpoint(w)
+    return w.send(w.admin, "POST", f"{WEBHOOKS}/{endpoint['id']}/disable")["id"]
+
+
+def _webhook_endpoint_secret_rotated(w):
+    endpoint = _webhook_endpoint(w)
+    path = f"{WEBHOOKS}/{endpoint['id']}/rotate-secret"
+    return w.send(w.admin, "POST", path, {})["id"]
+
+
 SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.PRODUCT_CREATED: _product_created,
     AuditAction.PRODUCT_UPDATED: _product_updated,
@@ -885,6 +930,12 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.INTEGRATION_SECRET_CREATED: _integration_secret_created,
     AuditAction.INTEGRATION_SECRET_REVOKED: _integration_secret_revoked,
     AuditAction.INTEGRATION_REVOKED: _integration_revoked,
+    AuditAction.WEBHOOK_ENDPOINT_CREATED: _webhook_endpoint_created,
+    AuditAction.WEBHOOK_ENDPOINT_UPDATED: _webhook_endpoint_updated,
+    AuditAction.WEBHOOK_ENDPOINT_DELETED: _webhook_endpoint_deleted,
+    AuditAction.WEBHOOK_ENDPOINT_ENABLED: _webhook_endpoint_enabled,
+    AuditAction.WEBHOOK_ENDPOINT_DISABLED: _webhook_endpoint_disabled,
+    AuditAction.WEBHOOK_ENDPOINT_SECRET_ROTATED: _webhook_endpoint_secret_rotated,
 }
 
 
@@ -964,6 +1015,32 @@ def test_an_integration_entry_has_no_secret_nor_its_hash(world, db_session):
         assert client["clientSecret"] not in stored
         assert rotated["clientSecret"] not in stored
         assert not any(hashed in stored for hashed in hashes)
+
+
+def test_a_webhook_entry_has_no_secret_nor_the_url_s_query(world, db_session):
+    endpoint = _webhook_endpoint(world)
+    world.admin.api.post(f"{WEBHOOKS}/{endpoint['id']}/rotate-secret", {})
+    secrets = world.admin.api.get(f"{WEBHOOKS}/{endpoint['id']}/secret")
+    sealed = [
+        value
+        for row in db_session.execute(
+            text(
+                "SELECT secret_ciphertext, previous_secret_ciphertext "
+                "FROM webhook_endpoints"
+            )
+        )
+        for value in row
+        if value
+    ]
+
+    entries = list(db_session.scalars(select(AuditLogModel)))
+    assert entries
+    for entry in entries:
+        stored = f"{entry.before} {entry.after}"
+        assert secrets["secret"] not in stored
+        assert secrets["previousSecret"] not in stored
+        assert not any(value in stored for value in sealed)
+        assert "receptor" not in stored
 
 
 # The operation's transaction

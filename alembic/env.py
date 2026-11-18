@@ -81,6 +81,12 @@ from src.tenancy.infra.models import (  # noqa: F401
     TenantModel,
     UserBranchAccessModel,
 )
+from src.webhooks.infra.models import (  # noqa: F401
+    WebhookDeliveryModel,
+    WebhookEndpointModel,
+    WebhookMessageModel,
+    WebhookStockChangeModel,
+)
 
 env = Env()
 env.read_env()

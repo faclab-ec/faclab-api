@@ -21,6 +21,12 @@ class DeployedConfig(BaseConfig):
                 self.JWT_PRIVATE_KEY or self.JWT_PRIVATE_KEY_FILE
             ),
         }
+        # The master key of the webhooks' secrets (S6.4); FernetSecretBox checks
+        # they are Fernet keys and not the development one
+        if self.WEBHOOKS_ENABLED:
+            required["SECRET_ENCRYPTION_KEYS or SECRET_ENCRYPTION_KEYS_FILE"] = (
+                self.SECRET_ENCRYPTION_KEYS or self.SECRET_ENCRYPTION_KEYS_FILE
+            )
         missing = [name for name, value in required.items() if not value]
         if missing:
             raise RuntimeError(
@@ -42,6 +48,12 @@ class DeployedConfig(BaseConfig):
                 raise RuntimeError(
                     f"EMAIL_ENABLED needs {', '.join(unset)} in {self.ENVIRONMENT}"
                 )
+        # A webhook towards a private address would let a company make the
+        # server call the internal network (SSRF)
+        if self.WEBHOOK_ALLOW_PRIVATE_URLS:
+            raise RuntimeError(
+                f"WEBHOOK_ALLOW_PRIVATE_URLS can't be on in {self.ENVIRONMENT}"
+            )
         # The API allows credentials, and with "*" the browser would accept
         # them from any site
         if "*" in self.CORS_ORIGINS:
