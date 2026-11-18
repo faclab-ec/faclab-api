@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.organization.app.repositories import PosTerminalRepository
@@ -33,7 +34,9 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
         event_publisher: EventPublisher,
         audit: AuditTrail,
         credit: CustomerCredit,
+        session: Session,
     ):
+        self.session = session
         self.credit = credit
         self.sale_repo = sale_repo
         self.sale_item_repo = sale_item_repo
@@ -94,7 +97,9 @@ class POSCancelSaleCommandHandler(CommandHandler[POSCancelSaleCommand, dict]):
                 reason=command.reason or "",
                 was_confirmed=was_confirmed,
                 source=command.source,
-            )
+            ),
+            # Its webhook goes out with the cancellation or not at all (S6.4)
+            session=self.session,
         )
 
         return sale.dict()

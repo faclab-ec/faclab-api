@@ -4,6 +4,20 @@ Los cambios compatibles (endpoints, campos de respuesta, campos opcionales de en
 nuevos de enums extensibles) no cambian de versión. Uno incompatible publica `/api/v2` y v1 se
 mantiene al menos seis meses con `Deprecation` y `Sunset` (PUBLIC_API.md §8).
 
+## v1.1.0 — 2026-11 (S6.4)
+
+Webhooks firmados, sin cambios incompatibles.
+
+- `GET/POST /api/v1/webhook-endpoints`, `GET/PUT/DELETE /api/v1/webhook-endpoints/{id}`,
+  `POST …/{id}/enable`, `/disable`, `/rotate-secret`, `/test`, `GET …/{id}/secret`,
+  `GET …/{id}/deliveries` y `POST …/{id}/deliveries/{deliveryId}/retry` (scope `webhooks:manage`).
+- Eventos v1: `sale.confirmed`, `sale.cancelled`, `invoice.authorized`, `invoice.rejected`,
+  `credit_note.authorized`, `stock.changed`, `product.updated` y `webhook.test`, con su JSON Schema
+  en `webhooks/v1/` y firma Standard Webhooks.
+- Códigos de error nuevos: `WEBHOOK_URL_NOT_ALLOWED`, `WEBHOOK_ENDPOINT_LIMIT_REACHED`,
+  `WEBHOOK_ENDPOINT_DISABLED`, `WEBHOOK_DELIVERY_PENDING`, `INTEGRATION_CLIENT_REVOKED` y
+  `WEBHOOKS_DISABLED`.
+
 ## v1.0.0 — 2026-11 (S6.3)
 
 Primera versión.

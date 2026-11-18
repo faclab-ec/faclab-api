@@ -7,6 +7,7 @@ import pytest
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.movement.domain.entities import Movement
 from src.inventory.stock.domain.entities import Stock
+from src.inventory.stock.domain.events import StockCreated, StockUpdated
 from src.pos.terminal.app.stock import TerminalStock
 from src.sales.domain.exceptions import InsufficientStockError
 from tests.costs import inventory_costs
@@ -43,7 +44,9 @@ def _stock(
     )
     movement_repo = MagicMock()
     return (
-        TerminalStock(stock_repo, movement_repo, inventory_costs()),
+        TerminalStock(
+            stock_repo, movement_repo, inventory_costs(), MagicMock(), MagicMock()
+        ),
         stock_repo,
         movement_repo,
     )
@@ -231,3 +234,32 @@ def test_costs_of_reads_what_each_product_left_at():
     movement_repo.filter_by.assert_called_once_with(
         reference_type="sale", reference_id=5
     )
+
+
+def test_every_stock_row_it_writes_is_published_in_its_transaction():
+    """The stock events (S6.4): stock.changed hears the POS too"""
+    stock_repo = MagicMock()
+    stock_repo.first_for_update.side_effect = lambda product_id, location_id: (
+        Stock(id=1, product_id=1, quantity=Decimal(10)) if product_id == 1 else None
+    )
+    stock_repo.update.side_effect = lambda row: row
+    stock_repo.create.side_effect = lambda row: Stock(
+        id=9,
+        product_id=row.product_id,
+        quantity=row.quantity,
+        location_id=row.location_id,
+    )
+    publisher, session = MagicMock(), MagicMock()
+    stock = TerminalStock(
+        stock_repo, MagicMock(), inventory_costs(), publisher, session
+    )
+
+    stock.take([Line(1, Decimal(4))], 7, "Sale #5", "sale", 5)
+    stock.put_back([Line(2, Decimal(1))], 7, "Refund #3", "refund", 3)
+
+    taken, created = [c.args[0] for c in publisher.publish.call_args_list]
+    assert isinstance(taken, StockUpdated)
+    assert (taken.product_id, taken.old_quantity, taken.new_quantity) == (1, 10, 6)
+    assert isinstance(created, StockCreated)
+    assert (created.aggregate_id, created.product_id, created.quantity) == (9, 2, 1)
+    assert all(c.kwargs["session"] is session for c in publisher.publish.call_args_list)

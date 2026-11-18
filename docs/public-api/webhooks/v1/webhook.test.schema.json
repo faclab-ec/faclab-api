@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/webhook.test.schema.json",
+  "$defs": {
+    "WebhookTestData": {
+      "properties": {
+        "endpointId": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "endpointId",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "webhook.test",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/WebhookTestData"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "webhook.test v1"
+}

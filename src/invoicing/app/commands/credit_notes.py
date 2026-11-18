@@ -26,7 +26,7 @@ from src.invoicing.domain.entities import (
     DiscrepancyKind,
     DiscrepancyStatus,
 )
-from src.invoicing.domain.events import CreditNoteRequested
+from src.invoicing.domain.events import CreditNoteAuthorized, CreditNoteRequested
 from src.invoicing.domain.exceptions import (
     CreditNoteAlreadyRequestedError,
     CreditNoteNotApplicableError,
@@ -307,6 +307,8 @@ class ApplyCreditNoteResultCommandHandler(
         refunds: RefundRepository,
         refund_items: RefundItemRepository,
         discrepancies: InvoiceDiscrepancyRepository,
+        event_publisher: EventPublisher,
+        session: Session,
     ):
         self.credit_notes = credit_notes
         self.sales = sales
@@ -314,6 +316,8 @@ class ApplyCreditNoteResultCommandHandler(
         self.refunds = refunds
         self.refund_items = refund_items
         self.discrepancies = discrepancies
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: ApplyCreditNoteResultCommand) -> dict:
         note = self.credit_notes.get_by_id(command.credit_note_id)
@@ -338,6 +342,20 @@ class ApplyCreditNoteResultCommandHandler(
         ):
             note = self.credit_notes.update(note)
             self._credit_sale(note)
+            self.event_publisher.publish(
+                CreditNoteAuthorized(
+                    aggregate_id=note.require_id(),
+                    credit_note_id=note.require_id(),
+                    sale_id=note.sale_id,
+                    refund_id=note.refund_id,
+                    invoice_id=note.invoice_id,
+                    document_id=command.document_id,
+                    number=note.number,
+                    access_code=note.access_code,
+                    authorized_at=note.authorized_at,
+                ),
+                session=self.session,
+            )
         return note.dict()
 
     def _credit_sale(self, note: CreditNote) -> None:

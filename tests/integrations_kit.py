@@ -1,6 +1,8 @@
 """Runs the commands of the integration clients (S6.2) over a session, with
 the real repositories and a fake audit trail, for the unit tests."""
 
+from unittest.mock import MagicMock
+
 from sqlalchemy.orm import Session
 
 from src.auth.domain.scopes import Scope
@@ -54,6 +56,7 @@ class Kit:
     def __init__(self, session: Session):
         self.session = session
         self.audit = FakeAuditTrail()
+        self.publisher = MagicMock()
         self.clients = SqlAlchemyIntegrationClientRepository(
             session, IntegrationClientMapper()
         )
@@ -122,7 +125,7 @@ class Kit:
 
     def revoke(self, client_id: int) -> dict:
         return RevokeIntegrationClientCommandHandler(
-            self.clients, self.secrets, self.audit
+            self.clients, self.secrets, self.audit, self.publisher, self.session
         ).handle(RevokeIntegrationClientCommand(client_id))
 
     def token(

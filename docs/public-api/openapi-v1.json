@@ -3,7 +3,7 @@
   "info": {
     "title": "Faclab API",
     "description": "The public API of Faclab for integrations: a contract of its own, versioned in\nthe URL, that doesn't change with the application's frontend.\n\n- **Authentication:** OAuth 2.0 client credentials at `POST /api/oauth/token`\n  with the client's id and secret; the access token lasts 15 minutes. Each\n  route requires a scope.\n- **Tenant and branch:** the company comes from the token. A client may be\n  limited to some branches; `X-Branch-Id` names the branch of an operation.\n- **Format:** JSON in camelCase. Money and quantities are decimal strings\n  (`\"12.50\"`), never floating point numbers; timestamps are ISO 8601 in UTC.\n- **Lists:** `limit` (up to 200) and `offset`, always in a stable order (the id\n  breaks ties), `sort` among the fields of each resource, and `updatedSince`\n  to sync.\n- **Retries:** every POST requires `Idempotency-Key` (a UUID per operation):\n  repeating it returns the same response, with `Idempotent-Replayed: true`.\n- **Limits:** per client and per company; over them, 429 `RATE_LIMITED` with\n  `Retry-After`. Every response carries `RateLimit-Limit`,\n  `RateLimit-Remaining`, `RateLimit-Reset` and `RateLimit-Policy`.\n- **Errors:** `{\"errors\": [{\"code\", \"message\", \"field\"?}], \"meta\"}` with codes\n  of a stable catalog. Clients must ignore fields they don't know: new ones\n  are added without a new version.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/api/v1/branches": {
@@ -2409,6 +2409,1574 @@
         ]
       }
     },
+    "/api/v1/webhook-endpoints": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List webhook endpoints",
+        "description": "This client's webhook endpoints, by id.",
+        "operationId": "list_api_v1_webhook_endpoints_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WebhookEndpointStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Create a webhook endpoint",
+        "description": "Register an HTTPS URL that receives the events of `eventTypes`,\nsigned with a new secret: read it with `GET …/{id}/secret`. Each event\nneeds the read scope of its resource on this client\n(`INSUFFICIENT_SCOPE`), and it only gets the ones of its branches. A URL\nthat isn't HTTPS or resolves to a private or local address:\n`WEBHOOK_URL_NOT_ALLOWED`. At most 20 per company\n(`WEBHOOK_ENDPOINT_LIMIT_REACHED`). Requires `Idempotency-Key`.",
+        "operationId": "create_api_v1_webhook_endpoints_post",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Get a webhook endpoint",
+        "description": "One of this client's webhook endpoints.",
+        "operationId": "get_api_v1_webhook_endpoints__endpoint_id__get",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Update a webhook endpoint",
+        "description": "Replace its URL (checked again), events, description and\n`excludeOwnChanges`.",
+        "operationId": "update_api_v1_webhook_endpoints__endpoint_id__put",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Delete a webhook endpoint",
+        "description": "Delete it with its history: what was on its way is not sent.",
+        "operationId": "delete_api_v1_webhook_endpoints__endpoint_id__delete",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/enable": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Enable a webhook endpoint",
+        "description": "Back to receiving: its pending deliveries go on; the failed ones are\nsent again with `…/deliveries/{deliveryId}/retry`. Requires\n`Idempotency-Key`.",
+        "operationId": "enable_api_v1_webhook_endpoints__endpoint_id__enable_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/disable": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Disable a webhook endpoint",
+        "description": "Stop sending to it; what it had pending waits until it is enabled.\nRequires `Idempotency-Key`.",
+        "operationId": "disable_api_v1_webhook_endpoints__endpoint_id__disable_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/secret": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Get its signing secret",
+        "description": "The secret that signs its messages and, during a rotation, the\nprevious one. Keep it on your server only.",
+        "operationId": "secret_api_v1_webhook_endpoints__endpoint_id__secret_get",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookSecret_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/rotate-secret": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Rotate its signing secret",
+        "description": "A new secret (read it with `GET …/secret`); the current one keeps\nsigning next to it for `previousExpiresInHours` (24 by default), so the\nreceiver can switch without losing messages. Requires\n`Idempotency-Key`.",
+        "operationId": "rotate_secret_api_v1_webhook_endpoints__endpoint_id__rotate_secret_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RotateWebhookSecretInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookEndpoint_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/test": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Send a test event",
+        "description": "Queue a `webhook.test` event to it: its delivery, pending, which the\nworker sends in a moment. A disabled endpoint:\n`WEBHOOK_ENDPOINT_DISABLED`. Requires `Idempotency-Key`.",
+        "operationId": "test_api_v1_webhook_endpoints__endpoint_id__test_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookDelivery_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/deliveries": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List its deliveries",
+        "description": "Its deliveries of the last 30 days, newest first.",
+        "operationId": "deliveries_api_v1_webhook_endpoints__endpoint_id__deliveries_get",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Page size (1-200)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Page size (1-200)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows to skip",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Rows to skip"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WebhookDeliveryStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "eventType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Eventtype"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDataResponse_WebhookDelivery_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
+    "/api/v1/webhook-endpoints/{endpoint_id}/deliveries/{delivery_id}/retry": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Send a delivery again",
+        "description": "Send a delivered or failed delivery again, with its attempts from the\nstart and the same `webhook-id`. A pending one:\n`WEBHOOK_DELIVERY_PENDING`; a disabled endpoint:\n`WEBHOOK_ENDPOINT_DISABLED`. Requires `Idempotency-Key`.",
+        "operationId": "retry_api_v1_webhook_endpoints__endpoint_id__deliveries__delivery_id__retry_post",
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Delivery Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "A UUID generated once per operation and resent on every retry of it: the operation runs once and a retry gets its response (`IDEMPOTENCY_KEY_REQUIRED` without it, `IDEMPOTENCY_KEY_REUSED` with another body)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataResponse_WebhookDelivery_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "**Invalid credentials**: the token is missing, expired (`TOKEN_EXPIRED`) or no longer valid (`INVALID_TOKEN`: its client or secret was revoked, or the request comes from an address the client doesn't allow).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "**Not allowed**: the token lacks the route's scope (`INSUFFICIENT_SCOPE`), is not an integration's (`PERMISSION_DENIED`) or names a branch the client may not operate in (`BRANCH_ACCESS_DENIED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "**Invalid request**: `VALIDATION_ERROR`, with the `field`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "**Rate limited** (`RATE_LIMITED`): retry after the seconds in `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "**Public API disabled** (`PUBLIC_API_DISABLED`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "**Business rule violation**.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "**Not found** (`NOT_FOUND`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "**Conflict**: a unique value is taken (`*_ALREADY_EXISTS`), the key of `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`) or the state doesn't allow it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clientCredentials": [
+              "webhooks:manage"
+            ]
+          }
+        ]
+      }
+    },
     "/api/oauth/token": {
       "post": {
         "tags": [
@@ -2929,6 +4497,69 @@
         ],
         "title": "DataResponse[Sale]"
       },
+      "DataResponse_WebhookDelivery_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WebhookDelivery",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[WebhookDelivery]"
+      },
+      "DataResponse_WebhookEndpoint_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpoint",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[WebhookEndpoint]"
+      },
+      "DataResponse_WebhookSecret_": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WebhookSecret",
+            "description": "The requested resource"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta",
+            "description": "Response metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "DataResponse[WebhookSecret]"
+      },
+      "DisabledReason": {
+        "type": "string",
+        "enum": [
+          "manual",
+          "failing",
+          "client_revoked"
+        ],
+        "title": "DisabledReason"
+      },
       "EmissionPoint": {
         "properties": {
           "id": {
@@ -3248,6 +4879,50 @@
           "meta"
         ],
         "title": "PaginatedDataResponse[StockRow]"
+      },
+      "PaginatedDataResponse_WebhookDelivery_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[WebhookDelivery]"
+      },
+      "PaginatedDataResponse_WebhookEndpoint_": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "List of resources for the current page"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/PaginatedMeta",
+            "description": "Response metadata including pagination details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "meta"
+        ],
+        "title": "PaginatedDataResponse[WebhookEndpoint]"
       },
       "PaginatedMeta": {
         "properties": {
@@ -3771,6 +5446,21 @@
         ],
         "title": "ProductPresentation",
         "description": "A way the product is sold: the base unit, a box of 100, a roll of 50 m"
+      },
+      "RotateWebhookSecretInput": {
+        "properties": {
+          "previousExpiresInHours": {
+            "type": "integer",
+            "maximum": 72.0,
+            "minimum": 0.0,
+            "title": "Previousexpiresinhours",
+            "description": "Hours the current secret keeps signing next to the new one",
+            "default": 24
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RotateWebhookSecretInput"
       },
       "Sale": {
         "properties": {
@@ -4552,6 +6242,443 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WebhookDelivery": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "messageId": {
+            "type": "string",
+            "title": "Messageid",
+            "description": "Its `webhook-id`: `msg_…`"
+          },
+          "eventType": {
+            "type": "string",
+            "title": "Eventtype"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurredat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/WebhookDeliveryStatus"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts",
+            "description": "Attempts since it was created or resent"
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextattemptat"
+          },
+          "lastAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastattemptat"
+          },
+          "responseStatus": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsestatus",
+            "description": "HTTP status the endpoint answered last"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasterror"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliveredat"
+          },
+          "retriedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retriedat",
+            "description": "Last manual resend"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "messageId",
+          "eventType",
+          "occurredAt",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastAttemptAt",
+          "responseStatus",
+          "lastError",
+          "durationMs",
+          "deliveredAt",
+          "retriedAt",
+          "createdAt"
+        ],
+        "title": "WebhookDelivery"
+      },
+      "WebhookDeliveryStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "delivered",
+          "failed"
+        ],
+        "title": "WebhookDeliveryStatus"
+      },
+      "WebhookEndpoint": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "eventTypes": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            },
+            "type": "array",
+            "title": "Eventtypes"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WebhookEndpointStatus"
+          },
+          "disabledReason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisabledReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`manual`, `failing` (a delivery spent its attempts without an answer) or `client_revoked`"
+          },
+          "disabledAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabledat"
+          },
+          "excludeOwnChanges": {
+            "type": "boolean",
+            "title": "Excludeownchanges",
+            "description": "It skips the events this client's own requests caused"
+          },
+          "secretHint": {
+            "type": "string",
+            "title": "Secrethint",
+            "description": "The start of its secret, to recognize it"
+          },
+          "previousSecretExpiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previoussecretexpiresat",
+            "description": "Until when the previous secret signs too (rotation)"
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsuccessat"
+          },
+          "failingSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failingsince",
+            "description": "Since when its deliveries fail without one succeeding"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat",
+            "description": "ISO 8601 in UTC",
+            "examples": [
+              "2026-11-17T15:04:05.000Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "description",
+          "eventTypes",
+          "status",
+          "disabledReason",
+          "disabledAt",
+          "excludeOwnChanges",
+          "secretHint",
+          "previousSecretExpiresAt",
+          "lastSuccessAt",
+          "failingSince",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "WebhookEndpoint"
+      },
+      "WebhookEndpointInput": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "description": "HTTPS URL towards a public address"
+          },
+          "eventTypes": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            },
+            "type": "array",
+            "maxItems": 7,
+            "minItems": 1,
+            "title": "Eventtypes",
+            "description": "What it receives; each needs the read scope of its resource"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "excludeOwnChanges": {
+            "type": "boolean",
+            "title": "Excludeownchanges",
+            "description": "Skip the events this client's own requests caused",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "eventTypes"
+        ],
+        "title": "WebhookEndpointInput"
+      },
+      "WebhookEndpointStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "disabled"
+        ],
+        "title": "WebhookEndpointStatus"
+      },
+      "WebhookEventType": {
+        "type": "string",
+        "enum": [
+          "sale.confirmed",
+          "sale.cancelled",
+          "invoice.authorized",
+          "invoice.rejected",
+          "credit_note.authorized",
+          "stock.changed",
+          "product.updated"
+        ],
+        "title": "WebhookEventType",
+        "description": "What an endpoint subscribes to. A new type is a compatible change"
+      },
+      "WebhookSecret": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret",
+            "description": "`whsec_` and the base64 of the HMAC-SHA256 key of its signatures"
+          },
+          "previousSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previoussecret",
+            "description": "The previous one while it still signs (rotation)"
+          },
+          "previousExpiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO 8601 in UTC",
+                "examples": [
+                  "2026-11-17T15:04:05.000Z"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousexpiresat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "previousSecret",
+          "previousExpiresAt"
+        ],
+        "title": "WebhookSecret"
       }
     },
     "securitySchemes": {
@@ -4608,6 +6735,10 @@
     {
       "name": "Sales",
       "description": "Sales of every channel; sales of the API."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Endpoints that receive the events of the company, signed (Standard Webhooks), with their deliveries."
     }
   ]
 }

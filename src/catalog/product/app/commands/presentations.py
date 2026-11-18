@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.app.presentations import presentation_view
@@ -10,9 +11,11 @@ from src.catalog.product.app.repositories import (
     ProductRepository,
 )
 from src.catalog.product.domain.entities import Product, ProductPresentation
+from src.catalog.product.domain.events import ProductPresentationChanged
 from src.catalog.product.domain.exceptions import BasePresentationFixedError
 from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
 
 # What the audit log keeps of a presentation
@@ -78,11 +81,15 @@ class CreateProductPresentationCommandHandler(
         presentations: ProductPresentationRepository,
         quantities: ProductQuantities,
         audit: AuditTrail,
+        event_publisher: EventPublisher,
+        session: Session,
     ):
         self.products = products
         self.presentations = presentations
         self.quantities = quantities
         self.audit = audit
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: CreateProductPresentationCommand) -> dict:
         product = _product(self.products, command.product_id)
@@ -103,6 +110,7 @@ class CreateProductPresentationCommandHandler(
             product.require_id(),
             after=_audited(presentation) | snapshot(presentation, *AUDITED_FIELDS),
         )
+        _publish_changed(self.event_publisher, self.session, presentation)
         return _view(self.quantities, product, presentation)
 
 
@@ -130,11 +138,15 @@ class UpdateProductPresentationCommandHandler(
         presentations: ProductPresentationRepository,
         quantities: ProductQuantities,
         audit: AuditTrail,
+        event_publisher: EventPublisher,
+        session: Session,
     ):
         self.products = products
         self.presentations = presentations
         self.quantities = quantities
         self.audit = audit
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: UpdateProductPresentationCommand) -> dict:
         product = _product(self.products, command.product_id)
@@ -160,6 +172,7 @@ class UpdateProductPresentationCommandHandler(
                 before=_audited(presentation) | old,
                 after=_audited(presentation) | new,
             )
+            _publish_changed(self.event_publisher, self.session, presentation)
         return _view(self.quantities, product, presentation)
 
 
@@ -176,9 +189,17 @@ class DeleteProductPresentationCommandHandler(
     """Borra una presentación que ninguna línea usa (si alguna la usa, 409
     RECORD_IN_USE: se desactiva). La base no se borra."""
 
-    def __init__(self, presentations: ProductPresentationRepository, audit: AuditTrail):
+    def __init__(
+        self,
+        presentations: ProductPresentationRepository,
+        audit: AuditTrail,
+        event_publisher: EventPublisher,
+        session: Session,
+    ):
         self.presentations = presentations
         self.audit = audit
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: DeleteProductPresentationCommand) -> None:
         presentation = _presentation(
@@ -192,3 +213,17 @@ class DeleteProductPresentationCommandHandler(
             command.product_id,
             before=_audited(presentation) | snapshot(presentation, *AUDITED_FIELDS),
         )
+        _publish_changed(self.event_publisher, self.session, presentation)
+
+
+def _publish_changed(
+    publisher: EventPublisher, session: Session, presentation: ProductPresentation
+) -> None:
+    publisher.publish(
+        ProductPresentationChanged(
+            aggregate_id=presentation.product_id,
+            product_id=presentation.product_id,
+            presentation_id=presentation.require_id(),
+        ),
+        session=session,
+    )

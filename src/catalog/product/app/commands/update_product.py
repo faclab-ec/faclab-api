@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.app.presentations import ProductPresentations
@@ -49,7 +50,9 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
         audit: AuditTrail,
         quantities: ProductQuantities,
         presentations: ProductPresentations,
+        session: Session,
     ):
+        self.session = session
         self.repo = repo
         self.quantities = quantities
         self.presentations = presentations
@@ -131,7 +134,8 @@ class UpdateProductCommandHandler(CommandHandler[UpdateProductCommand, dict]):
                 aggregate_id=product.require_id(),
                 product_id=product.require_id(),
                 changes=changes,
-            )
+            ),
+            session=self.session,
         )
 
         [described] = self.presentations.describe(

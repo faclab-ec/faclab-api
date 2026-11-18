@@ -465,6 +465,23 @@
     de sucursales.
   - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
     squash-merge del core: la copia apunta al commit local de la rama.
+- **Webhooks, lo que quedó de S6.4** (2026-11-18):
+  - Número, clave de acceso y fecha de autorización en `invoice.authorized`, y los códigos del SRI
+    en `invoice.rejected`. Hay que ampliar el mensaje `invoices` v1 con campos opcionales en
+    faclab-invoicing (productor) y en el core (consumidor). Hoy el integrador los lee en
+    `GET /api/v1/invoices/{id}`.
+  - Otros eventos:
+    - `product.deleted`;
+    - cambios de listas de precios;
+    - `refund.*`;
+    - `payment.*` cuando la API acepte pagos.
+  - Reenvío masivo (todas las fallidas de un endpoint al reactivarlo): hoy es una por una.
+  - El cuerpo del mensaje en el historial de entregas.
+  - Un comando para volver a cifrar los secretos con la clave maestra nueva después de rotarla. Hoy
+    se rota poniendo la clave nueva primero y conservando la anterior.
+  - Pantallas de endpoints y entregas en faclab-web (portal, S6.5) y límites de endpoints por plan
+    (S8.4). Hoy son 20 por empresa.
+  - Panel de las entregas por resultado (`faclab.webhooks.deliveries`) en SigNoz (S7.1).
 
 ## 2. Dependencias
 

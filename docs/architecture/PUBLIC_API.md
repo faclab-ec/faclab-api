@@ -5,9 +5,9 @@
 > [ADR-0009](ADR/0009-webhooks-firmados.md) (webhooks). Se implementa en la Etapa 6, después de
 > multiempresa (Etapa 2) e idempotencia (S3.1, terminada: el POS ya exige `Idempotency-Key` con el
 > mecanismo que reutiliza `/api/v1`, ver `docs/pos-api-spec.md` §0.1). Las credenciales de
-> integración (§3) están implementadas desde S6.2 y la fachada `/api/v1` con sus límites (§4, §5, §9)
-> desde S6.3; los webhooks (S6.4) y el portal (S6.5) todavía no. La guía para integradores está en
-> [`docs/public-api/`](../public-api/README.md).
+> integración (§3) están implementadas desde S6.2, la fachada `/api/v1` con sus límites (§4, §5, §9)
+> desde S6.3 y los webhooks (§7) desde S6.4; el portal (S6.5) todavía no. La guía para integradores
+> está en [`docs/public-api/`](../public-api/README.md).
 
 ## 1. Principios
 
@@ -146,7 +146,7 @@ Cada scope se traduce a los `Permission` existentes (`PERMISSIONS_BY_SCOPE` en
 | `sales:read` | `sale:read` |
 | `sales:write` | `sale:write`, `sale:cancel` |
 | `invoices:read` | `sale:read` |
-| `webhooks:manage` | ninguno todavía (S6.4) |
+| `webhooks:manage` | ninguno: las rutas `/api/v1/webhook-endpoints` exigen el scope directamente (S6.4) |
 
 Ningún scope da permisos de administración (`user:manage`, `audit:read`, `organization:write`,
 `import:write`, `integration:manage`) ni de operación de caja (`pos:operate`, `refund:approve`). Una
@@ -196,9 +196,14 @@ integración nunca puede tener más scopes que el plan de la empresa permite.
 | `GET /api/v1/invoices` | `invoices:read` | invoicing | Facturas y notas de crédito (`documentType`) de las sucursales del cliente; filtros `saleId`, `status` (`PROCESSING`, `AUTHORIZED`, `REJECTED`), `documentType`, `from`, `to`, `branchId`, `updatedSince`; `sort`: `createdAt`, `updatedAt`, `id` |
 | `GET /api/v1/invoices/{id}` | `invoices:read` | invoicing | Número, clave de acceso, autorización, motivo del rechazo, total |
 | `GET /api/v1/invoices/{id}/xml`, `/ride` | `invoices:read` | invoicing | XML autorizado y PDF. Ya existen en la API interna (S4.1 y S4.4): `GET /api/invoices/{id}/authorized-xml` y `GET /api/invoices/{id}/ride`, adjuntos con la clave de acceso como nombre, 404 hasta que la factura esté autorizada; v1 los expone con otro prefijo y el scope |
-| `GET/POST/DELETE /api/v1/webhook-endpoints` | `webhooks:manage` | core | |
-| `POST /api/v1/webhook-endpoints/{id}/test` | `webhooks:manage` | core | Envía un evento de prueba |
+| `GET/POST /api/v1/webhook-endpoints`, `GET/PUT/DELETE …/{id}` | `webhooks:manage` | core | Solo los endpoints del cliente; idempotente; URL HTTPS hacia una dirección pública (`WEBHOOK_URL_NOT_ALLOWED`); cada evento necesita el scope de lectura de su recurso; 20 por empresa |
+| `POST …/{id}/enable`, `/disable` | `webhooks:manage` | core | Agregados en S6.4: reanudar y pausar (lo pendiente espera) |
+| `GET …/{id}/secret`, `POST …/{id}/rotate-secret` | `webhooks:manage` | core | Agregados en S6.4: el secreto (`whsec_…`) y su rotación, con el anterior firmando 24 h más |
+| `POST /api/v1/webhook-endpoints/{id}/test` | `webhooks:manage` | core | Envía un evento `webhook.test` |
 | `GET /api/v1/webhook-endpoints/{id}/deliveries` | `webhooks:manage` | core | Últimos 30 días; reenvío con `POST .../{deliveryId}/retry` |
+
+El administrador de la empresa gestiona todos los endpoints, de la empresa y de sus clientes, en
+`/api/admin/webhook-endpoints` (permiso `integration:manage`), con las mismas rutas.
 
 Caddy enruta `/api/v1/invoices*` a invoicing y el resto a core, bajo un solo dominio y un solo token
 (S8.1). Cada documento de facturación guarda la sucursal de su venta (`branch_id` de
@@ -276,47 +281,91 @@ Los montos del ejemplo son ilustrativos. El total con IVA lo calcula el core con
 
 ## 7. Webhooks
 
+> **Implementado en S6.4** (2026-11-18). Guía para integradores en
+> [`docs/public-api/webhooks.md`](../public-api/webhooks.md); contratos en
+> [`docs/public-api/webhooks/v1/`](../public-api/webhooks/v1/).
+
 ### 7.1 Eventos iniciales
 
 | Tipo | Cuándo | Datos principales |
 |---|---|---|
-| `sale.confirmed` | Venta confirmada (cualquier canal) | id, número, sucursal, totales, ítems, canal, `externalReference` |
-| `sale.cancelled` | Venta anulada | id, motivo |
-| `invoice.authorized` | Comprobante autorizado | id, venta, número, clave de acceso, fecha de autorización |
-| `invoice.rejected` | Comprobante rechazado | id, venta, códigos del SRI |
-| `credit_note.authorized` | Nota de crédito autorizada | id, factura de referencia |
-| `stock.changed` | Cambió el disponible de un producto en una sucursal (agrupado cada 30 s) | producto, sucursal, disponible |
-| `product.updated` | Alta o cambio de producto o precio | id, sku, campos cambiados |
+| `sale.confirmed` | Venta confirmada (cualquier canal) | La venta como `GET /api/v1/sales/{id}`: número, sucursal, totales, ítems, pagos, canal, `externalReference` |
+| `sale.cancelled` | Venta anulada | id, número, sucursal, canal, `externalReference`, motivo |
+| `invoice.authorized` | Factura autorizada | id de la factura, venta, número de la venta, sucursal |
+| `invoice.rejected` | Factura rechazada | Lo mismo más el motivo (los mensajes del SRI unidos con ` >> `) |
+| `credit_note.authorized` | Nota de crédito autorizada | id, documento, número, clave de acceso, fecha de autorización, factura de referencia, venta, devolución |
+| `stock.changed` | Cambió el disponible de un producto en una sucursal (agrupado cada 30 s) | producto, SKU, sucursal, disponible |
+| `product.updated` | Alta o cambio de un campo público del producto, su precio o sus presentaciones | id, sku, `action` (`created`/`updated`), campos cambiados |
+| `webhook.test` | Pedido con `POST …/test` | endpoint, mensaje |
+
+Diferencias con el diseño inicial:
+
+- `invoice.authorized` no lleva número, clave de acceso ni fecha de autorización, e
+  `invoice.rejected` lleva el texto del SRI en lugar de sus códigos: el mensaje `invoices` que
+  faclab-invoicing publica al core no los trae. El integrador los lee en
+  `GET /api/v1/invoices/{id}`. Agregarlos es un cambio compatible pendiente (ampliar `invoices` v1
+  en los dos servicios).
+- `product.updated` no se emite cuando solo cambian campos internos (costo, umbrales de stock). Las
+  listas de precios no lo emiten todavía.
 
 ### 7.2 Entrega
 
 ```http
 POST /webhooks/faclab HTTP/1.1
 Content-Type: application/json
-webhook-id: msg_2Xf9…
+webhook-id: msg_2f9a…
 webhook-timestamp: 1760461445
 webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 
-{"id":"msg_2Xf9…","type":"invoice.authorized","version":1,
- "occurredAt":"2026-10-14T15:04:05Z","tenantId":"8d1c…","data":{…}}
+{"id":"msg_2f9a…","type":"invoice.authorized","version":1,
+ "occurredAt":"2026-10-14T15:04:05.000Z","tenantId":"8d1c…","originClientId":null,"data":{…}}
 ```
 
-- La firma es HMAC-SHA256 con el secreto del endpoint, en base64, sobre
-  `"{webhook-id}.{webhook-timestamp}.{cuerpo}"`. Se rechazan los mensajes con más de 5 minutos de
-  antigüedad.
+- La firma sigue Standard Webhooks: HMAC-SHA256 en base64 sobre
+  `"{webhook-id}.{webhook-timestamp}.{cuerpo}"`. La clave es el secreto `whsec_<base64>` decodificado
+  después del prefijo. Se rechazan los mensajes con más de 5 minutos de antigüedad.
+- **Secretos:** cada endpoint tiene el suyo, cifrado en la base con la clave maestra del entorno
+  (`SECRET_ENCRYPTION_KEYS`, Fernet; la primera cifra y cualquiera descifra, así que la clave maestra
+  también rota). Se lee con `GET …/{id}/secret`. Las respuestas de crear y rotar no lo traen, así la
+  tabla de idempotencia nunca lo guarda. En una rotación el anterior firma junto al nuevo durante
+  24 h (configurable de 0 a 72), con dos firmas en el encabezado.
+- **Encolado:** cada evento de dominio escribe, en su misma transacción, un `webhook_messages` (el
+  cuerpo completo, el mismo en cada intento) y una `webhook_deliveries` por endpoint que lo quiere.
+  Un endpoint de un cliente recibe solo lo que el cliente puede leer en ese momento (scopes y
+  sucursales). `stock.changed` se agrupa en un búfer de solo inserción que el worker reúne cada
+  `WEBHOOK_STOCK_BATCH_SECONDS`.
+- **Envío** (el worker, `src/webhooks/infra/dispatcher.py`):
+  - una entrega a la vez por endpoint, con un *lease* (`locked_until`), y hasta
+    `WEBHOOK_CONCURRENCY` en paralelo: un receptor lento solo frena su propia cola;
+  - timeout total de 10 s; las redirecciones no se siguen;
+  - Faclab resuelve el nombre del host antes de cada intento, valida cada dirección y se conecta a
+    la dirección validada, con verificación TLS contra el nombre del host.
 - Hay que responder 2xx en menos de 10 s; el procesamiento pesado se hace después.
-- Reintentos con backoff exponencial durante hasta 3 días (por ejemplo, 5 s, 5 min, 30 min, 2 h, 5 h,
-  10 h, 24 h, 24 h). Tras fallos sostenidos el endpoint se desactiva y se avisa a la empresa.
-- El receptor deduplica por `webhook-id`. Los eventos pueden llegar desordenados: se usa `occurredAt` y
-  el estado actual consultado por API cuando el orden importa.
-- **Prevención de ciclos:** las escrituras hechas por un cliente de integración guardan su `azp` como
-  origen, y el endpoint puede activar `excludeOwnChanges`. Además, `externalReference` permite que el
-  sistema externo reconozca sus propios registros.
+- Reintentos 5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 24 h y 24 h después: 9 intentos en unos tres días.
+  Si una entrega los agota y el endpoint no respondió bien a ninguna desde que esa entrega se creó,
+  el endpoint se desactiva (`disabledReason: failing`). La desactivación se audita, queda en el log
+  como ERROR y se avisa por correo a los administradores de la empresa. Lo pendiente se conserva:
+  al reactivarlo sigue saliendo, y las entregas fallidas se reenvían a mano.
+- El receptor deduplica por `webhook-id`. Los eventos pueden llegar desordenados: se usa
+  `occurredAt` y el estado actual consultado por API cuando el orden importa.
+- **Prevención de ciclos:** el mensaje lleva `originClientId`, el `azp` del cliente cuya solicitud
+  lo causó (o `null`). Un endpoint de ese cliente con `excludeOwnChanges` no lo recibe. Además,
+  `externalReference` permite que el sistema externo reconozca sus propios registros.
+- **Seguridad:** solo HTTPS hacia direcciones globales. Se rechazan las privadas, loopback,
+  link-local (169.254.169.254), compartidas (100.64/10), multicast, reservadas y de documentación,
+  también dentro de una IPv6 (IPv4 mapeada, 6to4, Teredo), al registrar y en cada envío.
+  `WEBHOOK_ALLOW_PRIVATE_URLS` las permite solo en local.
+- **Operación:** historial de 30 días (`WEBHOOK_RETENTION_DAYS`, purgado por el worker), evento de
+  prueba y reenvío. `WEBHOOK_DELIVERY_ENABLED=false` pausa el envío y conserva lo pendiente;
+  `WEBHOOKS_ENABLED=false` además deja de encolar y apaga las rutas (503 `WEBHOOKS_DISABLED`).
+  Métrica `faclab.webhooks.deliveries` por resultado.
 
 Verificación (Python):
 
 ```python
 import base64, hmac, hashlib, time
+
+secret = base64.b64decode("whsec_…".removeprefix("whsec_"))
 
 def verify(secret: bytes, msg_id: str, ts: str, body: bytes, header: str) -> bool:
     if abs(time.time() - int(ts)) > 300:
@@ -328,6 +377,9 @@ def verify(secret: bytes, msg_id: str, ts: str, body: bytes, header: str) -> boo
         hmac.compare_digest(expected, sig.split(",", 1)[1]) for sig in header.split(" ")
     )
 ```
+
+Las pruebas usan esta función tal cual: `tests/webhook_receiver.py` la usa para verificar cada
+mensaje que recibe el receptor HTTPS local.
 
 ## 8. Versionado y compatibilidad
 

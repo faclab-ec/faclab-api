@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.auth.domain.scopes import Scope
@@ -15,6 +16,7 @@ from src.integrations.app.settings import IntegrationSettings
 from src.integrations.app.views import describe_client
 from src.integrations.domain.credentials import new_secret
 from src.integrations.domain.entities import ClientSecret, IntegrationClient
+from src.integrations.domain.events import IntegrationClientRevoked
 from src.integrations.domain.exceptions import (
     IntegrationBranchNotFoundError,
     ScopeNotInPlanError,
@@ -22,6 +24,7 @@ from src.integrations.domain.exceptions import (
 from src.organization.app.repositories import BranchRepository
 from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.events import EventPublisher
 from src.shared.domain.exceptions import NotFoundError
 
 # What the audit log keeps of a client: never a secret nor its hash
@@ -162,10 +165,14 @@ class RevokeIntegrationClientCommandHandler(
         clients: IntegrationClientRepository,
         secrets: ClientSecretRepository,
         audit: AuditTrail,
+        event_publisher: EventPublisher,
+        session: Session,
     ):
         self.clients = clients
         self.secrets = secrets
         self.audit = audit
+        self.event_publisher = event_publisher
+        self.session = session
 
     def _handle(self, command: RevokeIntegrationClientCommand) -> dict:
         client = get_client(self.clients, command.client_id, for_update=True)
@@ -182,6 +189,12 @@ class RevokeIntegrationClientCommandHandler(
             client.require_id(),
             before={"status": "ACTIVE"},
             after={"status": client.status},
+        )
+        self.event_publisher.publish(
+            IntegrationClientRevoked(
+                aggregate_id=client.require_id(), client_id=client.require_id()
+            ),
+            session=self.session,
         )
         return describe_client(client, secrets, now)
 

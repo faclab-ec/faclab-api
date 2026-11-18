@@ -32,13 +32,18 @@ cualquier otro caso responde el código genérico de su estado.
 | 409 | `BRANCH_INACTIVE`, `EMISSION_POINT_INACTIVE`, `LOCATION_INACTIVE`, `CUSTOMER_INACTIVE` | Está desactivado |
 | 409 | `RECORD_IN_USE` | Otros registros lo usan |
 | 409 | `IDEMPOTENCY_IN_PROGRESS` | La solicitud con esa clave sigue en curso: reintenta |
+| 409 | `WEBHOOK_ENDPOINT_LIMIT_REACHED` | La empresa ya tiene 20 endpoints de webhooks |
+| 409 | `WEBHOOK_ENDPOINT_DISABLED` | El endpoint está desactivado: actívalo antes de probar o reenviar |
+| 409 | `WEBHOOK_DELIVERY_PENDING` | La entrega todavía está pendiente: se enviará sola |
+| 409 | `INTEGRATION_CLIENT_REVOKED` | El cliente de integración del endpoint está revocado |
 | 422 | `VALIDATION_ERROR` | El cuerpo o los parámetros no son válidos (un número con decimales en vez de texto, un `sort` no permitido) |
 | 422 | `REFERENCE_NOT_FOUND` | Un id del cuerpo no existe (producto, ubicación, cliente) |
 | 422 | `QUANTITY_PRECISION_EXCEEDED` | Más decimales de los que admite la unidad |
+| 422 | `WEBHOOK_URL_NOT_ALLOWED` | La URL del webhook no es HTTPS o resuelve a una dirección privada o local; `field: "url"` |
 | 422 | `IDEMPOTENCY_KEY_REQUIRED`, `INVALID_IDEMPOTENCY_KEY`, `IDEMPOTENCY_KEY_REUSED` | Falta la clave, no es un UUID o ya se usó con otro cuerpo |
 | 429 | `RATE_LIMITED` | Demasiadas solicitudes: espera `Retry-After` segundos |
 | 500 | `INTERNAL_ERROR` | Error inesperado: reintenta y reporta el `requestId` si persiste |
-| 503 | `PUBLIC_API_DISABLED`, `SERVICE_UNAVAILABLE` | La API está apagada o un servicio no responde |
+| 503 | `PUBLIC_API_DISABLED`, `WEBHOOKS_DISABLED`, `SERVICE_UNAVAILABLE` | La API o los webhooks están apagados, o un servicio no responde |
 
 El catálogo vive en `src/public_api/infra/errors.py` (`PUBLIC_ERROR_CODES`); un código nuevo entra
 cuando un endpoint lo documenta y se anota en el [CHANGELOG](CHANGELOG.md).

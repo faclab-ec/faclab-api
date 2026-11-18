@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from sqlalchemy.orm import Session
 from wireup import injectable
 
 from src.catalog.product.app.quantities import ProductQuantities
@@ -10,6 +11,8 @@ from src.inventory.movement.app.commands.movement import (
 )
 from src.inventory.movement.domain.constants import MovementType
 from src.inventory.stock.app.repositories import StockRepository
+from src.inventory.stock.domain.entities import Stock
+from src.inventory.stock.domain.events import StockUpdated
 from src.inventory.stock.domain.exceptions import InsufficientStockError
 from src.inventory.transfer.app.repositories import (
     StockTransferItemRepository,
@@ -34,6 +37,21 @@ from src.shared.domain.exceptions import NotFoundError
 # ---------------------------------------------------------------------------
 # Transfer commands
 # ---------------------------------------------------------------------------
+
+
+def _reserved(publisher: EventPublisher, session: Session, stock: Stock) -> None:
+    """A reservation changes what the row has available, not its quantity:
+    whoever follows the stock (stock.changed, S6.4) hears it in its transaction"""
+    publisher.publish(
+        StockUpdated(
+            aggregate_id=stock.require_id(),
+            product_id=stock.product_id,
+            old_quantity=stock.quantity,
+            new_quantity=stock.quantity,
+            location_id=stock.location_id,
+        ),
+        session=session,
+    )
 
 
 @dataclass
@@ -183,12 +201,14 @@ class ConfirmStockTransferCommandHandler(
         stock_repo: StockRepository,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        session: Session,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.event_publisher = event_publisher
         self.audit = audit
+        self.session = session
 
     def _handle(self, command: ConfirmStockTransferCommand) -> dict:
         transfer = self.repo.get_by_id(command.id)
@@ -210,7 +230,7 @@ class ConfirmStockTransferCommandHandler(
             if stock is None:
                 raise InsufficientStockError(item.product_id, item.quantity)
             stock.reserve(item.quantity)
-            self.stock_repo.update(stock)
+            _reserved(self.event_publisher, self.session, self.stock_repo.update(stock))
 
         saved = self.repo.update(transfer)
         _audit(self.audit, AuditAction.TRANSFER_CONFIRMED, saved, before_status, items)
@@ -318,12 +338,14 @@ class CancelStockTransferCommandHandler(
         stock_repo: StockRepository,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        session: Session,
     ):
         self.repo = repo
         self.item_repo = item_repo
         self.stock_repo = stock_repo
         self.event_publisher = event_publisher
         self.audit = audit
+        self.session = session
 
     def _handle(self, command: CancelStockTransferCommand) -> dict:
         transfer = self.repo.get_by_id(command.id)
@@ -343,7 +365,11 @@ class CancelStockTransferCommandHandler(
                 )
                 if stock is not None:
                     stock.release(item.quantity)
-                    self.stock_repo.update(stock)
+                    _reserved(
+                        self.event_publisher,
+                        self.session,
+                        self.stock_repo.update(stock),
+                    )
 
         saved = self.repo.update(transfer)
         _audit(self.audit, AuditAction.TRANSFER_CANCELLED, saved, before_status)

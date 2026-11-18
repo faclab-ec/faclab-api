@@ -238,3 +238,20 @@ class SaleItemRemoved(DomainEvent):
             "product_id": self.product_id,
             "quantity": self.quantity,
         }
+
+
+@dataclass
+class SaleInvoiceRejected(DomainEvent):
+    """El SRI rechazó la factura de una venta (S6.4: el webhook
+    `invoice.rejected`); solo cuando el rechazo cambió algo"""
+
+    sale_id: int = 0
+    invoice_id: str = ""
+    reason: str | None = None
+
+    def _payload(self) -> dict[str, Any]:
+        return {
+            "sale_id": self.sale_id,
+            "invoice_id": self.invoice_id,
+            "reason": self.reason,
+        }

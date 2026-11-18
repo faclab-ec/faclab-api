@@ -564,7 +564,9 @@ class TestProcessRefund:
             refund_payment_repo,
             sale_repo,
             credit_notes,
-            TerminalStock(stock_repo, movement_repo, inventory_costs()),
+            TerminalStock(
+                stock_repo, movement_repo, inventory_costs(), MagicMock(), MagicMock()
+            ),
             terminal_repo,
             numbering("D-001-000001"),
             event_publisher,

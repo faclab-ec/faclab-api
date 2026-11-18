@@ -32,6 +32,18 @@ class ProductUpdated(DomainEvent):
 
 
 @dataclass
+class ProductPresentationChanged(DomainEvent):
+    """A presentation of the product was created, changed or deleted: its
+    product changed for whoever reads it (S6.4, `product.updated`)"""
+
+    product_id: int = 0
+    presentation_id: int = 0
+
+    def _payload(self) -> dict:
+        return {"product_id": self.product_id, "presentation_id": self.presentation_id}
+
+
+@dataclass
 class ProductDeleted(DomainEvent):
     product_id: int = 0
 

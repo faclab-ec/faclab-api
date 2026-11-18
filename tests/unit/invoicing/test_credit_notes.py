@@ -26,7 +26,7 @@ from src.invoicing.domain.entities import (
     DiscrepancyStatus,
     InvoiceDiscrepancy,
 )
-from src.invoicing.domain.events import CreditNoteRequested
+from src.invoicing.domain.events import CreditNoteAuthorized, CreditNoteRequested
 from src.invoicing.domain.exceptions import (
     CreditNoteAlreadyAuthorizedError,
     CreditNoteAlreadyRequestedError,
@@ -480,8 +480,16 @@ class TestApplyingTheResult:
             item for item in refund_items if item.refund_id == refund_id
         ]
         disc.unresolved.return_value = list(discrepancies)
+        self.publisher, self.session = MagicMock(), MagicMock()
         handler = ApplyCreditNoteResultCommandHandler(
-            credit_notes, sales, sale_item_repo, refund_repo, refund_item_repo, disc
+            credit_notes,
+            sales,
+            sale_item_repo,
+            refund_repo,
+            refund_item_repo,
+            disc,
+            self.publisher,
+            self.session,
         )
         return handler, credit_notes, sales, disc
 
@@ -526,6 +534,29 @@ class TestApplyingTheResult:
             AUTHORIZED_AT,
         )
         credit_notes.update.assert_called_once()
+
+    def test_an_authorization_is_published_in_its_transaction_once(self):
+        """Its webhook, credit_note.authorized (S6.4); a repeated result
+        publishes nothing"""
+        note = _note()
+        handler, *_ = self._handler(note)
+
+        handler.handle(self._authorized())
+        handler.handle(self._authorized())
+
+        [call] = self.publisher.publish.call_args_list
+        event = call.args[0]
+        assert isinstance(event, CreditNoteAuthorized)
+        assert (event.credit_note_id, event.document_id, event.number) == (
+            note.id,
+            "doc-1",
+            "001-002-000000012",
+        )
+        assert (event.invoice_id, event.authorized_at) == (
+            note.invoice_id,
+            AUTHORIZED_AT,
+        )
+        assert call.kwargs["session"] is self.session
 
     def test_a_partial_refund_doesnt_credit_the_whole_invoice(self):
         sale = _sale()

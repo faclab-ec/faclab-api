@@ -51,6 +51,7 @@ def create_wireup_container():
     from src.shared.infra.tenant import tenant_context
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
     from src.tenancy.infra.container import INJECTABLES as TENANCY_INJECTABLES
+    from src.webhooks.infra.container import INJECTABLES as WEBHOOK_INJECTABLES
 
     db_connection_string = config.DB_CONNECTION_STRING
     if not db_connection_string:
@@ -101,6 +102,7 @@ def create_wireup_container():
             *IMPORT_INJECTABLES,
             *INTEGRATION_INJECTABLES,
             *PUBLIC_API_INJECTABLES,
+            *WEBHOOK_INJECTABLES,
         ]
     )
 
@@ -109,5 +111,8 @@ def create_wireup_container():
     import src.inventory.stock.infra.event_handlers  # noqa: F401
     import src.invoicing.infra.event_handlers  # noqa: F401
     import src.purchasing.infra.event_handlers  # noqa: F401
+
+    # After invoicing's: a sale.confirmed already shows its invoice PENDING
+    import src.webhooks.infra.event_handlers  # noqa: F401
 
     return container

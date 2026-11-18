@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/sale.cancelled.schema.json",
+  "$defs": {
+    "SaleCancelledData": {
+      "properties": {
+        "saleId": {
+          "type": "integer"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Of its branch: V-001-000123"
+        },
+        "branchId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "channel": {
+          "$ref": "#/$defs/SaleChannel"
+        },
+        "externalReference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "saleId",
+        "number",
+        "branchId",
+        "channel",
+        "externalReference",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "SaleChannel": {
+      "description": "Dónde se vendió (S6.3): en una terminal del POS o por la API pública,\ncon un cliente de integración",
+      "enum": [
+        "pos",
+        "api"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "sale.cancelled",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/SaleCancelledData"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "sale.cancelled v1"
+}

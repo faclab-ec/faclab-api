@@ -13,6 +13,10 @@ from src.quotes.infra import expiration as quote_expiration
 from src.shared.infra.idempotency import purge as idempotency_purge
 from src.shared.infra.outbox import purge as outbox_purge
 from src.shared.infra.worker.runner import PeriodicTask
+from src.webhooks.infra import (
+    purge as webhook_purge,
+    stock_changes as webhook_stock_changes,
+)
 
 
 def periodic_tasks() -> list[PeriodicTask]:
@@ -32,6 +36,20 @@ def periodic_tasks() -> list[PeriodicTask]:
         # The public API's rate limit counters whose bucket is full (S6.3)
         PeriodicTask("api_rate_limits_purge", interval, public_api_rate_limit.purge),
     ]
+    # The webhooks' stock.changed, grouped by product and branch (S6.4): while
+    # the sending is paused they keep piling up as pending deliveries
+    if config.WEBHOOKS_ENABLED:
+        tasks.append(
+            PeriodicTask(
+                "webhook_stock_changes",
+                config.WEBHOOK_STOCK_BATCH_SECONDS,
+                webhook_stock_changes.flush_stock_changes,
+            )
+        )
+    # The webhooks' history of WEBHOOK_RETENTION_DAYS
+    tasks.append(
+        PeriodicTask("webhook_deliveries_purge", interval, webhook_purge.purge)
+    )
     # Without Kafka nothing is sent to faclab-invoicing, so nothing to reconcile
     if config.KAFKA_ENABLED and config.INVOICE_RECONCILIATION_ENABLED:
         tasks.append(

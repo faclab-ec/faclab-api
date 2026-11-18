@@ -91,6 +91,16 @@ class AuditAction(StrEnum):
     INTEGRATION_SECRET_CREATED = "integration.secret_created"
     INTEGRATION_SECRET_REVOKED = "integration.secret_revoked"
     INTEGRATION_REVOKED = "integration.revoked"
+    # Webhook endpoints (S6.4): created, its URL, events, description or
+    # exclude_own_changes changed, deleted, enabled, disabled (by hand, by the
+    # worker after sustained failures, or with its integration client revoked),
+    # its secret rotated. The URL without its query, never the secret
+    WEBHOOK_ENDPOINT_CREATED = "webhook_endpoint.created"
+    WEBHOOK_ENDPOINT_UPDATED = "webhook_endpoint.updated"
+    WEBHOOK_ENDPOINT_DELETED = "webhook_endpoint.deleted"
+    WEBHOOK_ENDPOINT_ENABLED = "webhook_endpoint.enabled"
+    WEBHOOK_ENDPOINT_DISABLED = "webhook_endpoint.disabled"
+    WEBHOOK_ENDPOINT_SECRET_ROTATED = "webhook_endpoint.secret_rotated"
 
     @property
     def resource(self) -> str:

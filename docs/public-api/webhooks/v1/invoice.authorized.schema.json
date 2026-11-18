@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/invoice.authorized.schema.json",
+  "$defs": {
+    "InvoiceAuthorizedData": {
+      "description": "Its number, access code and authorization: `GET /api/v1/invoices/{id}`",
+      "properties": {
+        "invoiceId": {
+          "description": "Its id in /api/v1/invoices",
+          "type": "string"
+        },
+        "saleId": {
+          "type": "integer"
+        },
+        "saleNumber": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "branchId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "externalReference": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "invoiceId",
+        "saleId",
+        "saleNumber",
+        "branchId",
+        "externalReference"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "invoice.authorized",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/InvoiceAuthorizedData"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "invoice.authorized v1"
+}

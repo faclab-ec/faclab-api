@@ -1,7 +1,8 @@
 """Proceso worker (ADR-0007): la misma imagen que el API, otro comando.
 
-Corre el relay del outbox y el consumidor de Kafka (con KAFKA_ENABLED) y las
-purgas periódicas (outbox publicado, claves de idempotencia, sesiones). Con
+Corre el relay del outbox y el consumidor de Kafka (con KAFKA_ENABLED), el
+envío de los webhooks (S6.4) y las tareas periódicas (purgas, importaciones,
+stock.changed agrupado). Con
 SIGTERM termina lo que está haciendo y se detiene en orden. Su salud está en
 WORKER_HEALTH_FILE (`python -m src.shared.infra.worker.health`).
 
@@ -21,6 +22,7 @@ from src.container import create_wireup_container
 from src.shared.infra.adapters import OpenTelemetry
 from src.shared.infra.logging import configure_logging
 from src.shared.infra.worker.runner import Service, Worker, WorkerHealth
+from src.webhooks.infra.dispatcher import create_dispatcher
 
 # Its own service name, so a sale's trace shows API → worker → invoicing
 SERVICE_NAME = f"{config.OTEL_SERVICE_NAME}-worker"
@@ -30,6 +32,9 @@ SERVICE_NAME = f"{config.OTEL_SERVICE_NAME}-worker"
 # message retrying its handler holds the consumer up to a minute or two
 RELAY_MAX_AGE_SECONDS = max(60.0, config.OUTBOX_POLL_INTERVAL_SECONDS * 30)
 CONSUMER_MAX_AGE_SECONDS = 300.0
+# The webhook dispatcher polls every WEBHOOK_POLL_INTERVAL_SECONDS; a claim is
+# a short transaction, the sending goes on in its pool
+DISPATCHER_MAX_AGE_SECONDS = max(60.0, config.WEBHOOK_POLL_INTERVAL_SECONDS * 30)
 
 
 def main() -> None:
@@ -60,6 +65,18 @@ def main() -> None:
         )
     else:
         logger.info("worker_messaging_disabled", reason="KAFKA_ENABLED is false")
+    # Signed webhooks (S6.4): WEBHOOK_DELIVERY_ENABLED=false pauses the sending,
+    # the deliveries wait pending
+    if config.WEBHOOKS_ENABLED and config.WEBHOOK_DELIVERY_ENABLED:
+        health.register("webhook_dispatcher", DISPATCHER_MAX_AGE_SECONDS)
+        services.append(
+            create_dispatcher(on_cycle=health.reporter("webhook_dispatcher"))
+        )
+    else:
+        logger.info(
+            "worker_webhooks_paused",
+            reason="WEBHOOKS_ENABLED or WEBHOOK_DELIVERY_ENABLED is false",
+        )
 
     try:
         Worker(services, periodic_tasks(), health).run()

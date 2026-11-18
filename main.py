@@ -72,6 +72,7 @@ from src.public_api.infra.routes.prices import ApiPriceListRouter
 from src.public_api.infra.routes.products import ApiProductRouter
 from src.public_api.infra.routes.sales import ApiSaleRouter
 from src.public_api.infra.routes.stock import ApiStockRouter
+from src.public_api.infra.routes.webhooks import ApiWebhookEndpointRouter
 from src.purchasing.infra.routes import (
     POItemRouter,
     PurchaseOrderRouter,
@@ -112,6 +113,8 @@ from src.suppliers.infra.routes import (
     SupplierProductRouter,
     SupplierRouter,
 )
+from src.webhooks.infra.routes import WebhookEndpointRouter
+from src.webhooks.infra.secrets import secret_box
 
 configure_logging(
     log_level=config.LOG_LEVEL,
@@ -133,6 +136,11 @@ otel.setup(config.get_otel_config())
 # ---------------------------------------------------------------------------
 
 _docs = config.get_docs_config()
+
+# The master key of the webhooks' secrets (S6.4): a bad one stops the startup
+# instead of failing on the first endpoint
+if config.WEBHOOKS_ENABLED:
+    secret_box()
 
 # The outbox relay and the Kafka consumer run in the worker (`worker.py`).
 # RUN_BACKGROUND=true starts them here too, as before the worker: the rollback
@@ -428,6 +436,9 @@ admin_router.include_router(
     IntegrationRouter().router, prefix="/integrations", tags=["Integrations"]
 )
 admin_router.include_router(
+    WebhookEndpointRouter().router, prefix="/webhook-endpoints", tags=["Webhooks"]
+)
+admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
     tags=["Inventory Reports"],
@@ -493,6 +504,11 @@ public_router.include_router(
     ApiCustomerRouter().router, prefix="/customers", tags=["v1 Customers"]
 )
 public_router.include_router(ApiSaleRouter().router, prefix="/sales", tags=["v1 Sales"])
+public_router.include_router(
+    ApiWebhookEndpointRouter().router,
+    prefix="/webhook-endpoints",
+    tags=["v1 Webhooks"],
+)
 
 # ---------------------------------------------------------------------------
 # Middleware

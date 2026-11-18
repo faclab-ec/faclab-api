@@ -18,7 +18,7 @@ from src.auth.domain.scopes import Scope
 from src.public_api.infra.dependencies import OAUTH_SCHEME
 from src.public_api.infra.rate_limit import PUBLIC_API_PREFIX
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 TOKEN_PATH = "/api/oauth/token"
 # The tag of each public router in the app's own document: `v1 Products`
 TAG_PREFIX = "v1 "
@@ -59,6 +59,13 @@ TAGS = [
     {"name": "Stock", "description": "Stock by branch, warehouse and location."},
     {"name": "Customers", "description": "Customers by identification."},
     {"name": "Sales", "description": "Sales of every channel; sales of the API."},
+    {
+        "name": "Webhooks",
+        "description": (
+            "Endpoints that receive the events of the company, signed "
+            "(Standard Webhooks), with their deliveries."
+        ),
+    },
 ]
 
 # The headers the shared dependencies declare, as the public API requires them

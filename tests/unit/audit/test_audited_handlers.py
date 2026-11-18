@@ -86,6 +86,7 @@ def _update_product(**changes: Any) -> FakeAuditTrail:
         audit,
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     ).handle(replace(command, **changes))
     return audit
 
@@ -114,6 +115,7 @@ def test_a_new_material_code_is_an_update_with_only_what_changed():
         audit,
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     ).handle(
         UpdateProductCommand(
             product_id=1,

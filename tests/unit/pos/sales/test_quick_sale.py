@@ -159,6 +159,8 @@ def _build_handler(
                 stock_repo or _mock_repo(),
                 movement_repo or _mock_repo(),
                 inventory_costs(),
+                MagicMock(),
+                MagicMock(),
             ),
             payment_repo=payment_repo or _mock_repo(),
             numbering=numbering(),

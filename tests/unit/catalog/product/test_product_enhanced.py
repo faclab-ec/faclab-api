@@ -74,6 +74,7 @@ def test_create_product_with_all_new_fields():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -116,6 +117,7 @@ def test_create_product_service_type():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -138,6 +140,7 @@ def test_create_product_inactive():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -160,6 +163,7 @@ def test_create_product_defaults_for_new_fields():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -189,6 +193,7 @@ def test_create_product_passes_new_fields_to_entity():
         FakeAuditTrail(),
         FakeProductQuantities(),
         presentations,
+        MagicMock(),
     )
 
     handler.handle(
@@ -232,6 +237,7 @@ def test_update_product_with_new_fields():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -270,6 +276,7 @@ def test_update_product_tracks_new_field_changes_in_event():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
     handler.handle(
         UpdateProductCommand(
@@ -304,6 +311,7 @@ def test_update_product_deactivate():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -328,6 +336,7 @@ def test_update_product_not_found_raises():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -354,6 +363,7 @@ def test_update_product_no_changes_does_not_include_unchanged_fields_in_event():
         FakeAuditTrail(),
         FakeProductQuantities(),
         presentations,
+        MagicMock(),
     )
     handler.handle(
         UpdateProductCommand(
@@ -383,6 +393,7 @@ def test_update_product_set_barcode():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -410,6 +421,7 @@ def test_update_product_with_unit_of_measure():
         FakeAuditTrail(),
         FakeProductQuantities(),
         FakeProductPresentations(),
+        MagicMock(),
     )
 
     result = handler.handle(
@@ -431,7 +443,12 @@ def _create_handler() -> tuple[CreateProductCommandHandler, MagicMock]:
     repo = MagicMock()
     repo.create.side_effect = lambda product: replace(product, id=1)
     return CreateProductCommandHandler(
-        repo, MagicMock(), Mock(), FakeProductQuantities(), FakeProductPresentations()
+        repo,
+        MagicMock(),
+        Mock(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
+        MagicMock(),
     ), repo
 
 
@@ -440,7 +457,12 @@ def _update_handler(**existing) -> tuple[UpdateProductCommandHandler, MagicMock]
     repo.get_by_id.return_value = _make_product(**existing)
     repo.update.side_effect = lambda product: product
     return UpdateProductCommandHandler(
-        repo, MagicMock(), Mock(), FakeProductQuantities(), FakeProductPresentations()
+        repo,
+        MagicMock(),
+        Mock(),
+        FakeProductQuantities(),
+        FakeProductPresentations(),
+        MagicMock(),
     ), repo
 
 

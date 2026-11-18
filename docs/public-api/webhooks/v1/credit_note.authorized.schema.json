@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://faclab.ec/webhooks/v1/credit_note.authorized.schema.json",
+  "$defs": {
+    "CreditNoteAuthorizedData": {
+      "properties": {
+        "creditNoteId": {
+          "type": "integer"
+        },
+        "documentId": {
+          "description": "Its id in /api/v1/invoices",
+          "type": "string"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "accessCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "authorizedAt": {
+          "anyOf": [
+            {
+              "description": "ISO 8601 in UTC",
+              "examples": [
+                "2026-11-17T15:04:05.000Z"
+              ],
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "invoiceId": {
+          "description": "The invoice it modifies",
+          "type": "string"
+        },
+        "saleId": {
+          "type": "integer"
+        },
+        "refundId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Its refund; null: the whole invoice of a cancelled sale"
+        },
+        "branchId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "creditNoteId",
+        "documentId",
+        "number",
+        "accessCode",
+        "authorizedAt",
+        "invoiceId",
+        "saleId",
+        "refundId",
+        "branchId"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "id": {
+      "description": "The `webhook-id`: the same in every attempt",
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "type": "integer"
+    },
+    "occurredAt": {
+      "description": "When it happened",
+      "examples": [
+        "2026-11-17T15:04:05.000Z"
+      ],
+      "format": "date-time",
+      "type": "string"
+    },
+    "tenantId": {
+      "description": "The company",
+      "format": "uuid",
+      "type": "string"
+    },
+    "originClientId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The client_id of the integration whose request caused it; null for a user's or the system's"
+    },
+    "type": {
+      "const": "credit_note.authorized",
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/CreditNoteAuthorizedData"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "occurredAt",
+    "tenantId",
+    "originClientId",
+    "type",
+    "data"
+  ],
+  "type": "object",
+  "title": "credit_note.authorized v1"
+}

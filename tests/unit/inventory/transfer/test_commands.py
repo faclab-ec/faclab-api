@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.inventory.stock.domain.entities import Stock
+from src.inventory.stock.domain.events import StockUpdated
 from src.inventory.transfer.app.commands.transfer import (
     AddTransferItemCommand,
     AddTransferItemCommandHandler,
@@ -32,6 +33,7 @@ from src.inventory.transfer.domain.entities import (
     StockTransferItem,
     TransferStatus,
 )
+from src.inventory.transfer.domain.events import StockTransferConfirmed
 from src.shared.domain.exceptions import DomainError, NotFoundError
 from src.shared.domain.quantity import QuantityPrecisionError
 from tests.audit import FakeAuditTrail
@@ -206,6 +208,7 @@ def test_confirm_transfer_reserves_stock():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
     result = handler.handle(ConfirmStockTransferCommand(id=1))
 
@@ -214,7 +217,11 @@ def test_confirm_transfer_reserves_stock():
     updated_stock = stock_repo.update.call_args[0][0]
     assert updated_stock.reserved_quantity == 15  # 5 + 10
     assert result["status"] == TransferStatus.CONFIRMED
-    event_publisher.publish.assert_called_once()
+    # The reservation (what follows the stock hears it, S6.4), then the transfer
+    reserved, confirmed = [c.args[0] for c in event_publisher.publish.call_args_list]
+    assert isinstance(reserved, StockUpdated)
+    assert isinstance(confirmed, StockTransferConfirmed)
+    assert event_publisher.publish.call_args_list[0].kwargs["session"] is not None
 
 
 def test_confirm_transfer_validates_insufficient_stock():
@@ -239,6 +246,7 @@ def test_confirm_transfer_validates_insufficient_stock():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
 
     with pytest.raises(DomainError):
@@ -270,6 +278,7 @@ def test_confirm_transfer_validates_no_stock_record():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
 
     with pytest.raises(DomainError):
@@ -294,6 +303,7 @@ def test_confirm_transfer_raises_if_no_items():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
 
     with pytest.raises(DomainError):
@@ -314,6 +324,7 @@ def test_confirm_transfer_raises_if_not_found():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
 
     with pytest.raises(NotFoundError):
@@ -448,6 +459,7 @@ def test_cancel_draft_transfer_does_not_release_reservations():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
     result = handler.handle(CancelStockTransferCommand(id=1))
 
@@ -481,6 +493,7 @@ def test_cancel_confirmed_transfer_releases_reservations():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
     result = handler.handle(CancelStockTransferCommand(id=1))
 
@@ -505,6 +518,7 @@ def test_cancel_received_transfer_raises():
         stock_repo,
         event_publisher,
         FakeAuditTrail(),
+        MagicMock(),
     )
 
     with pytest.raises(DomainError):
