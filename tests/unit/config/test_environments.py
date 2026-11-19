@@ -32,6 +32,7 @@ _SETTINGS = (
     "JWT_PUBLIC_KEYS",
     "JWT_PUBLIC_KEYS_FILE",
     "DOCS_ENABLED",
+    "PUBLIC_DOCS_ENABLED",
     "KAFKA_ENABLED",
     "RUN_BACKGROUND",
     "SECRET_ENCRYPTION_KEYS",
@@ -254,6 +255,24 @@ def test_production_app_has_health_but_no_docs(tmp_path):
 
     assert {"/health/live", "/health/ready", "/.well-known/jwks.json"} <= set(routes)
     assert not {"/", "/docs", "/openapi.json", "/openapi/admin.json"} & set(routes)
+    # Integrators read the public documentation in production too (S6.5)
+    assert {"/docs/public", "/openapi/public-docs.json", "/docs/public/files"} <= set(
+        routes
+    )
+
+
+def test_the_public_documentation_can_be_hidden(tmp_path):
+    routes = _last_json_line(
+        _run(
+            _PRINT_ROUTES,
+            ENVIRONMENT="production",
+            PUBLIC_DOCS_ENABLED="false",
+            **{**DEPLOYED, "DATABASE_URL": f"sqlite:///{tmp_path}/app.db"},
+        )
+    )
+
+    assert "/openapi/public.json" in routes
+    assert not {"/docs/public", "/openapi/public-docs.json"} & set(routes)
 
 
 def test_without_run_background_the_api_starts_no_messaging_threads():

@@ -456,8 +456,9 @@
     (S8.4). Core y facturación cuentan cada uno sus rutas; no hay un límite compartido.
   - Facturación no ve la revocación de un cliente: allí su token vale hasta que vence (15 minutos).
     Si hace falta antes, consultar el estado al core o acortar la vida del token.
-  - OpenAPI público unificado (core más facturación) y portal para integradores: S6.5. Ejemplos en
-    `curl`, Python y JavaScript que se ejecuten en CI contra el sandbox: S6.5.
+  - OpenAPI público unificado (core más facturación) y portal para integradores: hechos en S6.5.
+    Ejemplos en `curl`, Python y JavaScript que se ejecutan en CI: hechos en S6.5, contra un core
+    de sandbox en el mismo job.
   - faclab-web no muestra el canal ni la referencia externa de una venta (`channel`,
     `externalReference`): las respuestas internas de ventas no los incluyen todavía.
   - `sort` en los listados internos: hoy solo tienen el orden estable por id (G-73).
@@ -479,9 +480,26 @@
   - El cuerpo del mensaje en el historial de entregas.
   - Un comando para volver a cifrar los secretos con la clave maestra nueva después de rotarla. Hoy
     se rota poniendo la clave nueva primero y conservando la anterior.
-  - Pantallas de endpoints y entregas en faclab-web (portal, S6.5) y límites de endpoints por plan
-    (S8.4). Hoy son 20 por empresa.
+  - Pantallas de endpoints y entregas en faclab-web: hechas en S6.5. Límites de endpoints por plan
+    (S8.4): hoy son 20 por empresa.
   - Panel de las entregas por resultado (`faclab.webhooks.deliveries`) en SigNoz (S7.1).
+- **Portal, documentación y sandbox, lo que quedó de S6.5** (2026-11-19):
+  - Desplegar el sandbox (`sandbox.<dominio>`, D-9) con su core, facturación y web, y un workflow
+    programado que corra `docs/public-api/examples/run-all.sh` contra él con credenciales `fl_test_`
+    en secretos del repositorio (`FACLAB_SKIP_WEBHOOKS=1`): S8.1. Hoy el job `examples` corre contra
+    un core levantado en el mismo job, sin facturación.
+  - Configurar facturación de una empresa del sandbox (perfil fiscal con ambiente 1 y certificado)
+    sin pasos a mano: un comando en faclab-invoicing, y un interruptor de despliegue que impida el
+    SRI de producción en el sandbox (hoy solo `NODE_ENV`). El SRI de pruebas pide un RUC y un
+    certificado reales.
+  - Subdominio de la documentación (D-9): hoy `/docs/public` del dominio de la API.
+  - El cuerpo del mensaje y cada intento en el historial de entregas del portal (lo que quedó de
+    S6.4), y el reenvío masivo.
+  - La prueba con un integrador externo: se simuló siguiendo **Primeros pasos** paso a paso
+    contra un sandbox local; queda repetirla con alguien de afuera cuando exista el sandbox
+    desplegado.
+  - `make public-openapi-invoicing` copia el contrato de facturación a mano; un job que compare la
+    copia con la de `master` de faclab-invoicing avisaría si se desactualiza.
 
 ## 2. Dependencias
 

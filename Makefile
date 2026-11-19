@@ -32,6 +32,10 @@ public-openapi:  ## Write docs/public-api/openapi-v1.json and the webhooks' JSON
 	OTEL_ENABLED=false .venv/bin/python -m src.public_api.infra.openapi
 	OTEL_ENABLED=false .venv/bin/python -m src.webhooks.infra.contracts
 
+public-openapi-invoicing:  ## Copy faclab-invoicing's public OpenAPI (../faclab-invoicing) for the docs page /docs/public: d=<its checkout>
+	mkdir -p docs/public-api/invoicing
+	cp $(or $(d),../faclab-invoicing)/docs/public-api/openapi-v1.json docs/public-api/invoicing/openapi-v1.json
+
 typecheck:  ## Type check with ty
 	source .venv/bin/activate && ty check
 
@@ -55,6 +59,9 @@ seed-admin:  ## Bootstrap the default tenant and its first admin (idempotent)
 
 provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ..."
 	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m src.tenancy.provision $(args)
+
+sandbox:  ## Sandbox company with made-up data, optionally an integration client (refuses outside the sandbox): args="--ruc ... --legal-name ... --admin-username ... --admin-email ... [--client-name ...] [--reset]"
+	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m scripts.sandbox $(args)
 
 purge-idempotency-keys:  ## Delete the Idempotency-Key rows older than IDEMPOTENCY_KEY_RETENTION_HOURS now (the worker does it hourly)
 	docker compose run --rm api python -m src.shared.infra.idempotency.purge

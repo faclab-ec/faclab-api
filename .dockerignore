@@ -27,6 +27,12 @@ htmlcov
 # Not needed at runtime (compose mounts the source tree in development)
 tests
 docs
+# Except what /docs/public serves to integrators (S6.5)
+!docs/public-api
+# but not what its examples write when run here (a webhook secret, invoices)
+docs/public-api/examples/**/webhook-secret
+docs/public-api/examples/**/facturas
+docs/public-api/examples/**/.faclab-sync*
 contracts
 CLAUDE.md
 Dockerfile

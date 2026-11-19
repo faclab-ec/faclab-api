@@ -26,12 +26,14 @@ PUBLIC_ROUTES = HEALTH_ROUTES | {
     "POST /api/oauth/token",
     # The public API's contract (S6.3), while PUBLIC_API_ENABLED is on
     "GET /openapi/public.json",
+    # Its documentation for integrators (S6.5), with PUBLIC_DOCS_ENABLED too
+    "GET /docs/public",
+    "GET /openapi/public-docs.json",
     # Only registered when DOCS_ENABLED is on
     "GET /",
     "GET /docs",
     "GET /docs/admin",
     "GET /docs/pos",
-    "GET /docs/public",
     "GET /openapi/admin.json",
     "GET /openapi/pos.json",
 }

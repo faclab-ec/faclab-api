@@ -8,3 +8,7 @@
 __pycache__/
 .qodo
 CLAUDE.md
+# What the public API's examples write when run here (S6.5): a webhook secret
+# and downloaded invoices, never committed nor copied into the image
+docs/public-api/examples/**/webhook-secret
+docs/public-api/examples/**/facturas/
