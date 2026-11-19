@@ -6,8 +6,8 @@
 > multiempresa (Etapa 2) e idempotencia (S3.1, terminada: el POS ya exige `Idempotency-Key` con el
 > mecanismo que reutiliza `/api/v1`, ver `docs/pos-api-spec.md` §0.1). Las credenciales de
 > integración (§3) están implementadas desde S6.2, la fachada `/api/v1` con sus límites (§4, §5, §9)
-> desde S6.3 y los webhooks (§7) desde S6.4; el portal (S6.5) todavía no. La guía para integradores
-> está en [`docs/public-api/`](../public-api/README.md).
+> desde S6.3, los webhooks (§7) desde S6.4 y el portal, la documentación pública y el sandbox (§10)
+> desde S6.5. La guía para integradores está en [`docs/public-api/`](../public-api/README.md).
 
 ## 1. Principios
 
@@ -55,7 +55,8 @@ alcance inicial).
 ### 3.2 Cliente de integración
 
 - Lo crea un administrador de la empresa con `POST /api/admin/integrations` (permiso
-  `integration:manage`, solo ADMIN; las pantallas del portal son de S6.5), que elige:
+  `integration:manage`, solo ADMIN; desde S6.5 también en el portal de faclab-web,
+  **Configuración → Integraciones**), que elige:
   - Nombre del cliente.
   - Scopes.
   - Sucursales permitidas (opcional; ninguna = todas).
@@ -417,15 +418,29 @@ mensaje que recibe el receptor HTTPS local.
 
 ## 10. Experiencia de integración
 
-- **Documentación:** referencia generada del OpenAPI público (Scalar, ya usado en el core) más guías:
-  autenticación, sincronizar catálogo y stock, crear ventas desde un ecommerce, recibir facturas por
-  webhook.
-- **Ejemplos** en `curl`, Python y JavaScript, ejecutados en CI contra el sandbox para que no se
-  desactualicen.
-- **Sandbox:** empresa de prueba por cliente con datos ficticios y facturación en el ambiente de
-  pruebas del SRI. Las credenciales tienen el prefijo `fl_test_` y apuntan a
+> **Implementado en S6.5** (2026-11-19), salvo el sandbox desplegado (S8.1, D-9) y la
+> configuración de facturación de sus empresas (pendiente).
+
+- **Documentación:** `/docs/public` (Scalar), pública también donde `DOCS_ENABLED` está apagado
+  (`PUBLIC_DOCS_ENABLED`). Una página con las guías como introducción, la referencia del OpenAPI
+  público del core más la copia fijada del de facturación (`docs/public-api/invoicing/`) y los
+  eventos de webhook como `webhooks` de OpenAPI 3.1 (`src/public_api/infra/docs.py`). El contrato
+  sigue siendo `/openapi/public.json`, que esa página no cambia. Guías: primeros pasos,
+  autenticación, sincronizar catálogo y stock, ventas desde un ecommerce, facturas por webhook,
+  webhooks, errores y límites. Los ejemplos y los JSON Schema se sirven en `/docs/public/files/`.
+- **Ejemplos** en `curl`, Python y JavaScript (`docs/public-api/examples/`), con su
+  `run-all.sh`. El job `examples` del CI los corre en cada PR contra un core de sandbox levantado en
+  el mismo job (PostgreSQL, API y worker, sin Kafka): token, catálogo, stock, venta con reintento y
+  anulación, y webhooks firmados recibidos en el runner. Las descargas de facturas no corren allí.
+  Correrlos contra el sandbox desplegado queda para S8.1.
+- **Sandbox:** un despliegue aparte (`INTEGRATION_ENVIRONMENT=sandbox`) con una empresa de prueba
+  por integrador y datos ficticios: `make sandbox` (`scripts/sandbox.py`, se niega fuera del
+  sandbox). Facturación en el ambiente de pruebas del SRI configurando la empresa en
+  faclab-invoicing (`docs/sandbox.md`). Las credenciales tienen el prefijo `fl_test_` y apuntan a
   `https://sandbox.<dominio>`.
 - **SDK oficial:** solo cuando haya demanda de varios integradores. Mientras tanto, OpenAPI permite
-  generar clientes.
-- **Portal en la aplicación** (S6.5): clientes de integración (crear, rotar, revocar), scopes,
-  sucursales, uso reciente, webhooks con historial de entregas y reenvío.
+  generar clientes, y los clientes mínimos de los ejemplos (`faclab.py`, `faclab.mjs`) sirven de
+  base.
+- **Portal en la aplicación** (faclab-web, `integration:manage`): clientes de integración (crear,
+  editar, rotar y revocar secretos, revocar), scopes, sucursales, redes, uso de 30 días, webhooks
+  con su secreto, prueba, historial de entregas y reenvío.
