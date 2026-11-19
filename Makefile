@@ -32,6 +32,10 @@ public-openapi:  ## Write docs/public-api/openapi-v1.json and the webhooks' JSON
 	OTEL_ENABLED=false .venv/bin/python -m src.public_api.infra.openapi
 	OTEL_ENABLED=false .venv/bin/python -m src.webhooks.infra.contracts
 
+public-openapi-invoicing:  ## Copy faclab-invoicing's public OpenAPI (../faclab-invoicing) for the docs page /docs/public: d=<its checkout>
+	mkdir -p docs/public-api/invoicing
+	cp $(or $(d),../faclab-invoicing)/docs/public-api/openapi-v1.json docs/public-api/invoicing/openapi-v1.json
+
 typecheck:  ## Type check with ty
 	source .venv/bin/activate && ty check
 

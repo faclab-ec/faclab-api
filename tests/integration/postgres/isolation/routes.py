@@ -1092,6 +1092,9 @@ ROUTES: dict[str, Route] = {
     ),
     "GET /openapi/public.json": Route(exempt="the same contract for every tenant"),
     "GET /docs/public": Route(exempt="docs"),
+    "GET /openapi/public-docs.json": Route(
+        exempt="the same documentation for every tenant"
+    ),
     "GET /": Route(exempt="docs"),
     "GET /docs": Route(exempt="docs"),
     "GET /docs/admin": Route(exempt="docs"),

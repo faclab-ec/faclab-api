@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from wireup.integration.fastapi import setup as wireup_fastapi_setup
 
@@ -59,6 +60,7 @@ from src.pos.sales.infra.routes import POSSaleRouter
 from src.pos.shift.infra.routes import POSShiftRouter
 from src.pricing.infra.routes import POSPriceRouter, PriceListRouter
 from src.public_api.app.rate_limit import RateLimit
+from src.public_api.infra.docs import FILES_PATH, PUBLIC_DOCS, public_docs_document
 from src.public_api.infra.errors import public_error_code
 from src.public_api.infra.openapi import public_openapi, security_scheme
 from src.public_api.infra.rate_limit import (
@@ -611,6 +613,28 @@ if config.PUBLIC_API_ENABLED:
         return JSONResponse(public_openapi(app))
 
 
+# Its documentation (S6.5): the guides, core's and invoicing's routes and the
+# webhook events on one page, with the examples and schemas it links to. Not
+# behind DOCS_ENABLED: integrators read it in production too
+if config.PUBLIC_API_ENABLED and config.PUBLIC_DOCS_ENABLED:
+
+    @app.get("/docs/public", include_in_schema=False)
+    async def scalar_public_docs():
+        """The public API for integrations: guides and reference."""
+        return _scalar_response("Faclab API", "/openapi/public-docs.json")
+
+    @app.get("/openapi/public-docs.json", include_in_schema=False)
+    async def public_docs_schema():
+        return JSONResponse(public_docs_document(app))
+
+    # Without the folder (an image built without it) the API still starts
+    app.mount(
+        FILES_PATH,
+        StaticFiles(directory=PUBLIC_DOCS, check_dir=False),
+        name="public-docs",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Doc endpoints and root redirect (only registered when DOCS_ENABLED=true)
 # ---------------------------------------------------------------------------
@@ -631,11 +655,6 @@ if _docs.enabled:
     async def scalar_pos_docs():
         """Interactive API reference — POS endpoints only."""
         return _scalar_response(f"{_docs.title} — POS", "/openapi/pos.json")
-
-    @app.get("/docs/public", include_in_schema=False)
-    async def scalar_public_docs():
-        """Interactive API reference — the public API for integrations."""
-        return _scalar_response(f"{_docs.title} — Public API", "/openapi/public.json")
 
     @app.get("/openapi/admin.json", include_in_schema=False)
     async def admin_openapi_schema():

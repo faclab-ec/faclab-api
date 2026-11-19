@@ -203,6 +203,11 @@ class BaseConfig:
     # with bursts of up to BURST at once; over it, 429 with Retry-After
     #
     PUBLIC_API_ENABLED = env.bool("PUBLIC_API_ENABLED", True)
+    # Its documentation (S6.5): /docs/public, the guides and the reference of
+    # every /api/v1 route and webhook event, public also where DOCS_ENABLED is
+    # off (staging, production). false hides it; the contract stays at
+    # /openapi/public.json
+    PUBLIC_DOCS_ENABLED = env.bool("PUBLIC_DOCS_ENABLED", True)
     PUBLIC_API_RATE_LIMIT_ENABLED = env.bool("PUBLIC_API_RATE_LIMIT_ENABLED", True)
     PUBLIC_API_RATE_LIMIT_PER_MINUTE = env.int(
         "PUBLIC_API_RATE_LIMIT_PER_MINUTE", 600, validate=lambda value: value > 0

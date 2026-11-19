@@ -56,6 +56,8 @@ COPY alembic.ini main.py worker.py ./
 COPY alembic ./alembic
 COPY config ./config
 COPY src ./src
+# The public documentation /docs/public serves (S6.5): guides, examples and contracts
+COPY docs/public-api ./docs/public-api
 
 # Tag or commit SHA, reported as service.version in every log and span:
 # docker build --target production --build-arg SERVICE_VERSION=$(git rev-parse --short HEAD) .
