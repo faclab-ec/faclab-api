@@ -37,12 +37,33 @@ Idempotency-Key: 0b7c5e2a-3f1d-4c8e-9a6b-2d4f8e1c7a90
   la bitácora de auditoría con el cliente de integración como autor.
 - **Pagos**: la venta llega **pagada en línea**: `CREDIT_CARD`, `DEBIT_CARD`, `TRANSFER` u `OTHER`,
   con la referencia de la pasarela, por el **total con IVA exacto** (`INSUFFICIENT_PAYMENT` o
-  `PAYMENT_EXCEEDS_BALANCE` si no). Efectivo y crédito no se aceptan. El total lo calcula Faclab:
-  léelo de la respuesta.
+  `PAYMENT_EXCEEDS_BALANCE` si no). Efectivo y crédito no se aceptan.
 - **Stock**: si no alcanza, 400 `INSUFFICIENT_STOCK` y nada cambia.
 
 La respuesta (201) trae la venta confirmada con su número, totales, ítems, pagos e `invoiceStatus`
 (`PENDING` mientras se factura).
+
+## El total
+
+Faclab calcula el total con los precios de sus listas, así que tu tienda tiene que cobrar lo mismo.
+Por cada línea sin descuento, el subtotal es precio × cantidad y el IVA, subtotal × tarifa. Los
+subtotales se suman y se redondean al centavo, y el IVA se suma por tarifa y se redondea al centavo,
+siempre la mitad hacia arriba. El total es la suma de los dos.
+
+| `taxCode` | Tarifa |
+|---|---|
+| `VAT_15` | 15 % |
+| `VAT_5` | 5 % (materiales de construcción) |
+| `VAT_8_TOURISM`, `VAT_12`, `VAT_13`, `VAT_14` | 8, 12, 13 y 14 % |
+| `VAT_0`, `EXEMPT`, `NOT_TAXED` | 0 % |
+
+Por ejemplo, 3 unidades de `0.85` con `VAT_15`: subtotal `2.55`, IVA `0.3825` → `0.38`, total
+`2.93`. La respuesta trae el `total` que calculó Faclab: si tu tienda cobró otro, la venta se rechaza
+con `INSUFFICIENT_PAYMENT` o `PAYMENT_EXCEEDS_BALANCE` y no se guarda.
+
+La función `line_total` de [faclab.py](examples/python/faclab.py) y `lineTotal` de
+[faclab.mjs](examples/javascript/faclab.mjs) hacen ese cálculo con decimales exactos. No uses
+números de punto flotante para dinero.
 
 ## Reintentos
 
@@ -64,5 +85,12 @@ facturación la tiene, 400 `INVOICE_IN_PROGRESS`; una vez autorizada necesita un
 
 `GET /api/v1/sales/{id}` trae `invoiceStatus` (`PENDING`, `AUTHORIZED`, `REJECTED`) e `invoiceId`.
 Con `invoices:read`, `GET /api/v1/invoices?saleId={id}` lista sus comprobantes y
-`/api/v1/invoices/{invoiceId}/xml` y `/ride` descargan el XML autorizado y el PDF. Hasta que lleguen
-los webhooks (S6.4), consulta el estado periódicamente.
+`/api/v1/invoices/{invoiceId}/xml` y `/ride` descargan el XML autorizado y el PDF. En vez de consultar
+el estado, suscríbete a `invoice.authorized` e `invoice.rejected`: ver
+[Facturas por webhook](facturas-por-webhook.md).
+
+## El ejemplo completo
+
+[crear_venta.py](examples/python/crear_venta.py), [crear-venta.mjs](examples/javascript/crear-venta.mjs)
+y [venta.sh](examples/curl/venta.sh) eligen una sucursal y un producto con stock, calculan el total,
+crean la venta, la reintentan con la misma clave, la buscan por `externalReference` y la anulan.

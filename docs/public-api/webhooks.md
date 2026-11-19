@@ -2,12 +2,14 @@
 
 En lugar de consultar la API cada pocos segundos, tu sistema registra una URL y Faclab le envía un
 `POST` firmado cada vez que pasa algo que le interesa: una venta confirmada, una factura autorizada,
-un cambio de stock. Diseño en [PUBLIC_API.md §7](../architecture/PUBLIC_API.md) y
-[ADR-0009](../architecture/ADR/0009-webhooks-firmados.md).
+un cambio de stock.
 
 ## 1. Registrar un endpoint
 
-Con un token que tenga el scope `webhooks:manage`:
+Un administrador de la empresa lo registra en la aplicación (**Configuración → Webhooks → Nuevo
+webhook**), con un cliente de integración como dueño o para la empresa. Ahí mismo lo prueba, lo
+desactiva, lee y rota su secreto y ve el historial de entregas con su reenvío. Tu sistema también
+puede registrar los suyos con un token que tenga el scope `webhooks:manage`:
 
 ```bash
 curl -s https://api.<dominio>/api/v1/webhook-endpoints \
@@ -63,18 +65,19 @@ webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
 - `originClientId` es el `client_id` de la integración cuya solicitud causó el evento, o `null` si
   lo causó un usuario o el sistema. Con él reconoces tus propios cambios aunque no uses
   `excludeOwnChanges`.
-- Cada tipo de `data` tiene su JSON Schema en [`webhooks/v1/`](webhooks/v1/):
+- Cada tipo de `data` tiene su JSON Schema: está en la sección **Webhooks** de la referencia de
+  esta documentación y se descarga desde la tabla (columna *Esquema*):
 
-| Tipo | Cuándo | `data` |
-|---|---|---|
-| `sale.confirmed` | Se confirmó una venta de cualquier canal | La venta como la muestra `GET /api/v1/sales/{id}` |
-| `sale.cancelled` | Se anuló una venta | `saleId`, `number`, `branchId`, `channel`, `externalReference`, `reason` |
-| `invoice.authorized` | El SRI autorizó la factura de una venta | `invoiceId`, `saleId`, `saleNumber`, `branchId`, `externalReference`. El número, la clave de acceso y la fecha de autorización están en `GET /api/v1/invoices/{invoiceId}` |
-| `invoice.rejected` | El SRI rechazó la factura | Lo mismo más `reason` (los mensajes del SRI) |
-| `credit_note.authorized` | El SRI autorizó una nota de crédito | `creditNoteId`, `documentId`, `number`, `accessCode`, `authorizedAt`, `invoiceId`, `saleId`, `refundId`, `branchId` |
-| `stock.changed` | Cambió el disponible de un producto en una sucursal | `productId`, `sku`, `branchId`, `available` (en unidades base, en todas las ubicaciones de la sucursal). Se agrupa: como máximo un evento por producto y sucursal cada 30 s |
-| `product.updated` | Se creó un producto o cambió algo de lo que muestra la API (precio, presentaciones…) | `productId`, `sku`, `action` (`created` o `updated`), `changedFields` |
-| `webhook.test` | Lo pediste con `POST …/test` | `endpointId`, `message` |
+| Tipo | Cuándo | `data` | Esquema |
+|---|---|---|---|
+| `sale.confirmed` | Se confirmó una venta de cualquier canal | La venta como la muestra `GET /api/v1/sales/{id}` | [JSON](webhooks/v1/sale.confirmed.schema.json) |
+| `sale.cancelled` | Se anuló una venta | `saleId`, `number`, `branchId`, `channel`, `externalReference`, `reason` | [JSON](webhooks/v1/sale.cancelled.schema.json) |
+| `invoice.authorized` | El SRI autorizó la factura de una venta | `invoiceId`, `saleId`, `saleNumber`, `branchId`, `externalReference`. El número, la clave de acceso y la fecha de autorización están en `GET /api/v1/invoices/{invoiceId}` | [JSON](webhooks/v1/invoice.authorized.schema.json) |
+| `invoice.rejected` | El SRI rechazó la factura | Lo mismo más `reason` (los mensajes del SRI) | [JSON](webhooks/v1/invoice.rejected.schema.json) |
+| `credit_note.authorized` | El SRI autorizó una nota de crédito | `creditNoteId`, `documentId`, `number`, `accessCode`, `authorizedAt`, `invoiceId`, `saleId`, `refundId`, `branchId` | [JSON](webhooks/v1/credit_note.authorized.schema.json) |
+| `stock.changed` | Cambió el disponible de un producto en una sucursal | `productId`, `sku`, `branchId`, `available` (en unidades base, en todas las ubicaciones de la sucursal). Se agrupa: como máximo un evento por producto y sucursal cada 30 s | [JSON](webhooks/v1/stock.changed.schema.json) |
+| `product.updated` | Se creó un producto o cambió algo de lo que muestra la API (precio, presentaciones…) | `productId`, `sku`, `action` (`created` o `updated`), `changedFields` | [JSON](webhooks/v1/product.updated.schema.json) |
+| `webhook.test` | Lo pediste con `POST …/test` | `endpointId`, `message` | [JSON](webhooks/v1/webhook.test.schema.json) |
 
 Ignora los campos que no conozcas: se agregan sin cambiar de versión. Un cambio incompatible
 publicaría `version: 2`.
@@ -118,6 +121,12 @@ function verify(msgId, ts, rawBody, header) {
 ```
 
 Rechaza un mensaje con más de 5 minutos de antigüedad.
+
+Dos receptores completos, que comprueban la firma, responden enseguida, deduplican por `webhook-id`
+y procesan después: [receptor_webhooks.py](examples/python/receptor_webhooks.py) (solo biblioteca
+estándar) y [receptor-webhooks.mjs](examples/javascript/receptor-webhooks.mjs) (Node, sin
+dependencias). Para registrar un endpoint y pedir una prueba desde la terminal:
+[webhook.sh](examples/curl/webhook.sh).
 
 ## 4. Responder, reintentos y desactivación
 

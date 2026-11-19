@@ -143,3 +143,97 @@ jobs:
           path: |
             coverage.xml
             htmlcov/
+
+  # The public API's examples (S6.5): every guide's curl, Python and
+  # JavaScript example (docs/public-api/examples/run-all.sh) against a sandbox
+  # core started here: PostgreSQL, the API and the worker, without Kafka. The
+  # webhooks reach receivers on this runner, so private URLs are allowed (only
+  # possible with ENVIRONMENT=local). A change that breaks a guide fails here
+  examples:
+    name: examples
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          # Throwaway credentials for the CI service container only
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ENVIRONMENT: local
+      # The roles with throwaway passwords, as in the test job
+      DATABASE_URL_ADMIN: postgresql://postgres:postgres@localhost:5432/faclab_sandbox
+      DATABASE_URL_MIGRATIONS: postgresql://faclab_owner:faclab_owner@localhost:5432/faclab_sandbox
+      DATABASE_URL: postgresql://faclab_app:faclab_app@localhost:5432/faclab_sandbox
+      DATABASE_URL_WORKER: postgresql://faclab_worker:faclab_worker@localhost:5432/faclab_sandbox
+      KAFKA_ENABLED: "false"
+      OTEL_ENABLED: "false"
+      RUN_BACKGROUND: "false"
+      INTEGRATION_ENVIRONMENT: sandbox
+      WEBHOOK_ALLOW_PRIVATE_URLS: "true"
+      WEBHOOK_STOCK_BATCH_SECONDS: "1"
+      FACLAB_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install system packages
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev jq bc
+
+      - name: Install dependencies
+        run: pip install -r requirements_dev.txt
+
+      - name: Create the database and migrate it
+        run: |
+          python -m src.shared.infra.db_roles
+          alembic upgrade head
+
+      # The secret goes to a file only the runner reads, never to the log
+      - name: Create the sandbox company and its integration client
+        run: |
+          PROVISION_ADMIN_PASSWORD="$(python -c 'import secrets; print(secrets.token_urlsafe(24) + "Aa1!")')" \
+            python -m scripts.sandbox --ruc 0999999980001 --legal-name "Tienda Demo (sandbox)" \
+            --admin-username sandbox-admin --admin-email sandbox-admin@example.com \
+            --client-name CI --credentials-file "$RUNNER_TEMP/sandbox.env"
+
+      - name: Start the API and the worker
+        run: |
+          WORKER_HEALTH_FILE="$RUNNER_TEMP/worker-health.json" nohup python worker.py >"$RUNNER_TEMP/worker.log" 2>&1 &
+          nohup uvicorn main:app --host 127.0.0.1 --port 3000 >"$RUNNER_TEMP/api.log" 2>&1 &
+          for _ in $(seq 60); do
+            curl -sf "$FACLAB_API_URL/health/ready" >/dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Run the examples
+        run: |
+          set -a
+          . "$RUNNER_TEMP/sandbox.env"
+          set +a
+          echo "::add-mask::$FACLAB_CLIENT_SECRET"
+          docs/public-api/examples/run-all.sh
+
+      - name: Logs of the API and the worker
+        if: failure()
+        run: |
+          echo "--- api"; tail -n 200 "$RUNNER_TEMP/api.log" || true
+          echo "--- worker"; tail -n 200 "$RUNNER_TEMP/worker.log" || true

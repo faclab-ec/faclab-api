@@ -30,5 +30,5 @@ RateLimit-Remaining: 0
 ```
 
 Espera `Retry-After` segundos antes de reintentar; para sincronizaciones grandes usa páginas de 200 y
-`updatedSince` en vez de recorrer todo. Core y facturación cuentan cada uno las solicitudes a sus
-rutas. El proxy aplica además un límite por IP.
+`updatedSince` en vez de recorrer todo. Las rutas de comprobantes (`/api/v1/invoices`) llevan su
+propia cuenta, aparte del resto. Además hay un límite por IP.
