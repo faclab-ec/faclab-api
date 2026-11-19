@@ -56,6 +56,9 @@ seed-admin:  ## Bootstrap the default tenant and its first admin (idempotent)
 provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ..."
 	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m src.tenancy.provision $(args)
 
+sandbox:  ## Sandbox company with made-up data, optionally an integration client (refuses outside the sandbox): args="--ruc ... --legal-name ... --admin-username ... --admin-email ... [--client-name ...] [--reset]"
+	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m scripts.sandbox $(args)
+
 purge-idempotency-keys:  ## Delete the Idempotency-Key rows older than IDEMPOTENCY_KEY_RETENTION_HOURS now (the worker does it hourly)
 	docker compose run --rm api python -m src.shared.infra.idempotency.purge
 
