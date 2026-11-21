@@ -106,6 +106,92 @@ def test_a_missing_or_invalid_request_id_is_replaced(sent, span_exporter):
     assert response.json()["meta"]["requestId"] == returned
 
 
+# faclab-web (S7.3): fetch/XHR send the W3C trace context to core and invoicing
+BROWSER_ORIGIN = "http://localhost:5173"
+TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+BROWSER_SPAN_ID = "00f067aa0ba902b7"
+
+
+@pytest.fixture
+def browser_app(monkeypatch) -> FastAPI:
+    monkeypatch.setattr(main.config, "CORS_ORIGINS", [BROWSER_ORIGIN])
+    return _app()
+
+
+def test_a_browser_preflight_may_send_the_trace_context(browser_app):
+    requested = "authorization, traceparent, tracestate, x-branch-id, x-terminal-id, idempotency-key"
+
+    response = TestClient(browser_app).options(
+        "/items/7",
+        headers={
+            "Origin": BROWSER_ORIGIN,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": requested,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == BROWSER_ORIGIN
+    allowed = {
+        h.strip().lower()
+        for h in response.headers["access-control-allow-headers"].split(",")
+    }
+    assert {
+        "traceparent",
+        "tracestate",
+        "authorization",
+        "x-branch-id",
+        "x-terminal-id",
+    } <= allowed
+
+
+def test_a_preflight_from_another_origin_is_refused(browser_app):
+    response = TestClient(browser_app).options(
+        "/items/7",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "traceparent",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_the_browser_trace_continues_in_the_request_span(browser_app, span_exporter):
+    TestClient(browser_app).get(
+        "/items/7",
+        headers={
+            "Origin": BROWSER_ORIGIN,
+            "traceparent": f"00-{TRACE_ID}-{BROWSER_SPAN_ID}-01",
+            "tracestate": "faclab=web",
+        },
+    )
+
+    server = _server_span(span_exporter)
+    assert format(server.context.trace_id, "032x") == TRACE_ID
+    assert server.parent is not None
+    assert server.parent.is_remote
+    assert format(server.parent.span_id, "016x") == BROWSER_SPAN_ID
+    assert server.context.trace_state.get("faclab") == "web"
+
+
+def test_a_trace_the_browser_did_not_sample_is_not_recorded(browser_app, span_exporter):
+    # ParentBased: the browser's decision (OTEL_SAMPLING_RATE) holds in core
+    TestClient(browser_app).get(
+        "/items/7",
+        headers={
+            "Origin": BROWSER_ORIGIN,
+            "traceparent": f"00-{TRACE_ID}-{BROWSER_SPAN_ID}-00",
+        },
+    )
+
+    assert not [
+        s for s in span_exporter.get_finished_spans() if s.kind == SpanKind.SERVER
+    ]
+
+
 def test_passwords_tokens_and_authorization_never_reach_a_log(span_exporter, json_logs):
     client = TestClient(_app())
     headers = {"Authorization": "Bearer leaked-access-token"}

@@ -7,19 +7,19 @@
 ## 1. Estado actual
 
 Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71; S7.1 (2026-11-21), que agregó
-las métricas del core (G-68), y S7.2 (2026-11-21), que agregó las de facturación (G-68) y el aviso de
-certificados por vencer (G-23).
+las métricas del core (G-68); S7.2 (2026-11-21), que agregó las de facturación (G-68) y el aviso de
+certificados por vencer (G-23), y S7.3 (2026-11-21), que agregó la telemetría del navegador (G-69).
 
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
-| SDK | OTel Python 1.32 (trazas, métricas y logs por OTLP gRPC) | OTel sdk-node 0.214 | Ninguno |
-| Auto-instrumentación | FastAPI (middleware por fuera del de errores, convenciones HTTP estables) y SQLAlchemy del engine de los requests | HTTP, AWS SDK, pino, Fastify | — |
-| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>`, `process invoice`, `deliver invoice`, `sri.recepcion`, `sri.autorizacion`, `invoice.sign` | — |
-| Logs | structlog (JSON fuera de local) + OTLP | pino + OTLP | `console.error` |
-| Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` por instrumentación de pino | — |
-| Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `messaging.*`, `faclab.dead_letters.pending`, SRI, comprobantes (transiciones, pendientes, tiempo a resultado, rechazos, pasos, cola), entregas y certificados (§6) | — |
-| Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | — |
-| Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | — |
+| SDK | OTel Python 1.32 (trazas, métricas y logs por OTLP gRPC) | OTel sdk-node 0.214 | OTel web 2.12 (trazas y métricas por OTLP/HTTP a `/otlp`), en un chunk que solo se carga con `otelEnabled`; apagado por defecto (§9.3) |
+| Auto-instrumentación | FastAPI (middleware por fuera del de errores, convenciones HTTP estables) y SQLAlchemy del engine de los requests | HTTP, AWS SDK, pino, Fastify | Carga del documento, XHR (axios) y fetch, con `traceparent` solo hacia el core y la facturación |
+| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>`, `process invoice`, `deliver invoice`, `sri.recepcion`, `sri.autorizacion`, `invoice.sign` | `ui.error` |
+| Logs | structlog (JSON fuera de local) + OTLP | pino + OTLP | `console.error`; los errores de interfaz van como spans `ui.error` |
+| Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` por instrumentación de pino | La traza de cada llamada continúa en el core y la facturación; los avisos de error muestran el `requestId` |
+| Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `messaging.*`, `faclab.dead_letters.pending`, SRI, comprobantes (transiciones, pendientes, tiempo a resultado, rechazos, pasos, cola), entregas y certificados (§6) | `faclab.web_vitals.lcp`, `.inp` y `.cls` por ruta (§6.3) |
+| Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | Ídem, sin `service.instance.id` |
+| Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | Valores del query string de cada URL; de un `ApiError`, el mensaje del servidor (§9.3) |
 | Dashboards y alertas | No existen | No existen | — |
 
 Lo que se conserva:
@@ -51,6 +51,9 @@ flowchart LR
   Después reenvía con TLS.
 - El navegador envía OTLP/HTTP a una ruta pública (`/otlp`) que Caddy limita por tamaño y frecuencia.
   Solo se aceptan trazas y logs de la propia aplicación.
+  - `/otlp` es del mismo origen que la aplicación, así que el Collector no necesita CORS.
+  - En local lo sirve el servidor de Vite, que lo reenvía al OTLP/HTTP de SigNoz (S7.3, §10.1).
+  - En producción la ruta y sus límites quedan para S8.1 (Caddy) y S7.4 (receptor del Collector).
 
 ## 3. Atributos de recurso (todos los servicios)
 
@@ -165,8 +168,15 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 ### 5.1 Propagación
 
 - W3C Trace Context (`traceparent`, `tracestate`) en HTTP y Kafka. Ya existe en Kafka.
-- Navegador → API: la instrumentación de `fetch`/XHR del SDK web inyecta `traceparent` solo hacia los
-  dominios propios (`propagateTraceHeaderCorsUrls`). CORS debe permitir el encabezado.
+- Navegador → API (S7.3):
+  - La instrumentación de `fetch`/XHR del SDK web inyecta `traceparent` y `tracestate` solo hacia los
+    orígenes de `apiBaseUrl` e `invoicingApiUrl` (`propagateTraceHeaderCorsUrls`).
+  - Core e invoicing los aceptan en CORS. Ambos devuelven en el preflight los encabezados que pide el
+    navegador: `allow_headers=["*"]` en el core, `@fastify/cors` sin `allowedHeaders` en invoicing.
+    `test_http_observability.py` y `test/http/cors.test.ts` lo fijan.
+  - Los dos continúan la traza: el span XHR del navegador es la raíz y `POST /api/pos/sales/quick` su
+    hijo, con el resto de la venta debajo.
+  - Con `ParentBased`, la decisión de muestreo del navegador manda en las solicitudes que él inicia.
 - Kafka:
   - El productor crea un span `send <tópico>` (kind PRODUCER) e **inyecta ese span**; hoy invoicing
     inyecta el contexto activo (G-67).
@@ -193,7 +203,13 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 | SRI | `sri.recepcion`, `sri.autorizacion` (kind CLIENT, S7.2) | `faclab.sri.environment` (`pruebas`, `produccion`), `faclab.sri.status` (RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, EN PROCESO; sin autorización todavía = EN PROCESO), `error.type` (`timeout` o la clase del error cuando no hubo respuesta); además `rpc.system=soap`, `rpc.method`, `server.address`. El cliente SOAP ya no abre su propio span |
 | Firma | `invoice.sign` (S7.2) | `faclab.document.type` (`invoice`, `credit_note`), `error.type` (el código del error tipado, por ejemplo `CERTIFICATE_EXPIRED`) |
 | Webhook | `webhook.deliver` | `http.response.status_code`, `faclab.retry.attempt` |
+| Navegador: carga | `documentLoad`, `documentFetch` y `resourceFetch` (instrumentación de carga, S7.3) | `faclab.ui.route`, `url.full` |
+| Navegador: llamada | El método (`POST`), kind CLIENT, con un hijo `CORS Preflight` cuando hubo preflight (XHR y fetch, S7.3) | `faclab.ui.route`, `url.full`, `http.response.status_code` |
+| Error de interfaz | `ui.error` (S7.3), con estado ERROR y evento `exception` | `faclab.ui.route`, `faclab.error.source` (`boundary`, `window`, `unhandledrejection`), `error.type`, `faclab.react.component_stack`; de un `ApiError`: `faclab.error.code`, `http.response.status_code` y `http.request.id`, sin el mensaje |
 | Base de datos | Automático (SQLAlchemy, pg) | `db.system`, `db.operation.name`; sin parámetros |
+
+`faclab.ui.route` es el patrón de la ruta (`/sales/:id`), nunca la URL, y las URLs del navegador van sin
+los valores de su query string (`?search=REDACTED`).
 
 Prohibido en atributos de span: datos personales de clientes, montos detallados de un cliente
 identificado, XML y claves de acceso completas. El id de venta y el id de factura **sí** pueden ir en
@@ -265,6 +281,25 @@ facturación hace lo mismo `test/shared/metric-attributes.test.ts` (S7.2), con e
 métricas.
 Excepción evaluada y rechazada: certificados por empresa (se resuelve con conteos por ventana más un
 log con el detalle).
+
+### 6.3 Navegador
+
+| Métrica | Tipo y unidad | Atributos | Para qué |
+|---|---|---|---|
+| `faclab.web_vitals.lcp` | Histograma, ms | `faclab.ui.route`, `faclab.web_vitals.rating` (`good`, `needs-improvement`, `poor`) | Largest Contentful Paint de la carga de la aplicación. Existe (S7.3) |
+| `faclab.web_vitals.inp` | Histograma, ms | Ídem | Interaction to Next Paint: la interacción más lenta de la visita. Existe (S7.3) |
+| `faclab.web_vitals.cls` | Histograma, sin unidad | Ídem | Cumulative Layout Shift: la peor ventana de desplazamientos. Existe (S7.3) |
+
+- **Medición:** la librería `web-vitals`, que mide como Chrome.
+- **Buckets:** rodean los umbrales de Google: LCP 2,5 y 4 s; INP 200 y 500 ms; CLS 0,1 y 0,25.
+- **Ruta de cada vital:**
+  - LCP lleva la ruta de carga.
+  - INP y CLS se informan al ocultar la página, cuando ya puede haber otra ruta abierta. Por eso llevan la
+    ruta donde ocurrió la interacción o el mayor desplazamiento, según el `startTime` de sus entradas y
+    el historial de rutas (`routes.ts`).
+- **Temporalidad DELTA:** cada navegador es una serie sin id de instancia, y con la acumulativa dos
+  navegadores se pisarían.
+- **Exportación:** cada 60 s, y además al ocultar la página.
 
 ## 7. Dashboards
 
@@ -383,12 +418,58 @@ Métricas (S7.2): el catálogo está en `src/shared/telemetry/metrics.ts`.
 
 ### 9.3 Navegador (faclab-web)
 
-- `@opentelemetry/sdk-trace-web` con instrumentación de `fetch`/XHR y carga de documento.
-- Exportador OTLP/HTTP al endpoint público `/otlp`.
-- Reporte de errores no controlados desde el `ErrorBoundary`, como log o span de error, sin datos del
-  formulario.
-- Web vitals (LCP, INP, CLS) como métricas agregadas por ruta.
-- Mostrar el `requestId` en los mensajes de error para facilitar el soporte (ya se recibe en `ApiError`).
+Implementado en S7.3, en `src/shared/lib/telemetry/`.
+
+- **Configuración.** Va en `appConfig.telemetry`, que lee `/config.js` (`window.__FACLAB_CONFIG__`) y si
+  no, los `VITE_*`:
+
+  | Clave de `/config.js` | Variable `VITE_*` | Variable de la imagen | Por defecto |
+  |---|---|---|---|
+  | `otelEnabled` | `VITE_OTEL_ENABLED` | `OTEL_ENABLED` | `false` |
+  | `otlpUrl` | `VITE_OTLP_URL` | `OTLP_URL` | `/otlp` |
+  | `otelSamplingRate` | `VITE_OTEL_SAMPLING_RATE` | `OTEL_SAMPLING_RATE` | `1` |
+  | `environment` | `VITE_ENVIRONMENT` | `ENVIRONMENT` | `local` (la imagen, `production`) |
+
+  - Apagarla es el rollback.
+  - El e2e la fija apagada.
+  - `service.version` es `__APP_VERSION__`: el `SERVICE_VERSION` del build (`--build-arg` de la imagen) o,
+    sin él, la versión de `package.json`.
+- **Carga diferida.**
+  - `index.ts`, que va en el bundle principal (unos 0,8 KB gzip), escucha `error` y `unhandledrejection`
+    de `window` desde antes del render. Con la telemetría encendida importa `sdk.ts`, un chunk aparte de
+    unos 44 KB gzip.
+  - Los errores que llegan mientras carga esperan en una cola de 20.
+  - Las llamadas anteriores a la carga del SDK no se trazan; el `/me` inicial es una de ellas.
+- **Trazas.**
+  - `WebTracerProvider` con `ParentBased(TraceIdRatioBased(otelSamplingRate))` y `BatchSpanProcessor`
+    acotado (cola de 512, lotes de 64), exportando a `<otlpUrl>/v1/traces`.
+  - Instrumentaciones de carga del documento, XHR (axios) y fetch.
+  - `traceparent` solo va hacia los orígenes del core y la facturación.
+  - El propio `/otlp` se ignora: el exportador envía con fetch y, sin eso, cada envío se trazaría.
+- **Redacción.**
+  - `RedactUrlProcessor` (`onEnding`) deja `url.full` y `http.url` sin los valores del query string ni el
+    fragmento. Así las búsquedas por nombre, RUC o código de barras no salen del navegador.
+  - Nunca se leen el DOM, los formularios, el usuario ni la empresa.
+- **Errores.**
+  - Los informan el `ErrorBoundary` (con el stack de componentes) y los oyentes de `window`. Los
+    errores no capturados de React 19 llegan por ahí.
+  - Cada error es un span `ui.error` (§5.2) con la ruta, y aparece en la vista de excepciones de SigNoz.
+  - Mensajes y stacks van recortados.
+  - De un `ApiError` va el código en lugar del mensaje, también en la primera línea del stack.
+- **Ruta.**
+  - `RouteTracker`, dentro de `AppViews` para que la tabla de rutas no entre al bundle inicial, guarda
+    el patrón (`routePattern`, `matchRoutes` sobre las rutas de la app) con el instante de cada cambio.
+  - Una URL ajena es `unmatched`.
+  - Lo anterior a que cargue `AppViews` lleva `unknown`; por ejemplo, la carga del documento y las
+    primeras llamadas como `/me`. Su `url.full` dice la página.
+- **`resourceFetch` en desarrollo:** Vite sirve cada módulo por separado, así que cada carga produce
+  cientos de estos spans. Con el build son unos pocos.
+- **Web vitals:** §6.3.
+- **requestId.**
+  - `notifyError` y `ErrorState` muestran «Id de solicitud» con el `meta.requestId` del error, completo
+    y seleccionable.
+  - Con id, el aviso dura 8 s y se puede cerrar.
+- **Imagen.** `docker/entrypoint.sh` valida las variables de telemetría y las escribe en `/config.js`.
 
 ## 10. Observabilidad en pruebas y entrega
 
@@ -411,7 +492,10 @@ Métricas (S7.2): el catálogo está en `src/shared/telemetry/metrics.ts`.
 
 `faclab-infra/scripts/signoz.sh up` levanta SigNoz (v0.118.0) y une su collector a `faclab_network`. Los
 contenedores exportan a `http://signoz-otel-collector:4317` y los procesos del host a
-`http://localhost:4317`. La primera vez hay que crear la cuenta de administrador en
+`http://localhost:4317`.
+
+faclab-web en desarrollo (`VITE_OTEL_ENABLED=true`) envía a `/otlp` de su propio origen, y el servidor de
+Vite lo reenvía al OTLP/HTTP de SigNoz en `http://localhost:4318` (`OTLP_PROXY_TARGET` lo cambia). La primera vez hay que crear la cuenta de administrador en
 `http://localhost:8080`: hasta entonces SigNoz no le entrega configuración al collector y nada escucha
 en 4317.
 
@@ -423,7 +507,7 @@ en 4317.
 | S4.3 | `faclab.reconciliation.discrepancies` y los logs de la conciliación (terminada 2026-10-30) |
 | S7.1 | Métricas técnicas y de negocio del core (outbox, fallidos, pool, ventas, inventario, login; `kafka.*` renombradas a `messaging.*`) (terminada 2026-11-21) |
 | S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, rechazos, cola, entregas, certificados; `kafka.*` y `dlq.message.count` renombradas a `messaging.*` y `faclab.dead_letters.pending`) (terminada 2026-11-21) |
-| S7.3 | SDK web, errores de interfaz y web vitals |
+| S7.3 | SDK web con trazas que continúan en el core y la facturación, errores de interfaz (`ui.error`), web vitals por ruta y el `requestId` en los avisos de error; `/otlp` local por el proxy de Vite (terminada 2026-11-21) |
 | S7.4 | Collector con receptores de host, Docker, PostgreSQL, Kafka y httpcheck |
 | S7.5 | Dashboards y alertas como código, con runbooks |
 | S7.6 | Pruebas de observabilidad y definición de terminado |
