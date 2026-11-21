@@ -9,9 +9,11 @@ from typing import Any
 import structlog
 
 from src.inventory.movement.domain.events import MovementCreated
+from src.inventory.movement.infra.metrics import count_stock_rejection
 from src.inventory.stock.app.repositories import StockRepository
 from src.inventory.stock.domain.entities import Stock
 from src.inventory.stock.domain.events import StockCreated, StockUpdated
+from src.inventory.stock.domain.exceptions import InsufficientStockError
 from src.shared.infra.events.decorators import event_handler
 from src.shared.infra.events.event_bus import EventBus
 from src.shared.infra.events.scope import create_sync_scope
@@ -115,6 +117,10 @@ def handle_movement_created(event: MovementCreated, session: Any = None) -> None
                 )
 
         except Exception as e:
+            # An OUT of what the location doesn't have: the movement's document
+            # says where the attempt came from (S7.1)
+            if isinstance(e, InsufficientStockError):
+                count_stock_rejection(event.reference_type)
             logger.error(
                 "movement_created_handler_error",
                 movement_id=event.aggregate_id,

@@ -153,6 +153,43 @@ def test_create_movement_publishes_movement_created_event(
     assert published_event.product_id == 1
     assert published_event.quantity == 10
     assert published_event.type == MovementType.IN.value
+    assert published_event.reference_type is None
+
+
+def test_the_event_names_the_document_that_moved_the_stock(
+    mock_movement_repo, event_publisher
+):
+    """The stock handler counts a rejection by it (S7.1)"""
+    mock_movement_repo.create.return_value = Movement(
+        id=2,
+        product_id=1,
+        quantity=Decimal(4),
+        type=MovementType.IN,
+        reference_type="purchase_order",
+        reference_id=9,
+    )
+    handler = CreateMovementCommandHandler(
+        mock_movement_repo,
+        event_publisher,
+        Mock(),
+        FakeAuditTrail(),
+        FakeProductQuantities(),
+        _stock_repo(),
+        inventory_costs(),
+    )
+
+    handler.handle(
+        CreateMovementCommand(
+            product_id=1,
+            quantity=Decimal(4),
+            type=MovementType.IN.value,
+            reference_type="purchase_order",
+            reference_id=9,
+        )
+    )
+
+    published_event = event_publisher.publish.call_args[0][0]
+    assert published_event.reference_type == "purchase_order"
 
 
 def test_create_movement_in_with_negative_quantity_raises(

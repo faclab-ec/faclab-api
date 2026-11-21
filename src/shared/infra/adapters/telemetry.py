@@ -12,6 +12,7 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+from opentelemetry.metrics import NoOpMeterProvider
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -180,9 +181,15 @@ class OpenTelemetry:
             instrument_fastapi(app)
 
     def instrument_engine(self, engine: Engine) -> None:
-        """Trace the queries of this engine (the one behind the requests)."""
+        """Trace the queries of this engine (the one behind the requests).
+        Its pool metric is left out: `db.client.connection.count`
+        (`telemetry_instruments`) reports every engine's pool under a fixed
+        name, while the instrumentation's deprecated `db.client.connections.usage`
+        would name it by the database URL."""
         if self._initialized and not self._engine_instrumented:
-            SQLAlchemyInstrumentor().instrument(engine=engine)
+            SQLAlchemyInstrumentor().instrument(
+                engine=engine, meter_provider=NoOpMeterProvider()
+            )
             self._engine_instrumented = True
 
     def shutdown(self) -> None:

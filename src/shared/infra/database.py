@@ -22,6 +22,8 @@ from src.shared.domain.tenant import (
     require_tenant,
 )
 from src.shared.infra.adapters import OpenTelemetry
+from src.shared.infra.metrics import discard_pending_metrics, record_pending_metrics
+from src.shared.infra.telemetry_instruments import watch_pool
 
 
 class Base(DeclarativeBase):
@@ -49,20 +51,25 @@ class TenantScoped:
 
 
 def create_session_maker(
-    connection_string: str, traced: bool = False
+    connection_string: str, traced: bool = False, pool_name: str = "default"
 ) -> sessionmaker[Session]:
     """`traced` adds a span per query (with OTel enabled). Only the requests'
     engine is traced: the outbox relay and the readiness check poll every few
-    seconds and would bury the queries that matter."""
+    seconds and would bury the queries that matter. `pool_name` names its pool
+    in `db.client.connection.count` (`request`, `app`, `worker`)."""
     if not connection_string:
         raise ValueError("Database connection string cannot be empty")
 
     engine = create_engine(connection_string)
     if traced:
         OpenTelemetry().instrument_engine(engine)
+    watch_pool(engine, pool_name)
     factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     event.listen(factory, "after_begin", set_tenant_setting)
     event.listen(factory, "before_flush", assign_tenant)
+    # Business counters count what committed (S7.1)
+    event.listen(factory, "after_commit", record_pending_metrics)
+    event.listen(factory, "after_transaction_end", discard_pending_metrics)
     return factory
 
 
@@ -73,7 +80,7 @@ def worker_session_maker() -> sessionmaker[Session]:
     never for a request. One engine per process."""
     from config import config
 
-    return create_session_maker(config.DB_WORKER_CONNECTION_STRING)
+    return create_session_maker(config.DB_WORKER_CONNECTION_STRING, pool_name="worker")
 
 
 @functools.cache
@@ -84,7 +91,7 @@ def app_session_maker() -> sessionmaker[Session]:
     that `AuthMiddleware` reads and records (S6.2). One engine per process."""
     from config import config
 
-    return create_session_maker(config.DB_CONNECTION_STRING)
+    return create_session_maker(config.DB_CONNECTION_STRING, pool_name="app")
 
 
 def set_tenant_setting(
@@ -121,7 +128,7 @@ def assign_tenant(
 
 
 def create_session_factory(connection_string: str):
-    _factory = create_session_maker(connection_string, traced=True)
+    _factory = create_session_maker(connection_string, traced=True, pool_name="request")
 
     @injectable(lifetime="scoped")
     def get_db_session() -> Iterator[Session]:

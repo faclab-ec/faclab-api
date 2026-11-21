@@ -4,6 +4,7 @@ from wireup import Injected
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
 from src.auth.infra.dependencies import get_current_user, require_permission
+from src.inventory.movement.infra.metrics import stock_attempt
 from src.inventory.transfer.app.commands.transfer import (
     AddTransferItemCommand,
     AddTransferItemCommandHandler,
@@ -210,7 +211,9 @@ class TransferRouter:
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[TransferResponse]:
         """Confirm a stock transfer — reserves stock at source location."""
-        result = handler.handle(ConfirmStockTransferCommand(id=id))
+        # Reserving writes no movement, so its INSUFFICIENT_STOCK is counted here
+        with stock_attempt("transfer"):
+            result = handler.handle(ConfirmStockTransferCommand(id=id))
         return DataResponse(data=TransferResponse.model_validate(result), meta=meta)
 
     def receive(

@@ -7,6 +7,7 @@ from wireup import Injected
 from src.auth.domain.entities import AuthenticatedUser
 from src.auth.domain.permissions import Permission
 from src.auth.infra.dependencies import get_current_user, require_permission
+from src.pos.infra.metrics import sale_attempt
 from src.pos.sales.app.commands.apply_discount import (
     ApplySaleDiscountCommand,
     ApplySaleDiscountCommandHandler,
@@ -302,19 +303,20 @@ class POSSaleRouter:
         """
 
         def respond() -> DataResponse[SaleDetailResponse]:
-            result = handler.handle(
-                QuickSaleCommand(
-                    terminal=terminal,
-                    items=[item.model_dump() for item in sale.items],
-                    payments=[p.model_dump() for p in sale.payments],
-                    customer_id=sale.customer_id,
-                    discount_type=sale.discount_type,
-                    discount_value=sale.discount_value,
-                    notes=sale.notes,
-                    created_by=user.display_name,
-                    quote_id=sale.quote_id,
+            with sale_attempt("pos"):
+                result = handler.handle(
+                    QuickSaleCommand(
+                        terminal=terminal,
+                        items=[item.model_dump() for item in sale.items],
+                        payments=[p.model_dump() for p in sale.payments],
+                        customer_id=sale.customer_id,
+                        discount_type=sale.discount_type,
+                        discount_value=sale.discount_value,
+                        notes=sale.notes,
+                        created_by=user.display_name,
+                        quote_id=sale.quote_id,
+                    )
                 )
-            )
             return DataResponse(
                 data=SaleDetailResponse.model_validate(result), meta=meta
             )
@@ -421,7 +423,8 @@ class POSSaleRouter:
         guard.sale(sale_id, branch)
 
         def respond() -> DataResponse[SaleResponse]:
-            result = handler.handle(POSConfirmSaleCommand(sale_id=sale_id))
+            with sale_attempt("pos"):
+                result = handler.handle(POSConfirmSaleCommand(sale_id=sale_id))
             return DataResponse(data=SaleResponse.model_validate(result), meta=meta)
 
         return idempotency.run(idempotent, respond)

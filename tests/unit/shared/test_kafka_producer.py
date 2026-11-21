@@ -83,3 +83,37 @@ def test_the_key_goes_to_the_broker_as_bytes(producer):
     producer.publish("sales.confirmed", {"event_id": "e-2"}, [])
 
     assert producer._producer.keys == [b"tenant-1", None]
+
+
+class BrokenBroker(FakeBroker):
+    async def send_and_wait(self, topic, value, key=None, headers=None):
+        raise ValueError("message too large")
+
+
+def test_each_send_is_counted_by_topic(producer, recorded_metrics):
+    producer.publish("sales.confirmed", {"event_id": "e-1"}, [])
+
+    assert recorded_metrics.collect().points("messaging.client.sent.messages") == [
+        (
+            1,
+            {
+                "messaging.system": "kafka",
+                "messaging.operation.name": "send",
+                "messaging.destination.name": "sales.confirmed",
+            },
+        )
+    ]
+
+
+def test_a_failed_send_carries_its_error_type(producer, recorded_metrics):
+    producer._producer = BrokenBroker()
+
+    with pytest.raises(ValueError):
+        producer.publish("sales.confirmed", {"event_id": "e-1"}, [])
+
+    ((value, attributes),) = recorded_metrics.collect().points(
+        "messaging.client.sent.messages"
+    )
+    assert value == 1
+    assert attributes["error.type"] == "ValueError"
+    assert attributes["messaging.destination.name"] == "sales.confirmed"

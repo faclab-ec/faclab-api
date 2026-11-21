@@ -7,6 +7,7 @@ from wireup import Injected
 from src.auth.domain.principals import IntegrationPrincipal
 from src.auth.domain.scopes import Scope
 from src.auth.infra.dependencies import require_branch
+from src.pos.infra.metrics import sale_attempt
 from src.public_api.app.commands.sales import (
     CancelApiSaleCommand,
     CancelApiSaleCommandHandler,
@@ -135,7 +136,8 @@ class ApiSaleRouter:
         sale, made once."""
 
         def respond() -> DataResponse[Sale]:
-            created = handler.handle(_create_command(body, client, branch_id))
+            with sale_attempt("api"):
+                created = handler.handle(_create_command(body, client, branch_id))
             result = reader.handle(GetApiSaleQuery(sale_id=created["id"]))
             return DataResponse(data=Sale.model_validate(result), meta=meta)
 

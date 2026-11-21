@@ -3,11 +3,15 @@
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 import pytest
 
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
+
+if TYPE_CHECKING:
+    from tests.metrics import RecordedMetrics
 
 # Tests never export telemetry nor talk to Kafka.
 os.environ["OTEL_ENABLED"] = "false"
@@ -30,6 +34,16 @@ if os.environ.get("TEST_DATABASE_URL"):
 _POSTGRES_TESTS = Path(__file__).parent / "integration" / "postgres"
 
 TEST_TENANT_ID = UUID("00000000-0000-4000-8000-00000000000a")
+
+
+@pytest.fixture
+def recorded_metrics() -> "RecordedMetrics":
+    """The metrics recorded from here on: call `.collect()` to read them (S7.1)."""
+    from tests.metrics import RecordedMetrics, install_reader
+
+    recorded = RecordedMetrics(install_reader())
+    recorded.collect()  # what earlier tests left
+    return recorded
 
 
 @pytest.fixture

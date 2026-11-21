@@ -6,6 +6,7 @@ it, so two workers never run the same batch."""
 
 from config import config
 from src.auth.infra import session_purge
+from src.background import queue_metrics
 from src.imports.infra import purge as import_purge, runner as import_runner
 from src.invoicing.infra import reconciliation
 from src.public_api.infra import rate_limit as public_api_rate_limit
@@ -35,6 +36,13 @@ def periodic_tasks() -> list[PeriodicTask]:
         PeriodicTask("import_rows_purge", interval, import_purge.purge),
         # The public API's rate limit counters whose bucket is full (S6.3)
         PeriodicTask("api_rate_limits_purge", interval, public_api_rate_limit.purge),
+        # The outbox and dead letter gauges (S7.1); also without Kafka: a
+        # message left pending is still worth seeing
+        PeriodicTask(
+            "queue_metrics",
+            config.WORKER_METRICS_INTERVAL_SECONDS,
+            queue_metrics.sample,
+        ),
     ]
     # The webhooks' stock.changed, grouped by product and branch (S6.4): while
     # the sending is paused they keep piling up as pending deliveries
