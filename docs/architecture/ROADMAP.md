@@ -396,8 +396,9 @@
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
     `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
 - **Facturación, lo que quedó de S4.2** (2026-10-29):
-  - Métricas de la cola de facturas (vencidas, edad de la más antigua, leases vencidos, duración de
-    cada paso): S7.2.
+  - ~~Métricas de la cola de facturas (vencidas, edad de la más antigua, leases vencidos, duración de
+    cada paso)~~: hechas en S7.2 (`faclab.invoices.due`, `oldest_age`, `expired_leases` y
+    `step.duration`).
   - Servicio `invoicing-worker` en el stack de producción: la API con `RUN_BACKGROUND=false`, el
     worker con el mismo `HEALTHCHECK` y un `stop_grace_period` mayor que `SRI_TIMEOUT_MS` (S8.1). Si
     se mata antes, sus facturas esperan a que venza el lease (2 minutos por defecto).
@@ -438,7 +439,8 @@
   - Proveedor SMTP de producción, `INVOICE_EMAIL_FROM` del dominio de la plataforma con SPF y DKIM, y
     las variables `SMTP_*` en el stack (S8.1). Sin ellas, producción no arranca salvo con
     `INVOICE_EMAIL_ENABLED=false`.
-  - Métricas de entregas (pendientes, enviadas, rebotadas, fallidas) y su alerta: S7.2 y S7.5.
+  - ~~Métricas de entregas (pendientes, enviadas, rebotadas, fallidas)~~: hechas en S7.2
+    (`faclab.invoices.deliveries` por resultado y `faclab.invoices.pending_deliveries`). Su alerta, S7.5.
   - Límite de reenvíos por factura o por usuario; hoy solo se evita un segundo pendiente.
   - Reenvío a un correo corregido después de la venta: hoy va siempre al de la venta (el riesgo de la
     ficha). Requeriría que el core mande el correo actual o una corrección auditada.
@@ -503,8 +505,8 @@
 - **Métricas del core, lo que quedó de S7.1** (2026-11-21):
   - Paneles y alertas sobre las métricas nuevas: S7.5. Esto incluye el panel de
     `faclab.webhooks.deliveries` que S6.4 dejaba para S7.1.
-  - faclab-invoicing todavía usa `kafka.consumer.*` y `dlq.message.count`. Las alinea con
-    `messaging.*` y `faclab.dead_letters.pending` en S7.2.
+  - ~~faclab-invoicing todavía usa `kafka.consumer.*` y `dlq.message.count`~~: S7.2 las alineó con
+    `messaging.*` y `faclab.dead_letters.pending`.
   - `kafka.consumer_group.lag` y las métricas de PostgreSQL, del host y de los contenedores las
     agrega el Collector (S7.4).
   - Un fallo en el commit mismo de una venta (un `CHECK` de `stocks`, 409 `INTEGRITY_ERROR`) no se
@@ -513,6 +515,21 @@
     contarían también como `sale`. Hoy no existe otro.
   - `faclab.outbox.failed` cuenta sobre todo el outbox (no hay un índice parcial de `failed`). Es
     barato mientras la purga lo mantenga en `OUTBOX_RETENTION_DAYS`.
+- **Métricas de facturación, lo que quedó de S7.2** (2026-11-21):
+  - Paneles y alertas sobre las métricas nuevas (dashboard 4; facturas atascadas con
+    `faclab.invoices.oldest_age`; SRI no disponible con `faclab.sri.request.duration` cuyo
+    `faclab.sri.outcome` no es `ok`; aumento de rechazos; certificado por vencer; entregas fallidas):
+    S7.5.
+  - Con varios workers de facturación, cada uno reporta su muestra de los gauges (los paneles agregan
+    con `max`) y el log diario de certificados sale una vez por worker y por arranque.
+  - Lag del consumidor de facturación y métricas de su PostgreSQL: S7.4.
+  - `event.name` en el resto de los logs de facturación: hoy solo lo llevan los de certificados
+    (S7.6 o una sesión de logs).
+  - El muestreo recorre las facturas en vuelo cada 60 s (`ix_invoices_status_created_at`); revisar su
+    costo si la tabla crece mucho.
+  - **Despliegue:** sin migraciones. Variable opcional nueva `WORKER_METRICS_INTERVAL_MS` (60000).
+    `soap.call.duration`, `kafka.consumer.*` y `dlq.message.count` dejan de existir. Reiniciar el API y
+    el worker de facturación; no depende de otro repo.
 
 ## 2. Dependencias
 
