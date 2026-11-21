@@ -6,17 +6,18 @@
 
 ## 1. Estado actual
 
-Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71, y S7.1 (2026-11-21), que agregó
-las métricas del core (G-68).
+Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71; S7.1 (2026-11-21), que agregó
+las métricas del core (G-68), y S7.2 (2026-11-21), que agregó las de facturación (G-68) y el aviso de
+certificados por vencer (G-23).
 
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
 | SDK | OTel Python 1.32 (trazas, métricas y logs por OTLP gRPC) | OTel sdk-node 0.214 | Ninguno |
 | Auto-instrumentación | FastAPI (middleware por fuera del de errores, convenciones HTTP estables) y SQLAlchemy del engine de los requests | HTTP, AWS SDK, pino, Fastify | — |
-| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>` (también la DLQ), SOAP | — |
+| Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>`, `process invoice`, `deliver invoice`, `sri.recepcion`, `sri.autorizacion`, `invoice.sign` | — |
 | Logs | structlog (JSON fuera de local) + OTLP | pino + OTLP | `console.error` |
 | Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` por instrumentación de pino | — |
-| Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `kafka.consumer.*`, `dlq.message.count`, `soap.call.duration` | — |
+| Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `messaging.*`, `faclab.dead_letters.pending`, SRI, comprobantes (transiciones, pendientes, tiempo a resultado, rechazos, pasos, cola), entregas y certificados (§6) | — |
 | Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | — |
 | Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | — |
 | Dashboards y alertas | No existen | No existen | — |
@@ -189,8 +190,8 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 | Consulta | `query <Nombre>` | Ídem |
 | Evento de dominio | `event.publish <Tipo>`, `event.handle <Handler>` | `faclab.event.type` |
 | Kafka | `send <tópico>`, `process <tópico>` | `messaging.system=kafka`, `messaging.destination.name`, `messaging.kafka.message.key`, `messaging.message.id` |
-| SRI | `sri.recepcion`, `sri.autorizacion` | `faclab.sri.environment` (pruebas o producción), `faclab.sri.status` (RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, EN PROCESO), `error.type` |
-| Firma | `invoice.sign` | `faclab.document.type` (factura, nota de crédito) |
+| SRI | `sri.recepcion`, `sri.autorizacion` (kind CLIENT, S7.2) | `faclab.sri.environment` (`pruebas`, `produccion`), `faclab.sri.status` (RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, EN PROCESO; sin autorización todavía = EN PROCESO), `error.type` (`timeout` o la clase del error cuando no hubo respuesta); además `rpc.system=soap`, `rpc.method`, `server.address`. El cliente SOAP ya no abre su propio span |
+| Firma | `invoice.sign` (S7.2) | `faclab.document.type` (`invoice`, `credit_note`), `error.type` (el código del error tipado, por ejemplo `CERTIFICATE_EXPIRED`) |
 | Webhook | `webhook.deliver` | `http.response.status_code`, `faclab.retry.attempt` |
 | Base de datos | Automático (SQLAlchemy, pg) | `db.system`, `db.operation.name`; sin parámetros |
 
@@ -216,14 +217,19 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `http.server.request.duration` | Histograma, s | `http.request.method`, `http.route`, `http.response.status_code` | Auto (`OTEL_SEMCONV_STABILITY_OPT_IN=http`, que fija S1.5) | Existe con la convención estable; una prueba lo fija (S7.1) |
 | `handler.duration`, `handler.invocations`, `handler.errors` | Histograma ms, contadores | `handler.type`, `handler.name`; `handler.errors` además `error.kind` (`domain`, `unexpected`) | Core | Existe (la separación por `error.kind` la hizo S1.5) |
 | `db.client.connection.count` | Up-down counter observable, `{connection}` | `db.client.connection.pool.name` (`request`: el motor de las unidades de trabajo, los requests del API y los scopes de las tareas del worker; `app`; `worker`), `db.client.connection.state` (`idle`, `used`) | Core, cada pool de SQLAlchemy (los de SQLite no cuentan conexiones) | Existe (S7.1). Reemplaza el `db.client.connections.usage` obsoleto de la instrumentación, que nombraba el pool por la URL de la base |
-| `messaging.client.sent.messages` | Contador, `{message}` | `messaging.system`, `messaging.operation.name`, `messaging.destination.name`; `error.type` en un envío fallido | Core (relay) | Existe (S7.1); reemplaza `kafka.messages_sent` y `kafka.send_errors` |
-| `messaging.process.duration` | Histograma, s | `messaging.system`, `messaging.operation.name`, `messaging.destination.name`, `messaging.consumer.group.name`; `error.type` si el handler falló | Core (consumidor) | Existe (S7.1); reemplaza `kafka.messages_consumed` y `kafka.consume_errors` |
+| `messaging.client.sent.messages` | Contador, `{message}` | `messaging.system`, `messaging.operation.name`, `messaging.destination.name`; `error.type` en un envío fallido | Core (relay) e invoicing (productor de `invoices` y `credit_notes.results`) | Existe (S7.1 en el core; S7.2 en invoicing); reemplaza `kafka.messages_sent` y `kafka.send_errors` |
+| `messaging.process.duration` | Histograma, s | `messaging.system`, `messaging.operation.name`, `messaging.destination.name`, `messaging.consumer.group.name`; `error.type` si el handler falló | Core e invoicing (consumidores), por intento | Existe (S7.1 en el core; S7.2 en invoicing, que reemplaza `kafka.consumer.message.*` y `kafka.consumer.retry.count`); reemplaza `kafka.messages_consumed` y `kafka.consume_errors` |
 | `faclab.outbox.pending` | Gauge observable, `{message}` | `messaging.destination.name` | Core worker (`queue_metrics`) | Existe (S7.1) |
 | `faclab.outbox.oldest_age` | Gauge observable, s | `messaging.destination.name` | Core worker (`queue_metrics`) | Existe (S7.1); 0 sin pendientes |
 | `faclab.outbox.failed` | Gauge observable, `{message}` | `messaging.destination.name` | Core worker (`queue_metrics`) | Existe (S7.1) |
-| `faclab.dead_letters.pending` | Gauge observable, `{message}` | `messaging.destination.name` (`service.name` va en el recurso) | Ambos | Existe en el core (S7.1, `queue_metrics`); falta en invoicing (S7.2), que tiene `dlq.message.count` como contador; desde S4.3 cuenta los mensajes que guarda en su tabla `dead_letters` |
+| `faclab.dead_letters.pending` | Gauge observable, `{message}` | `messaging.destination.name` (`service.name` va en el recurso) | Ambos | Existe en el core (S7.1, `queue_metrics`) y en invoicing (S7.2, el muestreo del worker sobre su tabla `dead_letters`; reemplaza el contador `dlq.message.count`) |
 | `kafka.consumer_group.lag` | Gauge | `group`, `topic` | Collector (`kafkametrics`) | Falta |
-| `faclab.sri.request.duration` | Histograma, s | `faclab.sri.operation`, `faclab.sri.outcome` | Invoicing | Existe como `soap.call.duration` |
+| `faclab.sri.request.duration` | Histograma, s | `faclab.sri.operation` (`recepcion`, `autorizacion`), `faclab.sri.outcome` (`ok`, `timeout`, `error`), `faclab.sri.environment` (`pruebas`, `produccion`) | Invoicing (adaptadores SRI) | Existe (S7.2); reemplaza `soap.call.duration`. `faclab.sri.environment` se agregó para el filtro del dashboard 4. `error` es una llamada sin respuesta: un DEVUELTA es `ok` y se cuenta en `faclab.invoices.rejections` |
+| `faclab.invoices.step.duration` | Histograma, s | `faclab.invoice.step` (`prepare`, `sign`, `send`, `authorize`), `faclab.step.outcome` (`advanced`, `blocked`, `invalid`, `retry`, `conflict`), `faclab.document.type` | Invoicing (decorador de los pasos) | Existe (S7.2, lo que S4.2 dejó pendiente). El resultado es la clase del issue que deja el paso |
+| `faclab.invoices.due` | Gauge observable, `{document}` | — | Invoicing worker (muestreo) | Existe (S7.2): filas de la cola vencidas que nadie tiene; un valor que crece indica pocos workers |
+| `faclab.invoices.expired_leases` | Gauge observable, `{document}` | — | Invoicing worker (muestreo) | Existe (S7.2): retenidas por un worker cuyo lease venció (un worker que murió) |
+| `faclab.invoices.deliveries` | Contador, `{delivery}` | `result` (`sent`, `bounced`, `retry`, `failed`, `no_recipient`, `disabled`) | Invoicing (worker de entregas) | Existe (S7.2, lo que S4.4 dejó pendiente) |
+| `faclab.invoices.pending_deliveries` | Gauge observable, `{delivery}` | — | Invoicing worker (muestreo) | Existe (S7.2) |
 | `faclab.webhooks.deliveries` | Contador, `{delivery}` | `result` (`delivered`, `retry`, `failed`) | Core worker | Existe (S6.4) |
 | `faclab.auth.login.attempts` | Contador, `{attempt}` | `result` (`success`, `invalid`, `locked`, `no_tenant`) | Core (ruta de login) | Existe (S7.1). `no_tenant`: contraseña correcta, pero sin ninguna empresa activa (ni éxito ni fuerza bruta) |
 | Host, contenedores, PostgreSQL | Varias | Estándar de cada receptor | Collector | Falta |
@@ -237,20 +243,26 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.sales.cancelled`, `faclab.refunds.completed` | Contadores | `faclab.sale.source` | Devoluciones y anulaciones. Existen (S7.1); `cancelled` solo cuenta ventas confirmadas que se anulan (descartar un borrador no es una anulación) |
 | `faclab.inventory.movements` | Contador | `faclab.movement.type` (`in`, `out`), `faclab.movement.source` | Volumen de inventario. Existe (S7.1): se cuenta en el repositorio de movimientos, por donde escriben los documentos y `TerminalStock` |
 | `faclab.inventory.stock_rejections` | Contador | `faclab.movement.source` | Intentos de vender sin stock. Existe (S7.1): ventas (`sale`), reserva de una transferencia (`transfer`) y la salida de cualquier otro documento en el handler de movimientos |
-| `faclab.invoices.transitions` | Contador | `from`, `to` (estados) | Flujo de facturación |
-| `faclab.invoices.pending` | Gauge | `status`, `faclab.issue.type` | Comprobantes sin estado final |
-| `faclab.invoices.time_to_final` | Histograma, s | `result` (`authorized`, `rejected`) | Tiempo desde la venta hasta el resultado del SRI |
-| `faclab.invoices.rejections` | Contador | `faclab.sri.message.code` (código SRI, acotado) | Rechazos tributarios |
-| `faclab.certificates.expiring` | Gauge | `window` (`30d`, `7d`, `expired`) | Cuántos certificados vencen pronto; el detalle por empresa va en un log diario `certificate.expiring` |
+| `faclab.invoices.transitions` | Contador | `from`, `to` (estados), `faclab.document.type` | Flujo de facturación. Existe (S7.2): cuenta cada cambio de estado que un paso guardó, en el worker y en el reintento manual |
+| `faclab.invoices.pending` | Gauge observable | `status`, `faclab.issue.type` (el código del issue, `none` o `other`), `faclab.document.type` | Comprobantes sin estado final. Existe (S7.2): el worker lo muestrea cada `WORKER_METRICS_INTERVAL_MS` (60 s) en todas las empresas; cada estado de cada tipo reporta, en 0 si no hay |
+| `faclab.invoices.oldest_age` | Gauge observable, s | `status` | Edad del comprobante sin estado final más antiguo (desde que llegó); 0 sin pendientes. Existe (S7.2), para la alerta de facturas atascadas |
+| `faclab.invoices.time_to_final` | Histograma, s | `result` (`authorized`, `rejected`), `faclab.document.type` | Tiempo desde la venta hasta el resultado del SRI. Existe (S7.2): desde el `occurred_at` del mensaje (`requested_at`: la confirmación o un reenvío) hasta el estado final; los anteriores a S4.1, desde que llegaron |
+| `faclab.invoices.rejections` | Contador | `faclab.sri.message.code` (identificador SRI de 1 a 4 dígitos, `other` o `none`), `faclab.sri.operation` | Rechazos tributarios. Existe (S7.2): DEVUELTA (salvo los 43 y 70 de una clave que el SRI ya tiene) y NO AUTORIZADO, con el código del primer error. Los rechazos antes del SRI (consumidor final sobre el límite, nota de crédito sin factura) solo se ven en `faclab.invoices.transitions` desde `pending` |
+| `faclab.certificates.expiring` | Gauge observable | `window` (`30d`, `7d`, `expired`) | Cuántos certificados vencen pronto; el detalle por empresa va en un log diario `certificate.expiring`. Existe (S7.2): solo el certificado que cada emisor seleccionó; ventanas exclusivas (`7d`: hasta 7 días; `30d`: de 8 a 30); se muestrea con las demás para que una renovación se vea enseguida, y el log (WARN `certificate.expiring`, ERROR `certificate.expired`, sin el sujeto del certificado) sale al arrancar el worker y cada 24 h |
 | `faclab.reconciliation.discrepancies` | Gauge observable | `kind` (`confirmed_without_result`, `authorized_on_cancelled`) | Operaciones que requieren conciliación. Existe (S4.3; observable desde S7.1, antes se exportaba una sola vez por pasada): la tarea `invoice_reconciliation` del worker la fija después de cada pasada con las abiertas de todas las empresas por tipo (las revisadas no cuentan). Sus logs: `invoice_discrepancy_detected` (WARN, una por discrepancia nueva, con la venta y el tipo), `invoice_reconciliation_done` (INFO si abrió o cerró alguna, DEBUG si no) e `invoice_reconciliation_failed` (ERROR, la empresa que falló) |
 
 `faclab.movement.source` es el `reference_type` del movimiento (`sale`, `refund`, `purchase_order`,
 `supplier_return`, `adjustment`, `transfer`), `manual` sin referencia y `other` para cualquier tipo nuevo
 que no esté en esa lista, así que sigue acotado.
 
+`faclab.document.type` (`invoice`, `credit_note`) en las métricas de comprobantes es una desviación
+del estándar (S7.2): facturas y notas de crédito pasan por la misma cola y conviene separarlas.
+
 **Prohibido como etiqueta de métrica:** ids de venta, factura, usuario, cliente, producto o empresa.
 `tests/unit/shared/test_metric_attributes.py` emite cada métrica de S7.1 por su camino real y falla si
-un atributo no es uno de los permitidos, si su clave termina en `id` o si su valor parece un id.
+un atributo no es uno de los permitidos, si su clave termina en `id` o si su valor parece un id. En
+facturación hace lo mismo `test/shared/metric-attributes.test.ts` (S7.2), con el catálogo de sus 15
+métricas.
 Excepción evaluada y rechazada: certificados por empresa (se resuelve con conteos por ventana más un
 log con el detalle).
 
@@ -356,6 +368,19 @@ también cubre lo que la instrumentación de pino envía por OTLP. `sdk.shutdown
 - Spans de Kafka con kind PRODUCER y CONSUMER e inyección del span del productor.
 - Recurso y nombres de atributos idénticos a los de Python.
 
+Métricas (S7.2): el catálogo está en `src/shared/telemetry/metrics.ts`.
+
+- **Instrumentos perezosos.** El API de OpenTelemetry para JS no tiene meter proxy: un instrumento creado
+  al importar el módulo, antes de que el SDK registre su proveedor, quedaría no-op. Cada uno se crea en
+  su primer uso con el proveedor vigente.
+- **Pasos medidos por un decorador.** `measureSteps` envuelve el mapa de comandos: lo usan el worker y
+  el reintento manual, y solo cuenta lo que un paso guardó (transiciones, duración, tiempo a
+  resultado). La capa de aplicación no importa OpenTelemetry.
+- **Gauges de la base, observables.** Igual que en el core (`ObservedGauge` porta `ObservedValues`): el
+  worker muestrea cola, entregas, mensajes fallidos y certificados cada `WORKER_METRICS_INTERVAL_MS`
+  (60 s) y la muestra caduca a los tres intervalos. Cada worker reporta la suya: los paneles agregan
+  con `max`.
+
 ### 9.3 Navegador (faclab-web)
 
 - `@opentelemetry/sdk-trace-web` con instrumentación de `fetch`/XHR y carga de documento.
@@ -397,7 +422,7 @@ en 4317.
 | S1.5 | Corregir correlación, middleware, SQL, recurso, sampler, niveles, redacción, spans de Kafka, apagado de invoicing; SigNoz local conectado a `faclab_network` (terminada 2026-10-15) |
 | S4.3 | `faclab.reconciliation.discrepancies` y los logs de la conciliación (terminada 2026-10-30) |
 | S7.1 | Métricas técnicas y de negocio del core (outbox, fallidos, pool, ventas, inventario, login; `kafka.*` renombradas a `messaging.*`) (terminada 2026-11-21) |
-| S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, certificados) |
+| S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, rechazos, cola, entregas, certificados; `kafka.*` y `dlq.message.count` renombradas a `messaging.*` y `faclab.dead_letters.pending`) (terminada 2026-11-21) |
 | S7.3 | SDK web, errores de interfaz y web vitals |
 | S7.4 | Collector con receptores de host, Docker, PostgreSQL, Kafka y httpcheck |
 | S7.5 | Dashboards y alertas como código, con runbooks |
