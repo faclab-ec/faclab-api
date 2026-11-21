@@ -530,6 +530,26 @@
   - **Despliegue:** sin migraciones. Variable opcional nueva `WORKER_METRICS_INTERVAL_MS` (60000).
     `soap.call.duration`, `kafka.consumer.*` y `dlq.message.count` dejan de existir. Reiniciar el API y
     el worker de facturación; no depende de otro repo.
+- **Telemetría del navegador, lo que quedó de S7.3** (2026-11-21):
+  - **`/otlp` en producción:** la ruta del Caddy de entrada hacia el receptor OTLP/HTTP del Collector,
+    con `request_body max_size` y límite por IP (S8.1).
+    - En el Collector propio, `max_request_body_size` en ese receptor y aceptar por esa vía solo
+      `service.name=faclab-web` (S7.4).
+    - En local, el proxy de Vite no limita nada; el SDK sí acota su cola (512 spans) y sus lotes (64).
+  - **Fuera del alcance de S7.3:**
+    - las llamadas anteriores a la carga del chunk del SDK, como el `/me` inicial, no se trazan;
+    - no hay spans de interacción del usuario, porque necesitarían `zone.js`.
+  - **Paneles y alertas** de `ui.error` y `faclab.web_vitals.*`: S7.5.
+  - **Invoicing toma el `x-request-id` entrante sin validarlo y no lo devuelve en la respuesta.** Su
+    envelope de error ya trae `meta.requestId`, así que la web lo muestra igual.
+  - **El muestreo descarta también los errores.** Con `OTEL_SAMPLING_RATE` menor que 1 se pierde esa
+    fracción de los `ui.error`.
+  - **Despliegue:**
+    - faclab-web con variables opcionales nuevas: `OTEL_ENABLED` (false), `OTLP_URL` (`/otlp`),
+      `OTEL_SAMPLING_RATE` (1) y `ENVIRONMENT` (`production`). Su imagen acepta
+      `--build-arg SERVICE_VERSION`.
+    - El core y la facturación solo agregan pruebas.
+    - Sin migraciones; en cualquier orden.
 
 ## 2. Dependencias
 
