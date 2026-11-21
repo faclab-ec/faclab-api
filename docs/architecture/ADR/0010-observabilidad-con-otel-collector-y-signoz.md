@@ -38,3 +38,15 @@ dashboards versionados.
 - El Collector agrega un contenedor por VPS.
 - La versión de SigNoz se fija al desplegar (S8.6); antes de implementar dashboards y alertas se
   verifica qué soporta esa versión.
+
+## Implementación
+
+- **S1.5:** el SDK y el recurso común de core e invoicing.
+- **S7.1 a S7.3:** las métricas de los servicios y el SDK del navegador.
+- **S7.4 (2026-11-21):** el punto 2, en faclab-infra.
+  - El servicio `collector` con `otel/opentelemetry-collector-contrib:0.165.0`.
+  - Redacción con `transform`.
+  - Docker a través de un proxy de solo lectura y PostgreSQL con `faclab_monitor` (`pg_monitor`).
+  - En local, SigNoz sin puertos en el host, así que no hay camino directo.
+  - El detalle está en [OBSERVABILITY.md §2.1](../OBSERVABILITY.md#21-implementación-s74).
+  - El TLS real y el Collector del VPS quedan para S8.1 y S8.6.

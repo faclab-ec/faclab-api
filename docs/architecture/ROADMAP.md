@@ -507,8 +507,8 @@
     `faclab.webhooks.deliveries` que S6.4 dejaba para S7.1.
   - ~~faclab-invoicing todavía usa `kafka.consumer.*` y `dlq.message.count`~~: S7.2 las alineó con
     `messaging.*` y `faclab.dead_letters.pending`.
-  - `kafka.consumer_group.lag` y las métricas de PostgreSQL, del host y de los contenedores las
-    agrega el Collector (S7.4).
+  - ~~`kafka.consumer_group.lag` y las métricas de PostgreSQL, del host y de los contenedores las
+    agrega el Collector (S7.4)~~: hecho en S7.4.
   - Un fallo en el commit mismo de una venta (un `CHECK` de `stocks`, 409 `INTEGRITY_ERROR`) no se
     cuenta en `faclab.sales.failed`: `sale_attempt` envuelve el handler y el commit ocurre después.
   - Los rechazos de stock de una venta con `INSUFFICIENT_STOCK` que no lanza `TerminalStock`
@@ -522,7 +522,7 @@
     S7.5.
   - Con varios workers de facturación, cada uno reporta su muestra de los gauges (los paneles agregan
     con `max`) y el log diario de certificados sale una vez por worker y por arranque.
-  - Lag del consumidor de facturación y métricas de su PostgreSQL: S7.4.
+  - ~~Lag del consumidor de facturación y métricas de su PostgreSQL: S7.4~~: hecho en S7.4.
   - `event.name` en el resto de los logs de facturación: hoy solo lo llevan los de certificados
     (S7.6 o una sesión de logs).
   - El muestreo recorre las facturas en vuelo cada 60 s (`ix_invoices_status_created_at`); revisar su
@@ -533,8 +533,9 @@
 - **Telemetría del navegador, lo que quedó de S7.3** (2026-11-21):
   - **`/otlp` en producción:** la ruta del Caddy de entrada hacia el receptor OTLP/HTTP del Collector,
     con `request_body max_size` y límite por IP (S8.1).
-    - En el Collector propio, `max_request_body_size` en ese receptor y aceptar por esa vía solo
-      `service.name=faclab-web` (S7.4).
+    - ~~En el Collector propio, `max_request_body_size` en ese receptor y aceptar por esa vía solo
+      `service.name=faclab-web` (S7.4)~~: hecho en S7.4 (`otlp/browser` en `:4318`, 1 MiB,
+      `filter/browser`).
     - En local, el proxy de Vite no limita nada; el SDK sí acota su cola (512 spans) y sus lotes (64).
   - **Fuera del alcance de S7.3:**
     - las llamadas anteriores a la carga del chunk del SDK, como el `/me` inicial, no se trazan;
@@ -550,6 +551,37 @@
       `--build-arg SERVICE_VERSION`.
     - El core y la facturación solo agregan pruebas.
     - Sin migraciones; en cualquier orden.
+- **Collector e infraestructura, lo que quedó de S7.4** (2026-11-21):
+  - **Collector de producción** (S8.1):
+    - no publicar `4317` ni `4318` fuera del VPS: los servicios por la red interna y el navegador por la
+      ruta `/otlp` de Caddy;
+    - `CORE_HEALTH_URL` al API de producción (`:8080`) y `COLLECTOR_ENVIRONMENT=production`;
+    - `faclab_monitor` con su contraseña en las dos bases.
+  - **Destino con TLS** y, si D-1 elige SigNoz Cloud, su llave de ingesta (encabezado del exportador):
+    S8.6.
+  - **Muestreo `tail_sampling`** en el Collector (100 % de errores y lentas), cuando el volumen lo pida
+    (§5.3).
+  - **Prueba automática de la redacción** del Collector en CI (exportador a archivo y un span con
+    `password`): S7.6. Hoy CI valida la configuración y la redacción se comprobó a mano contra SigNoz.
+  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`) y un
+    healthcheck en el compose: la imagen es distroless, sin shell; con la extensión `health_check` y un
+    chequeo externo (S7.5 o S8.1).
+  - **TLS hacia el proxy de Docker.** `docker_stats` avisa que el TCP sin TLS está obsoleto desde
+    Docker 26. Se acepta porque la red `docker_api` es interna y solo la comparte con el Collector.
+  - **Duración de transacciones de PostgreSQL** (dashboard 5): el receptor no la da sin sus muestras
+    de consultas, que llevan texto SQL y quedan apagadas. Se decide en S7.5 (con `pg_stat_activity` por
+    una consulta propia o sin ese panel).
+  - **El worker del core no tiene `/health` HTTP:** su salud la da el healthcheck del contenedor
+    (`docker_stats` lo ve como contenedor). El httpcheck cubre el API del core y el de la facturación.
+  - **Despliegue:**
+    - faclab-infra con dos servicios nuevos (`collector`, `docker-socket-proxy`) y una red interna.
+    - El overlay de SigNoz le quita a su collector los puertos del host.
+    - `invoicing-db` crea `faclab_monitor`: en un volumen existente hay que correr su script de inicio
+      otra vez.
+    - En el core, `DATABASE_URL_MONITOR` (opcional) y `make db-roles`. Cada servicio apunta su endpoint
+      OTLP al Collector (`http://collector:4317`).
+    - Sin migraciones. Orden: faclab-infra (Collector), después `make db-roles` en el core, después los
+      endpoints de los servicios.
 
 ## 2. Dependencias
 
