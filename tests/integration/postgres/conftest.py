@@ -45,12 +45,14 @@ def _test_database_url():
 
 
 def _role_urls(url) -> RoleUrls:
-    """The roles of the app, the worker and the migrations, on the test database"""
+    """The roles of the app, the worker and the migrations, on the test database,
+    and faclab_monitor when TEST_DATABASE_URL_MONITOR names it (S7.4)"""
     roles = RoleUrls.parse(
         admin=os.environ["TEST_DATABASE_URL"],
         owner=os.environ["DATABASE_URL_MIGRATIONS"],
         app=os.environ["DATABASE_URL"],
         worker=os.environ["DATABASE_URL_WORKER"],
+        monitor=os.environ.get("TEST_DATABASE_URL_MONITOR") or None,
     )
     if roles.database != url.database:
         raise RuntimeError("the role URLs must name the database of TEST_DATABASE_URL")

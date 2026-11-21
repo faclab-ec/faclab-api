@@ -139,6 +139,33 @@ def test_only_the_worker_bypasses_rls(pg_engine):
     assert make_url(config.DB_WORKER_CONNECTION_STRING).username == "faclab_worker"
 
 
+@pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL_MONITOR"),
+    reason="faclab_monitor is optional: TEST_DATABASE_URL_MONITOR bootstraps it",
+)
+def test_the_monitor_reads_statistics_and_no_table(pg_engine):
+    """The OTel Collector's user (S7.4): pg_monitor, never a row of a table"""
+    monitor = create_engine(os.environ["TEST_DATABASE_URL_MONITOR"])
+    try:
+        with monitor.connect() as conn:
+            member = conn.scalar(
+                text("SELECT pg_has_role(current_user, 'pg_monitor', 'MEMBER')")
+            )
+            databases = conn.scalar(text("SELECT count(*) FROM pg_stat_database"))
+            with pytest.raises(ProgrammingError) as error:
+                conn.execute(text("SELECT 1 FROM products LIMIT 1"))
+    finally:
+        monitor.dispose()
+
+    assert member is True
+    assert databases > 0
+    assert _sqlstate(error) == INSUFFICIENT_PRIVILEGE
+    assert _row(
+        pg_engine,
+        "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'faclab_monitor'",
+    ) == (False, False)
+
+
 def test_faclab_owner_owns_every_table(pg_engine):
     others = _scalars(
         pg_engine,

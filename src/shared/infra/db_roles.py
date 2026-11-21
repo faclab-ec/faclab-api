@@ -6,8 +6,10 @@ Usage:
 Each URL names a role and its password: `DATABASE_URL` → `faclab_app` (the API,
 under row-level security), `DATABASE_URL_WORKER` → `faclab_worker` (BYPASSRLS:
 the outbox relay and platform lookups) and `DATABASE_URL_MIGRATIONS` →
-`faclab_owner` (owns the tables and runs the migrations). With the superuser of
-`DATABASE_URL_ADMIN` it creates or updates the three roles, creates the database
+`faclab_owner` (owns the tables and runs the migrations). The optional
+`DATABASE_URL_MONITOR` → `faclab_monitor` is the OTel Collector's user (S7.4):
+`pg_monitor` reads the server's statistics and no table. With the superuser of
+`DATABASE_URL_ADMIN` it creates or updates the roles, creates the database
 owned by `faclab_owner` and hands it any table, sequence or type of `public` that
 another role owns (a database migrated before S2.4). Table privileges and the
 policies come with the migrations. Passwords go to the server already hashed and
@@ -30,36 +32,42 @@ logger = structlog.get_logger(__name__)
 OWNER = "faclab_owner"
 APP = "faclab_app"
 WORKER = "faclab_worker"
+MONITOR = "faclab_monitor"
 
 _COMMON = "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"
 ATTRIBUTES = {
     OWNER: f"{_COMMON} NOBYPASSRLS",
     APP: f"{_COMMON} NOBYPASSRLS",
     WORKER: f"{_COMMON} BYPASSRLS",
+    MONITOR: f"{_COMMON} NOBYPASSRLS",
 }
 
 
 class RoleConfigError(ValueError):
-    """The role URLs don't describe the three roles of one database"""
+    """The role URLs don't describe the roles of one database"""
 
 
 @dataclass(frozen=True)
 class RoleUrls:
-    """The superuser's URL and one URL per role; `URL` masks the passwords in
-    its repr, so a traceback never shows them"""
+    """The superuser's URL and one URL per role (the monitor's is optional);
+    `URL` masks the passwords in its repr, so a traceback never shows them"""
 
     admin: URL
     owner: URL
     app: URL
     worker: URL
+    monitor: URL | None = None
 
     @classmethod
-    def parse(cls, admin: str, owner: str, app: str, worker: str) -> "RoleUrls":
+    def parse(
+        cls, admin: str, owner: str, app: str, worker: str, monitor: str | None = None
+    ) -> "RoleUrls":
         urls = cls(
             admin=_parse("the admin URL", admin),
             owner=_parse(f"the URL for {OWNER}", owner),
             app=_parse(f"the URL for {APP}", app),
             worker=_parse(f"the URL for {WORKER}", worker),
+            monitor=_parse(f"the URL for {MONITOR}", monitor) if monitor else None,
         )
         urls.validate()
         return urls
@@ -69,7 +77,10 @@ class RoleUrls:
         return self.owner.database or ""
 
     def roles(self) -> dict[str, URL]:
-        return {OWNER: self.owner, APP: self.app, WORKER: self.worker}
+        roles = {OWNER: self.owner, APP: self.app, WORKER: self.worker}
+        if self.monitor is not None:
+            roles[MONITOR] = self.monitor
+        return roles
 
     def validate(self) -> None:
         for role, url in self.roles().items():
@@ -130,7 +141,7 @@ def _ensure_role(cursor: Any, connection: Any, role: str, password: str) -> bool
     return created
 
 
-def _ensure_database(cursor: Any, database: str) -> bool:
+def _ensure_database(cursor: Any, database: str, roles: list[str]) -> bool:
     from psycopg2 import sql
 
     cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (database,))
@@ -142,11 +153,18 @@ def _ensure_database(cursor: Any, database: str) -> bool:
         sql.SQL(statement).format(sql.Identifier(database), sql.Identifier(OWNER))
     )
     cursor.execute(
-        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}, {}").format(
-            sql.Identifier(database), sql.Identifier(APP), sql.Identifier(WORKER)
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(database),
+            sql.SQL(", ").join(sql.Identifier(role) for role in roles),
         )
     )
     return created
+
+
+def _grant_monitoring(cursor: Any) -> None:
+    from psycopg2 import sql
+
+    cursor.execute(sql.SQL("GRANT pg_monitor TO {}").format(sql.Identifier(MONITOR)))
 
 
 # Objects of `public` owned by another role: tables (their serial sequences
@@ -194,7 +212,10 @@ def bootstrap(urls: RoleUrls) -> None:
         for role, url in urls.roles().items():
             created = _ensure_role(cursor, connection, role, url.password or "")
             logger.info("db_role_ready", role=role, created=created)
-        created = _ensure_database(cursor, urls.database)
+        if urls.monitor is not None:
+            _grant_monitoring(cursor)
+        connect = [role for role in urls.roles() if role != OWNER]
+        created = _ensure_database(cursor, urls.database, connect)
         logger.info(
             "db_database_ready", database=urls.database, owner=OWNER, created=created
         )
@@ -219,6 +240,7 @@ def main() -> int:
             owner=env.str("DATABASE_URL_MIGRATIONS"),
             app=env.str("DATABASE_URL"),
             worker=env.str("DATABASE_URL_WORKER"),
+            monitor=env.str("DATABASE_URL_MONITOR", "") or None,
         )
     except (EnvError, RoleConfigError) as exc:
         logger.error("db_roles_invalid_config", error=str(exc))

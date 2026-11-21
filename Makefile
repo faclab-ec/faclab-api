@@ -23,6 +23,7 @@ test-integration:  ## Run the Postgres integration tests on a throwaway <db>_tes
 		TEST_DATABASE_URL_APP="$${DATABASE_URL%/*}/$$DB" \
 		TEST_DATABASE_URL_WORKER="$${DATABASE_URL_WORKER%/*}/$$DB" \
 		TEST_DATABASE_URL_MIGRATIONS="$${DATABASE_URL_MIGRATIONS%/*}/$$DB" \
+		TEST_DATABASE_URL_MONITOR="$${DATABASE_URL_MONITOR:+$${DATABASE_URL_MONITOR%/*}/$$DB}" \
 		pytest tests/integration/postgres $(args)'
 
 lint:  ## Fix linter errors

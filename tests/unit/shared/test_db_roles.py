@@ -1,11 +1,13 @@
-"""The role URLs of `python -m src.shared.infra.db_roles` (S2.4). The SQL runs
-against PostgreSQL in the integration tests, whose fixture bootstraps the roles."""
+"""The role URLs of `python -m src.shared.infra.db_roles` (S2.4, faclab_monitor
+in S7.4). The SQL runs against PostgreSQL in the integration tests, whose fixture
+bootstraps the roles."""
 
 import pytest
 
 from src.shared.infra.db_roles import (
     APP,
     ATTRIBUTES,
+    MONITOR,
     OWNER,
     WORKER,
     RoleConfigError,
@@ -43,9 +45,20 @@ def test_three_roles_of_one_database():
     }
 
 
+def test_the_monitor_is_optional():
+    assert _parse().monitor is None
+    assert MONITOR not in _parse().roles()
+
+    urls = _parse(monitor=_url(MONITOR))
+
+    assert urls.roles()[MONITOR].username == MONITOR
+    assert list(urls.roles()) == [OWNER, APP, WORKER, MONITOR]
+
+
 def test_only_the_worker_bypasses_row_level_security():
     assert "NOBYPASSRLS" in ATTRIBUTES[OWNER]
     assert "NOBYPASSRLS" in ATTRIBUTES[APP]
+    assert "NOBYPASSRLS" in ATTRIBUTES[MONITOR]
     assert ATTRIBUTES[WORKER].endswith(" BYPASSRLS")
     assert all("NOSUPERUSER" in attributes for attributes in ATTRIBUTES.values())
 
@@ -62,6 +75,10 @@ def test_only_the_worker_bypasses_row_level_security():
         {"owner": f"postgresql://{OWNER}:{SECRET}@db:5432"},
         {"owner": f"postgresql://{OWNER}:{SECRET}@db:5432/"},
         {"app": f"not a url {SECRET}"},
+        {"monitor": _url(APP)},
+        {"monitor": f"postgresql://{MONITOR}@db:5432/faclab"},
+        {"monitor": _url(MONITOR, host="elsewhere")},
+        {"monitor": _url(MONITOR, database="other")},
     ],
     ids=[
         "app-as-superuser",
@@ -73,6 +90,10 @@ def test_only_the_worker_bypasses_row_level_security():
         "no-database",
         "empty-database",
         "garbage",
+        "monitor-as-app",
+        "monitor-without-password",
+        "monitor-elsewhere",
+        "monitor-other-database",
     ],
 )
 def test_inconsistent_urls_are_rejected_without_the_password(overrides):
