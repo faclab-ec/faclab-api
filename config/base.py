@@ -96,6 +96,8 @@ class BaseConfig:
     #
     RUN_BACKGROUND = env.bool("RUN_BACKGROUND", True)
     WORKER_PURGE_INTERVAL_SECONDS = env.float("WORKER_PURGE_INTERVAL_SECONDS", 3600.0)
+    # The queue gauges (outbox, dead letters) query the database this often (S7.1)
+    WORKER_METRICS_INTERVAL_SECONDS = env.float("WORKER_METRICS_INTERVAL_SECONDS", 60.0)
     # Last successful cycle of each task, read by the container's health check
     WORKER_HEALTH_FILE = env.str("WORKER_HEALTH_FILE", "/tmp/faclab-worker-health.json")
     # Credit notes (S4.5, only with KAFKA_ENABLED): false stops asking for them, the

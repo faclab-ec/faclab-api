@@ -19,6 +19,7 @@ contexto; uno con una empresa que no es un UUID se descarta.
 import asyncio
 import json
 import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 from uuid import UUID
@@ -31,10 +32,7 @@ from opentelemetry.propagate import extract
 
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.kafka.dead_letters import DeadLetter
-from src.shared.infra.telemetry_instruments import (
-    kafka_consume_errors,
-    kafka_messages_consumed,
-)
+from src.shared.infra.telemetry_instruments import messaging_process_duration
 from src.shared.infra.tenant import TENANT_HEADER, tenant_scope
 
 logger = structlog.get_logger(__name__)
@@ -323,6 +321,14 @@ class KafkaMessageConsumer:
             kind=trace.SpanKind.CONSUMER,
             attributes=attributes,
         ) as span:
+            # Bounded: no partition or offset, only where it came from
+            metric_attributes = {
+                "messaging.system": "kafka",
+                "messaging.operation.name": "process",
+                "messaging.destination.name": topic,
+                "messaging.consumer.group.name": self._group_id,
+            }
+            start = time.perf_counter()
             try:
                 if tenant_id is None:
                     self._handlers[topic](message)
@@ -331,12 +337,17 @@ class KafkaMessageConsumer:
                     with tenant_scope(context):
                         self._handlers[topic](message)
             except Exception as exc:
-                kafka_consume_errors.add(1, {"kafka.topic": topic})
+                messaging_process_duration.record(
+                    time.perf_counter() - start,
+                    {**metric_attributes, "error.type": type(exc).__name__},
+                )
                 logger.exception("kafka_message_failed", topic=topic)
                 span.record_exception(exc)
                 span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
                 raise
-        kafka_messages_consumed.add(1, {"kafka.topic": topic})
+            messaging_process_duration.record(
+                time.perf_counter() - start, metric_attributes
+            )
 
 
 def _carrier(headers: Sequence[tuple[str, bytes]]) -> dict[str, str]:

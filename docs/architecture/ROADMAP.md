@@ -500,6 +500,19 @@
     desplegado.
   - `make public-openapi-invoicing` copia el contrato de facturación a mano; un job que compare la
     copia con la de `master` de faclab-invoicing avisaría si se desactualiza.
+- **Métricas del core, lo que quedó de S7.1** (2026-11-21):
+  - Paneles y alertas sobre las métricas nuevas: S7.5. Esto incluye el panel de
+    `faclab.webhooks.deliveries` que S6.4 dejaba para S7.1.
+  - faclab-invoicing todavía usa `kafka.consumer.*` y `dlq.message.count`. Las alinea con
+    `messaging.*` y `faclab.dead_letters.pending` en S7.2.
+  - `kafka.consumer_group.lag` y las métricas de PostgreSQL, del host y de los contenedores las
+    agrega el Collector (S7.4).
+  - Un fallo en el commit mismo de una venta (un `CHECK` de `stocks`, 409 `INTEGRITY_ERROR`) no se
+    cuenta en `faclab.sales.failed`: `sale_attempt` envuelve el handler y el commit ocurre después.
+  - Los rechazos de stock de una venta con `INSUFFICIENT_STOCK` que no lanza `TerminalStock`
+    contarían también como `sale`. Hoy no existe otro.
+  - `faclab.outbox.failed` cuenta sobre todo el outbox (no hay un índice parcial de `failed`). Es
+    barato mientras la purga lo mantenga en `OUTBOX_RETENTION_DAYS`.
 
 ## 2. Dependencias
 

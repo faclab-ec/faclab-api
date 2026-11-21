@@ -218,3 +218,35 @@ def test_dispatch_raises_what_the_handler_raises():
 
     with pytest.raises(ConnectionError, match="database is down"):
         _consumer(failing).dispatch("invoices", b'{"saleId": "1"}')
+
+
+def test_processing_is_measured_by_topic_and_group(recorded_metrics):
+    consumer = _consumer(lambda _message: None)
+
+    consumer.process("invoices", b'{"saleId": "1"}')
+
+    collected = recorded_metrics.collect()
+    assert collected.units["messaging.process.duration"] == "s"
+    assert collected.points("messaging.process.duration") == [
+        (
+            1,
+            {
+                "messaging.system": "kafka",
+                "messaging.operation.name": "process",
+                "messaging.destination.name": "invoices",
+                "messaging.consumer.group.name": "test",
+            },
+        )
+    ]
+
+
+def test_a_failed_handler_is_measured_with_its_error_type(recorded_metrics):
+    def failing(_message):
+        raise ConnectionError("database is down")
+
+    _consumer(failing).process("invoices", b'{"saleId": "1"}')
+
+    ((_count, attributes),) = recorded_metrics.collect().points(
+        "messaging.process.duration"
+    )
+    assert attributes["error.type"] == "ConnectionError"

@@ -318,3 +318,32 @@ def test_handle_movement_created_with_location(mock_create_scope):
     created_stock = mock_repo.create.call_args[0][0]
     assert created_stock.product_id == 10
     assert created_stock.quantity == 5
+
+
+@patch("src.inventory.stock.infra.event_handlers.create_sync_scope")
+def test_a_rejected_out_is_counted_by_its_document(mock_create_scope, recorded_metrics):
+    mock_repo = Mock()
+    mock_repo.first_for_update.return_value = Stock(
+        id=1, product_id=10, quantity=Decimal(1)
+    )
+    mock_scope = Mock()
+    mock_scope.get.return_value = mock_repo
+    mock_create_scope.return_value.__enter__.return_value = mock_scope
+
+    for reference_type in ("supplier_return", None):
+        with pytest.raises(InsufficientStockError):
+            handle_movement_created(
+                MovementCreated(
+                    aggregate_id=7,
+                    product_id=10,
+                    quantity=Decimal(-5),
+                    type=MovementType.OUT.value,
+                    reference_type=reference_type,
+                )
+            )
+
+    points = recorded_metrics.collect().points("faclab.inventory.stock_rejections")
+    assert sorted(points, key=str) == [
+        (1, {"faclab.movement.source": "manual"}),
+        (1, {"faclab.movement.source": "supplier_return"}),
+    ]

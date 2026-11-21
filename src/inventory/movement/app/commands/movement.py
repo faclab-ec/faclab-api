@@ -126,6 +126,7 @@ class CreateMovementCommandHandler(CommandHandler[CreateMovementCommand, dict]):
                 reason=movement.reason,
                 date=movement.date,
                 unit_cost=movement.unit_cost,
+                reference_type=movement.reference_type,
             ),
             session=self.session,
         )

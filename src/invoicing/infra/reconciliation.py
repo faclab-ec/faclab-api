@@ -4,7 +4,9 @@ El worker la corre cada INVOICE_RECONCILIATION_INTERVAL_SECONDS. Busca como
 faclab_worker las empresas con ventas confirmadas sin resultado de facturación
 desde hace INVOICE_RECONCILIATION_PENDING_MINUTES, o con discrepancias de ese
 tipo sin resolver, y en cada una corre `ReconcileInvoicesCommand` en su contexto
-(bajo RLS). Al final publica cuántas hay abiertas por tipo.
+(bajo RLS). Al final publica cuántas hay abiertas por tipo (el gauge observable
+`faclab.reconciliation.discrepancies`, que exporta ese conteo hasta la pasada
+siguiente).
 
 Solo usa el estado que el core ya tiene (`invoice_status`, `invoice_requested_at`):
 no consulta a faclab-invoicing. Dos workers a la vez solo repiten trabajo, el
@@ -28,7 +30,7 @@ from src.sales.domain.specifications import SalesAwaitingInvoice
 from src.sales.infra.models import SaleModel
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.events.scope import create_sync_scope
-from src.shared.infra.telemetry_instruments import reconciliation_discrepancies
+from src.shared.infra.telemetry_instruments import reconciliation_discrepancy_values
 
 logger = structlog.get_logger(__name__)
 
@@ -91,8 +93,12 @@ def reconcile() -> dict[str, int]:
         resolved += result["resolved"]
 
     open_now = open_by_kind(worker_session_maker())
-    for kind, count in open_now.items():
-        reconciliation_discrepancies.set(count, {"kind": kind})
+    # Exported until three passes are missed: then the series stops instead of
+    # showing a stale count
+    reconciliation_discrepancy_values.replace(
+        ((count, {"kind": kind}) for kind, count in open_now.items()),
+        max_age=config.INVOICE_RECONCILIATION_INTERVAL_SECONDS * 3,
+    )
     # A pass that changed nothing only shows in DEBUG (OBSERVABILITY.md 4.5)
     log = logger.info if opened or resolved or failed else logger.debug
     log(

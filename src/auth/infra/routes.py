@@ -30,6 +30,7 @@ from src.auth.infra.cookies import (
     set_refresh_cookie,
 )
 from src.auth.infra.dependencies import get_current_user
+from src.auth.infra.metrics import login_attempt
 from src.auth.infra.validators import (
     AuthenticatedUserResponse,
     BranchAccessResponse,
@@ -126,13 +127,14 @@ class AuthRouter:
         response: Response,
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[TokenPairResponse | TenantSelectionResponse]:
-        result = handler.handle(
-            LoginCommand(
-                username=credentials.username,
-                password=credentials.password,
-                ip_address=request.client.host if request.client else None,
+        with login_attempt():
+            result = handler.handle(
+                LoginCommand(
+                    username=credentials.username,
+                    password=credentials.password,
+                    ip_address=request.client.host if request.client else None,
+                )
             )
-        )
         if result.session is not None:
             return DataResponse(data=_session(response, result.session), meta=meta)
         if result.selection is None:

@@ -12,10 +12,7 @@ from opentelemetry import trace
 from opentelemetry.propagate import extract, inject
 
 from src.shared.infra.outbox.relay import BrokerUnavailableError
-from src.shared.infra.telemetry_instruments import (
-    kafka_messages_sent,
-    kafka_send_errors,
-)
+from src.shared.infra.telemetry_instruments import messaging_sent_messages
 
 logger = structlog.get_logger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -151,16 +148,24 @@ class KafkaEventProducer:
                 ),
                 self._loop,
             )
+            # Bounded: no message id, only what the destination is
+            metric_attributes = {
+                "messaging.system": "kafka",
+                "messaging.operation.name": "send",
+                "messaging.destination.name": topic,
+            }
             try:
                 future.result(timeout=5)
             except Exception as exc:
-                kafka_send_errors.add(1, {"kafka.topic": topic})
+                messaging_sent_messages.add(
+                    1, {**metric_attributes, "error.type": type(exc).__name__}
+                )
                 if _broker_unavailable(exc):
                     raise BrokerUnavailableError(
                         str(exc) or type(exc).__name__
                     ) from exc
                 raise
-            kafka_messages_sent.add(1, {"kafka.topic": topic})
+            messaging_sent_messages.add(1, metric_attributes)
             logger.info("kafka_message_sent", topic=topic, event_id=event_id)
 
     def close(self) -> None:

@@ -110,6 +110,7 @@ def create_wireup_container():
     import src.inventory.serial.infra.event_handlers  # noqa: F401
     import src.inventory.stock.infra.event_handlers  # noqa: F401
     import src.invoicing.infra.event_handlers  # noqa: F401
+    import src.pos.infra.event_handlers  # noqa: F401
     import src.purchasing.infra.event_handlers  # noqa: F401
 
     # After invoicing's: a sale.confirmed already shows its invoice PENDING
