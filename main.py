@@ -110,6 +110,7 @@ from src.shared.infra.middlewares import (
     http_exception_handler,
     request_validation_exception_handler,
 )
+from src.shared.infra.telemetry_instruments import initialize_counters
 from src.suppliers.infra.routes import (
     SupplierContactRouter,
     SupplierProductRouter,
@@ -132,6 +133,7 @@ logger = structlog.get_logger(__name__)
 # app are instrumented against them
 otel = OpenTelemetry()
 otel.setup(config.get_otel_config())
+initialize_counters()
 
 # ---------------------------------------------------------------------------
 # App

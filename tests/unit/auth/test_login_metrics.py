@@ -9,6 +9,7 @@ from src.auth.domain.exceptions import (
     NoActiveTenantError,
 )
 from src.auth.infra.metrics import login_attempt
+from src.shared.infra.telemetry_instruments import LOGIN_RESULTS, initialize_counters
 
 
 def _results(recorded_metrics) -> list[str]:
@@ -44,3 +45,14 @@ def test_other_errors_are_not_login_attempts(recorded_metrics):
         raise InvalidTokenError("bad token")
 
     assert _results(recorded_metrics) == []
+
+
+def test_every_result_starts_at_zero(recorded_metrics):
+    """An alert reads them with `increase`: the first failed login after a
+    restart must already have a point to increase from (S7.6)"""
+    initialize_counters()
+
+    assert sorted(
+        recorded_metrics.collect().points("faclab.auth.login.attempts"),
+        key=lambda point: point[1]["result"],
+    ) == [(0, {"result": result}) for result in sorted(LOGIN_RESULTS)]

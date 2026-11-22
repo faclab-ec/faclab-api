@@ -1,38 +1,17 @@
-import asyncio
-import threading
-
 import pytest
 from opentelemetry import trace
 from opentelemetry.propagate import inject
 from opentelemetry.trace import SpanKind
 
-from src.shared.infra.kafka.producer import KafkaEventProducer
-
-
-class FakeBroker:
-    def __init__(self):
-        self.sent: list[tuple[str, dict, list[tuple[str, bytes]]]] = []
-        self.keys: list[bytes | None] = []
-
-    async def send_and_wait(self, topic, value, key=None, headers=None):
-        self.sent.append((topic, value, headers or []))
-        self.keys.append(key)
+from tests.kafka import FakeBroker, fake_producer
 
 
 @pytest.fixture
 def producer():
     """Producer whose event loop runs in a thread, as after start(), with a
     fake broker instead of Kafka."""
-    loop = asyncio.new_event_loop()
-    thread = threading.Thread(target=loop.run_forever, daemon=True)
-    thread.start()
-    producer = KafkaEventProducer("localhost:9092")
-    producer._loop = loop
-    producer._producer = FakeBroker()  # ty: ignore[invalid-assignment]
-    yield producer
-    loop.call_soon_threadsafe(loop.stop)
-    thread.join(timeout=5)
-    loop.close()
+    with fake_producer() as (producer, _broker):
+        yield producer
 
 
 def _outbox_headers() -> tuple[list[tuple[str, bytes]], trace.SpanContext]:
@@ -46,7 +25,7 @@ def _outbox_headers() -> tuple[list[tuple[str, bytes]], trace.SpanContext]:
 def test_sending_continues_the_trace_of_the_request(producer, span_exporter):
     headers, written_by = _outbox_headers()
 
-    producer.publish("sales.confirmed", {"event_id": "e-1"}, headers)
+    producer.publish("sales.confirmed", {"event_id": "e-1"}, headers, key="tenant-1")
 
     send = next(
         s
@@ -60,6 +39,17 @@ def test_sending_continues_the_trace_of_the_request(producer, span_exporter):
     assert send.attributes is not None
     assert send.attributes["messaging.destination.name"] == "sales.confirmed"
     assert send.attributes["messaging.message.id"] == "e-1"
+    assert send.attributes["messaging.system"] == "kafka"
+    # The partition key: the tenant, so its messages keep their order
+    assert send.attributes["messaging.kafka.message.key"] == "tenant-1"
+
+
+def test_a_message_without_key_has_no_key_attribute(producer, span_exporter):
+    producer.publish("sales.confirmed", {"event_id": "e-1"}, [])
+
+    (send,) = span_exporter.get_finished_spans()
+    assert send.attributes is not None
+    assert "messaging.kafka.message.key" not in send.attributes
 
 
 def test_the_consumer_receives_the_send_span_as_parent(producer, span_exporter):

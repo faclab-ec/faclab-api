@@ -12,7 +12,9 @@ certificados por vencer (G-23); S7.3 (2026-11-21), que agregó la telemetría de
 (2026-11-21), que puso el OTel Collector entre los servicios y SigNoz, con métricas de host,
 contenedores, PostgreSQL, Kafka (lag incluido) y salud (G-68), y S7.5 (2026-11-22), que actualizó
 SigNoz a v0.151.0 (instalado con Foundry) y dejó los seis dashboards, 22 alertas con su runbook y los
-canales como código en faclab-infra (G-70).
+canales como código en faclab-infra (G-70), y S7.6 (2026-11-22), que dejó pruebas de las trazas y los
+logs de los flujos críticos, la prueba de la redacción del Collector en CI y la definición de terminado
+en las plantillas de PR (§10).
 
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
@@ -20,7 +22,7 @@ canales como código en faclab-infra (G-70).
 | Auto-instrumentación | FastAPI (middleware por fuera del de errores, convenciones HTTP estables) y SQLAlchemy del engine de los requests | HTTP, AWS SDK, pino, Fastify | Carga del documento, XHR (axios) y fetch, con `traceparent` solo hacia el core y la facturación |
 | Spans manuales | `command.*`, `query.*`, `event.publish.*`, `event.handle.*`, `send <tópico>`, `process <tópico>` | `send <tópico>`, `process <tópico>`, `process invoice`, `deliver invoice`, `sri.recepcion`, `sri.autorizacion`, `invoice.sign` | `ui.error` |
 | Logs | structlog (JSON fuera de local) + OTLP | pino + OTLP | `console.error`; los errores de interfaz van como spans `ui.error` |
-| Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` por instrumentación de pino | La traza de cada llamada continúa en el core y la facturación; los avisos de error muestran el `requestId` |
+| Correlación de logs | `trace_id`, `span_id`, `http.request.id` y `event.name` en cada log | `trace_id` y `span_id` del `mixin` del logger (S7.6); `event.name` en los logs del consumidor, el productor, la cola y el procesador de facturas | La traza de cada llamada continúa en el core y la facturación; los avisos de error muestran el `requestId` |
 | Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `messaging.*`, `faclab.dead_letters.pending`, SRI, comprobantes (transiciones, pendientes, tiempo a resultado, rechazos, pasos, cola), entregas y certificados (§6) | `faclab.web_vitals.lcp`, `.inp` y `.cls` por ruta (§6.3) |
 | Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | Ídem, sin `service.instance.id` |
 | Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | Valores del query string de cada URL; de un `ApiError`, el mensaje del servidor (§9.3) |
@@ -250,13 +252,14 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 
 | Operación | Nombre del span | Atributos (además de los estándar) |
 |---|---|---|
-| Comando | `command <Nombre>` | `faclab.operation`, `faclab.tenant.id`, `faclab.branch.id` |
-| Consulta | `query <Nombre>` | Ídem |
-| Evento de dominio | `event.publish <Tipo>`, `event.handle <Handler>` | `faclab.event.type` |
-| Kafka | `send <tópico>`, `process <tópico>` | `messaging.system=kafka`, `messaging.destination.name`, `messaging.kafka.message.key`, `messaging.message.id` |
+| Request HTTP (core) | `<MÉTODO> <ruta>` (kind SERVER, instrumentación de FastAPI) | `http.route`, `http.response.status_code`, `faclab.tenant.id`, `faclab.branch.id` (el contexto de la solicitud, `tenant_scope`) |
+| Comando | `command.<Nombre>` (core) | `handler.type`, `handler.name`, `command.name`; la empresa y la sucursal van en el span raíz de la solicitud o del mensaje |
+| Consulta | `query.<Nombre>` (core) | `handler.type`, `handler.name`, `query.name` |
+| Evento de dominio | `event.publish.<Tipo>`, `event.handle.<handler>` (core) | `event.type`; `event.handler_count` en el primero y `event.handler` en el segundo |
+| Kafka | `send <tópico>` (PRODUCER), `process <tópico>` (CONSUMER) | `messaging.system=kafka`, `messaging.destination.name`, `messaging.kafka.message.key` (la empresa, cuando el mensaje tiene clave; S7.6), `messaging.message.id` (`event_id`) en el `send` del core; `messaging.consumer.group.name` y `faclab.tenant.id` en el `process` del core |
 | SRI | `sri.recepcion`, `sri.autorizacion` (kind CLIENT, S7.2) | `faclab.sri.environment` (`pruebas`, `produccion`), `faclab.sri.status` (RECIBIDA, DEVUELTA, AUTORIZADO, NO AUTORIZADO, EN PROCESO; sin autorización todavía = EN PROCESO), `error.type` (`timeout` o la clase del error cuando no hubo respuesta); además `rpc.system=soap`, `rpc.method`, `server.address`. El cliente SOAP ya no abre su propio span |
 | Firma | `invoice.sign` (S7.2) | `faclab.document.type` (`invoice`, `credit_note`), `error.type` (el código del error tipado, por ejemplo `CERTIFICATE_EXPIRED`) |
-| Webhook | `webhook.deliver` | `http.response.status_code`, `faclab.retry.attempt` |
+| Webhook | `webhook.deliver` (kind CLIENT, worker del core) | `http.response.status_code`, `faclab.retry.attempt` (S7.6), `server.address`, `faclab.webhook.event_type`, `faclab.tenant.id`; ERROR si la entrega falló. El log del resultado (`webhook_delivered`, `webhook_retry`, `webhook_failed`) se escribe dentro del span |
 | Navegador: carga | `documentLoad`, `documentFetch` y `resourceFetch` (instrumentación de carga, S7.3) | `faclab.ui.route`, `url.full` |
 | Navegador: llamada | El método (`POST`), kind CLIENT, con un hijo `CORS Preflight` cuando hubo preflight (XHR y fetch, S7.3) | `faclab.ui.route`, `url.full`, `http.response.status_code` |
 | Error de interfaz | `ui.error` (S7.3), con estado ERROR y evento `exception` | `faclab.ui.route`, `faclab.error.source` (`boundary`, `window`, `unhandledrejection`), `error.type`, `faclab.react.component_stack`; de un `ApiError`: `faclab.error.code`, `http.response.status_code` y `http.request.id`, sin el mensaje |
@@ -264,6 +267,10 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 
 `faclab.ui.route` es el patrón de la ruta (`/sales/:id`), nunca la URL, y las URLs del navegador van sin
 los valores de su query string (`?search=REDACTED`).
+
+Los nombres de los spans del core son los del código (`command.<Nombre>`, `event.publish.<Tipo>`), no
+`command <Nombre>` como decía este estándar: ningún dashboard ni alerta los usa, y S7.6 decidió
+documentarlos en vez de renombrarlos. Las pruebas de §10 los fijan.
 
 Prohibido en atributos de span: datos personales de clientes, montos detallados de un cliente
 identificado, XML y claves de acceso completas. El id de venta y el id de factura **sí** pueden ir en
@@ -298,10 +305,10 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.invoices.step.duration` | Histograma, s | `faclab.invoice.step` (`prepare`, `sign`, `send`, `authorize`), `faclab.step.outcome` (`advanced`, `blocked`, `invalid`, `retry`, `conflict`), `faclab.document.type` | Invoicing (decorador de los pasos) | Existe (S7.2, lo que S4.2 dejó pendiente). El resultado es la clase del issue que deja el paso |
 | `faclab.invoices.due` | Gauge observable, `{document}` | — | Invoicing worker (muestreo) | Existe (S7.2): filas de la cola vencidas que nadie tiene; un valor que crece indica pocos workers |
 | `faclab.invoices.expired_leases` | Gauge observable, `{document}` | — | Invoicing worker (muestreo) | Existe (S7.2): retenidas por un worker cuyo lease venció (un worker que murió) |
-| `faclab.invoices.deliveries` | Contador, `{delivery}` | `result` (`sent`, `bounced`, `retry`, `failed`, `no_recipient`, `disabled`) | Invoicing (worker de entregas) | Existe (S7.2, lo que S4.4 dejó pendiente) |
+| `faclab.invoices.deliveries` | Contador, `{delivery}` | `result` (`sent`, `bounced`, `retry`, `failed`, `no_recipient`, `disabled`) | Invoicing (worker de entregas) | Existe (S7.2, lo que S4.4 dejó pendiente). Desde S7.6 cada `result` arranca en 0 (`initializeCounters`) |
 | `faclab.invoices.pending_deliveries` | Gauge observable, `{delivery}` | — | Invoicing worker (muestreo) | Existe (S7.2) |
 | `faclab.webhooks.deliveries` | Contador, `{delivery}` | `result` (`delivered`, `retry`, `failed`) | Core worker | Existe (S6.4) |
-| `faclab.auth.login.attempts` | Contador, `{attempt}` | `result` (`success`, `invalid`, `locked`, `no_tenant`) | Core (ruta de login) | Existe (S7.1). `no_tenant`: contraseña correcta, pero sin ninguna empresa activa (ni éxito ni fuerza bruta) |
+| `faclab.auth.login.attempts` | Contador, `{attempt}` | `result` (`success`, `invalid`, `locked`, `no_tenant`) | Core (ruta de login) | Existe (S7.1). `no_tenant`: contraseña correcta, pero sin ninguna empresa activa (ni éxito ni fuerza bruta). Desde S7.6 cada `result` arranca en 0 (`initialize_counters`) |
 | Host (`system.*`), contenedores (`container.*`), PostgreSQL (`postgresql.*`), salud (`httpcheck.*`) | Varias | Estándar de cada receptor; `server.address` separa los dos PostgreSQL, `container.name` cada contenedor, `http.url` cada chequeo | Collector (`host_metrics`, `docker_stats`, `postgresql`, `http_check`) | Existe (S7.4). PostgreSQL incluye las opcionales `postgresql.database.locks` y `postgresql.deadlocks`; los procesos del host quedan fuera por cardinalidad |
 
 ### 6.2 Negocio
@@ -542,6 +549,9 @@ también cubre lo que la instrumentación de pino envía por OTLP. `sdk.shutdown
 
 - `@opentelemetry/sdk-node` con `service.version` del build, no fijo.
 - pino con `redact` para las claves de la lista bloqueada.
+- `trace_id`, `span_id` y `trace_flags` los pone el `mixin` del logger (`traceFields`, S7.6) con el span
+  activo, en las mismas claves que `PinoInstrumentation`, que sigue enviando los logs por OTLP con
+  `disableLogCorrelation`. Así también salen en las pruebas, que no cargan la instrumentación.
 - `sdk.shutdown()` antes de `process.exit`.
 - Spans de Kafka con kind PRODUCER y CONSUMER e inyección del span del productor.
 - Recurso y nombres de atributos idénticos a los de Python.
@@ -616,19 +626,66 @@ Implementado en S7.3, en `src/shared/lib/telemetry/`.
 
 ## 10. Observabilidad en pruebas y entrega
 
-- **Pruebas:**
-  - Exportador en memoria en las pruebas de integración de flujos críticos: venta POS, publicación al
-    outbox, consumo de `invoices`, firma y envío al SRI simulado.
-  - Las pruebas verifican que existen los spans esperados, con sus atributos y la correlación padre e
-    hijo, y que los logs llevan `trace_id` y `event.name`.
-- **Redacción:** prueba que envía una contraseña inválida y verifica que no aparece en la salida del
-  log.
-- **CI:** se verifica que la configuración de producción tenga `service.version` y endpoint del
-  Collector.
-- **Definición de terminado** (plantilla de PR):
+Implementado en S7.6. Las pruebas fijan solo lo que este estándar fija: nombres y tipos de span (§5.2),
+atributos, padre e hijo, y `trace_id`, `span_id` y `event.name` en los logs. Quitar un span, un
+`inject`/`extract` o el contexto de los logs hace fallar alguna; la ficha de S7.6 registra cada mutación
+probada.
+
+- **Fixtures del core:**
+  - `span_exporter` (spans en memoria, un proveedor global por corrida), `json_logs` (los logs en JSON
+    como los escribe el API) y `recorded_metrics` (S7.1) están en `tests/conftest.py`.
+  - `tests/telemetry.py` tiene las ayudas: `one`, `named`, `children_of`, `descends_from`,
+    `assert_child_of`, `span_ids` y `traceparent_ids`, y `instrumented(app)`, que pone el middleware de
+    OTel en `main.app` (las pruebas corren con `OTEL_ENABLED=false`).
+  - `tests/kafka.py` da un `KafkaEventProducer` real sobre un broker falso.
+  - `traced_client`, en las pruebas con PostgreSQL, es un cliente del app instrumentado.
+- **Fixtures de invoicing:** `useSpans()` (`test/tracing.ts`, con `expectChildOf` y `traceparentOf`),
+  `captureLogs()` (`test/logs.ts`) y `useRecordedMetrics()` (`test/metrics.ts`, S7.2). El SOAP simulado
+  del SRI (`simulatedSoap`, `sriAnswering`) y el firmante real con un p12 generado (`realSigner`) están en
+  `test/helpers.ts`.
+- **Flujos probados:**
+  - **Venta, outbox, Kafka y `invoices`** (`tests/integration/postgres/test_trace_of_a_sale.py`, core).
+    Una venta rápida del POS en PostgreSQL produce:
+    1. el span SERVER, con su ruta, empresa y sucursal;
+    2. los `command.*` y `event.publish.SaleConfirmed` dentro de él;
+    3. el `traceparent` que el outbox guarda;
+    4. `send sales.confirmed`, hijo de ese contexto y con la clave del mensaje;
+    5. `process invoices`, hijo del span remoto de facturación, con `command.InvoiceSaleCommand` debajo.
+
+    Todo queda en una sola traza, y los logs del request y del consumo la llevan.
+  - **Emisión de factura** (`test/invoice/invoice-trace.test.ts`, invoicing). El mensaje que llega del
+    `send` del core produce:
+    1. `process sales.confirmed`;
+    2. `process invoice`, hijo del anterior en el mismo trabajo de la cola;
+    3. `invoice.sign`, `sri.recepcion` y `sri.autorizacion` dentro de él, con los adaptadores reales;
+    4. `send invoices`, hijo del trabajo, que viaja en el `traceparent`.
+
+    Los logs de cada paso llevan la traza y su `event.name`.
+  - **Webhook** (`tests/unit/webhooks/test_dispatcher.py`, core): cada intento es un `webhook.deliver`
+    con su número y su código HTTP, y el log del resultado lleva su `span_id`.
+  - Las pruebas unitarias de S1.5 y S7.1–S7.3 siguen fijando cada pieza: productor y consumidor, comandos,
+    eventos, SRI, firma, CORS y métricas.
+- **Redacción:**
+  - En los servicios: `test_passwords_tokens_and_authorization_never_reach_a_log` (core) y
+    `test/shared/logger.test.ts` (invoicing).
+  - En el Collector: `scripts/collector-redaction-test.py` de faclab-infra (CI). Corre el Collector real
+    con un exportador a archivo y envía claves sensibles en el recurso, los spans, sus eventos, los
+    puntos de las métricas y los logs; ninguna puede llegar al archivo. También comprueba que el
+    receptor del navegador solo acepta a `faclab-web`.
+- **CI, pendiente:** verificar que la configuración de producción tenga `service.version` y el endpoint
+  del Collector. Hoy `SERVICE_VERSION` vale `dev` si la imagen no recibe el build arg, y
+  `OTEL_OTLP_ENDPOINT` vale `localhost:4317`; ninguna prueba lo impide. Quedó anotado en ROADMAP.md
+  (S8.1, junto con el despliegue).
+- **Contadores en 0.** Un contador que una alerta lee con `increase` exporta 0 al arrancar el proceso,
+  con cada valor de sus atributos (`initialize_counters` en el core, `initializeCounters` en
+  invoicing). Así, la primera falla después de un reinicio ya cuenta como aumento.
+  - Hoy son `faclab.auth.login.attempts` y `faclab.invoices.deliveries`.
+  - `faclab.invoices.rejections` no se puede inicializar: cada código del SRI abre su propia serie.
+    Queda para S9.2.
+- **Definición de terminado** (plantilla de PR de faclab-core y faclab-invoicing, `.github/pull_request_template.md`):
   - Logs con `event.name`.
   - Métricas de las operaciones nuevas.
-  - Spans de las rutas críticas.
+  - Spans de las rutas críticas, con su prueba.
   - Dashboard o alerta si el cambio introduce un modo de fallo nuevo.
 
 ### 10.1 SigNoz local
@@ -662,5 +719,5 @@ Faclab acumula y reintenta.
 | S7.3 | SDK web con trazas que continúan en el core y la facturación, errores de interfaz (`ui.error`), web vitals por ruta y el `requestId` en los avisos de error; `/otlp` local por el proxy de Vite (terminada 2026-11-21) |
 | S7.4 | Collector entre los servicios y SigNoz: receptores de host, Docker (por un proxy de solo lectura), PostgreSQL (`faclab_monitor`), Kafka (lag) y httpcheck; redacción de claves sensibles; receptor del navegador limitado a `faclab-web` (terminada 2026-11-21) |
 | S7.5 | SigNoz v0.151.0 con Foundry; seis dashboards, 22 alertas, canales (correo y Telegram) y runbooks como código, importados con `scripts/signoz.sh sync` y probados con fallas controladas (terminada 2026-11-22) |
-| S7.6 | Pruebas de observabilidad y definición de terminado |
+| S7.6 | Pruebas de trazas y logs de la venta, la emisión de factura y el webhook; atributos que faltaban (`messaging.kafka.message.key`, `faclab.retry.attempt`); `trace_id` propio en los logs de invoicing; contadores en 0; prueba de la redacción del Collector en CI; definición de terminado en las plantillas de PR (terminada 2026-11-22) |
 | S8.6 | Despliegue y operación de SigNoz (versión fijada, accesos, retención, respaldos) |

@@ -11,7 +11,12 @@ import pytest
 from src.shared.domain.tenant import TenantContext, TenantSource, use_tenant
 
 if TYPE_CHECKING:
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
     from tests.metrics import RecordedMetrics
+    from tests.telemetry import JsonLogs
 
 # Tests never export telemetry nor talk to Kafka.
 os.environ["OTEL_ENABLED"] = "false"
@@ -44,6 +49,28 @@ def recorded_metrics() -> "RecordedMetrics":
     recorded = RecordedMetrics(install_reader())
     recorded.collect()  # what earlier tests left
     return recorded
+
+
+@pytest.fixture
+def span_exporter() -> "Iterator[InMemorySpanExporter]":
+    """Spans finished during the test, kept in memory (`tests/telemetry.py`
+    has the helpers to read them)."""
+    from tests.telemetry import install_tracer_provider
+
+    exporter = install_tracer_provider()
+    exporter.clear()
+    yield exporter
+    exporter.clear()
+
+
+@pytest.fixture
+def json_logs() -> "Iterator[JsonLogs]":
+    """Logs as the deployed API writes them (JSON lines); call the fixture to
+    read the lines written so far."""
+    from tests.telemetry import json_logs
+
+    with json_logs() as logs:
+        yield logs
 
 
 @pytest.fixture

@@ -284,6 +284,7 @@ class WebhookDispatcher:
                     Endpoint.secret_ciphertext,
                     Endpoint.previous_secret_ciphertext,
                     Endpoint.previous_secret_expires_at,
+                    Delivery.attempts,
                 )
                 .select_from(Delivery)
                 .join(Message, Message.id == Delivery.message_id)
@@ -317,6 +318,8 @@ class WebhookDispatcher:
                 "faclab.webhook.endpoint_id": claim.endpoint_id,
                 "faclab.tenant.id": str(claim.tenant_id),
                 "server.address": url_host(row.url),
+                # This attempt's number: claim() counted it
+                "faclab.retry.attempt": row.attempts,
             },
         ) as span:
             result = self._sender.post(row.url, headers, body)
@@ -324,7 +327,8 @@ class WebhookDispatcher:
                 span.set_attribute("http.response.status_code", result.status)
             if not result.ok:
                 span.set_status(trace.Status(trace.StatusCode.ERROR, result.error))
-        return self._record(claim, result, row.event_type, row.url)
+            # Inside the span, so the log of the result carries its trace
+            return self._record(claim, result, row.event_type, row.url)
 
     # 3. Record
 

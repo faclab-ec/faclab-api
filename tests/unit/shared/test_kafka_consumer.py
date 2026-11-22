@@ -94,7 +94,7 @@ def test_processing_continues_the_trace_of_the_message(span_exporter):
     headers, sent_from = _traceparent()
 
     _consumer(lambda _message: None).process(
-        "invoices", b'{"saleId": "1"}', headers, partition=0, offset=41
+        "invoices", b'{"saleId": "1"}', headers, partition=0, offset=41, key=b"t-1"
     )
 
     process = next(
@@ -109,6 +109,15 @@ def test_processing_continues_the_trace_of_the_message(span_exporter):
     assert process.attributes["messaging.destination.name"] == "invoices"
     assert process.attributes["messaging.consumer.group.name"] == "test"
     assert process.attributes["messaging.kafka.offset"] == 41
+    assert process.attributes["messaging.kafka.message.key"] == "t-1"
+
+
+def test_handling_keeps_the_key_of_the_message(span_exporter):
+    assert _handle(_consumer(lambda _message: None), b'{"saleId": "1"}') is True
+
+    (process,) = span_exporter.get_finished_spans()
+    assert process.attributes is not None
+    assert process.attributes["messaging.kafka.message.key"] == "k-1"
 
 
 def test_a_failed_message_fails_its_span(span_exporter):

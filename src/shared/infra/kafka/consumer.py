@@ -193,7 +193,7 @@ class KafkaMessageConsumer:
         error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             try:
-                self.dispatch(topic, value, headers, partition, offset)
+                self.dispatch(topic, value, headers, partition, offset, key=key)
                 return True
             except Exception as exc:
                 error = exc
@@ -268,10 +268,11 @@ class KafkaMessageConsumer:
         headers: Sequence[tuple[str, bytes]] = (),
         partition: int | None = None,
         offset: int | None = None,
+        key: bytes | None = None,
     ) -> bool:
         """Entrega el mensaje a su handler, una vez; devuelve False si falló."""
         try:
-            self.dispatch(topic, value, headers, partition, offset)
+            self.dispatch(topic, value, headers, partition, offset, key=key)
         except Exception:
             return False
         return True
@@ -283,6 +284,7 @@ class KafkaMessageConsumer:
         headers: Sequence[tuple[str, bytes]] = (),
         partition: int | None = None,
         offset: int | None = None,
+        key: bytes | None = None,
     ) -> None:
         """Entrega el mensaje a su handler y propaga lo que este lance. Un
         mensaje que no se puede leer, o de una empresa inválida, se descarta."""
@@ -313,6 +315,9 @@ class KafkaMessageConsumer:
             attributes["messaging.destination.partition.id"] = str(partition)
         if offset is not None:
             attributes["messaging.kafka.offset"] = offset
+        if key is not None:
+            # The tenant, as the producers key it
+            attributes["messaging.kafka.message.key"] = key.decode("utf-8", "replace")
 
         # Child of the producer's span, so the message continues its trace
         with tracer.start_as_current_span(
