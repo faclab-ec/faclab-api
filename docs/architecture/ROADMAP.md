@@ -423,8 +423,9 @@
   - El reproceso de dead letters de facturación es un CLI sobre el código compilado (`npm run build`
     y `npm run cli`, o la imagen). Los endpoints de plataforma y su entrada en la bitácora llegan con
     S8.5, como los del core.
-  - La alerta sobre `faclab.reconciliation.discrepancies` (discrepancias abiertas durante 30 minutos)
-    es de S7.5; la cifra de discrepancias en el resumen de inicio, si se quiere, con S7.x. El
+  - ~~La alerta sobre `faclab.reconciliation.discrepancies` (discrepancias abiertas durante 30 minutos)~~:
+    hecha en S7.5 (`conciliacion`). La cifra de discrepancias en el resumen de inicio, si se quiere,
+    con S7.x. El
     `uninvoicedSales` del dashboard sigue contando todas las ventas `CONFIRMED`.
   - Una venta confirmada sin resultado se marca a los 30 minutos aunque facturación la esté
     reintentando sola (SRI caído). La vista muestra el estado en facturación para decidir; si el
@@ -440,7 +441,8 @@
     las variables `SMTP_*` en el stack (S8.1). Sin ellas, producción no arranca salvo con
     `INVOICE_EMAIL_ENABLED=false`.
   - ~~Métricas de entregas (pendientes, enviadas, rebotadas, fallidas)~~: hechas en S7.2
-    (`faclab.invoices.deliveries` por resultado y `faclab.invoices.pending_deliveries`). Su alerta, S7.5.
+    (`faclab.invoices.deliveries` por resultado y `faclab.invoices.pending_deliveries`). Su alerta la
+    agregó S7.5 (`entregas-fallidas`).
   - Límite de reenvíos por factura o por usuario; hoy solo se evita un segundo pendiente.
   - Reenvío a un correo corregido después de la venta: hoy va siempre al de la venta (el riesgo de la
     ficha). Requeriría que el core mande el correo actual o una corrección auditada.
@@ -503,8 +505,9 @@
   - `make public-openapi-invoicing` copia el contrato de facturación a mano; un job que compare la
     copia con la de `master` de faclab-invoicing avisaría si se desactualiza.
 - **Métricas del core, lo que quedó de S7.1** (2026-11-21):
-  - Paneles y alertas sobre las métricas nuevas: S7.5. Esto incluye el panel de
-    `faclab.webhooks.deliveries` que S6.4 dejaba para S7.1.
+  - ~~Paneles y alertas sobre las métricas nuevas~~: hechos en S7.5 (dashboards *API Core*, *Kafka y
+    mensajería* y *Calidad de operaciones*), con el panel de `faclab.webhooks.deliveries` que S6.4
+    dejaba para S7.1.
   - ~~faclab-invoicing todavía usa `kafka.consumer.*` y `dlq.message.count`~~: S7.2 las alineó con
     `messaging.*` y `faclab.dead_letters.pending`.
   - ~~`kafka.consumer_group.lag` y las métricas de PostgreSQL, del host y de los contenedores las
@@ -516,10 +519,10 @@
   - `faclab.outbox.failed` cuenta sobre todo el outbox (no hay un índice parcial de `failed`). Es
     barato mientras la purga lo mantenga en `OUTBOX_RETENTION_DAYS`.
 - **Métricas de facturación, lo que quedó de S7.2** (2026-11-21):
-  - Paneles y alertas sobre las métricas nuevas (dashboard 4; facturas atascadas con
+  - ~~Paneles y alertas sobre las métricas nuevas (dashboard 4; facturas atascadas con
     `faclab.invoices.oldest_age`; SRI no disponible con `faclab.sri.request.duration` cuyo
-    `faclab.sri.outcome` no es `ok`; aumento de rechazos; certificado por vencer; entregas fallidas):
-    S7.5.
+    `faclab.sri.outcome` no es `ok`; aumento de rechazos; certificado por vencer; entregas fallidas)~~:
+    hechos en S7.5.
   - Con varios workers de facturación, cada uno reporta su muestra de los gauges (los paneles agregan
     con `max`) y el log diario de certificados sale una vez por worker y por arranque.
   - ~~Lag del consumidor de facturación y métricas de su PostgreSQL: S7.4~~: hecho en S7.4.
@@ -540,7 +543,8 @@
   - **Fuera del alcance de S7.3:**
     - las llamadas anteriores a la carga del chunk del SDK, como el `/me` inicial, no se trazan;
     - no hay spans de interacción del usuario, porque necesitarían `zone.js`.
-  - **Paneles y alertas** de `ui.error` y `faclab.web_vitals.*`: S7.5.
+  - ~~**Paneles** de `ui.error` y `faclab.web_vitals.*`~~: hechos en S7.5 (*Ecosistema*, fila
+    Navegador). Sus **alertas**, en S9.2: sin tráfico real no hay umbral con sentido.
   - **Invoicing toma el `x-request-id` entrante sin validarlo y no lo devuelve en la respuesta.** Su
     envelope de error ya trae `meta.requestId`, así que la web lo muestra igual.
   - **El muestreo descarta también los errores.** Con `OTEL_SAMPLING_RATE` menor que 1 se pierde esa
@@ -569,8 +573,8 @@
   - **TLS hacia el proxy de Docker.** `docker_stats` avisa que el TCP sin TLS está obsoleto desde
     Docker 26. Se acepta porque la red `docker_api` es interna y solo la comparte con el Collector.
   - **Duración de transacciones de PostgreSQL** (dashboard 5): el receptor no la da sin sus muestras
-    de consultas, que llevan texto SQL y quedan apagadas. Se decide en S7.5 (con `pg_stat_activity` por
-    una consulta propia o sin ese panel).
+    de consultas, que llevan texto SQL y quedan apagadas. Decidido en S7.5: sin ese panel. El dashboard 5
+    muestra bloqueos y deadlocks, y las transacciones largas se ven en las trazas de la ruta.
   - **El worker del core no tiene `/health` HTTP:** su salud la da el healthcheck del contenedor
     (`docker_stats` lo ve como contenedor). El httpcheck cubre el API del core y el de la facturación.
   - **Despliegue:**
@@ -582,6 +586,40 @@
       OTLP al Collector (`http://collector:4317`).
     - Sin migraciones. Orden: faclab-infra (Collector), después `make db-roles` en el core, después los
       endpoints de los servicios.
+
+- **SigNoz, dashboards y alertas, lo que quedó de S7.5** (2026-11-22):
+  - **SigNoz en producción (S8.6),** desde el mismo `observability/signoz/casting.yaml`:
+    - el SMTP real (`SIGNOZ_SMTP_*`), `ALERT_EMAIL_TO`, el bot de Telegram de producción y
+      `SIGNOZ_EXTERNAL_URL`;
+    - la service account de `sync` y su llave como secretos del despliegue;
+    - la retención y los respaldos.
+  - **Umbrales con línea base (S9.2):** todos son provisionales. Pendientes también:
+    - las alertas del navegador (`ui.error`, web vitals);
+    - el 5 % de rechazos, que hoy está solo en el panel.
+  - **Contadores inicializados en 0 (S7.6).** El primer punto de un contador que aparece después de
+    arrancar el proceso no da `increase`, así que la primera falla no avisa. Afecta a
+    `faclab.auth.login.attempts`, `faclab.invoices.rejections` y `faclab.invoices.deliveries`, y en la
+    prueba hizo falta un segundo evento.
+  - **El worker de facturación en desarrollo** (`npm run dev:worker`, con `ts-node-dev`) se reporta como
+    `faclab-invoicing` y no como `faclab-invoicing-worker`. `serviceNameFor` no ve el *entry point* en
+    `process.argv`. No se verificó con la imagen (`node dist/worker.js`).
+  - **La facturación usa la convención HTTP antigua** (`http.server.duration` en ms, `http.status_code`).
+    Sus paneles y su alerta de 5xx la convierten. `OTEL_SEMCONV_STABILITY_OPT_IN=http`, como el core,
+    simplificaría las consultas.
+  - **Enlaces entre dashboards:** el servidor genera el id de cada dashboard, así que *Ecosistema* los
+    nombra. `sync` podría escribir los enlaces en una segunda pasada.
+  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`) y su
+    healthcheck: siguen para S8.1.
+  - **Despliegue:**
+    - faclab-infra levanta SigNoz con `scripts/signoz.sh up` (Foundry, en volúmenes nuevos; los de
+      v0.118 no se tocan) y recrea el Collector, que ahora emite `system.*.utilization`.
+    - Después se crea la service account Admin y se corre `scripts/signoz.sh sync`.
+    - En el core:
+      - cambian las cubetas de `http.server.request.duration` y `messaging.process.duration`, ahora en
+        segundos; sin migraciones;
+      - desplegarlo hace que el p95 sea real (`latencia-pos` y los paneles de latencia);
+      - en orden, va después de faclab-infra o junto con él.
+    - Sin cambios en la facturación ni la web.
 
 ## 2. Dependencias
 
@@ -692,7 +730,7 @@ flowchart LR
 | [S7.2](sessions/S7.2-metricas-de-facturacion.md) | Métricas de facturación | SRI, transiciones, tiempos, certificados | S1.5, S4.2 | invoicing | G-68, G-23 | M |
 | [S7.3](sessions/S7.3-observabilidad-del-frontend.md) | Observabilidad del frontend | Trazas desde el navegador, errores y web vitals | S1.5 | web, core | G-69 | M |
 | [S7.4](sessions/S7.4-collector-e-infraestructura.md) | Collector e infraestructura | Collector con métricas de host, Docker, PostgreSQL y Kafka | S1.5 | infra | G-68 | M |
-| [S7.5](sessions/S7.5-dashboards-y-alertas.md) | Dashboards y alertas | Seis dashboards, alertas y runbooks como código | S7.1, S7.2, S7.3, S7.4 | infra | G-70 | M |
+| [S7.5](sessions/S7.5-dashboards-y-alertas.md) | Dashboards y alertas | SigNoz v0.151 con Foundry; seis dashboards, alertas y runbooks como código | S7.1, S7.2, S7.3, S7.4 | infra, core | G-70 | M |
 | [S7.6](sessions/S7.6-observabilidad-en-pruebas.md) | Observabilidad en pruebas | Pruebas de spans y logs; definición de terminado | S7.1, S7.2 | core, invoicing | — | S |
 | [S8.1](sessions/S8.1-stack-de-produccion-en-vps.md) | Stack de producción | Compose de producción en el VPS con Caddy y secretos | S1.2, S1.3, S2.7, S3.4 | infra | G-49, G-59 | L |
 | [S8.2](sessions/S8.2-entrega-continua.md) | Entrega continua | Imágenes versionadas, despliegue y reversión | S8.1, S1.1 | todos | G-57 | M |
