@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 import pytest
+from opentelemetry.trace import SpanKind, StatusCode
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -29,6 +30,7 @@ from src.webhooks.infra.notifications import DisabledEndpointNotifier
 from src.webhooks.infra.purge import purge_history
 from src.webhooks.infra.urls import DnsUrlGuard
 from tests.conftest import TEST_TENANT_ID
+from tests.telemetry import named, span_ids
 from tests.webhook_receiver import Receiver
 from tests.webhooks_kit import WEBHOOK_MODELS, Kit, fernet_box, table_resolver
 
@@ -363,3 +365,40 @@ def test_the_history_older_than_the_retention_is_purged(world, receiver):
     with world.factory() as session:
         assert len(session.scalars(select(WebhookDeliveryModel)).all()) == 1
         assert len(session.scalars(select(WebhookMessageModel)).all()) == 1
+
+
+# --- Telemetry (S7.6, OBSERVABILITY.md §5.2 and §10) ---------------------------
+
+
+def test_each_attempt_is_a_webhook_deliver_span_with_its_log(
+    world, receiver, span_exporter, json_logs
+):
+    receiver.status = 500
+    endpoint = world.endpoint(receiver)
+    world.sale()
+
+    [first] = world.dispatcher.run_once()
+    world.clock.advance(
+        world.delivery(endpoint["id"]).next_attempt_at - world.clock.now
+    )
+    receiver.status = 204
+    [second] = world.dispatcher.run_once()
+
+    assert (first.status, second.status) == ("pending", "delivered")
+    failed, delivered = named(span_exporter.get_finished_spans(), "webhook.deliver")
+    for span, attempt, status in ((failed, 1, 500), (delivered, 2, 204)):
+        assert span.kind == SpanKind.CLIENT
+        assert span.attributes is not None
+        assert span.attributes["faclab.retry.attempt"] == attempt
+        assert span.attributes["http.response.status_code"] == status
+        assert span.attributes["server.address"] == "localhost"
+        assert span.attributes["faclab.webhook.event_type"] == "sale.confirmed"
+        assert span.attributes["faclab.tenant.id"] == str(TEST_TENANT_ID)
+    assert failed.status.status_code == StatusCode.ERROR
+    assert delivered.status.status_code != StatusCode.ERROR
+
+    # The log of each result is written inside its span
+    for span, event in ((failed, "webhook_retry"), (delivered, "webhook_delivered")):
+        [line] = json_logs.event(event)
+        assert (line["trace_id"], line["span_id"]) == span_ids(span)
+        assert line["event.name"] == event.replace("_", ".")

@@ -32,6 +32,7 @@ from tests.integration.postgres.support import (
     truncate_all,
 )
 from tests.integration.postgres.tenants import ensure_tenant
+from tests.telemetry import instrumented
 
 
 def _test_database_url():
@@ -111,6 +112,14 @@ def db_session(pg_engine: Engine) -> Iterator[Session]:
 def client(pg_engine: Engine) -> TestClient:
     # Not used as a context manager: the lifespan only closes Kafka and OTEL.
     return TestClient(app)
+
+
+@pytest.fixture
+def traced_client(pg_engine: Engine, span_exporter) -> Iterator[TestClient]:
+    """A client of the app with the OTel middleware, as deployed: its requests
+    are SERVER spans in `span_exporter` (S7.6)"""
+    with instrumented(app):
+        yield TestClient(app)
 
 
 @pytest.fixture

@@ -130,6 +130,9 @@ class KafkaEventProducer:
         }
         if event_id is not None:
             attributes["messaging.message.id"] = str(event_id)
+        if key is not None:
+            # The tenant: it picks the partition (not personal data)
+            attributes["messaging.kafka.message.key"] = key
 
         with tracer.start_as_current_span(
             f"send {topic}",

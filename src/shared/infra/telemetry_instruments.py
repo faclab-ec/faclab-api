@@ -181,6 +181,8 @@ db_connection_count = _meter.create_observable_up_down_counter(
 
 # --- Auth ----------------------------------------------------------------------
 
+LOGIN_RESULTS = ("success", "invalid", "locked", "no_tenant")
+
 login_attempts = _meter.create_counter(
     "faclab.auth.login.attempts",
     unit="{attempt}",
@@ -260,3 +262,15 @@ webhook_deliveries = _meter.create_counter(
         "the next one) or failed (it spent its attempts) (S6.4)"
     ),
 )
+
+
+# --- Counters that start at 0 (S7.6) -----------------------------------------
+
+
+def initialize_counters() -> None:
+    """Export 0 for every series an alert reads with `increase`, as soon as the
+    process starts. A series' first point has nothing before it to increase
+    from, so without this the first brute-force attempt after a restart would
+    not fire the alert. Call it once the meter provider is set."""
+    for result in LOGIN_RESULTS:
+        login_attempts.add(0, {"result": result})
