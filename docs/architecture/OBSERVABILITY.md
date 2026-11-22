@@ -10,7 +10,9 @@ Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71; S7.1 (2026
 las métricas del core (G-68); S7.2 (2026-11-21), que agregó las de facturación (G-68) y el aviso de
 certificados por vencer (G-23); S7.3 (2026-11-21), que agregó la telemetría del navegador (G-69), y S7.4
 (2026-11-21), que puso el OTel Collector entre los servicios y SigNoz, con métricas de host,
-contenedores, PostgreSQL, Kafka (lag incluido) y salud (G-68).
+contenedores, PostgreSQL, Kafka (lag incluido) y salud (G-68), y S7.5 (2026-11-22), que actualizó
+SigNoz a v0.151.0 (instalado con Foundry) y dejó los seis dashboards, 22 alertas con su runbook y los
+canales como código en faclab-infra (G-70).
 
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
@@ -22,7 +24,7 @@ contenedores, PostgreSQL, Kafka (lag incluido) y salud (G-68).
 | Métricas propias | `handler.*` (con `error.kind`), `events.*`, `messaging.*`, colas (`faclab.outbox.*`, `faclab.dead_letters.pending`), pool, login, ventas, inventario, conciliación y webhooks (§6) | `messaging.*`, `faclab.dead_letters.pending`, SRI, comprobantes (transiciones, pendientes, tiempo a resultado, rechazos, pasos, cola), entregas y certificados (§6) | `faclab.web_vitals.lcp`, `.inp` y `.cls` por ruta (§6.3) |
 | Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | Ídem, sin `service.instance.id` |
 | Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | Valores del query string de cada URL; de un `ApiError`, el mensaje del servidor (§9.3) |
-| Dashboards y alertas | No existen | No existen | — |
+| Dashboards y alertas | Seis dashboards y 22 alertas en `faclab-infra/observability/signoz/`, con runbooks (S7.5, §7–§8) | Ídem (los mismos archivos) | Paneles de `ui.error` y web vitals en *Ecosistema*; sin alertas hasta S9.2 |
 
 Los tres exportan al Collector de faclab-infra (S7.4, §2), que agrega las métricas de infraestructura,
 vuelve a borrar las claves sensibles y reenvía a SigNoz.
@@ -96,13 +98,14 @@ Detalle y operación en el README de faclab-infra.
   - **PostgreSQL.** `faclab_monitor` tiene `pg_monitor` y ninguna tabla. En el core lo crea
     `make db-roles` con `DATABASE_URL_MONITOR`; en `invoicing-db`, su script de inicio.
 - **Vuelta atrás:** el endpoint de cada servicio a `http://signoz-otel-collector:4317` (directo a SigNoz,
-  sin métricas de infraestructura).
+  sin métricas de infraestructura). Desde S7.5 ese nombre es un alias del ingester de SigNoz v0.151 en
+  `faclab_network`, que agrega el `casting.yaml` de Foundry (§7).
 
 ## 3. Atributos de recurso (todos los servicios)
 
 | Atributo | Valor | Origen |
 |---|---|---|
-| `service.name` | `faclab-core-api`, `faclab-core-worker`, `faclab-invoicing-api`, `faclab-invoicing-worker`, `faclab-web` | Variable `OTEL_SERVICE_NAME` |
+| `service.name` | `faclab-core`, `faclab-core-worker`, `faclab-invoicing`, `faclab-invoicing-worker`, `faclab-web` | Variable `OTEL_SERVICE_NAME` (por defecto `faclab-core` y `faclab-invoicing`); cada worker le agrega `-worker`. Las alertas de ausencia de telemetría (§8) usan estos nombres (S7.5 corrigió los `-api` que decía esta tabla) |
 | `service.namespace` | `faclab` | Fijo |
 | `service.version` | Tag semántico o SHA del commit | Variable de build (`SERVICE_VERSION`) |
 | `deployment.environment.name` | `local`, `staging`, `production` | Variable de entorno |
@@ -281,7 +284,7 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 
 | Métrica | Tipo y unidad | Atributos | Origen | Estado |
 |---|---|---|---|---|
-| `http.server.request.duration` | Histograma, s | `http.request.method`, `http.route`, `http.response.status_code` | Auto (`OTEL_SEMCONV_STABILITY_OPT_IN=http`, que fija S1.5) | Existe con la convención estable; una prueba lo fija (S7.1) |
+| `http.server.request.duration` | Histograma, s | `http.request.method`, `http.route`, `http.response.status_code` | Auto (`OTEL_SEMCONV_STABILITY_OPT_IN=http`, que fija S1.5) | Existe con la convención estable; una prueba lo fija (S7.1). Desde S7.5 lleva cubetas en segundos (0,005 a 10 s, las de la convención): antes usaba las del SDK, pensadas para ms, y todo p95 daba 4,75 s |
 | `handler.duration`, `handler.invocations`, `handler.errors` | Histograma ms, contadores | `handler.type`, `handler.name`; `handler.errors` además `error.kind` (`domain`, `unexpected`) | Core | Existe (la separación por `error.kind` la hizo S1.5) |
 | `db.client.connection.count` | Up-down counter observable, `{connection}` | `db.client.connection.pool.name` (`request`: el motor de las unidades de trabajo, los requests del API y los scopes de las tareas del worker; `app`; `worker`), `db.client.connection.state` (`idle`, `used`) | Core, cada pool de SQLAlchemy (los de SQLite no cuentan conexiones) | Existe (S7.1). Reemplaza el `db.client.connections.usage` obsoleto de la instrumentación, que nombraba el pool por la URL de la base |
 | `messaging.client.sent.messages` | Contador, `{message}` | `messaging.system`, `messaging.operation.name`, `messaging.destination.name`; `error.type` en un envío fallido | Core (relay) e invoicing (productor de `invoices` y `credit_notes.results`) | Existe (S7.1 en el core; S7.2 en invoicing); reemplaza `kafka.messages_sent` y `kafka.send_errors` |
@@ -354,9 +357,7 @@ log con el detalle).
 
 ## 7. Dashboards
 
-> Se implementan en S7.5 como JSON en `faclab-infra/observability/signoz/dashboards/`. Antes de
-> construirlos se verifica qué paneles, variables y tipos de consulta soporta la versión de SigNoz
-> desplegada. El compose del clon local referencia v0.118.0; está pendiente de validar al desplegar.
+> Implementados en S7.5 como JSON en `faclab-infra/observability/signoz/dashboards/` (detalle en §7.1).
 > SigNoz ya genera métricas RED (solicitudes, errores y duración) por servicio a partir de los spans;
 > los dashboards se enfocan en lo que esa vista no muestra.
 
@@ -370,6 +371,36 @@ log con el detalle).
 | 6 | **Calidad de operaciones** | ¿Qué operaciones de negocio necesitan intervención? | Ventas fallidas por código; rechazos de stock; discrepancias de conciliación; devoluciones y anulaciones; entregas de webhooks fallidas; intentos de login bloqueados | Entorno | Discrepancias > 0 | Usar el listado de conciliación y reprocesar |
 
 Cada panel documenta en su descripción: consulta, unidad, umbral y acción.
+
+### 7.1 Implementación (S7.5)
+
+- **Versión.** SigNoz se actualizó a v0.151.0, con Foundry (`observability/signoz/casting.yaml` de
+  faclab-infra).
+  - Desde v0.130, SigNoz no publica un Docker Compose.
+  - La API de dashboards pasó a v2, con el formato Perses `schemaVersion: v6`, y la de alertas a
+    `/api/v2/rules`. Lo que se armó para v0.118 no habría servido.
+  - Los archivos son los nativos de esa versión: se pueden exportar desde la interfaz y volver a
+    importar.
+- **Importación.** `scripts/signoz.sh sync` (faclab-infra, `scripts/signoz-sync.py`, solo la librería
+  estándar de Python) los crea o actualiza por la API, con la llave de una *service account* con rol
+  Admin.
+  - Es idempotente: reconoce cada dashboard por su `name` estable (`faclab-<slug>`).
+  - `check` los valida sin red en el CI, y `verify` corre cada consulta.
+  - Se probó en una instalación limpia: la primera pasada creó todo, y la segunda no cambió nada.
+- **Además de la tabla:**
+  - *Ecosistema* tiene una fila del navegador: `ui.error` por ruta (trazas) y el p75 de LCP, INP y CLS
+    con los umbrales de Google.
+  - *Facturación* suma la cola del worker, los pasos y las entregas.
+  - *Calidad de operaciones* suma las entregas de webhooks y de facturas.
+  - Cada dashboard abre con un panel de texto que explica su propósito y enlaza los runbooks.
+- **Limitaciones encontradas:**
+  - El id de un dashboard lo genera el servidor, así que *Ecosistema* nombra los otros dashboards en
+    vez de enlazarlos.
+  - La facturación emite `http.server.duration`, con la convención HTTP antigua (milisegundos y
+    `http.status_code`): sus paneles y su alerta de 5xx la convierten.
+  - La duración de SQL sale de los spans de SQLAlchemy.
+  - Los paneles de una métrica que todavía no tiene datos (por ejemplo, la facturación apagada en local)
+    se ven vacíos, sin error.
 
 ## 8. Alertas
 
@@ -394,8 +425,65 @@ Los umbrales son **iniciales y provisionales**: hay que fijar una línea base co
 | Ausencia de telemetría | Sin spans de un servicio durante 10 min en horario comercial | Advertencia | Revisar Collector y exportador |
 | Fuerza bruta | > 50 logins fallidos en 5 min | Advertencia | Revisar IPs; ajustar bloqueo |
 
-Canales: correo y un canal de mensajería (por definir). Las críticas despiertan a alguien. Las
-advertencias se revisan en horario laboral.
+Canales: correo (`faclab-correo`, todas) y Telegram (`faclab-telegram`, solo las críticas; S7.5). Las
+críticas despiertan a alguien. Las advertencias se revisan en horario laboral.
+
+### 8.1 Implementación (S7.5)
+
+Hay 22 reglas en `faclab-infra/observability/signoz/alerts/`, de esquema `v2alpha1`, con niveles
+`warning` y `critical` en la misma regla. Cada una lleva:
+
+- la etiqueta `faclab_rule`;
+- la anotación `runbook_url` y el mismo enlace en su descripción;
+- un runbook en `faclab-infra/observability/runbooks/`.
+
+Cada una se disparó en una prueba controlada (`observability/signoz/pruebas-de-alertas.md`). Ajustes
+respecto de la tabla:
+
+- **Separadas por servicio o por métrica:**
+  - 5xx del core y de la facturación;
+  - outbox `failed` y dead letters;
+  - certificado a 30 días (advertencia) y a 7 días o vencido (crítica);
+  - ausencia de telemetría, una regla por servicio.
+- **5xx con mínimo de solicitudes.** Se cuenta en pasos de 10 minutos (`stepInterval` 600). El total
+  lleva `having __result >= 20`, así que con menos de 20 solicitudes no hay serie y la alerta no se
+  evalúa.
+- **«Todo el tiempo en N minutos»** (servicio no disponible, consumidor detenido, conciliación) exige
+  `requireMinPoints` con el 75 % de los puntos de la ventana.
+  - Sin eso, una serie nueva disparaba con sus primeros puntos: la conciliación avisó a los 2 minutos
+    en vez de a los 30.
+  - SigNoz descarta los pasos parciales de los extremos, así que 10 minutos dan unos 8 puntos.
+- **Ausencia de telemetría.** Es un latido de métricas: `db.client.connection.count` del servicio,
+  ausente 10 minutos (`alertOnAbsent`). No usa spans.
+  - Todos los procesos lo exportan con o sin tráfico, así que avisa también de noche sin falsas
+    alarmas, y no hace falta limitarla al horario comercial.
+  - En desarrollo, el worker de facturación lanzado con `npm run dev:worker` se reporta como
+    `faclab-invoicing` (pendiente en ROADMAP).
+- **Rechazos.** La alerta es por más de 3 en 1 h. El 5 % queda como umbral del panel hasta tener una
+  línea base (S9.2).
+- **Entregas de facturas fallidas.** Es una alerta nueva, que S7.2 dejó pendiente: alguna entrega
+  `failed` o `bounced` en 1 h.
+- **Certificados.** Se evalúan cada hora y vuelven a avisar cada 24 h (el aviso diario). Las demás
+  vuelven a avisar cada 4 h mientras sigan activas.
+- **Primer evento de un contador.** Un contador que aparece por primera vez después de arrancar el
+  proceso no da `increase` en su primer punto, porque no hay uno anterior. Afecta a fuerza bruta,
+  rechazos y entregas fallidas. En la prueba hizo falta un segundo evento.
+  - La corrección es que cada servicio inicialice esos contadores en 0 al arrancar (pendiente para
+    S7.6).
+- **Navegador.** Las alertas de `ui.error` y de web vitals quedan para S9.2: sin tráfico real no hay
+  umbral con sentido.
+- **El correo** sale por el SMTP de SigNoz: Mailpit en local, el proveedor real en S8.6.
+- **Latencia del POS y percentiles del core.** La primera prueba de `latencia-pos` destapó un defecto
+  del core.
+  - `http.server.request.duration` y `messaging.process.duration`, en segundos, usaban las cubetas por
+    defecto del SDK de Python (0, 5, 10… pensadas para milisegundos).
+  - Toda petición de menos de 5 s caía en la primera cubeta, y cualquier percentil salía cerca de
+    4,75 s. La alerta saltaba con cualquier tráfico y los paneles de p95 no servían.
+  - `histogram_views()` (`src/shared/infra/adapters/telemetry.py`) les da cubetas en segundos. Hay que
+    desplegar el core para que el p95 de producción sea real.
+  - Además, en SigNoz un percentil se consulta sobre `<métrica>.bucket`.
+  - `verify` ahora muestra las métricas que SigNoz nunca recibió, que es como se detecta un nombre
+    equivocado.
 
 ## 9. Estándar por tecnología
 
@@ -424,6 +512,10 @@ además `service.name`, `service.version` y `deployment.environment.name`, y la 
 - `shutdown()` en el lifespan, como ya existe.
 
 Métricas (S7.1): el catálogo completo está en `src/shared/infra/telemetry_instruments.py`.
+
+- **Histogramas en segundos.** Cada uno necesita sus cubetas: `histogram_views()` las fija para
+  `http.server.request.duration` y `messaging.process.duration` (S7.5). Un histograma nuevo en segundos
+  se agrega ahí; si no, toma las cubetas del SDK, pensadas para milisegundos.
 
 - **Contar lo que se confirmó.** Lo que pasó (venta confirmada, anulada, devuelta, movimiento escrito)
   se cuenta con `add_on_commit` (`src/shared/infra/metrics.py`): queda en la sesión y se registra en su
@@ -541,10 +633,17 @@ Implementado en S7.3, en `src/shared/lib/telemetry/`.
 
 ### 10.1 SigNoz local
 
-`faclab-infra/scripts/signoz.sh up` levanta SigNoz (v0.118.0) y une su collector a `faclab_network`
+`faclab-infra/scripts/signoz.sh up` levanta SigNoz v0.151.0 con Foundry (S7.5): forja
+`observability/signoz/casting.yaml` y une el ingester a `faclab_network` como `signoz-otel-collector`,
 sin puertos en el host. `docker compose up -d collector` en faclab-infra levanta el Collector de Faclab
 (S7.4), que reenvía a `signoz-otel-collector:4317`. Los contenedores exportan a
 `http://collector:4317` y los procesos del host a `http://localhost:4317`.
+
+- **Alertas por correo:** llegan a Mailpit (`http://localhost:8025`).
+- **Dashboards, alertas y canales:** se importan con `scripts/signoz.sh sync`, con la llave de una
+  *service account* con rol Admin en el `.env` de faclab-infra (su README, «Dashboards y alertas»).
+- **Recursos:** el `casting.yaml` apaga los logs de sistema de ClickHouse que Foundry enciende. En una VM
+  de Docker de 4 GB, el perfilador (`trace_log`) dejó la máquina sin aire durante las pruebas.
 
 faclab-web en desarrollo (`VITE_OTEL_ENABLED=true`) envía a `/otlp` de su propio origen, y el servidor de
 Vite lo reenvía al receptor del navegador del Collector en `http://localhost:4318` (`OTLP_PROXY_TARGET`
@@ -562,6 +661,6 @@ Faclab acumula y reintenta.
 | S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, rechazos, cola, entregas, certificados; `kafka.*` y `dlq.message.count` renombradas a `messaging.*` y `faclab.dead_letters.pending`) (terminada 2026-11-21) |
 | S7.3 | SDK web con trazas que continúan en el core y la facturación, errores de interfaz (`ui.error`), web vitals por ruta y el `requestId` en los avisos de error; `/otlp` local por el proxy de Vite (terminada 2026-11-21) |
 | S7.4 | Collector entre los servicios y SigNoz: receptores de host, Docker (por un proxy de solo lectura), PostgreSQL (`faclab_monitor`), Kafka (lag) y httpcheck; redacción de claves sensibles; receptor del navegador limitado a `faclab-web` (terminada 2026-11-21) |
-| S7.5 | Dashboards y alertas como código, con runbooks |
+| S7.5 | SigNoz v0.151.0 con Foundry; seis dashboards, 22 alertas, canales (correo y Telegram) y runbooks como código, importados con `scripts/signoz.sh sync` y probados con fallas controladas (terminada 2026-11-22) |
 | S7.6 | Pruebas de observabilidad y definición de terminado |
 | S8.6 | Despliegue y operación de SigNoz (versión fijada, accesos, retención, respaldos) |

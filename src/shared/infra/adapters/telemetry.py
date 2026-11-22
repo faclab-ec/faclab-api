@@ -17,6 +17,7 @@ from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -44,6 +45,57 @@ SERVICE_NAMESPACE = "faclab"
 
 # Probes hit these every few seconds; a trace each would drown the real traffic
 EXCLUDED_URLS = "health/live,health/ready"
+
+# Bucket boundaries of the histograms measured in seconds. Without them the SDK uses
+# its default ones (0, 5, 10, 25 ... 10000), meant for milliseconds: every request
+# under 5 s fell in the first bucket and any percentile came out near 4.75 s (S7.5).
+# HTTP: the advisory boundaries of the semantic conventions; messaging: the same as
+# faclab-invoicing's, so both services' panels compare
+HTTP_DURATION_BUCKETS = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0,
+    2.5,
+    5.0,
+    7.5,
+    10.0,
+)
+MESSAGING_DURATION_BUCKETS = (
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
+    30.0,
+    60.0,
+)
+
+
+def histogram_views() -> list[View]:
+    """Explicit buckets for the histograms in seconds"""
+    return [
+        View(
+            instrument_name="http.server.request.duration",
+            aggregation=ExplicitBucketHistogramAggregation(HTTP_DURATION_BUCKETS),
+        ),
+        View(
+            instrument_name="messaging.process.duration",
+            aggregation=ExplicitBucketHistogramAggregation(MESSAGING_DURATION_BUCKETS),
+        ),
+    ]
 
 
 class SkipBackgroundQueries(Sampler):
@@ -136,7 +188,9 @@ class OpenTelemetry:
             endpoint=config.otlp_endpoint, insecure=config.insecure
         )
         reader = PeriodicExportingMetricReader(exporter, export_interval_millis=15000)
-        self._meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+        self._meter_provider = MeterProvider(
+            resource=resource, metric_readers=[reader], views=histogram_views()
+        )
         metrics.set_meter_provider(self._meter_provider)
 
     def _setup_logging(self, resource: Resource, config: OpenTelemetryConfig) -> None:

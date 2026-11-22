@@ -50,3 +50,9 @@ dashboards versionados.
   - En local, SigNoz sin puertos en el host, así que no hay camino directo.
   - El detalle está en [OBSERVABILITY.md §2.1](../OBSERVABILITY.md#21-implementación-s74).
   - El TLS real y el Collector del VPS quedan para S8.1 y S8.6.
+- **S7.5 (2026-11-22):** dashboards y alertas como código, y SigNoz v0.151.0.
+  - Desde v0.130, SigNoz no publica un Docker Compose: se instala con Foundry. faclab-infra fija la
+    versión en `observability/signoz/casting.yaml`, con patches para la red y los puertos.
+  - Se verificó qué soporta esa versión antes de construir: dashboards v2 (Perses `v6`) y reglas
+    `v2alpha1`. El detalle está en [OBSERVABILITY.md §7.1 y §8.1](../OBSERVABILITY.md#71-implementación-s75).
+  - El despliegue en producción sigue siendo de S8.6, con el mismo `casting.yaml` como base.
