@@ -62,8 +62,8 @@ flowchart LR
   Solo se aceptan trazas y logs de la propia aplicación.
   - `/otlp` es del mismo origen que la aplicación, así que el Collector no necesita CORS.
   - En local lo sirve el servidor de Vite, que lo reenvía al OTLP/HTTP de SigNoz (S7.3, §10.1).
-  - En producción, la ruta y sus límites de Caddy quedan para S8.1. El receptor del Collector ya existe
-    (S7.4, abajo).
+  - En producción, el Caddy de entrada lleva `/otlp` del dominio de la web al receptor OTLP/HTTP del
+    Collector, con 1 MiB por envío y 120 por minuto por IP (S8.1, `faclab-infra/deploy/production`).
 
 ### 2.1 Implementación (S7.4)
 
@@ -672,10 +672,10 @@ probada.
     con un exportador a archivo y envía claves sensibles en el recurso, los spans, sus eventos, los
     puntos de las métricas y los logs; ninguna puede llegar al archivo. También comprueba que el
     receptor del navegador solo acepta a `faclab-web`.
-- **CI, pendiente:** verificar que la configuración de producción tenga `service.version` y el endpoint
-  del Collector. Hoy `SERVICE_VERSION` vale `dev` si la imagen no recibe el build arg, y
-  `OTEL_OTLP_ENDPOINT` vale `localhost:4317`; ninguna prueba lo impide. Quedó anotado en ROADMAP.md
-  (S8.1, junto con el despliegue).
+- **CI de la configuración de producción (S8.1):** `faclab-infra/deploy/production/scripts/ci-validate.sh`
+  falla si el compose de producción construye core, invoicing o web sin `SERVICE_VERSION` (si no, valdría
+  `dev`), o si el core o invoicing no exportan a `collector:4317` (si no, `localhost:4317`). Con las
+  imágenes publicadas en GHCR, la versión la fija S8.2.
 - **Contadores en 0.** Un contador que una alerta lee con `increase` exporta 0 al arrancar el proceso,
   con cada valor de sus atributos (`initialize_counters` en el core, `initializeCounters` en
   invoicing). Así, la primera falla después de un reinicio ya cuenta como aumento.

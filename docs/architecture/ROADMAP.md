@@ -159,7 +159,8 @@
   obligatorio de la aplicación (decisión del usuario), probado por repositorio y por API. Falta
   separar dueño, aplicación y un rol con `BYPASSRLS` para el consumidor y la recuperación, y activar
   RLS por `tenant_id` como en el core (S2.4); toca faclab-infra (script de roles). Encaja antes de
-  producción (S8.1); no entró en S3.4.
+  producción; no entró en S3.4 ni en S8.1, cuyo stack usa el rol único `faclab_invoicing`. Sigue
+  pendiente antes del piloto.
 - **Historiales y reportes del POS por sucursal y caja en faclab-web** (detectado en S2.9). El backend
   acepta `branchId` y `terminalId` en turnos, devoluciones y reportes (S2.6), pero las pantallas de
   administración del POS todavía no ofrecen esos filtros ni muestran la caja de cada turno.
@@ -211,7 +212,8 @@
   solo se facturan con `SALES_V1_TENANT_ID`.
 - **Clave de partición en Kafka** (hecho en S2.8 y S3.4). El relay del core y faclab-invoicing usan el
   `tenant_id` como clave, y `faclab-infra/scripts/create-topics.sh` crea los tópicos con 6 particiones
-  (S3.4). El stack de producción (S8.1) tiene que correr ese script antes de arrancar los servicios.
+  (S3.4). Hecho en S8.1: el servicio `kafka-topics` del stack de producción lo corre antes de los
+  workers.
 - **Mensajería, lo que quedó de S3.4** (detectado en S3.4):
   - El reproceso de mensajes `failed` y `dead_letters` es un CLI (`make outbox-retry`,
     `make reprocess-dead-letter`) que deja el autor en la fila y en el log. Los endpoints HTTP y su
@@ -222,8 +224,8 @@
   - El worker revisa el outbox cada segundo, porque el `wake()` tras el commit solo llega al relay del
     mismo proceso. Si llega a pesar, cambiar a LISTEN/NOTIFY.
   - Las dead letters reprocesadas no se purgan.
-  - El stack de producción (S8.1) tiene que levantar el servicio `worker` con su healthcheck y
-    `RUN_BACKGROUND=false` en el API.
+  - ~~El stack de producción (S8.1) tiene que levantar el servicio `worker` con su healthcheck y
+    `RUN_BACKGROUND=false` en el API~~: hecho en S8.1 (`core-worker`).
 - **Bitácora de auditoría, lo que quedó de S3.5** (detectado en S3.5):
   - Quedan fuera del catálogo: el reproceso por CLI (S8.5), la configuración fiscal y los
     certificados (viven en faclab-invoicing; auditarlos allá, con S4.x), los datos del tenant (sin
@@ -328,7 +330,8 @@
   - El correo se envía dentro de la solicitud, sin bitácora de envíos ni reintentos (los tiene la
     factura en faclab-invoicing). El PDF no lleva el logo de la empresa, que vive en faclab-invoicing.
   - Las empresas de producción necesitan `EMAIL_ENABLED`, `EMAIL_FROM` y `SMTP_*` en el core, además de
-    los de faclab-invoicing (S8.1).
+    los de faclab-invoicing. S8.1 los pasa en el stack (`env/` y `secrets.env`); el proveedor se elige
+    con el primer VPS.
   - ~~Cotizar a crédito llega con S5.5~~ (resuelto en S5.5: la venta rápida que cobra la cotización
     acepta un pago `CREDIT` como cualquier otra).
 - **Listas de precios, lo que quedó de S5.3** (2026-11-10):
@@ -380,7 +383,8 @@
     un `campoAdicional`. Sin sesión: hacerlo cuando un cliente lo sea.
   - Fijar `INVOICING_PROVIDER_RUC` en producción (Anexo 26, G-81) y leer la Res.
     NAC-DGERCGC26-00000027 para confirmar a qué proveedores aplica (la ficha cita la "resolución
-    2718"). Con el despliegue (S8.1).
+    2718"). S8.1 pasa la variable en el stack (`env/production.env`); el valor y la lectura de la
+    resolución quedan para el primer VPS.
   - Bloquear en el core la venta a consumidor final que supera el límite (hoy invoicing la rechaza
     antes de numerarla y el core la ve `REJECTED` con el motivo): al confirmar en el admin y en el
     POS, con el mismo valor que `FINAL_CONSUMER_MAX_TOTAL`. Encaja con S5.9 o antes del piloto.
@@ -391,17 +395,18 @@
     el SRI de pruebas: el XSD publicado no la tiene y se agregó desde la ficha.
   - ~~Número y fecha de autorización hacia el core~~: S4.4 tampoco los necesitó; la web los lee de
     facturación (`authorizationNumber`, `authorizedAt`) para descargar y reenviar.
-  - Servicio compatible con S3 del VPS (S8.1) y copia de los XML autorizados fuera del servidor, con
-    su retención (S8.3).
+  - ~~Servicio compatible con S3 del VPS (S8.1)~~: Garage, en S8.1. Falta la copia de los XML
+    autorizados fuera del servidor, con su retención (S8.3).
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
     `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
 - **Facturación, lo que quedó de S4.2** (2026-10-29):
   - ~~Métricas de la cola de facturas (vencidas, edad de la más antigua, leases vencidos, duración de
     cada paso)~~: hechas en S7.2 (`faclab.invoices.due`, `oldest_age`, `expired_leases` y
     `step.duration`).
-  - Servicio `invoicing-worker` en el stack de producción: la API con `RUN_BACKGROUND=false`, el
-    worker con el mismo `HEALTHCHECK` y un `stop_grace_period` mayor que `SRI_TIMEOUT_MS` (S8.1). Si
-    se mata antes, sus facturas esperan a que venza el lease (2 minutos por defecto).
+  - ~~Servicio `invoicing-worker` en el stack de producción: la API con `RUN_BACKGROUND=false`, el
+    worker con el mismo `HEALTHCHECK` y un `stop_grace_period` mayor que `SRI_TIMEOUT_MS` (S8.1)~~:
+    hecho en S8.1, con 75 s. Si se mata antes, sus facturas esperan a que venza el lease (2 minutos
+    por defecto).
   - La cola atiende por `next_attempt_at`, sin reparto entre empresas: una con muchas facturas
     vencidas retrasa a las demás. Repartir por empresa si el volumen lo pide.
   - Resincronizar `contracts/` en faclab-invoicing (`npm run contracts:sync`) después del
@@ -410,14 +415,14 @@
     resultados pendientes (`status IN ('authorized', 'rejected') AND result_published_at IS NULL`),
     porque la versión anterior no los publica; su migración `down` quita las columnas de la cola.
   - La API con `RUN_BACKGROUND=false` no se conecta a Kafka, pero la configuración de producción
-    todavía exige `KAFKA_BROKERS`. Relajarlo con S8.1 si estorba.
+    todavía exige `KAFKA_BROKERS`. No estorbó en S8.1: el stack se lo pasa.
 - **Conciliación y mensajes fallidos, lo que quedó de S4.3** (2026-10-30):
   - Diferencias de totales entre la venta y su factura (decisión del usuario: fuera de S4.3). Hoy el
     `importeTotal` de la factura es el `total` que manda el core, así que compararlos no aporta. Si
     faclab-invoicing llega a calcular su propio total, sumar `total` opcional a `InvoiceAuthorized`
     (invoices v1) y una discrepancia `total_mismatch`.
-  - Quitar el tópico `dlq` de `faclab-infra/scripts/create-topics.sh` (y del stack de S8.1) después
-    de desplegar faclab-invoicing: ya nadie lo escribe. Lo que quede en él se puede ignorar: era un
+  - ~~Quitar el tópico `dlq` de `faclab-infra/scripts/create-topics.sh` (y del stack de S8.1)~~:
+    hecho en S8.1. Ya nadie lo escribe. Lo que quede en él se puede ignorar: era un
     tópico sin lector.
   - Las dead letters reprocesadas de faclab-invoicing no se purgan (igual que las del core).
   - El reproceso de dead letters de facturación es un CLI sobre el código compilado (`npm run build`
@@ -436,10 +441,10 @@
     `dead_letters`), no un esquema.
 - **RIDE y correo, lo que quedó de S4.4** (2026-10-30):
   - Rebotes que llegan después (DSN o webhooks del proveedor): hoy solo se registran los síncronos
-    (5xx). Con el proveedor elegido (S8.1).
-  - Proveedor SMTP de producción, `INVOICE_EMAIL_FROM` del dominio de la plataforma con SPF y DKIM, y
-    las variables `SMTP_*` en el stack (S8.1). Sin ellas, producción no arranca salvo con
-    `INVOICE_EMAIL_ENABLED=false`.
+    (5xx). Con el proveedor elegido (primer VPS).
+  - Proveedor SMTP de producción, `INVOICE_EMAIL_FROM` del dominio de la plataforma con SPF y DKIM: con
+    el primer VPS. Las variables `SMTP_*` ya están en el stack (S8.1); sin ellas, producción no arranca
+    salvo con `INVOICE_EMAIL_ENABLED=false`, como staging.
   - ~~Métricas de entregas (pendientes, enviadas, rebotadas, fallidas)~~: hechas en S7.2
     (`faclab.invoices.deliveries` por resultado y `faclab.invoices.pending_deliveries`). Su alerta la
     agregó S7.5 (`entregas-fallidas`).
@@ -455,7 +460,8 @@
   - `POST /api/v1/sales/{id}/payments` y las ventas a crédito o pendientes de pago por la API: v1
     solo recibe ventas pagadas en línea (decisión de la sesión). Se agregan como cambio compatible si
     un integrador los necesita.
-  - Enrutar `/api/v1/invoices*` a faclab-invoicing en Caddy bajo el mismo dominio: S8.1.
+  - ~~Enrutar `/api/v1/invoices*` a faclab-invoicing en Caddy bajo el mismo dominio~~: hecho en S8.1,
+    con el resto de las rutas de facturación en `api.<dominio>`.
   - Límite por cliente en `POST /api/oauth/token` (hoy solo el del proxy por IP) y límites por plan
     (S8.4). Core y facturación cuentan cada uno sus rutas; no hay un límite compartido.
   - Facturación no ve la revocación de un cliente: allí su token vale hasta que vence (15 minutos).
@@ -490,13 +496,15 @@
 - **Portal, documentación y sandbox, lo que quedó de S6.5** (2026-11-19):
   - Desplegar el sandbox (`sandbox.<dominio>`, D-9) con su core, facturación y web, y un workflow
     programado que corra `docs/public-api/examples/run-all.sh` contra él con credenciales `fl_test_`
-    en secretos del repositorio (`FACLAB_SKIP_WEBHOOKS=1`): S8.1. Hoy el job `examples` corre contra
-    un core levantado en el mismo job, sin facturación.
+    en secretos del repositorio (`FACLAB_SKIP_WEBHOOKS=1`). S8.1 dejó el stack listo para el sandbox
+    (otro despliegue con su `env`, `INTEGRATION_ENVIRONMENT=sandbox`), pero desplegarlo necesita un
+    servidor y el despliegue por CI: pasa a S8.2. Hoy el job `examples` corre contra un core levantado
+    en el mismo job, sin facturación.
   - Configurar facturación de una empresa del sandbox (perfil fiscal con ambiente 1 y certificado)
     sin pasos a mano: un comando en faclab-invoicing, y un interruptor de despliegue que impida el
     SRI de producción en el sandbox (hoy solo `NODE_ENV`). El SRI de pruebas pide un RUC y un
     certificado reales.
-  - Subdominio de la documentación (D-9): hoy `/docs/public` del dominio de la API.
+  - ~~Subdominio de la documentación (D-9)~~: resuelto en S8.1, se queda en `api.<dominio>/docs/public`.
   - El cuerpo del mensaje y cada intento en el historial de entregas del portal (lo que quedó de
     S6.4), y el reenvío masivo.
   - La prueba con un integrador externo: se simuló siguiendo **Primeros pasos** paso a paso
@@ -535,8 +543,9 @@
     `soap.call.duration`, `kafka.consumer.*` y `dlq.message.count` dejan de existir. Reiniciar el API y
     el worker de facturación; no depende de otro repo.
 - **Telemetría del navegador, lo que quedó de S7.3** (2026-11-21):
-  - **`/otlp` en producción:** la ruta del Caddy de entrada hacia el receptor OTLP/HTTP del Collector,
-    con `request_body max_size` y límite por IP (S8.1).
+  - ~~**`/otlp` en producción:** la ruta del Caddy de entrada hacia el receptor OTLP/HTTP del
+    Collector, con `request_body max_size` y límite por IP (S8.1)~~: hecho en S8.1 (1 MiB, 120 por
+    minuto por IP).
     - ~~En el Collector propio, `max_request_body_size` en ese receptor y aceptar por esa vía solo
       `service.name=faclab-web` (S7.4)~~: hecho en S7.4 (`otlp/browser` en `:4318`, 1 MiB,
       `filter/browser`).
@@ -557,20 +566,19 @@
     - El core y la facturación solo agregan pruebas.
     - Sin migraciones; en cualquier orden.
 - **Collector e infraestructura, lo que quedó de S7.4** (2026-11-21):
-  - **Collector de producción** (S8.1):
-    - no publicar `4317` ni `4318` fuera del VPS: los servicios por la red interna y el navegador por la
-      ruta `/otlp` de Caddy;
-    - `CORE_HEALTH_URL` al API de producción (`:8080`) y `COLLECTOR_ENVIRONMENT=production`;
-    - `faclab_monitor` con su contraseña en las dos bases.
+  - ~~**Collector de producción** (S8.1)~~: hecho en S8.1:
+    - sin puertos publicados: los servicios llegan por la red interna y el navegador por `/otlp` de
+      Caddy;
+    - `CORE_HEALTH_URL` hacia `core-api:8080` y el entorno del despliegue;
+    - `faclab_monitor` de `db_roles`, con un solo receptor para la instancia compartida.
   - **Destino con TLS** y, si D-1 elige SigNoz Cloud, su llave de ingesta (encabezado del exportador):
     S8.6.
   - **Muestreo `tail_sampling`** en el Collector (100 % de errores y lentas), cuando el volumen lo pida
     (§5.3).
   - ~~**Prueba automática de la redacción** del Collector en CI (exportador a archivo y un span con
     `password`)~~: hecha en S7.6 (`scripts/collector-redaction-test.py`).
-  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`) y un
-    healthcheck en el compose: la imagen es distroless, sin shell; con la extensión `health_check` y un
-    chequeo externo (S7.5 o S8.1).
+  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`): S8.6. El
+    healthcheck se hizo en S8.1: la extensión `health_check`, consultada por `stack.sh status`.
   - **TLS hacia el proxy de Docker.** `docker_stats` avisa que el TCP sin TLS está obsoleto desde
     Docker 26. Se acepta porque la red `docker_api` es interna y solo la comparte con el Collector.
   - **Duración de transacciones de PostgreSQL** (dashboard 5): el receptor no la da sin sus muestras
@@ -610,8 +618,8 @@
     simplificaría las consultas.
   - **Enlaces entre dashboards:** el servidor genera el id de cada dashboard, así que *Ecosistema* los
     nombra. `sync` podría escribir los enlaces en una segunda pasada.
-  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`) y su
-    healthcheck: siguen para S8.1.
+  - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`): S8.6. Su
+    healthcheck se hizo en S8.1.
   - **Despliegue:**
     - faclab-infra levanta SigNoz con `scripts/signoz.sh up` (Foundry, en volúmenes nuevos; los de
       v0.118 no se tocan) y recrea el Collector, que ahora emite `system.*.utilization`.
@@ -624,9 +632,10 @@
     - Sin cambios en la facturación ni la web.
 
 - **Observabilidad en pruebas, lo que quedó de S7.6** (2026-11-22):
-  - **CI de la configuración de producción** (§10 de OBSERVABILITY.md): nada verifica que el despliegue
-    tenga `SERVICE_VERSION` (vale `dev` sin el build arg) y el endpoint del Collector (vale
-    `localhost:4317`). Va con el despliegue (S8.1).
+  - ~~**CI de la configuración de producción** (§10 de OBSERVABILITY.md)~~: hecho en S8.1.
+    `deploy/production/scripts/ci-validate.sh` comprueba que cada imagen se construye con
+    `SERVICE_VERSION` y que cada servicio exporta a `collector:4317`. Con GHCR, la versión de la
+    imagen publicada es de S8.2.
   - **`event.name` en el resto de los logs de facturación** y la línea `http.request.completed` del
     core (§4.4, pendiente desde S1.5): para una sesión de logs.
   - **La alerta de rechazos del SRI** no puede arrancar en 0 (arriba, S7.5): S9.2.
@@ -645,6 +654,37 @@
       pasa a `disableLogCorrelation` (las claves son las mismas). `faclab.invoices.deliveries` exporta
       ceros al arrancar el worker.
     - faclab-infra: solo CI.
+- **Stack de producción, lo que quedó de S8.1** (2026-11-22):
+  - **El primer VPS real.** Se probó en una VM limpia de OrbStack, con la CA interna de Caddy. En un
+    VPS falta:
+    - el DNS y los certificados de Let's Encrypt;
+    - `nmap` desde Internet;
+    - el proveedor SMTP con SPF, DKIM y DMARC (D-3);
+    - `INVOICING_PROVIDER_RUC`.
+  - **Docker Hub.** Sin cuenta da 10 descargas por hora por IP, y la instalación necesita una docena.
+    `provision-vps.sh` pone `mirror.gcr.io` como espejo. Con GHCR (S8.2) las imágenes propias dejan de
+    pasar por ahí; las de terceros (postgres, Kafka, Garage, Collector, Caddy) siguen.
+  - **Rotar `CERTIFICATE_PASSWORD_KEY`.** faclab-invoicing usa una sola clave y cambiarla deja
+    ilegibles los certificados guardados. Le falta una lista de claves, como `SECRET_ENCRYPTION_KEYS`
+    del core.
+  - **Secretos desde archivos.** `*_FILE` en faclab-invoicing, y `DATABASE_URL_FILE` y
+    `SMTP_PASSWORD_FILE` en el core. Hoy esos secretos van como variables, visibles con
+    `docker inspect` en el servidor.
+  - **`trustProxy` en faclab-invoicing.** Detrás de Caddy, sus logs ven la IP del proxy. Sus límites
+    son por cliente, así que nada se rompe.
+  - **Roles separados y RLS en la base de facturación** (arriba, S2.7 y S2.8).
+  - **Sin 401.** Core e invoicing responden 403 `PERMISSION_DENIED` sin token. Un cliente HTTP espera
+    401 para «sin credenciales»; cambiarlo es una decisión de contrato (API pública), no de despliegue.
+  - **Kafka con TLS y SASL** si sale del servidor (G-49, mitigada). Sin IPv6 ni registros AAAA: con
+    IPv6, el proxy de Docker oculta la IP del cliente al límite por IP.
+  - **El sandbox desplegado** y el workflow programado de los ejemplos pasan a S8.2 (arriba, S6.5).
+    Lo mismo vale para staging: la imagen de faclab-invoicing corre con `NODE_ENV=production`, así que
+    solo el ambiente del emisor (pruebas) lo separa del SRI real. Falta un interruptor de despliegue que
+    lo impida.
+  - **Despliegue de esta sesión:** nada cambia en los servicios. En faclab-infra:
+    - `create-topics.sh` aplica `KAFKA_TOPIC_RETENTION_MS` cuando está definida y ya no crea `dlq`;
+      un `dlq` local que exista queda sin uso;
+    - `init-invoicing-db.sh` toma `INVOICING_DATABASES`, con el mismo valor por defecto.
 
 ## 2. Dependencias
 

@@ -4,8 +4,10 @@ El sandbox es un despliegue aparte de Faclab (core, facturación y la aplicació
 base de datos, donde cada integrador recibe una empresa de prueba con datos ficticios. Las
 credenciales de integración que se crean allí son `fl_test_` y solo valen en ese despliegue; las de
 producción (`fl_live_`) no sirven allí, ni al revés. Así el sandbox no comparte datos con
-producción (S6.5, PUBLIC_API.md §10). El subdominio, `sandbox.<dominio>`, queda para D-9 y su
-despliegue para S8.1.
+producción (S6.5, PUBLIC_API.md §10). Es el mismo stack de producción de
+`faclab-infra/deploy/production` (S8.1), desplegado aparte con su propio archivo de entorno, sus
+secretos y sus dominios (por ejemplo `app.sandbox.<dominio>` y `api.sandbox.<dominio>`, D-9). Su
+despliegue llega con S8.2.
 
 ## Configuración del despliegue
 
@@ -20,7 +22,8 @@ despliegue para S8.1.
 faclab-invoicing solo llega al SRI de producción con `NODE_ENV=production`; con otro valor solo
 llega a celcer (el ambiente de pruebas). El del sandbox no debe tener ese permiso, así ninguna
 empresa del sandbox factura en el SRI real aunque su perfil fiscal diga ambiente 2. Hoy no hay un
-interruptor propio para eso en facturación: definirlo es parte del despliegue del sandbox (S8.1).
+interruptor propio para eso en facturación: la imagen de producción siempre corre con
+`NODE_ENV=production`. Definirlo es parte del despliegue del sandbox (S8.2).
 
 ## Crear la empresa de un integrador
 
@@ -68,4 +71,4 @@ worker en el mismo job (sin Kafka, con `WEBHOOK_ALLOW_PRIVATE_URLS=true` porque 
 corren en el runner), crea una empresa con `python -m scripts.sandbox ... --credentials-file` y
 corre `docs/public-api/examples/run-all.sh`. Las descargas de facturas no corren allí. Correr los
 mismos ejemplos contra el sandbox desplegado (programado, con credenciales en secretos del
-repositorio y `FACLAB_SKIP_WEBHOOKS=1`) queda para S8.1.
+repositorio y `FACLAB_SKIP_WEBHOOKS=1`) queda para S8.2.
