@@ -209,7 +209,7 @@ Middleware centralizado con respuestas estructuradas:
 - **Traces**: Cada request HTTP y ejecucion de handler genera spans automaticamente
 - **Metrics**: Histogramas de duracion, contadores de invocaciones y errores
 - **Logs**: structlog con formato JSON (produccion) o consola (desarrollo)
-- **Exportacion**: OTLP gRPC hacia un collector configurable
+- **Exportacion**: OTLP gRPC hacia el OTel Collector de faclab-infra (S7.4), que agrega metricas del host, los contenedores, PostgreSQL y Kafka, borra atributos sensibles y reenvia a SigNoz
 
 ## Requisitos Previos
 
@@ -236,17 +236,18 @@ Variables principales (la lista completa esta en `config/base.py`):
 | `RUN_BACKGROUND` | Por defecto `true`; `docker-compose.yml` lo pone en `false` en el API y levanta el servicio `worker` | `false` en el API cuando corre el worker; `true` lo vuelve a arrancar en el API (vuelta atras) |
 | `DATABASE_URL_MIGRATIONS` | Por defecto la de `DATABASE_URL` | El rol `faclab_owner`; solo la usa Alembic |
 | `DATABASE_URL_ADMIN` | Superusuario para `make db-roles` y `make test-integration` | Solo para crear los roles (`python -m src.shared.infra.db_roles`) |
+| `DATABASE_URL_MONITOR` | Opcional: el rol `faclab_monitor` del Collector de faclab-infra | Opcional: lo mismo; sin ella `make db-roles` no lo crea |
 | `CORS_ORIGINS` | Por defecto `http://localhost:3000,http://localhost:5173` | **Obligatoria**: origenes separados por comas; no admite `*` |
 | `JWT_PRIVATE_KEY_FILE` o `JWT_PRIVATE_KEY` | Por defecto una clave Ed25519 de desarrollo, fija | **Obligatoria**: la clave privada Ed25519 en PEM que firma los tokens (`openssl genpkey -algorithm ed25519`); se rechaza la de desarrollo |
 | `JWT_PUBLIC_KEYS_FILE` o `JWT_PUBLIC_KEYS` | Vacia | Solo durante una rotacion: la clave publica anterior (o la siguiente), que se sigue aceptando y publicando en `/.well-known/jwks.json` (ver `docs/auth-spec.md`) |
 | `DOCS_ENABLED` | Por defecto `true` | Por defecto `false` |
-| `OTEL_ENABLED`, `OTEL_OTLP_ENDPOINT` | `.env.example` apunta a SigNoz local (`http://signoz-otel-collector:4317`, levantado con `faclab-infra/scripts/signoz.sh up`) | Endpoint del collector |
+| `OTEL_ENABLED`, `OTEL_OTLP_ENDPOINT` | `.env.example` apunta al Collector de faclab-infra (`http://collector:4317`), que reenvia a SigNoz local (`faclab-infra/scripts/signoz.sh up`) | Endpoint del Collector local; nunca SigNoz directo |
 | `OTEL_EXPORTER_OTLP_INSECURE` | Por defecto `true` (sin TLS) | Por defecto `false` (TLS) |
 | `SERVICE_VERSION` | Por defecto `dev` | La imagen lo fija en el build: `--build-arg SERVICE_VERSION=<tag o SHA>` |
 
 Si falta alguna variable obligatoria, el arranque falla con un mensaje que las nombra.
 
-Cada proceso entra a PostgreSQL con su rol (Row-Level Security, S2.4): el API como `faclab_app`, que no puede saltarse las politicas por empresa; el worker (relay del outbox, consumidor y purgas) como `faclab_worker`, que si puede porque trabaja con los mensajes y las filas de todas; y las migraciones como `faclab_owner`, dueno de las tablas. `make db-roles` crea los tres roles (con las contrasenas de sus URLs) y la base, y se corre antes de `make upgrade`. Detalle en [docs/architecture/MULTI_TENANCY.md](docs/architecture/MULTI_TENANCY.md) §6.
+Cada proceso entra a PostgreSQL con su rol (Row-Level Security, S2.4): el API como `faclab_app`, que no puede saltarse las politicas por empresa; el worker (relay del outbox, consumidor y purgas) como `faclab_worker`, que si puede porque trabaja con los mensajes y las filas de todas; y las migraciones como `faclab_owner`, dueno de las tablas. `make db-roles` crea los tres roles (con las contrasenas de sus URLs) y la base, y se corre antes de `make upgrade`. Con `DATABASE_URL_MONITOR` crea tambien `faclab_monitor`, el usuario del OTel Collector de faclab-infra (S7.4): solo tiene `pg_monitor`, que lee estadisticas del servidor y ninguna tabla. Detalle en [docs/architecture/MULTI_TENANCY.md](docs/architecture/MULTI_TENANCY.md) §6.
 
 La imagen de produccion lee ademas `WEB_CONCURRENCY` (workers de uvicorn, por defecto 2) y `FORWARDED_ALLOW_IPS` (de quien confiar los encabezados `X-Forwarded-*`, por defecto `*` porque el API solo se expone detras del proxy).
 
@@ -279,7 +280,7 @@ make dev                        # Desarrollo con hot-reload
 make down                       # Detener contenedores
 
 # Base de datos
-make db-roles                   # Roles faclab_owner/app/worker y la base (idempotente; antes de upgrade)
+make db-roles                   # Roles faclab_owner/app/worker (y faclab_monitor) y la base (idempotente; antes de upgrade)
 make migrations m="descripcion" # Crear migracion
 make upgrade                    # Aplicar migraciones (como faclab_owner)
 make downgrade d=revision_id    # Revertir migracion

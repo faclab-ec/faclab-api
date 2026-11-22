@@ -8,7 +8,9 @@
 
 Actualizado tras S1.5 (2026-10-15), que corrigió G-61 a G-67 y G-71; S7.1 (2026-11-21), que agregó
 las métricas del core (G-68); S7.2 (2026-11-21), que agregó las de facturación (G-68) y el aviso de
-certificados por vencer (G-23), y S7.3 (2026-11-21), que agregó la telemetría del navegador (G-69).
+certificados por vencer (G-23); S7.3 (2026-11-21), que agregó la telemetría del navegador (G-69), y S7.4
+(2026-11-21), que puso el OTel Collector entre los servicios y SigNoz, con métricas de host,
+contenedores, PostgreSQL, Kafka (lag incluido) y salud (G-68).
 
 | Aspecto | faclab-core | faclab-invoicing | faclab-web |
 |---|---|---|---|
@@ -21,6 +23,9 @@ certificados por vencer (G-23), y S7.3 (2026-11-21), que agregó la telemetría 
 | Recurso | `service.name`, `service.namespace`, `service.version`, `deployment.environment.name` | Ídem | Ídem, sin `service.instance.id` |
 | Redacción | Lista bloqueada de §4.6 (structlog) | Lista bloqueada de §4.6 (pino) | Valores del query string de cada URL; de un `ApiError`, el mensaje del servidor (§9.3) |
 | Dashboards y alertas | No existen | No existen | — |
+
+Los tres exportan al Collector de faclab-infra (S7.4, §2), que agrega las métricas de infraestructura,
+vuelve a borrar las claves sensibles y reenvía a SigNoz.
 
 Lo que se conserva:
 
@@ -47,13 +52,51 @@ flowchart LR
 ```
 
 - Los servicios exportan al Collector local por la red interna de Docker; nunca directo a SigNoz.
-- El Collector aplica `memory_limiter`, `batch` y el procesador de atributos que borra claves sensibles.
-  Después reenvía con TLS.
+- El Collector aplica `memory_limiter`, `batch` y el procesador que borra claves sensibles. Después
+  reenvía con TLS.
 - El navegador envía OTLP/HTTP a una ruta pública (`/otlp`) que Caddy limita por tamaño y frecuencia.
   Solo se aceptan trazas y logs de la propia aplicación.
   - `/otlp` es del mismo origen que la aplicación, así que el Collector no necesita CORS.
   - En local lo sirve el servidor de Vite, que lo reenvía al OTLP/HTTP de SigNoz (S7.3, §10.1).
-  - En producción la ruta y sus límites quedan para S8.1 (Caddy) y S7.4 (receptor del Collector).
+  - En producción, la ruta y sus límites de Caddy quedan para S8.1. El receptor del Collector ya existe
+    (S7.4, abajo).
+
+### 2.1 Implementación (S7.4)
+
+El Collector vive en faclab-infra: servicio `collector` de `docker-compose.yml`, configuración en
+`observability/otel-collector/config.yaml` e imagen `otel/opentelemetry-collector-contrib:0.165.0`.
+Detalle y operación en el README de faclab-infra.
+
+- **Nombre:** el servicio se llama `collector` y no `otel-collector`. El collector de SigNoz se llama así
+  y el overlay lo une a `faclab_network`, donde los dos nombres chocarían.
+- **Puertos.** Publica `4317` y `4318` en el host. El overlay de SigNoz le quita los suyos
+  (`ports: !reset []`), así que los valores por defecto de faclab-invoicing (`localhost:4317`) y del
+  proxy de Vite (`localhost:4318`) llegan al Collector sin cambios.
+- **Receptores:**
+  - `otlp`: gRPC en `:4317`, para los servicios.
+  - `otlp/browser`: HTTP en `:4318`, solo para trazas y métricas. Acepta hasta 1 MiB por envío (un cuerpo
+    mayor responde 400), `/v1/logs` responde 404 y `filter/browser` descarta lo que no sea
+    `service.name=faclab-web`.
+  - `host_metrics` (raíz en `/hostfs`, solo lectura).
+  - `docker_stats`.
+  - `postgresql/core` y `postgresql/invoicing`, como `faclab_monitor`.
+  - `kafka_metrics`.
+  - `http_check` de `/health/ready` del core y `/health` de la facturación.
+- **Procesadores:**
+  - `memory_limiter`: 80 % de 512 MiB.
+  - `resource_detection` (`env` y `docker`): agrega `host.name`, `os.type` y
+    `deployment.environment.name` sin pisar los del servicio; el navegador no pasa por él.
+  - `transform/redact`.
+  - `batch`.
+- **Exportador:** `otlp_grpc` a `SIGNOZ_OTLP_ENDPOINT`, con `SIGNOZ_OTLP_INSECURE` (TLS salvo en local).
+- **Permisos:**
+  - **Docker.** El socket solo lo monta `docker-socket-proxy`, que deja pasar `GET` de contenedores,
+    eventos, versión e info, en una red interna con el Collector. Un socket montado `:ro` acepta
+    cualquier llamada a la API.
+  - **PostgreSQL.** `faclab_monitor` tiene `pg_monitor` y ninguna tabla. En el core lo crea
+    `make db-roles` con `DATABASE_URL_MONITOR`; en `invoicing-db`, su script de inicio.
+- **Vuelta atrás:** el endpoint de cada servicio a `http://signoz-otel-collector:4317` (directo a SigNoz,
+  sin métricas de infraestructura).
 
 ## 3. Atributos de recurso (todos los servicios)
 
@@ -133,8 +176,16 @@ error. Hoy ambos se marcan (G-65).
 
 ### 4.6 Redacción
 
-Hay tres capas: la aplicación (procesador de structlog o `redact` de pino), el Collector (procesador
-`attributes` o `redaction`) y la revisión de código.
+Hay tres capas: la aplicación (procesador de structlog o `redact` de pino), el Collector y la revisión
+de código.
+
+En el Collector (S7.4), `transform/redact` borra las claves de la lista de abajo y sus variantes del
+core (`is_sensitive_key`: `current_password`, `access_token`, `cookie`, `api_key`…):
+
+- en el recurso, los spans, sus eventos, los puntos de las métricas y los logs;
+- sin distinguir mayúsculas y también detrás de un prefijo (`http.request.header.authorization`).
+
+La aplicación enmascara el valor (`[REDACTED]`); el Collector borra la clave.
 
 Nunca se registran:
 
@@ -239,7 +290,7 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.outbox.oldest_age` | Gauge observable, s | `messaging.destination.name` | Core worker (`queue_metrics`) | Existe (S7.1); 0 sin pendientes |
 | `faclab.outbox.failed` | Gauge observable, `{message}` | `messaging.destination.name` | Core worker (`queue_metrics`) | Existe (S7.1) |
 | `faclab.dead_letters.pending` | Gauge observable, `{message}` | `messaging.destination.name` (`service.name` va en el recurso) | Ambos | Existe en el core (S7.1, `queue_metrics`) y en invoicing (S7.2, el muestreo del worker sobre su tabla `dead_letters`; reemplaza el contador `dlq.message.count`) |
-| `kafka.consumer_group.lag` | Gauge | `group`, `topic` | Collector (`kafkametrics`) | Falta |
+| `kafka.consumer_group.lag`, `kafka.consumer_group.lag_sum` | Gauge, `{message}` | `group`, `topic`; `partition` en `lag` | Collector (`kafka_metrics`, cada 30 s) | Existe (S7.4). Además brokers, particiones, offsets y miembros de cada grupo (`kafka.*`) |
 | `faclab.sri.request.duration` | Histograma, s | `faclab.sri.operation` (`recepcion`, `autorizacion`), `faclab.sri.outcome` (`ok`, `timeout`, `error`), `faclab.sri.environment` (`pruebas`, `produccion`) | Invoicing (adaptadores SRI) | Existe (S7.2); reemplaza `soap.call.duration`. `faclab.sri.environment` se agregó para el filtro del dashboard 4. `error` es una llamada sin respuesta: un DEVUELTA es `ok` y se cuenta en `faclab.invoices.rejections` |
 | `faclab.invoices.step.duration` | Histograma, s | `faclab.invoice.step` (`prepare`, `sign`, `send`, `authorize`), `faclab.step.outcome` (`advanced`, `blocked`, `invalid`, `retry`, `conflict`), `faclab.document.type` | Invoicing (decorador de los pasos) | Existe (S7.2, lo que S4.2 dejó pendiente). El resultado es la clase del issue que deja el paso |
 | `faclab.invoices.due` | Gauge observable, `{document}` | — | Invoicing worker (muestreo) | Existe (S7.2): filas de la cola vencidas que nadie tiene; un valor que crece indica pocos workers |
@@ -248,7 +299,7 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.invoices.pending_deliveries` | Gauge observable, `{delivery}` | — | Invoicing worker (muestreo) | Existe (S7.2) |
 | `faclab.webhooks.deliveries` | Contador, `{delivery}` | `result` (`delivered`, `retry`, `failed`) | Core worker | Existe (S6.4) |
 | `faclab.auth.login.attempts` | Contador, `{attempt}` | `result` (`success`, `invalid`, `locked`, `no_tenant`) | Core (ruta de login) | Existe (S7.1). `no_tenant`: contraseña correcta, pero sin ninguna empresa activa (ni éxito ni fuerza bruta) |
-| Host, contenedores, PostgreSQL | Varias | Estándar de cada receptor | Collector | Falta |
+| Host (`system.*`), contenedores (`container.*`), PostgreSQL (`postgresql.*`), salud (`httpcheck.*`) | Varias | Estándar de cada receptor; `server.address` separa los dos PostgreSQL, `container.name` cada contenedor, `http.url` cada chequeo | Collector (`host_metrics`, `docker_stats`, `postgresql`, `http_check`) | Existe (S7.4). PostgreSQL incluye las opcionales `postgresql.database.locks` y `postgresql.deadlocks`; los procesos del host quedan fuera por cardinalidad |
 
 ### 6.2 Negocio
 
@@ -490,14 +541,16 @@ Implementado en S7.3, en `src/shared/lib/telemetry/`.
 
 ### 10.1 SigNoz local
 
-`faclab-infra/scripts/signoz.sh up` levanta SigNoz (v0.118.0) y une su collector a `faclab_network`. Los
-contenedores exportan a `http://signoz-otel-collector:4317` y los procesos del host a
-`http://localhost:4317`.
+`faclab-infra/scripts/signoz.sh up` levanta SigNoz (v0.118.0) y une su collector a `faclab_network`
+sin puertos en el host. `docker compose up -d collector` en faclab-infra levanta el Collector de Faclab
+(S7.4), que reenvía a `signoz-otel-collector:4317`. Los contenedores exportan a
+`http://collector:4317` y los procesos del host a `http://localhost:4317`.
 
 faclab-web en desarrollo (`VITE_OTEL_ENABLED=true`) envía a `/otlp` de su propio origen, y el servidor de
-Vite lo reenvía al OTLP/HTTP de SigNoz en `http://localhost:4318` (`OTLP_PROXY_TARGET` lo cambia). La primera vez hay que crear la cuenta de administrador en
-`http://localhost:8080`: hasta entonces SigNoz no le entrega configuración al collector y nada escucha
-en 4317.
+Vite lo reenvía al receptor del navegador del Collector en `http://localhost:4318` (`OTLP_PROXY_TARGET`
+lo cambia). La primera vez hay que crear la cuenta de administrador en `http://localhost:8080`: hasta
+entonces SigNoz no le entrega configuración a su collector, que no acepta nada, y el Collector de
+Faclab acumula y reintenta.
 
 ## 11. Implementación por sesiones
 
@@ -508,7 +561,7 @@ en 4317.
 | S7.1 | Métricas técnicas y de negocio del core (outbox, fallidos, pool, ventas, inventario, login; `kafka.*` renombradas a `messaging.*`) (terminada 2026-11-21) |
 | S7.2 | Métricas y trazas de facturación (SRI, transiciones, tiempo a resultado, rechazos, cola, entregas, certificados; `kafka.*` y `dlq.message.count` renombradas a `messaging.*` y `faclab.dead_letters.pending`) (terminada 2026-11-21) |
 | S7.3 | SDK web con trazas que continúan en el core y la facturación, errores de interfaz (`ui.error`), web vitals por ruta y el `requestId` en los avisos de error; `/otlp` local por el proxy de Vite (terminada 2026-11-21) |
-| S7.4 | Collector con receptores de host, Docker, PostgreSQL, Kafka y httpcheck |
+| S7.4 | Collector entre los servicios y SigNoz: receptores de host, Docker (por un proxy de solo lectura), PostgreSQL (`faclab_monitor`), Kafka (lag) y httpcheck; redacción de claves sensibles; receptor del navegador limitado a `faclab-web` (terminada 2026-11-21) |
 | S7.5 | Dashboards y alertas como código, con runbooks |
 | S7.6 | Pruebas de observabilidad y definición de terminado |
 | S8.6 | Despliegue y operación de SigNoz (versión fijada, accesos, retención, respaldos) |

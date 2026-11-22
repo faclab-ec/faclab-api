@@ -381,6 +381,10 @@ CREATE POLICY tenant_isolation ON products
     (`_tenant_of_sale` se retiró en S2.8). El handler de cada mensaje, en cambio, corre en la empresa
     del mensaje como `faclab_app`. Las tareas de plataforma que recorran empresas abren un contexto
     por empresa o usan este rol.
+  - `faclab_monitor` (S7.4, opcional, con `DATABASE_URL_MONITOR`) es el usuario del OTel Collector de
+    faclab-infra. Solo tiene `pg_monitor` (estadísticas del servidor) y `CONNECT`: ninguna tabla, y no
+    entra en los privilegios por defecto de `faclab_owner`. `test_rls.py` lo comprueba cuando el fixture
+    lo crea (`TEST_DATABASE_URL_MONITOR`).
 - `SET LOCAL` (no `SET`) para que el valor muera con la transacción y no se filtre a otra solicitud que
   reutilice la conexión del pool.
 - Permisos (`80bfd3a8c63b`): app y worker tienen `SELECT, INSERT, UPDATE, DELETE` en todas las tablas

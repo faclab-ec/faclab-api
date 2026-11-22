@@ -405,12 +405,14 @@ Variables:
 
 ```
 OTEL_ENABLED=true
-OTEL_OTLP_ENDPOINT=http://signoz-otel-collector:4317   # SigNoz local en faclab_network
+OTEL_OTLP_ENDPOINT=http://collector:4317               # Collector de faclab-infra (S7.4)
 OTEL_EXPORTER_OTLP_INSECURE=true                        # por defecto solo en local
 OTEL_SERVICE_NAME=faclab-core
 OTEL_SAMPLING_RATE=1.0
 SERVICE_VERSION=dev                                     # la imagen lo fija en el build
 ```
 
-SigNoz local: `faclab-infra/scripts/signoz.sh up` (la primera vez, crear la cuenta en
-`http://localhost:8080`).
+Collector y SigNoz local: `docker compose up -d collector` y `scripts/signoz.sh up` en faclab-infra (la
+primera vez, crear la cuenta en `http://localhost:8080`). El Collector reenvía a SigNoz, agrega las
+métricas de host, contenedores, PostgreSQL y Kafka y borra atributos sensibles; los servicios nunca
+exportan directo a SigNoz.

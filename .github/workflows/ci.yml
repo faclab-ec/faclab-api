@@ -126,6 +126,7 @@ jobs:
           TEST_DATABASE_URL_APP: postgresql://faclab_app:faclab_app@localhost:5432/faclab_test
           TEST_DATABASE_URL_WORKER: postgresql://faclab_worker:faclab_worker@localhost:5432/faclab_test
           TEST_DATABASE_URL_MIGRATIONS: postgresql://faclab_owner:faclab_owner@localhost:5432/faclab_test
+          TEST_DATABASE_URL_MONITOR: postgresql://faclab_monitor:faclab_monitor@localhost:5432/faclab_test
         run: pytest tests/integration/postgres --cov=src --cov-append --cov-report=
 
       - name: Coverage report
