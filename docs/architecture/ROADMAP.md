@@ -526,8 +526,9 @@
   - Con varios workers de facturación, cada uno reporta su muestra de los gauges (los paneles agregan
     con `max`) y el log diario de certificados sale una vez por worker y por arranque.
   - ~~Lag del consumidor de facturación y métricas de su PostgreSQL: S7.4~~: hecho en S7.4.
-  - `event.name` en el resto de los logs de facturación: hoy solo lo llevan los de certificados
-    (S7.6 o una sesión de logs).
+  - `event.name` en el resto de los logs de facturación: ~~los del consumidor, el productor, la cola y
+    el procesador de facturas~~ los puso S7.6; faltan los demás (HTTP, certificados, configuración,
+    entregas, notas de crédito, CLI), para una sesión de logs.
   - El muestreo recorre las facturas en vuelo cada 60 s (`ix_invoices_status_created_at`); revisar su
     costo si la tabla crece mucho.
   - **Despliegue:** sin migraciones. Variable opcional nueva `WORKER_METRICS_INTERVAL_MS` (60000).
@@ -565,8 +566,8 @@
     S8.6.
   - **Muestreo `tail_sampling`** en el Collector (100 % de errores y lentas), cuando el volumen lo pida
     (§5.3).
-  - **Prueba automática de la redacción** del Collector en CI (exportador a archivo y un span con
-    `password`): S7.6. Hoy CI valida la configuración y la redacción se comprobó a mano contra SigNoz.
+  - ~~**Prueba automática de la redacción** del Collector en CI (exportador a archivo y un span con
+    `password`)~~: hecha en S7.6 (`scripts/collector-redaction-test.py`).
   - **Métricas propias del Collector** (cola del exportador, rechazos del `memory_limiter`) y un
     healthcheck en el compose: la imagen es distroless, sin shell; con la extensión `health_check` y un
     chequeo externo (S7.5 o S8.1).
@@ -596,10 +597,11 @@
   - **Umbrales con línea base (S9.2):** todos son provisionales. Pendientes también:
     - las alertas del navegador (`ui.error`, web vitals);
     - el 5 % de rechazos, que hoy está solo en el panel.
-  - **Contadores inicializados en 0 (S7.6).** El primer punto de un contador que aparece después de
-    arrancar el proceso no da `increase`, así que la primera falla no avisa. Afecta a
-    `faclab.auth.login.attempts`, `faclab.invoices.rejections` y `faclab.invoices.deliveries`, y en la
-    prueba hizo falta un segundo evento.
+  - ~~**Contadores inicializados en 0 (S7.6).**~~ El primer punto de un contador que aparece después de
+    arrancar el proceso no da `increase`, así que la primera falla no avisa. S7.6 inicializa
+    `faclab.auth.login.attempts` y `faclab.invoices.deliveries`. **Queda `faclab.invoices.rejections`**
+    (S9.2): cada `faclab.sri.message.code` abre su propia serie, así que no se puede inicializar. La
+    alerta podría usar `faclab.invoices.transitions` hacia el rechazo, que tiene atributos acotados.
   - **El worker de facturación en desarrollo** (`npm run dev:worker`, con `ts-node-dev`) se reporta como
     `faclab-invoicing` y no como `faclab-invoicing-worker`. `serviceNameFor` no ve el *entry point* en
     `process.argv`. No se verificó con la imagen (`node dist/worker.js`).
@@ -620,6 +622,29 @@
       - desplegarlo hace que el p95 sea real (`latencia-pos` y los paneles de latencia);
       - en orden, va después de faclab-infra o junto con él.
     - Sin cambios en la facturación ni la web.
+
+- **Observabilidad en pruebas, lo que quedó de S7.6** (2026-11-22):
+  - **CI de la configuración de producción** (§10 de OBSERVABILITY.md): nada verifica que el despliegue
+    tenga `SERVICE_VERSION` (vale `dev` sin el build arg) y el endpoint del Collector (vale
+    `localhost:4317`). Va con el despliegue (S8.1).
+  - **`event.name` en el resto de los logs de facturación** y la línea `http.request.completed` del
+    core (§4.4, pendiente desde S1.5): para una sesión de logs.
+  - **La alerta de rechazos del SRI** no puede arrancar en 0 (arriba, S7.5): S9.2.
+  - **Los nombres de los spans del core** quedaron como están (`command.<Nombre>`,
+    `event.publish.<Tipo>`), y §5.2 se corrigió para documentarlos. Tampoco llevan `faclab.operation`:
+    la empresa y la sucursal van en el span raíz.
+  - Los spans de Kafka de invoicing usan `messaging.kafka.destination.partition` y
+    `messaging.kafka.message.offset`; los del core, `messaging.destination.partition.id` y
+    `messaging.kafka.offset`. El estándar no fija esos dos atributos; unificarlos sería un cambio de
+    convención.
+  - **Despliegue:**
+    - Sin migraciones ni variables nuevas, en cualquier orden.
+    - Core: los spans `send`, `process` y `webhook.deliver` ganan atributos, y
+      `faclab.auth.login.attempts` exporta ceros al arrancar.
+    - Invoicing: sus logs llevan `trace_id` y `span_id` del `mixin` propio, y `PinoInstrumentation`
+      pasa a `disableLogCorrelation` (las claves son las mismas). `faclab.invoices.deliveries` exporta
+      ceros al arrancar el worker.
+    - faclab-infra: solo CI.
 
 ## 2. Dependencias
 
@@ -731,7 +756,7 @@ flowchart LR
 | [S7.3](sessions/S7.3-observabilidad-del-frontend.md) | Observabilidad del frontend | Trazas desde el navegador, errores y web vitals | S1.5 | web, core | G-69 | M |
 | [S7.4](sessions/S7.4-collector-e-infraestructura.md) | Collector e infraestructura | Collector con métricas de host, Docker, PostgreSQL y Kafka | S1.5 | infra | G-68 | M |
 | [S7.5](sessions/S7.5-dashboards-y-alertas.md) | Dashboards y alertas | SigNoz v0.151 con Foundry; seis dashboards, alertas y runbooks como código | S7.1, S7.2, S7.3, S7.4 | infra, core | G-70 | M |
-| [S7.6](sessions/S7.6-observabilidad-en-pruebas.md) | Observabilidad en pruebas | Pruebas de spans y logs; definición de terminado | S7.1, S7.2 | core, invoicing | — | S |
+| [S7.6](sessions/S7.6-observabilidad-en-pruebas.md) | Observabilidad en pruebas | Pruebas de spans y logs; definición de terminado | S7.1, S7.2 | core, invoicing, infra | — | S |
 | [S8.1](sessions/S8.1-stack-de-produccion-en-vps.md) | Stack de producción | Compose de producción en el VPS con Caddy y secretos | S1.2, S1.3, S2.7, S3.4 | infra | G-49, G-59 | L |
 | [S8.2](sessions/S8.2-entrega-continua.md) | Entrega continua | Imágenes versionadas, despliegue y reversión | S8.1, S1.1 | todos | G-57 | M |
 | [S8.3](sessions/S8.3-respaldos-y-recuperacion.md) | Respaldos y recuperación | PITR, archivo de comprobantes y simulacro de restauración | S8.1 | infra | G-59 | M |
