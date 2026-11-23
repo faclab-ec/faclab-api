@@ -693,9 +693,9 @@
       `chore(release): vX.Y.Z`, y la primera versión llega con el PR de S8.2;
     - el despliegue de 0.1.0 en staging (`versions/staging.env` ya lo dice), que hoy corre faclab-infra
       0.1.0-rc.4 y lo demás en 0.1.0-rc.1;
-    - borrar de GHCR las versiones de prueba: `0.1.0-broken.1` del core, `0.1.0-probe.1` de invoicing y
-      las prereleases `rc`. Necesita el permiso `delete:packages` (`gh auth refresh -s delete:packages`)
-      o la UI.
+    - borrar de GHCR las prereleases `rc` (`0.1.0-broken.1` y `0.1.0-probe.1` ya se borraron). Cada
+      versión publicada deja 6 versiones sin tag, sus imágenes por plataforma y sus atestaciones:
+      hay que borrarlas junto con la del tag. Necesita el permiso `delete:packages`.
   - **El primer VPS:**
     - la primera corrida del workflow `Deploy` de faclab-infra;
     - los entornos de GitHub `staging` y `production`, con revisor obligatorio en producción;
