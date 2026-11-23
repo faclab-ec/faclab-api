@@ -308,7 +308,9 @@ class BaseConfig:
     DOCS_ENABLED = env.bool("DOCS_ENABLED", False)
 
     API_TITLE = "Faclab Core API"
-    API_VERSION = "1.0.0"
+    # The release (S8.2): the image's tag, `dev` outside one. The public API's contract keeps its
+    # own version (src/public_api/infra/openapi.py)
+    API_VERSION = SERVICE_VERSION
     API_DESCRIPTION = """
 **Faclab Core** is a comprehensive sales and inventory management platform.
 It exposes two independent API surfaces — **Admin** for back-office operations

@@ -360,6 +360,40 @@ docker run --rm -e DATABASE_URL_MIGRATIONS=... faclab-core alembic upgrade head 
 
 El contenedor valida la configuracion antes de levantar los workers: si falta una variable obligatoria, sale con codigo 1 y el mensaje en vez de reiniciar los workers en bucle. Su `HEALTHCHECK` llama a `/health/live`.
 
+## Versiones y publicación
+
+Desde S8.2, cada versión es un tag `vX.Y.Z` con
+[versionado semántico](https://semver.org/lang/es/). Hasta el piloto la versión empieza por 0, y una
+versión menor puede romper la compatibilidad. Lo que trae cada una está en
+[CHANGELOG.md](CHANGELOG.md).
+
+1. **Preparar.** En `master` al día, `scripts/release.sh minor` (o `major`, `patch`, `X.Y.Z`):
+   - crea la rama `release/vX.Y.Z`;
+   - agrega al CHANGELOG la sección de la versión, con los commits de `master` desde la anterior
+     agrupados por tipo (`feat`, `fix`, `perf`, `!` incompatibles, los demás);
+   - hace el commit `chore(release): vX.Y.Z`.
+
+   Revisa la sección, súbela y abre el PR con ese título. Si cambió un contrato o hay una migración
+   que no se puede revertir, agrega su línea.
+2. **Etiquetar.** Después del merge, `scripts/release.sh tag X.Y.Z` crea el tag anotado sobre el
+   commit del release en `origin/master`. Publícalo con `git push origin vX.Y.Z`.
+3. **Publicar.** El tag corre `.github/workflows/release.yml`:
+   - comprueba que la versión venga de `master` y tenga su sección;
+   - construye la etapa `production` en un runner nativo por arquitectura (amd64 y arm64), con
+     `SERVICE_VERSION=X.Y.Z` (el `service.version` de cada log y span);
+   - publica `ghcr.io/faclab-ec/faclab-api:X.Y.Z`;
+   - comprueba las dos plataformas, `SERVICE_VERSION` y la etiqueta `org.opencontainers.image.version`;
+   - crea el release de GitHub con la sección del CHANGELOG.
+
+Una **prerelease** (`vX.Y.Z-rc.1`) se publica igual desde cualquier commit subido, sin release de
+GitHub. Es para probar en staging.
+
+Desplegar una versión es un PR en faclab-infra que cambia
+`deploy/production/versions/<entorno>.env`. Ese PR no pasa si la combinación de versiones no está en
+la [matriz de compatibilidad](https://github.com/faclab-ec/faclab-infra/blob/master/deploy/production/COMPATIBILITY.md).
+Al publicar una versión, agrega su fila a esa matriz. La guía de despliegue y reversión está en
+`deploy/production/README.md` de faclab-infra.
+
 ## Documentacion
 
 | Documento | Descripcion |
