@@ -497,9 +497,9 @@
   - Desplegar el sandbox (`sandbox.<dominio>`, D-9) con su core, facturación y web, y un workflow
     programado que corra `docs/public-api/examples/run-all.sh` contra él con credenciales `fl_test_`
     en secretos del repositorio (`FACLAB_SKIP_WEBHOOKS=1`). S8.1 dejó el stack listo para el sandbox
-    (otro despliegue con su `env`, `INTEGRATION_ENVIRONMENT=sandbox`), pero desplegarlo necesita un
-    servidor y el despliegue por CI: pasa a S8.2. Hoy el job `examples` corre contra un core levantado
-    en el mismo job, sin facturación.
+    (otro despliegue con su `env`, `INTEGRATION_ENVIRONMENT=sandbox`) y S8.2 el despliegue por CI
+    (`versions/sandbox.env` y el workflow `Deploy` con un entorno más); falta un servidor público, el
+    primer VPS. Hoy el job `examples` corre contra un core levantado en el mismo job, sin facturación.
   - Configurar facturación de una empresa del sandbox (perfil fiscal con ambiente 1 y certificado)
     sin pasos a mano: un comando en faclab-invoicing, y un interruptor de despliegue que impida el
     SRI de producción en el sandbox (hoy solo `NODE_ENV`). El SRI de pruebas pide un RUC y un
@@ -662,8 +662,9 @@
     - el proveedor SMTP con SPF, DKIM y DMARC (D-3);
     - `INVOICING_PROVIDER_RUC`.
   - **Docker Hub.** Sin cuenta da 10 descargas por hora por IP, y la instalación necesita una docena.
-    `provision-vps.sh` pone `mirror.gcr.io` como espejo. Con GHCR (S8.2) las imágenes propias dejan de
-    pasar por ahí; las de terceros (postgres, Kafka, Garage, Collector, Caddy) siguen.
+    `provision-vps.sh` pone `mirror.gcr.io` como espejo. Desde S8.2 las imágenes propias, el Caddy de
+    entrada incluido, vienen de GHCR; las de terceros (postgres, Kafka, Garage, Collector) siguen
+    pasando por Docker Hub.
   - **Rotar `CERTIFICATE_PASSWORD_KEY`.** faclab-invoicing usa una sola clave y cambiarla deja
     ilegibles los certificados guardados. Le falta una lista de claves, como `SECRET_ENCRYPTION_KEYS`
     del core.
@@ -677,14 +678,53 @@
     401 para «sin credenciales»; cambiarlo es una decisión de contrato (API pública), no de despliegue.
   - **Kafka con TLS y SASL** si sale del servidor (G-49, mitigada). Sin IPv6 ni registros AAAA: con
     IPv6, el proxy de Docker oculta la IP del cliente al límite por IP.
-  - **El sandbox desplegado** y el workflow programado de los ejemplos pasan a S8.2 (arriba, S6.5).
-    Lo mismo vale para staging: la imagen de faclab-invoicing corre con `NODE_ENV=production`, así que
+  - **El sandbox desplegado** y el workflow programado de los ejemplos: S8.2 dejó el despliegue por CI,
+    falta un servidor público (arriba, S6.5). Lo mismo vale para staging: la imagen de faclab-invoicing corre con `NODE_ENV=production`, así que
     solo el ambiente del emisor (pruebas) lo separa del SRI real. Falta un interruptor de despliegue que
     lo impida.
   - **Despliegue de esta sesión:** nada cambia en los servicios. En faclab-infra:
     - `create-topics.sh` aplica `KAFKA_TOPIC_RETENTION_MS` cuando está definida y ya no crea `dlq`;
       un `dlq` local que exista queda sin uso;
     - `init-invoicing-db.sh` toma `INVOICING_DATABASES`, con el mismo valor por defecto.
+- **Entrega continua, lo que quedó de S8.2** (2026-11-22):
+  - **Después del merge de los cuatro PR:**
+    - los tags `v0.1.0`, sobre el commit del merge en cada repositorio (`git tag -a v0.1.0 <commit>
+      -m v0.1.0` y `git push origin v0.1.0`). `scripts/release.sh tag` busca un commit
+      `chore(release): vX.Y.Z`, y la primera versión llega con el PR de S8.2;
+    - el despliegue de 0.1.0 en staging (`versions/staging.env` ya lo dice), que hoy corre faclab-infra
+      0.1.0-rc.4 y lo demás en 0.1.0-rc.1;
+    - borrar de GHCR las prereleases `rc` (`0.1.0-broken.1` y `0.1.0-probe.1` ya se borraron). Cada
+      versión publicada deja 6 versiones sin tag, sus imágenes por plataforma y sus atestaciones:
+      hay que borrarlas junto con la del tag. Necesita el permiso `delete:packages`.
+  - **El primer VPS:**
+    - la primera corrida del workflow `Deploy` de faclab-infra;
+    - los entornos de GitHub `staging` y `production`, con revisor obligatorio en producción;
+    - la llave del CI autorizada con `stack.sh authorize-ci`.
+
+    Se probó todo lo que corre el workflow (`deploy.sh`, la llave restringida y `remote.sh`), desde la
+    Mac contra la VM de OrbStack, que no tiene IP pública.
+  - **El sandbox desplegado** y su workflow de ejemplos (arriba, S6.5).
+  - **Un job `image` en el CI del core,** como el de invoicing y web: hoy solo el release construye la
+    imagen del core, así que un Dockerfile roto se ve al etiquetar.
+  - **El PR de cada release es a mano** (`scripts/release.sh`). Para automatizarlo, release-please con
+    el token de una GitHub App: con `GITHUB_TOKEN`, los PR y los tags que crea un workflow no disparan
+    otros workflows, ni el CI que exige `master`.
+  - **La reversión siempre baja el esquema** a lo que conoce la versión anterior, y pierde lo que la
+    versión nueva escribió en sus tablas o columnas nuevas. Con migraciones aditivas, un `rollback
+    --keep-schema` podría conservarlo.
+  - **Firmar las imágenes** (cosign, procedencia de build) y un SBOM: para la revisión de seguridad
+    (S9.3). Hoy el servidor fija cada imagen por digest.
+  - **Una restauración de prueba (`restore-predeploy`) tardó 411 s,** sin horas en la salida para saber
+    dónde. Con las horas que se agregaron después, repetida, tardó 109 s.
+  - **Despliegue de esta sesión:**
+    - **Los cuatro PR, en cualquier orden.** No cambia el comportamiento de ningún servicio:
+      - el `info.version` del OpenAPI interno del core pasa de `1.0.0` a la versión (`dev` fuera de
+        una imagen);
+      - la imagen de web guarda `SERVICE_VERSION`;
+      - `package.json` de invoicing y web pasa a 0.1.0.
+    - **Después, los tags `v0.1.0`** y el despliegue en staging con `deploy.sh`.
+    - **Un servidor de S8.1** pasa a S8.2 como dice la guía ("De S8.1 a S8.2"): `IMAGES_FROM`, `*_REF`
+      y `*_IMAGE` salen de su `env`, y el primer despliegue reemplaza las imágenes construidas.
 
 ## 2. Dependencias
 
