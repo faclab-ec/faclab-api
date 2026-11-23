@@ -687,15 +687,13 @@
       un `dlq` local que exista queda sin uso;
     - `init-invoicing-db.sh` toma `INVOICING_DATABASES`, con el mismo valor por defecto.
 - **Entrega continua, lo que quedó de S8.2** (2026-11-22):
-  - **Después del merge de los cuatro PR:**
-    - los tags `v0.1.0`, sobre el commit del merge en cada repositorio (`git tag -a v0.1.0 <commit>
-      -m v0.1.0` y `git push origin v0.1.0`). `scripts/release.sh tag` busca un commit
-      `chore(release): vX.Y.Z`, y la primera versión llega con el PR de S8.2;
-    - el despliegue de 0.1.0 en staging (`versions/staging.env` ya lo dice), que hoy corre faclab-infra
-      0.1.0-rc.4 y lo demás en 0.1.0-rc.1;
-    - borrar de GHCR las prereleases `rc` (`0.1.0-broken.1` y `0.1.0-probe.1` ya se borraron). Cada
-      versión publicada deja 6 versiones sin tag, sus imágenes por plataforma y sus atestaciones:
-      hay que borrarlas junto con la del tag. Necesita el permiso `delete:packages`.
+  - ~~**Después del merge de los cuatro PR**~~: hecho el 2026-11-23.
+    - Los tags `v0.1.0` se crearon a mano sobre cada merge. Las cuatro imágenes y los releases de
+      GitHub quedaron publicados.
+    - Staging corre 0.1.0: la prueba de humo pasa y los datos siguen.
+    - Se borraron todos los tags e imágenes de prueba (`rc`, `broken`, `probe`). Por eso la versión
+      anterior de staging, las `rc`, ya no se puede restaurar con `rollback`: el próximo release le
+      da una a la que volver.
   - **El primer VPS:**
     - la primera corrida del workflow `Deploy` de faclab-infra;
     - los entornos de GitHub `staging` y `production`, con revisor obligatorio en producción;
