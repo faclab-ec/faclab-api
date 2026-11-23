@@ -1,6 +1,6 @@
 # ADR-0011: Despliegue en VPS con Docker Compose y Caddy
 
-- **Estado:** propuesto (2026-10-14)
+- **Estado:** aceptado (2026-11-22, S8.1; propuesto el 2026-10-14)
 - **Relacionado:** [TARGET_ARCHITECTURE.md](../TARGET_ARCHITECTURE.md), [ADR-0007](0007-worker-para-procesos-en-segundo-plano.md)
 
 ## Contexto
@@ -62,7 +62,8 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
     - `node:22-bookworm-slim` como `app`, con `HEALTHCHECK` en `/health`;
     - toda la configuración que depende del entorno sale de variables, y producción no arranca sin
       ellas;
-    - `SRI_ENVIRONMENT` es explícito.
+    - el ambiente del SRI lo fija cada emisor en su configuración (`PUT /api/company-config`), no una
+      variable: `SRI_ENVIRONMENT` no existe. Con `NODE_ENV=production` puede llegar a los dos ambientes.
   - **Web**:
     - Caddy en Alpine en el puerto 8080, sin TLS: se lo pone el Caddy de entrada;
     - `API_BASE_URL` e `INVOICING_API_URL` se leen al arrancar, así que la misma imagen sirve en
@@ -72,3 +73,42 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
   - Para S8.1 queda:
     - con `read_only`, la web necesita un tmpfs en `/srv/runtime` del usuario `app`;
     - las URLs públicas tienen que coincidir con `CORS_ORIGINS` del core y de invoicing.
+
+- **S8.1 (2026-11-22)**: el stack de producción está en `faclab-infra/deploy/production`. Lo que se
+  decidió aquí:
+  - **Dominios (D-9).**
+    - `app.<dominio>` sirve la web y `/otlp`, que va al receptor OTLP/HTTP del Collector con 1 MiB y
+      límite por IP.
+    - `api.<dominio>` sirve el core y manda a invoicing `/api/v1/invoices*`, `/api/invoices*`,
+      `/api/invoicing*`, `/api/certificates*`, `/api/company-config*` y `/api/sequences*`, así que
+      `INVOICING_API_URL` es igual a `API_BASE_URL`.
+    - La documentación pública queda en `api.<dominio>/docs/public`.
+    - Al ser el mismo sitio, la cookie `SameSite=Strict` funciona.
+  - **La web**: su contenedor detrás del Caddy de entrada, `read_only` con tmpfs en `/srv/runtime`,
+    para conservar su `config.js` de tiempo de ejecución.
+  - **Caddy de entrada**:
+    - una imagen propia con `caddy-ratelimit`, fijado en un commit porque no publica versiones;
+    - límites por IP (general, login y OAuth, `/otlp`) y de cuerpo (2 MiB, 11 MiB en importaciones);
+    - HSTS, CSP en la web, `nosniff`, `Referrer-Policy` y `Permissions-Policy`;
+    - `/health` no es público;
+    - TLS de Let's Encrypt, o de su CA interna en staging.
+  - **PostgreSQL**:
+    - una instancia 17 con las dos bases;
+    - los roles del core los crea `db_roles` con el superusuario solo en esa corrida; el de invoicing,
+      `init-invoicing-db.sh`;
+    - las migraciones corren como tareas únicas antes de los servicios.
+  - **Kafka**: un nodo, PLAINTEXT solo en una red interna, sin puertos ni kafka-ui. G-49 queda mitigada
+    por aislamiento; TLS y SASL hacen falta si sale del servidor.
+  - **Almacenamiento de objetos (D-2)**: Garage, un nodo, en la red interna.
+  - **Secretos**:
+    - sops y age, en archivos cifrados por entorno fuera del repositorio;
+    - se descifran en la máquina del operador y llegan por SSH a `/etc/faclab`, cada archivo con el
+      dueño que lo lee;
+    - como Docker secrets van la llave JWT, las llaves Fernet y la contraseña del superusuario; lo
+      demás, como variables;
+    - la rotación de cada uno está en la guía.
+  - **Red**: tres redes, `egress`, `proxy` (interna) y `data` (interna). Solo Caddy publica 80, 443 y
+    443/udp. ufw cierra lo demás del host, pero no filtra los puertos que publica Docker.
+  - **Imágenes**: hasta S8.2, el servidor las construye desde Git en una ref fija
+    (`compose.build.yml`). Con GHCR basta cambiar `*_IMAGE`.
+  - **Un solo VPS** de aplicación; SigNoz sigue fuera (D-1, S8.6).
