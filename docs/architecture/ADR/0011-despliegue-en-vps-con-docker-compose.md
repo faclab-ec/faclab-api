@@ -109,6 +109,34 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
     - la rotación de cada uno está en la guía.
   - **Red**: tres redes, `egress`, `proxy` (interna) y `data` (interna). Solo Caddy publica 80, 443 y
     443/udp. ufw cierra lo demás del host, pero no filtra los puertos que publica Docker.
-  - **Imágenes**: hasta S8.2, el servidor las construye desde Git en una ref fija
-    (`compose.build.yml`). Con GHCR basta cambiar `*_IMAGE`.
+  - **Imágenes**: hasta S8.2, el servidor las construía desde Git en una ref fija
+    (`compose.build.yml`); S8.2 las trae de GHCR.
   - **Un solo VPS** de aplicación; SigNoz sigue fuera (D-1, S8.6).
+
+- **S8.2 (2026-11-22)**: la entrega continua que pedía la decisión ("imágenes en GitHub Container
+  Registry con tags semánticos; el despliegue corre por SSH desde CI").
+  - **Versiones:** cada repositorio tiene tags `vX.Y.Z`, su CHANGELOG y `scripts/release.sh`. Hasta el
+    piloto van en 0.x.
+  - **Imágenes:** un tag publica la del repositorio, para amd64 y arm64, con `service.version` igual a
+    la versión: `faclab-api`, `faclab-invoicing`, `faclab-web` y el Caddy de entrada, `faclab-caddy`.
+    Los paquetes son públicos, como los repositorios.
+  - **Versiones por entorno:** `deploy/production/versions/<entorno>.env` en faclab-infra; cambiarlas
+    es un PR, y el CI lo rechaza si la combinación no está en `COMPATIBILITY.md` (publica, acepta y
+    requiere de cada versión).
+  - **Despliegue:** el workflow `Deploy`, o `deploy.sh` desde la máquina del operador, entra por SSH
+    con una llave que solo puede correr `remote.sh`. Allí `stack.sh deploy`:
+    - toma un lock y hace checkout de faclab-infra en su tag;
+    - fija las imágenes por digest;
+    - respalda las dos bases con `pg_dump`;
+    - mueve el esquema, hacia atrás si la versión es más vieja, y migra;
+    - actualiza infra, invoicing, core y web en ese orden, cada uno con su salud;
+    - comprueba Caddy, la versión de cada contenedor y que nada se reinicie.
+  - **Reversión:**
+    - si algo falla, vuelve sola a la versión anterior: baja el esquema con las imágenes nuevas y
+      levanta las anteriores por digest;
+    - a mano, es un comando (`deploy.sh <entorno> rollback`);
+    - `restore-predeploy` restaura el respaldo previo, para las migraciones que no se revierten.
+  - **Migraciones:** las nuevas deben ser aditivas (expand/contract). La guía clasifica las anteriores
+    por cómo se revierten.
+  - Se probó en la VM de staging, con una versión rota que se revirtió sola. La primera corrida del
+    workflow desde GitHub queda para el primer VPS: la VM no tiene IP pública.

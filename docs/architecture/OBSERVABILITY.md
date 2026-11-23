@@ -109,7 +109,7 @@ Detalle y operación en el README de faclab-infra.
 |---|---|---|
 | `service.name` | `faclab-core`, `faclab-core-worker`, `faclab-invoicing`, `faclab-invoicing-worker`, `faclab-web` | Variable `OTEL_SERVICE_NAME` (por defecto `faclab-core` y `faclab-invoicing`); cada worker le agrega `-worker`. Las alertas de ausencia de telemetría (§8) usan estos nombres (S7.5 corrigió los `-api` que decía esta tabla) |
 | `service.namespace` | `faclab` | Fijo |
-| `service.version` | Tag semántico o SHA del commit | Variable de build (`SERVICE_VERSION`) |
+| `service.version` | Tag semántico (`0.1.0`, `0.2.0-rc.1`) en las imágenes publicadas; SHA del commit o `dev` en las demás | Variable de build (`SERVICE_VERSION`), que el workflow `release.yml` de cada repositorio toma del tag (S8.2) |
 | `deployment.environment.name` | `local`, `staging`, `production` | Variable de entorno |
 | `service.instance.id` | Id del contenedor | `resourcedetection` |
 
@@ -672,10 +672,12 @@ probada.
     con un exportador a archivo y envía claves sensibles en el recurso, los spans, sus eventos, los
     puntos de las métricas y los logs; ninguna puede llegar al archivo. También comprueba que el
     receptor del navegador solo acepta a `faclab-web`.
-- **CI de la configuración de producción (S8.1):** `faclab-infra/deploy/production/scripts/ci-validate.sh`
-  falla si el compose de producción construye core, invoicing o web sin `SERVICE_VERSION` (si no, valdría
-  `dev`), o si el core o invoicing no exportan a `collector:4317` (si no, `localhost:4317`). Con las
-  imágenes publicadas en GHCR, la versión la fija S8.2.
+- **CI de la configuración de producción (S8.1, S8.2):** `faclab-infra/deploy/production/scripts/ci-validate.sh`
+  falla si el core o invoicing no exportan a `collector:4317` (si no, `localhost:4317`), o si el compose
+  de un entorno no corre las imágenes publicadas de sus versiones. Desde S8.2 cada imagen sale de
+  GHCR, y su `release.yml` comprueba que `SERVICE_VERSION` y la etiqueta
+  `org.opencontainers.image.version` valgan la versión del tag. Al desplegar, `stack.sh` vuelve a
+  comprobar esa etiqueta en cada contenedor.
 - **Contadores en 0.** Un contador que una alerta lee con `increase` exporta 0 al arrancar el proceso,
   con cada valor de sus atributos (`initialize_counters` en el core, `initializeCounters` en
   invoicing). Así, la primera falla después de un reinicio ya cuenta como aumento.
