@@ -731,8 +731,8 @@
       compliance de 2557 días; el de pgBackRest con una regla que borre sus versiones ocultas;
     - repetir el simulacro allí (`RESPALDOS.md`).
 
-    Staging usa un sustituto local (versitygw) en la Mac. Si se apaga, staging acumula WAL y avisa
-    `wal-sin-archivar`.
+    S8.3 probó staging contra un sustituto local (versitygw) en la Mac y después lo dejó con
+    `BACKUPS=off`: sin el sustituto arriba, acumularía WAL y avisaría `wal-sin-archivar`.
   - **El plazo legal de los comprobantes:** 7 años, según fuentes secundarias (art. 41 del Reglamento
     de Comprobantes de Venta). Confirmarlo con el contador, como D-4, antes de crear el bucket de
     producción: el modo compliance no se acorta.
@@ -759,7 +759,7 @@
     - Solo faclab-infra. Después del merge:
       - `scripts/release.sh minor` (0.2.0) y su tag, que publica `faclab-caddy` y `faclab-postgres`;
       - `versions/staging.env` a 0.2.0 y `deploy.sh staging`;
-      - borrar los tags e imágenes `0.2.0-rc.1` a `rc.8`, como en S8.2.
+      - borrar los tags e imágenes `0.2.0-rc.1` a `rc.9`, como en S8.2.
     - Cada entorno necesita antes, en `env/<entorno>.env`, `BACKUPS` y `BACKUP_*`, y en sus secretos
       las siete `BACKUP_*` (`RESPALDOS.md`).
     - El primer despliegue recrea PostgreSQL con la imagen nueva, crea el stanza, enciende el archivo
