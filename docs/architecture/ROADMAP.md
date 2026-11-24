@@ -69,8 +69,9 @@
 - **Roles de base en despliegue y respaldos** (detectado en S2.4). Antes del primer despliegue hay que
   crear los roles con `python -m src.shared.infra.db_roles` y un superusuario (S8.1); otorgar `BYPASSRLS`
   exige superusuario, así que en un PostgreSQL administrado el worker necesitaría una política permisiva
-  propia. Con `FORCE`, `pg_dump` como dueño falla: los respaldos usan un superusuario o un rol con
-  `BYPASSRLS` (S8.3).
+  propia. Con `FORCE`, `pg_dump` como dueño falla: el respaldo previo a cada despliegue (S8.2) usa el
+  superusuario, y los de S8.3 son físicos (pgBackRest copia los archivos), así que la RLS no los
+  alcanza.
 - **Índices que empiezan por `tenant_id`** (detectado en S2.4). Cada tabla de negocio tiene un índice
   simple en `tenant_id` y las únicas por empresa lo incluyen; los listados grandes pueden necesitar
   índices compuestos `(tenant_id, …)`. Medir en S9.2 (carga y línea base).
@@ -395,8 +396,8 @@
     el SRI de pruebas: el XSD publicado no la tiene y se agregó desde la ficha.
   - ~~Número y fecha de autorización hacia el core~~: S4.4 tampoco los necesitó; la web los lee de
     facturación (`authorizationNumber`, `authorizedAt`) para descargar y reenviar.
-  - ~~Servicio compatible con S3 del VPS (S8.1)~~: Garage, en S8.1. Falta la copia de los XML
-    autorizados fuera del servidor, con su retención (S8.3).
+  - ~~Servicio compatible con S3 del VPS (S8.1)~~: Garage, en S8.1. ~~La copia de los XML autorizados
+    fuera del servidor, con su retención~~: S8.3, cifrada, en un bucket con versionado y Object Lock.
   - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
     `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
 - **Facturación, lo que quedó de S4.2** (2026-10-29):
@@ -723,6 +724,48 @@
     - **Después, los tags `v0.1.0`** y el despliegue en staging con `deploy.sh`.
     - **Un servidor de S8.1** pasa a S8.2 como dice la guía ("De S8.1 a S8.2"): `IMAGES_FROM`, `*_REF`
       y `*_IMAGE` salen de su `env`, y el primer despliegue reemplaza las imágenes construidas.
+
+- **Respaldos, lo que quedó de S8.3** (2026-11-24):
+  - **El proveedor real** (D-2), con el primer VPS:
+    - los dos buckets en otro proveedor y otra región: el de los comprobantes con Object Lock en modo
+      compliance de 2557 días; el de pgBackRest con una regla que borre sus versiones ocultas;
+    - repetir el simulacro allí (`RESPALDOS.md`).
+
+    Staging usa un sustituto local (versitygw) en la Mac. Si se apaga, staging acumula WAL y avisa
+    `wal-sin-archivar`.
+  - **El plazo legal de los comprobantes:** 7 años, según fuentes secundarias (art. 41 del Reglamento
+    de Comprobantes de Venta). Confirmarlo con el contador, como D-4, antes de crear el bucket de
+    producción: el modo compliance no se acorta.
+  - **El simulacro mensual automatizado.** Hoy es un procedimiento a mano (`RESPALDOS.md`, Simulacro).
+  - **Secuenciales del SRI después de una restauración con pérdida.** Hay que avanzarlos a mano por
+    encima del último autorizado (`PUT /api/sequences/...` de faclab-invoicing). En staging la primera
+    factura tuvo el ERROR 45, porque otro entorno ya había usado ese secuencial con el mismo RUC.
+    Automatizarlo: faclab-invoicing podría leerlos de la copia de comprobantes, o tomar el error 45
+    como señal para avanzar.
+  - **`pool_pre_ping` en el motor del core.** Tras un reinicio de PostgreSQL, cada conexión del pool
+    falla una petición (500 en un login de staging). `stack.sh` ya vuelve a levantar las aplicaciones
+    cuando PostgreSQL arrancó durante un despliegue, pero un reinicio fuera de un despliegue sigue
+    rompiendo esas peticiones.
+  - **El consumidor de Kafka de faclab-invoicing no vuelve solo.** Tras una suspensión de la VM superó
+    `max.poll.interval.ms`, salió del grupo y no volvió a entrar hasta reiniciar el worker, que seguía
+    «sano». Le falta reincorporarse, o un healthcheck que lo note.
+  - **`deploy.sh` no comprueba `faclab-postgres`** antes de entrar al servidor. Basta con
+    `faclab-caddy`, porque el mismo release publica las dos; `stack.sh` igual se detiene antes de
+    cambiar nada si falta.
+  - **Volver a una versión de faclab-infra anterior a 0.2.0** deja los timers apuntando a un script que
+    no existe. Quitarlos antes con `backups.sh remove-timers`.
+  - **Respaldo de SigNoz** (S8.6) y rotación de `CERTIFICATE_PASSWORD_KEY` (S8.1), sin cambios.
+  - **Despliegue de esta sesión:**
+    - Solo faclab-infra. Después del merge:
+      - `scripts/release.sh minor` (0.2.0) y su tag, que publica `faclab-caddy` y `faclab-postgres`;
+      - `versions/staging.env` a 0.2.0 y `deploy.sh staging`;
+      - borrar los tags e imágenes `0.2.0-rc.1` a `rc.8`, como en S8.2.
+    - Cada entorno necesita antes, en `env/<entorno>.env`, `BACKUPS` y `BACKUP_*`, y en sus secretos
+      las siete `BACKUP_*` (`RESPALDOS.md`).
+    - El primer despliegue recrea PostgreSQL con la imagen nueva, crea el stanza, enciende el archivo
+      de WAL (un reinicio), vuelve a levantar las aplicaciones, instala los timers y lanza el primer
+      completo.
+    - Sin migraciones del core ni de invoicing.
 
 ## 2. Dependencias
 
