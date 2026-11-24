@@ -140,3 +140,31 @@ publicadas ni respaldos (G-59). PostgreSQL 14 deja de recibir parches el 12/11/2
     por cómo se revierten.
   - Se probó en la VM de staging, con una versión rota que se revirtió sola. La primera corrida del
     workflow desde GitHub queda para el primer VPS: la VM no tiene IP pública.
+
+- **S8.3 (2026-11-24)**: respaldos y recuperación (`faclab-infra/deploy/production/RESPALDOS.md`).
+  - **PostgreSQL:** pgBackRest dentro de su contenedor, con la imagen `faclab-postgres` (la oficial
+    más pgBackRest, publicada por el release de faclab-infra):
+    - WAL continuo, a lo sumo 60 s después de cada escritura;
+    - un completo semanal y un incremental diario, cifrados con AES-256 antes de salir;
+    - todo a un bucket compatible con S3 de otro proveedor, y 4 completos de retención (de 4 a 5
+      semanas de recuperación a un punto en el tiempo).
+
+    Es un respaldo físico: la seguridad por filas forzada no lo afecta, a diferencia de `pg_dump`.
+  - **Comprobantes:** Garage no tiene versionado ni Object Lock. rclone copia su bucket, cifrado
+    (crypt), a otro bucket con versionado y Object Lock en modo compliance durante el plazo legal
+    (7 años, por confirmar con el contador), con una llave que no borra.
+  - **Operación:**
+    - timers de systemd que instala `stack.sh deploy` con `BACKUPS=on`;
+    - métricas `faclab.backup.*` al Collector y alertas `respaldo-fallido`, `respaldo-atrasado` y
+      `wal-sin-archivar`;
+    - `stack.sh restore <hora|latest>` restaura a un punto en el tiempo, en un servidor limpio o en
+      el mismo, y despliega las versiones anotadas en el respaldo; `restore-objects` trae los
+      comprobantes.
+  - **Objetivos:** RPO de 5 minutos y RTO de 2 horas. El simulacro en una VM limpia tardó 10 minutos
+    de máquina, con el resumen idéntico al origen en el punto elegido; la pérdida medida fue menor a
+    77 s.
+  - **El contenedor de PostgreSQL** corre con docker-init como PID 1 y `CAP_KILL` (lo pidió el
+    archivo asíncrono de pgBackRest), y su archivo de WAL va en `postgresql.auto.conf`, no en la línea
+    de comandos.
+  - Staging usa un sustituto local de S3 (versitygw). El proveedor real llega con el primer VPS. La
+    prueba de restauración mensual de esta decisión sigue la guía de `RESPALDOS.md`.

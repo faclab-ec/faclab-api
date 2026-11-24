@@ -77,7 +77,10 @@ Detalle y operación en el README de faclab-infra.
   (`ports: !reset []`), así que los valores por defecto de faclab-invoicing (`localhost:4317`) y del
   proxy de Vite (`localhost:4318`) llegan al Collector sin cambios.
 - **Receptores:**
-  - `otlp`: gRPC en `:4317`, para los servicios.
+  - `otlp`: gRPC en `:4317`, para los servicios. También acepta HTTP en `:4319` para las tareas
+    internas que no tienen SDK de OpenTelemetry: los respaldos de producción (S8.3) envían OTLP/HTTP
+    JSON desde el contenedor de PostgreSQL. Ese puerto no se publica, y ni Caddy ni Vite lo
+    enrutan.
   - `otlp/browser`: HTTP en `:4318`, solo para trazas y métricas. Acepta hasta 1 MiB por envío (un cuerpo
     mayor responde 400), `/v1/logs` responde 404 y `filter/browser` descarta lo que no sea
     `service.name=faclab-web`.
@@ -309,6 +312,9 @@ el span (`faclab.sale.id`, `faclab.invoice.id`): sirven para investigar y no son
 | `faclab.invoices.pending_deliveries` | Gauge observable, `{delivery}` | — | Invoicing worker (muestreo) | Existe (S7.2) |
 | `faclab.webhooks.deliveries` | Contador, `{delivery}` | `result` (`delivered`, `retry`, `failed`) | Core worker | Existe (S6.4) |
 | `faclab.auth.login.attempts` | Contador, `{attempt}` | `result` (`success`, `invalid`, `locked`, `no_tenant`) | Core (ruta de login) | Existe (S7.1). `no_tenant`: contraseña correcta, pero sin ninguna empresa activa (ni éxito ni fuerza bruta). Desde S7.6 cada `result` arranca en 0 (`initialize_counters`) |
+| `faclab.backup.age`, `faclab.backup.objects.age` | Gauge, s | `faclab.backup.kind` (`full`, `any`) en el primero | `backups.sh report` de faclab-infra, cada 5 min por OTLP/HTTP (`service.name=faclab-backups`) | Existe (S8.3): desde el último respaldo de PostgreSQL (completo o cualquiera) y desde la última copia buena de los comprobantes |
+| `faclab.backup.failed`, `faclab.backup.overdue` | Gauge, 0 o 1 | `faclab.backup.job` (`full`, `incr`, `objects`, `objects-recent`; `overdue` sin `objects-recent`) | Ídem | Existe (S8.3): la última corrida de ese trabajo falló; no se completó en su plazo (26 h, 8 días, 1 h) |
+| `faclab.backup.wal.failing`, `faclab.backup.wal.pending`, `faclab.backup.count` | Gauge | — | Ídem (`pg_stat_archiver`, `pg_wal/archive_status`, `pgbackrest info`) | Existe (S8.3): el archivo de WAL falla; segmentos esperando; respaldos en el repositorio |
 | Host (`system.*`), contenedores (`container.*`), PostgreSQL (`postgresql.*`), salud (`httpcheck.*`) | Varias | Estándar de cada receptor; `server.address` separa los dos PostgreSQL, `container.name` cada contenedor, `http.url` cada chequeo | Collector (`host_metrics`, `docker_stats`, `postgresql`, `http_check`) | Existe (S7.4). PostgreSQL incluye las opcionales `postgresql.database.locks` y `postgresql.deadlocks`; los procesos del host quedan fuera por cardinalidad |
 
 ### 6.2 Negocio
@@ -431,14 +437,17 @@ Los umbrales son **iniciales y provisionales**: hay que fijar una línea base co
 | Conexiones PostgreSQL | > 80 % de `max_connections` | Advertencia | Revisar pool y fugas |
 | Ausencia de telemetría | Sin spans de un servicio durante 10 min en horario comercial | Advertencia | Revisar Collector y exportador |
 | Fuerza bruta | > 50 logins fallidos en 5 min | Advertencia | Revisar IPs; ajustar bloqueo |
+| Respaldo fallido | La última corrida de un trabajo de respaldo falló (S8.3) | Advertencia | Corregir y repetirlo (runbook respaldos) |
+| Respaldo atrasado | Sin incremental en 26 h, sin completo en 8 días, sin copia de comprobantes en 1 h, o sin reporte en 30 min (S8.3) | Advertencia | Ídem |
+| WAL sin archivar | El archivo de WAL falla durante 15 min (S8.3) | Crítica | Almacenamiento externo y red; un completo después |
 
 Canales: correo (`faclab-correo`, todas) y Telegram (`faclab-telegram`, solo las críticas; S7.5). Las
 críticas despiertan a alguien. Las advertencias se revisan en horario laboral.
 
 ### 8.1 Implementación (S7.5)
 
-Hay 22 reglas en `faclab-infra/observability/signoz/alerts/`, de esquema `v2alpha1`, con niveles
-`warning` y `critical` en la misma regla. Cada una lleva:
+Hay 25 reglas en `faclab-infra/observability/signoz/alerts/` (22 de S7.5 y 3 de respaldos, S8.3),
+de esquema `v2alpha1`, con niveles `warning` y `critical` en la misma regla. Cada una lleva:
 
 - la etiqueta `faclab_rule`;
 - la anotación `runbook_url` y el mismo enlace en su descripción;
