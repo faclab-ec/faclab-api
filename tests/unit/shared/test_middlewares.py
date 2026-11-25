@@ -258,7 +258,9 @@ def test_unexpected_errors_log_their_type_not_their_message(json_logs):
     unhandled = next(line for line in lines if line["event"] == "unhandled_exception")
     assert unhandled["error_type"] == "RuntimeError"
     assert "error" not in unhandled
-    assert _EMAIL not in json.dumps([line for line in lines if line["event"] == "value_error"])
+    assert _EMAIL not in json.dumps(
+        [line for line in lines if line["event"] == "value_error"]
+    )
 
 
 def test_invalid_value_errors_do_not_log_the_value(json_logs):

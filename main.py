@@ -28,6 +28,7 @@ from src.catalog.product.infra.routes import CategoryRouter, ProductRouter
 from src.catalog.uom.infra.routes import UnitOfMeasureRouter
 from src.container import create_wireup_container
 from src.customers.infra.routes import CustomerContactRouter, CustomerRouter
+from src.data_protection.infra.routes import DataExportRouter
 from src.imports.infra.routes import ImportRouter
 from src.integrations.infra.access import integration_access
 from src.integrations.infra.oauth_routes import OAuthRouter
@@ -443,6 +444,9 @@ admin_router.include_router(
     AuditLogRouter().router, prefix="/audit-log", tags=["Audit Log"]
 )
 admin_router.include_router(ImportRouter().router, prefix="/imports", tags=["Imports"])
+admin_router.include_router(
+    DataExportRouter().router, prefix="/data-exports", tags=["Data Export"]
+)
 admin_router.include_router(
     IntegrationRouter().router, prefix="/integrations", tags=["Integrations"]
 )

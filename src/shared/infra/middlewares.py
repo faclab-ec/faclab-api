@@ -274,7 +274,9 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             # An InvalidValueError quotes the value that failed ("Invalid
             # email: …", "RUC must have 13 digits: …"): the client gets it, the
             # log only the code (S8.7)
-            fields = {} if isinstance(exc, InvalidValueError) else {"message": exc.message}
+            fields = (
+                {} if isinstance(exc, InvalidValueError) else {"message": exc.message}
+            )
             logger.warning("domain_error", error_code=exc.error_code, **fields)
             body = build_error_response(
                 error_code=public_error_code(request, exc.error_code, status),
@@ -311,9 +313,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             # event, and the span records the type alone (S8.7)
             logger.exception("unhandled_exception", error_type=type(exc).__name__)
             span = trace.get_current_span()
-            span.add_event(
-                "exception", {"exception.type": type(exc).__qualname__}
-            )
+            span.add_event("exception", {"exception.type": type(exc).__qualname__})
             span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
             body = build_error_response(
                 error_code="INTERNAL_ERROR",

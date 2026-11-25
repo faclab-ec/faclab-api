@@ -83,6 +83,9 @@ class AuditAction(StrEnum):
     # A bulk import confirmed (S5.8); what the worker writes is audited by each
     # command (product.created, adjustment.confirmed...) in the importer's name
     IMPORT_CONFIRMED = "import.confirmed"
+    # The export of all the company's data asked for (S8.7); what the ZIP holds
+    # is not in the entry
+    DATA_EXPORT_REQUESTED = "data_export.requested"
     # Integration clients (S6.2): created (with its first secret), its name,
     # scopes, branches or addresses changed, a secret added (rotation) or
     # revoked, the client revoked. Never the secret nor its hash

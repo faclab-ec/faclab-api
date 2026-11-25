@@ -295,6 +295,19 @@ class BaseConfig:
     IMPORT_RETENTION_DAYS = env.int("IMPORT_RETENTION_DAYS", 30)
 
     #
+    # Data export of a company (S8.7): the worker writes the ZIP into
+    # DATA_EXPORT_DIR/<tenant id>/ (a volume of the worker and the API: the API
+    # serves the download) and deletes it RETENTION_DAYS after it is ready
+    #
+    DATA_EXPORT_DIR = env.str("DATA_EXPORT_DIR", ".data/exports")
+    DATA_EXPORT_RETENTION_DAYS = env.int("DATA_EXPORT_RETENTION_DAYS", 7)
+    DATA_EXPORT_POLL_INTERVAL_SECONDS = env.float(
+        "DATA_EXPORT_POLL_INTERVAL_SECONDS", 10.0
+    )
+    # A RUNNING export older than this lost its worker: it is picked up again
+    DATA_EXPORT_STALE_MINUTES = env.int("DATA_EXPORT_STALE_MINUTES", 30)
+
+    #
     # Idempotency-Key (S3.1): the POS routes that create documents or move money
     # require it; false lets a request without it run as is (rollback switch).
     # The purge deletes the keys older than the retention

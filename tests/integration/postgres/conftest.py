@@ -142,3 +142,15 @@ def auth_headers(pg_engine: Engine) -> Callable[..., dict[str, str]]:
 @pytest.fixture
 def admin(auth_headers) -> dict[str, str]:
     return auth_headers(Role.ADMIN)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _export_dir(tmp_path_factory) -> Iterator[None]:
+    """The data exports (S8.7) are written under a directory of the session"""
+    from config import config
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            config, "DATA_EXPORT_DIR", str(tmp_path_factory.mktemp("exports"))
+        )
+        yield

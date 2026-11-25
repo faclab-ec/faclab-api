@@ -668,6 +668,11 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/imports/{{id}}/rows": Route(path=("import",)),
     f"GET {ADMIN}/imports/{{id}}/errors": Route(path=("import",)),
     f"POST {ADMIN}/imports/{{id}}/confirm": Route(path=("import",)),
+    # Export of the company's data (S8.7)
+    f"POST {ADMIN}/data-exports": Route(created=f"{ADMIN}/data-exports/{{}}"),
+    f"GET {ADMIN}/data-exports": Route(),
+    f"GET {ADMIN}/data-exports/{{id}}": Route(path=("data_export",)),
+    f"GET {ADMIN}/data-exports/{{id}}/download": Route(path=("data_export",)),
     f"POST {ADMIN}/users": Route(
         body=lambda ids: {
             "username": f"{ids['marker'].lower()}-new",

@@ -11,6 +11,7 @@ from uuid import UUID
 import pytest
 
 from config import config
+from src.data_protection.infra.runner import run_exports
 from src.invoicing.infra.invoice_messages import handle_invoice_message
 from src.invoicing.infra.reconciliation import reconcile
 from src.shared.domain.tenant import TenantContext, TenantSource
@@ -396,7 +397,15 @@ def build_tenant(api: Api, marker: str, seed: int, tenant_id: UUID) -> Ids:
     ids["invoice_discrepancy"] = discrepancy["id"]
     ids["credit_note"] = _credit_note(api, ids, tenant_id)
     ids["import"] = _import(api, ids)
+    ids["data_export"] = _data_export(api)
     return ids
+
+
+def _data_export(api: Api) -> int:
+    """A ready export of the tenant's data (S8.7), written by the worker"""
+    created = api.post("/api/admin/data-exports")
+    assert run_exports(wait=True) == 1
+    return created["id"]
 
 
 def _public_api(api: Api, ids: Ids) -> tuple[dict[str, str], int]:
