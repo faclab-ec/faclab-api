@@ -214,6 +214,22 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 `refresh_token`, `authorization`, `secret`, `client_secret`, `p12`, `certificate`, `private_key`,
 `xml`, `signature`.
 
+**Datos personales (S8.7).** Aparte de los secretos, la aplicación enmascara por clave `email`, `phone`,
+`tax_id`, `address`, `full_name` e `identification` (`_PII_KEYS` en core; en invoicing además `customer`,
+`buyer`), sin tocar `name`: lo tiene también una sucursal o un producto. `is_sensitive_key` (los
+secretos) sigue siendo lo que la bitácora quita de los valores antes y después; los datos personales sí
+se guardan ahí, y se anonimizan al dar de baja la empresa. Reglas de los errores:
+
+- Un `IntegrityError` se registra por tipo, SQLSTATE y nombre de la restricción; el texto del
+  controlador cita la fila (`Key (tenant_id, tax_id)=(…)`). El motor usa `hide_parameters=True`.
+- `InvalidValueError` («Invalid email: …») se responde al cliente, pero el log solo lleva el código.
+- Un error inesperado conserva su traceback para depurar y su evento no trae `str(exc)`; el span
+  guarda el tipo, no el mensaje.
+- El span de la solicitud no lleva la consulta de la URL (`?q=` de las búsquedas) y los de invoicing
+  limpian de correos e identificaciones el mensaje de un error.
+- **Pendiente (faclab-infra):** añadir `url.query` y `url.full` a la lista de `transform/redact` del
+  Collector, como segunda defensa.
+
 ### 4.7 Volumen, retención y costos
 
 - Producción con INFO. Se estima una línea por solicitud más eventos de negocio y de error.

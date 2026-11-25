@@ -19,3 +19,4 @@ Cada ADR documenta el contexto, las alternativas, la decisión y sus consecuenci
 | [0011](0011-despliegue-en-vps-con-docker-compose.md) | Despliegue en VPS con Docker Compose y Caddy | Propuesto | S1.2, S8.1–S8.3 |
 | [0012](0012-numeracion-de-documentos.md) | Numeración de documentos internos y tributarios | Aceptado | S2.6, S2.8, S3.3 |
 | [0013](0013-operadores-de-plataforma-y-consola.md) | Operadores de plataforma y consola | Aceptado | S8.5 |
+| [0014](0014-baja-de-empresas-y-conservacion-tributaria.md) | Baja de empresas y conservación tributaria | Aceptado | S8.7 |
