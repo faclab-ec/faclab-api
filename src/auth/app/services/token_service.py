@@ -8,7 +8,7 @@ from src.auth.domain.entities import User
 from src.auth.domain.scopes import Scope
 from src.tenancy.domain.entities import Membership
 
-TokenType = Literal["access", "refresh", "selection"]
+TokenType = Literal["access", "refresh", "selection", "platform"]
 
 
 @dataclass(frozen=True)
@@ -71,6 +71,28 @@ class ClientTokenClaims:
     bids: frozenset[int] | None = None
 
 
+@dataclass(frozen=True)
+class PlatformToken:
+    """The access token of a platform operator (S8.5): no tenant, short-lived,
+    no refresh (it logs in again)"""
+
+    access_token: str
+    expires_in: int
+    token_type: str = "Bearer"
+
+
+@dataclass(frozen=True)
+class PlatformTokenClaims:
+    """A platform operator's token: `typ` is `platform`, it has no `tid`"""
+
+    sub: int  # the user
+    username: str
+    iat: int
+    exp: int
+    iss: str
+    name: str | None = None
+
+
 class TokenService(ABC):
     @property
     @abstractmethod
@@ -128,6 +150,14 @@ class TokenService(ABC):
         (None, all of them)"""
 
     @abstractmethod
-    def decode_bearer(self, token: str) -> TokenClaims | ClientTokenClaims:
-        """An access token of a user (as `decode_access`) or of an integration
-        client. The user methods never accept an integration's token"""
+    def issue_platform_access(self, user: User) -> PlatformToken:
+        """Token of a platform operator: for this service only (never the
+        audiences of the other services), with no tenant"""
+
+    @abstractmethod
+    def decode_bearer(
+        self, token: str
+    ) -> TokenClaims | ClientTokenClaims | PlatformTokenClaims:
+        """An access token of a user (as `decode_access`), of an integration
+        client or of a platform operator. The user methods never accept the
+        other two"""

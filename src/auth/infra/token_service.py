@@ -11,6 +11,8 @@ from config import config
 from src.auth.app.services.token_service import (
     ClientToken,
     ClientTokenClaims,
+    PlatformToken,
+    PlatformTokenClaims,
     SelectionToken,
     TokenClaims,
     TokenPair,
@@ -53,6 +55,7 @@ class JwtTokenService(TokenService):
             *(aud for aud in config.JWT_SERVICE_AUDIENCES if aud != self._audience),
         ]
         self._reuse_grace = config.JWT_REFRESH_REUSE_GRACE_SECONDS
+        self._platform_ttl = config.PLATFORM_TOKEN_TTL_SECONDS
 
     @property
     def refresh_ttl_seconds(self) -> int:
@@ -103,11 +106,26 @@ class JwtTokenService(TokenService):
     def decode_access(self, token: str) -> TokenClaims:
         return self._user_access(self._decode(token, accepted=("access",)))
 
-    def decode_bearer(self, token: str) -> TokenClaims | ClientTokenClaims:
-        payload = self._verified(token, accepted=("access",))
+    def decode_bearer(
+        self, token: str
+    ) -> TokenClaims | ClientTokenClaims | PlatformTokenClaims:
+        payload = self._verified(token, accepted=("access", "platform"))
+        if payload["typ"] == "platform":
+            return _platform_claims(payload)
         if _is_client(payload):
             return _client_claims(payload)
         return self._user_access(_user_claims(payload))
+
+    def issue_platform_access(self, user: User) -> PlatformToken:
+        payload = self._payload(user, "platform", self._platform_ttl)
+        # No `tid`, no `role`; only this service names itself in `aud`, so
+        # faclab-invoicing refuses it
+        payload.pop("mcp", None)
+        if user.full_name:
+            payload["name"] = user.full_name
+        return PlatformToken(
+            access_token=self._encode(payload), expires_in=self._platform_ttl
+        )
 
     def issue_client_access(
         self,
@@ -272,6 +290,23 @@ def _user_claims(payload: dict[str, Any]) -> TokenClaims:
         )
     except (KeyError, TypeError, ValueError) as exc:
         logger.info("token_rejected", reason="malformed claims")
+        raise InvalidTokenError("invalid token") from exc
+
+
+def _platform_claims(payload: dict[str, Any]) -> PlatformTokenClaims:
+    try:
+        if payload.get("tid") is not None or _is_client(payload):
+            raise ValueError("a platform token has no tenant")
+        return PlatformTokenClaims(
+            sub=int(payload["sub"]),
+            username=payload["username"],
+            iat=int(payload["iat"]),
+            exp=int(payload["exp"]),
+            iss=payload["iss"],
+            name=payload.get("name") or None,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.info("token_rejected", reason="malformed platform claims")
         raise InvalidTokenError("invalid token") from exc
 
 

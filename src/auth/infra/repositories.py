@@ -122,6 +122,16 @@ class SqlAlchemyAuthSessionRepository(
         self.session.flush()
         return result.rowcount
 
+    def revoke_all_for_tenant(self, tenant_id: UUID, now: datetime) -> int:
+        result = self.session.execute(
+            update(AuthSessionModel)
+            .where(AuthSessionModel.tenant_id == tenant_id)
+            .where(AuthSessionModel.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        self.session.flush()
+        return result.rowcount
+
 
 @injectable(lifetime="scoped", as_type=LoginFailureRepository)
 class SqlAlchemyLoginFailureRepository(LoginFailureRepository):

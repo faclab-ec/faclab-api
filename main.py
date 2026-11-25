@@ -42,6 +42,7 @@ from src.inventory.stock.infra.routes import StockRouter
 from src.inventory.transfer.infra.routes import TransferItemRouter, TransferRouter
 from src.inventory.warehouse.infra.routes import WarehouseRouter
 from src.invoicing.infra.routes import CreditNoteRouter, InvoiceDiscrepancyRouter
+from src.onboarding.infra.routes import OnboardingRouter
 from src.organization.infra.routes import (
     BranchRouter,
     EmissionPointRouter,
@@ -52,6 +53,7 @@ from src.payables.infra.routes import (
     SupplierAccountRouter,
     SupplierPaymentRouter,
 )
+from src.platform_console.infra.routes import PlatformRouter
 from src.pos.cash.infra.routes import POSCashRouter
 from src.pos.infra.routes import POSCustomerRouter, POSProductRouter, POSTerminalRouter
 from src.pos.refund.infra.routes import POSRefundRouter
@@ -451,6 +453,9 @@ admin_router.include_router(
     SubscriptionRouter().router, prefix="/subscription", tags=["Subscription"]
 )
 admin_router.include_router(
+    OnboardingRouter().router, prefix="/onboarding", tags=["Onboarding"]
+)
+admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
     tags=["Inventory Reports"],
@@ -602,6 +607,10 @@ app.include_router(admin_router)
 app.include_router(pos_router)
 app.include_router(auth_router)
 app.include_router(public_router)
+# Platform console (S8.5): its own prefix, a token without a tenant
+platform_router = APIRouter(prefix="/api/platform")
+platform_router.include_router(PlatformRouter().router, tags=["Platform"])
+app.include_router(platform_router)
 # OAuth 2.0 client credentials of the integration clients (S6.2), public
 app.include_router(OAuthRouter(integration_access()).router)
 

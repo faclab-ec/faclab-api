@@ -102,6 +102,14 @@ class AuditAction(StrEnum):
     WEBHOOK_ENDPOINT_DISABLED = "webhook_endpoint.disabled"
     WEBHOOK_ENDPOINT_SECRET_ROTATED = "webhook_endpoint.secret_rotated"
 
+    # Platform operations on a company (S8.5): the operator is the actor and
+    # the entry is in the company's log, `source` task. The change to the
+    # SRI's production environment is audited by faclab-invoicing
+    TENANT_PROVISIONED = "tenant.provisioned"
+    TENANT_SUSPENDED = "tenant.suspended"
+    TENANT_ACTIVATED = "tenant.activated"
+    SUBSCRIPTION_CHANGED = "subscription.changed"
+
     @property
     def resource(self) -> str:
         return self.value.split(".", 1)[0]

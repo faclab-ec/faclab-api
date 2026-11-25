@@ -311,6 +311,11 @@ class BaseConfig:
     # most this many seconds: a change applies within it
     #
     PLAN_ENFORCEMENT_ENABLED = env.bool("PLAN_ENFORCEMENT_ENABLED", True)
+    # Platform console (S8.5): /api/platform, for the operators of Faclab.
+    # false answers 503 PLATFORM_CONSOLE_DISABLED (the rollback switch); a
+    # platform token is short-lived and has no refresh token
+    PLATFORM_CONSOLE_ENABLED = env.bool("PLATFORM_CONSOLE_ENABLED", True)
+    PLATFORM_TOKEN_TTL_SECONDS = env.int("PLATFORM_TOKEN_TTL_SECONDS", 900)
     SUBSCRIPTION_STATUS_CACHE_SECONDS = env.int(
         "SUBSCRIPTION_STATUS_CACHE_SECONDS",
         30,

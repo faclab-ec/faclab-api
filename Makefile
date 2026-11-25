@@ -73,6 +73,9 @@ worker:  ## Run the worker (outbox relay, Kafka consumer, purges) in the foregro
 plans:  ## Plans and subscriptions of the platform (S8.4): args="plans" | "plan-create CODE --name ..." | "subscription --ruc ..." | "subscription-set --ruc ... --status suspended --by <who>"
 	docker compose run --rm api python -m src.subscriptions.cli $(args)
 
+platform:  ## Operators of the platform console (S8.5): args="operators" | "operator-add --username ana --by <who>" | "operator-remove --username ana --by <who>"
+	docker compose run --rm api python -m src.platform_console.cli $(args)
+
 outbox-failed:  ## List the outbox messages that failed (every tenant)
 	docker compose run --rm api python -m src.background.cli outbox-failed
 

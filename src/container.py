@@ -27,8 +27,10 @@ def create_wireup_container():
         INJECTABLES as WAREHOUSE_INJECTABLES,
     )
     from src.invoicing.infra.container import INJECTABLES as INVOICING_INJECTABLES
+    from src.onboarding.infra.container import INJECTABLES as ONBOARDING_INJECTABLES
     from src.organization.infra.container import INJECTABLES as ORGANIZATION_INJECTABLES
     from src.payables.infra.container import INJECTABLES as PAYABLE_INJECTABLES
+    from src.platform_console.infra.container import INJECTABLES as PLATFORM_INJECTABLES
     from src.pos.cash.infra.container import POS_CASH_INJECTABLES
     from src.pos.refund.infra.container import POS_REFUND_INJECTABLES
     from src.pos.reports.infra.container import POS_REPORT_INJECTABLES
@@ -74,6 +76,8 @@ def create_wireup_container():
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
             *SUBSCRIPTION_INJECTABLES,
+            *PLATFORM_INJECTABLES,
+            *ONBOARDING_INJECTABLES,
             *ORGANIZATION_INJECTABLES,
             *CATALOG_INJECTABLES,
             *UOM_INJECTABLES,

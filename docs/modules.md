@@ -710,11 +710,54 @@ de cada recurso y comprobantes de los ultimos seis meses. `/api/auth/me` agrega 
 ni deja de serlo sin otro), `subscription --ruc` y `subscription-set --ruc [--plan] [--status]
 [--trial-days] --by` (quien lo cambia queda en la fila y en el log). La provision
 (`make provision-tenant`) acepta `--plan` y `--trial-days`; sin ellos, el plan por defecto, activa. El
-seed local agrega los planes de ejemplo `basico` y `profesional`. La consola web de plataforma llega en
-S8.5.
+seed local agrega los planes de ejemplo `basico` y `profesional`. La consola web de plataforma (S8.5) hace
+lo mismo desde `/platform`.
 
 **Rollback:** `PLAN_ENFORCEMENT_ENABLED=false` no verifica limites ni solo lectura y da todos los scopes;
 el uso se sigue midiendo y mostrando.
+
+---
+
+## Consola de plataforma y puesta en marcha
+
+La consola del equipo de Faclab y el asistente de la empresa (S8.5,
+[ADR-0013](architecture/ADR/0013-operadores-de-plataforma-y-consola.md), guia en
+[onboarding-guide.md](onboarding-guide.md)).
+
+**Operadores (`src/platform_console/`):** `platform_operators` (tabla de plataforma, sin RLS; `faclab_app`
+solo la lee) dice que usuarios globales pueden entrar. Se administran con `make platform args="operators |
+operator-add --username X --by Y | operator-remove ..."` (`python -m src.platform_console.cli`, como
+`faclab_worker`). `POST /api/platform/auth/login` (publico, mismo bloqueo por intentos que el login de
+empresa; quien no es operador falla como con una clave equivocada) da un token `typ=platform` sin `tid`
+(`aud` solo `faclab-core`, `PLATFORM_TOKEN_TTL_SECONDS`, sin refresh). En `/api/admin`, `/api/pos` y
+`/api/v1` ese token da 403 `PLATFORM_NOT_ALLOWED`; en `/api/platform` el de una empresa da 403
+`PERMISSION_DENIED`. `PLATFORM_CONSOLE_ENABLED=false` apaga todo (503 `PLATFORM_CONSOLE_DISABLED`).
+
+**Rutas (`/api/platform`, token de plataforma):** `GET /tenants` (`q` RUC o nombre, `status`, paginada, con
+plan, estado de la suscripcion, usuarios y sucursales activas), `POST /tenants` (alta idempotente por RUC:
+la empresa, su administrador con contrasena temporal que se devuelve una vez y debe cambiar, la
+estructura minima y la suscripcion; acepta `planCode` y `trialDays`), `GET /tenants/{id}` (el plan y el
+uso contra los limites, y la facturacion segun core: facturas por estado, ventas sin factura, diferencias
+abiertas y comprobantes del mes), `POST /tenants/{id}/suspend` (`reason`; impide el login y el refresh y
+revoca las sesiones; los access tokens ya emitidos duran hasta 15 minutos) y `/activate`, `PUT
+/tenants/{id}/subscription` (`planCode`, `status`, `trialDays`) y `GET /plans`. Todas pasan por
+`PlatformConsole.run`: el operador debe seguir activo y la operacion corre como `faclab_worker`, en el
+contexto de la empresa con el operador como actor.
+
+**Auditoria:** `tenant.provisioned`, `tenant.suspended`, `tenant.activated` y `subscription.changed` van
+al `audit_log` de la empresa, con el operador como actor, origen `task` y sin id de recurso. Altas y
+bajas de operadores quedan en el log estructurado (`platform_operator_changed`, con `by`).
+
+**Asistente de la empresa:** `GET /api/admin/onboarding` (`organization:read`) devuelve lo que core
+sabe: sucursales y puntos de emision activos, cajas, mas de un usuario y una importacion terminada, cada
+uno con `done`, `count` y `required` (`ready`: lo obligatorio esta). No guarda nada: el asistente de
+faclab-web lo combina con el estado de facturacion (`GET /api/invoicing/status`) y con la factura de
+prueba (`GET /api/invoicing/test-invoice`), de modo que se puede dejar y retomar. En faclab-invoicing:
+`POST /api/invoicing/test-invoice` (1 centavo al consumidor final, solo en pruebas y con el emisor listo;
+su resultado no se publica a core) y `POST /api/company-config/go-live` (`confirmRuc` mas
+`acknowledge`, emisor listo, factura de prueba autorizada y un servidor que alcance la produccion del
+SRI; olvida las facturas de prueba, devuelve sus numeros al contador y registra el cambio en
+`issuer_audit`).
 
 ---
 
