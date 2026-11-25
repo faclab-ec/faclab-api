@@ -217,8 +217,13 @@ Lista de claves bloqueadas (insensible a mayúsculas): `password`, `new_password
 ### 4.7 Volumen, retención y costos
 
 - Producción con INFO. Se estima una línea por solicitud más eventos de negocio y de error.
-- Retención inicial propuesta (D-7): logs 15 días, trazas 7 días, métricas 90 días. Se ajusta con el
-  volumen real medido en el piloto.
+- Retención (D-7, resuelta en S8.6): logs 15 días, trazas 7 días, métricas 90 días. La aplica
+  `scripts/signoz.sh retention` (idempotente; trazas y métricas por la API v1 y logs por la v2) y se
+  ajusta con el volumen real medido en el piloto.
+- Mientras no haya SigNoz de producción (D-1 abierta, S8.6), la telemetría está apagada:
+  `TELEMETRY_EXPORTER=nop` hace que el Collector reciba, procese y descarte, y se enciende cambiando
+  variables. Lo crítico lo cubren los latidos y sondeos de `deploy/production` (README, «Latidos y
+  sondeos»).
 - Muestreo de logs DEBUG: nunca en producción. Ráfagas de errores repetidos: el Collector puede
   agruparlos, pero no se descartan errores.
 
@@ -488,7 +493,7 @@ respecto de la tabla:
     S7.6).
 - **Navegador.** Las alertas de `ui.error` y de web vitals quedan para S9.2: sin tráfico real no hay
   umbral con sentido.
-- **El correo** sale por el SMTP de SigNoz: Mailpit en local, el proveedor real en S8.6.
+- **El correo** sale por el SMTP de SigNoz: Mailpit en local, el proveedor real al desplegar SigNoz en producción (S8.6, D-1).
 - **Latencia del POS y percentiles del core.** La primera prueba de `latencia-pos` destapó un defecto
   del core.
   - `http.server.request.duration` y `messaging.process.duration`, en segundos, usaban las cubetas por

@@ -56,3 +56,9 @@ dashboards versionados.
   - Se verificó qué soporta esa versión antes de construir: dashboards v2 (Perses `v6`) y reglas
     `v2alpha1`. El detalle está en [OBSERVABILITY.md §7.1 y §8.1](../OBSERVABILITY.md#71-implementación-s75).
   - El despliegue en producción sigue siendo de S8.6, con el mismo `casting.yaml` como base.
+- **S8.6 (2026-11-25):** el despliegue se pospone (D-1 abierta, decisión del usuario).
+  - El Collector de producción elige su exporter con `TELEMETRY_EXPORTER`: `nop` (por defecto,
+    descarta) u `otlp_grpc/signoz`, con cabeceras opcionales de autenticación. Es la misma
+    configuración, por lo que cambiar de backend sigue siendo solo reconfigurar el Collector.
+  - Retención D-7 por `scripts/signoz.sh retention`; sin secreto JWT por defecto (G-52).
+  - Sin SigNoz, las alertas críticas pasan a latidos desde el servidor y sondeos externos.

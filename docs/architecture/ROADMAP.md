@@ -41,6 +41,23 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
+- **Lo que S8.6 dejó fuera** (SigNoz en operación, 2026-11-25; la sesión quedó **en curso**, no terminada;
+  los puntos de las otras viñetas que dicen «S8.6» siguen pendientes salvo que digan lo contrario aquí):
+  - **Desplegar SigNoz** (VPS aparte o SigNoz Cloud) y encender la telemetría de producción con TLS,
+    vista en los seis dashboards: D-1 sigue abierta por decisión del usuario (no se compra host hasta
+    tener un par de clientes). Hecho en su lugar: el Collector arranca con la telemetría apagada
+    (`TELEMETRY_EXPORTER=nop`) y se enciende con variables; el exporter con TLS y token está probado
+    contra un receptor local; `scripts/signoz.sh retention` aplica D-7.
+  - Sus usuarios nominales y canales reales (SMTP, bot de Telegram, `ALERT_EMAIL_TO`,
+    `SIGNOZ_EXTERNAL_URL`) y una alerta de prueba que llegue a ellos.
+  - El simulacro de restauración del metastore de SigNoz (el procedimiento está documentado y el
+    volcado se probó en el SigNoz local) y las métricas propias del Collector.
+  - **Latidos y sondeos** (`heartbeats.sh`, un timer por comprobación): probados con un receptor local;
+    falta crear las cuentas (servicio de latidos y de sondeos), poner `HEARTBEAT_BASE_URL` y probarlos
+    en un servidor. No cubren facturas atascadas ni certificados de firma por vencer (leen tablas de
+    negocio y `faclab_monitor` no las ve), ni errores 5xx, latencia o trazas: vuelven con SigNoz.
+  - Leer los términos de uso comercial del plan gratuito del servicio de latidos y del de sondeos.
+
 - **Lo que S8.5 dejó fuera** (consola de plataforma y asistente, 2026-11-25; los puntos de las otras
   viñetas que dicen «S8.5» siguen pendientes salvo que digan lo contrario aquí):
   - La consola no tiene los endpoints HTTP del reproceso de mensajes `failed` y `dead_letters` (siguen
