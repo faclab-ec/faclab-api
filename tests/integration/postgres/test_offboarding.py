@@ -422,3 +422,21 @@ def test_the_cli_shows_a_plan_without_writing_and_refuses_a_purge_in_advance(
                 ]
             )
         )
+
+
+def test_the_cli_writes_the_export_without_the_application(companies, pg_engine):
+    import zipfile
+    from pathlib import Path
+
+    from src.data_protection.cli import _parser, run
+
+    a_id, _, _, _ = companies
+    ruc = _tenant(pg_engine, a_id)["ruc"]
+
+    result = run(_parser().parse_args(["export", "--ruc", ruc, "--by", "Ops"]))
+
+    archive = zipfile.ZipFile(Path(result["file"]))
+    assert (
+        "customers.csv" in archive.namelist() and "manifest.json" in archive.namelist()
+    )
+    assert str(a_id) in result["file"]
