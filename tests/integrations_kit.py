@@ -47,6 +47,7 @@ from src.organization.infra.repositories import SqlAlchemyBranchRepository
 from src.tenancy.infra.mappers import TenantMapper
 from src.tenancy.infra.repositories import SqlAlchemyTenantRepository
 from tests.audit import FakeAuditTrail
+from tests.plans import FakePlanLimits
 from tests.tokens import token_service
 
 SANDBOX = IntegrationSettings(environment=IntegrationEnvironment.SANDBOX)
@@ -56,6 +57,7 @@ class Kit:
     def __init__(self, session: Session):
         self.session = session
         self.audit = FakeAuditTrail()
+        self.limits = FakePlanLimits()
         self.publisher = MagicMock()
         self.clients = SqlAlchemyIntegrationClientRepository(
             session, IntegrationClientMapper()
@@ -85,6 +87,7 @@ class Kit:
             SqlAlchemyIntegrationDirectory(self.session),
             self.branches,
             plan or UnlimitedIntegrationPlan(),
+            self.limits,
             SANDBOX,
             self.audit,
         ).handle(command)

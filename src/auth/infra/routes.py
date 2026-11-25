@@ -53,6 +53,11 @@ from src.shared.infra.validators import (
     DataResponse,
     Meta,
 )
+from src.subscriptions.app.queries.subscription import (
+    GetSubscriptionStatusQuery,
+    GetSubscriptionStatusQueryHandler,
+)
+from src.subscriptions.infra.validators import SubscriptionStatusResponse
 
 
 class AuthRouter:
@@ -198,6 +203,7 @@ class AuthRouter:
         self,
         handler: Injected[GetMyTenantsQueryHandler],
         branches_handler: Injected[GetAccessibleBranchesQueryHandler],
+        subscription_handler: Injected[GetSubscriptionStatusQueryHandler],
         user: AuthenticatedUser = Depends(get_current_user),
         meta: Meta = Depends(get_meta),
     ) -> DataResponse[AuthenticatedUserResponse]:
@@ -207,6 +213,7 @@ class AuthRouter:
         branches = branches_handler.handle(
             GetAccessibleBranchesQuery(branch_ids=user.branch_ids)
         )
+        subscription = subscription_handler.handle(GetSubscriptionStatusQuery())
         return DataResponse(
             data=AuthenticatedUserResponse(
                 id=user.id,
@@ -223,6 +230,7 @@ class AuthRouter:
                 branches=[
                     BranchAccessResponse.model_validate(branch) for branch in branches
                 ],
+                subscription=SubscriptionStatusResponse.model_validate(subscription),
             ),
             meta=meta,
         )

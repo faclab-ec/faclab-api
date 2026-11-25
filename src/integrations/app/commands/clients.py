@@ -25,6 +25,7 @@ from src.organization.app.repositories import BranchRepository
 from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
+from src.shared.app.plans import PlanLimits, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 
 # What the audit log keeps of a client: never a secret nor its hash
@@ -44,7 +45,8 @@ class CreateIntegrationClientCommandHandler(
     CommandHandler[CreateIntegrationClientCommand, dict]
 ):
     """A client of the deployment's environment with its first secret, which
-    the result carries in `client_secret`: the only time it is shown"""
+    the result carries in `client_secret`: the only time it is shown. It takes
+    a seat of the plan (S8.4)"""
 
     def __init__(
         self,
@@ -53,6 +55,7 @@ class CreateIntegrationClientCommandHandler(
         directory: IntegrationDirectory,
         branches: BranchRepository,
         plan: IntegrationPlan,
+        limits: PlanLimits,
         settings: IntegrationSettings,
         audit: AuditTrail,
     ):
@@ -61,12 +64,14 @@ class CreateIntegrationClientCommandHandler(
         self.directory = directory
         self.branches = branches
         self.plan = plan
+        self.limits = limits
         self.settings = settings
         self.audit = audit
 
     def _handle(self, command: CreateIntegrationClientCommand) -> dict:
         scopes = frozenset(command.scopes)
         ensure_in_plan(scopes, self.plan)
+        self.limits.ensure_room(PlanResource.INTEGRATION_CLIENTS)
         ensure_branches(self.branches, command.branch_ids)
         client = IntegrationClient.new(
             self.settings.environment,

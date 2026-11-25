@@ -111,6 +111,11 @@ from src.shared.infra.middlewares import (
     request_validation_exception_handler,
 )
 from src.shared.infra.telemetry_instruments import initialize_counters
+from src.subscriptions.infra.guard import (
+    SubscriptionGuardMiddleware,
+    subscription_access,
+)
+from src.subscriptions.infra.routes import SubscriptionRouter
 from src.suppliers.infra.routes import (
     SupplierContactRouter,
     SupplierProductRouter,
@@ -443,6 +448,9 @@ admin_router.include_router(
     WebhookEndpointRouter().router, prefix="/webhook-endpoints", tags=["Webhooks"]
 )
 admin_router.include_router(
+    SubscriptionRouter().router, prefix="/subscription", tags=["Subscription"]
+)
+admin_router.include_router(
     ReportRouter().router,
     prefix="/reports/inventory",
     tags=["Inventory Reports"],
@@ -533,6 +541,12 @@ def add_middlewares(target: FastAPI) -> None:
         http_exception_handler,  # ty: ignore[invalid-argument-type]
     )
     target.add_middleware(ErrorHandlingMiddleware)
+    # Inside AuthMiddleware, which sets the request's tenant: a subscription
+    # that isn't active leaves its tenant read-only (S8.4)
+    target.add_middleware(
+        SubscriptionGuardMiddleware,
+        access=subscription_access() if config.PLAN_ENFORCEMENT_ENABLED else None,
+    )
     # The public API answers only the codes of its catalog (S6.3)
     target.state.error_translators = {PUBLIC_API_PREFIX: public_error_code}
     # Inside AuthMiddleware, which finds the integration client it counts

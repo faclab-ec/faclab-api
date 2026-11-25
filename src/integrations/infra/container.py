@@ -11,7 +11,6 @@ from src.integrations.app.commands.secrets import (
     RevokeClientSecretCommandHandler,
 )
 from src.integrations.app.commands.token import IssueClientTokenCommandHandler
-from src.integrations.app.plan import UnlimitedIntegrationPlan
 from src.integrations.app.queries.clients import (
     GetIntegrationClientQueryHandler,
     GetIntegrationUsageQueryHandler,
@@ -36,8 +35,8 @@ def integration_settings() -> IntegrationSettings:
 
 
 INJECTABLES = [
+    # Its IntegrationPlan is the subscriptions module's (S8.4)
     integration_settings,
-    UnlimitedIntegrationPlan,
     IntegrationClientMapper,
     ClientSecretMapper,
     SqlAlchemyIntegrationClientRepository,

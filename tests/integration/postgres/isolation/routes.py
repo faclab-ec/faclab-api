@@ -651,6 +651,8 @@ ROUTES: dict[str, Route] = {
     # Users: global identities, members per tenant
     f"GET {ADMIN}/users": Route(),
     f"GET {ADMIN}/audit-log": Route(),
+    # Its plan, status and usage: what the other tenant has never counts
+    f"GET {ADMIN}/subscription": Route(),
     # Bulk import (S5.8)
     f"GET {ADMIN}/imports/templates": Route(),
     f"GET {ADMIN}/imports/templates/{{kind}}": Route(

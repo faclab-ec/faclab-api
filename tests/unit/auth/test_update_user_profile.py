@@ -14,9 +14,11 @@ from src.auth.app.commands.update_user_profile import (
 from src.auth.domain.entities import AuthenticatedUser, Role, User
 from src.auth.domain.events import UserCreated
 from src.auth.domain.exceptions import UserInOtherTenantsError
+from src.shared.app.plans import PlanLimitReachedError, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.plans import FakePlanLimits
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -103,7 +105,7 @@ def _create(**overrides) -> tuple[dict, Mock, Mock]:
         **overrides,
     )
     result = CreateUserCommandHandler(
-        repo, memberships, hasher, publisher, FakeAuditTrail()
+        repo, memberships, hasher, publisher, FakePlanLimits(), FakeAuditTrail()
     ).handle(command)
     return result, memberships, publisher
 
@@ -143,3 +145,26 @@ def test_the_authenticated_user_signs_with_the_full_name_or_the_username():
         ).display_name
         == "Ana Pérez"
     )
+
+
+def test_a_user_beyond_the_plan_is_refused():
+    repo = Mock()
+    repo.get_by_username.return_value = None
+    repo.get_by_email.return_value = None
+    limits = FakePlanLimits(full={PlanResource.USERS})
+
+    with pytest.raises(PlanLimitReachedError):
+        CreateUserCommandHandler(
+            repo, Mock(), Mock(), Mock(), limits, FakeAuditTrail()
+        ).handle(
+            CreateUserCommand(
+                tenant_id=TENANT, username="ana", email="ana@x.ec", password="Secret123"
+            )
+        )
+    repo.create.assert_not_called()
+
+
+def test_an_inactive_user_takes_no_seat():
+    _, memberships, _ = _create(is_active=False)
+
+    assert memberships.create.call_args.args[0].active is False

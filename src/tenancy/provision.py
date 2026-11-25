@@ -1,12 +1,15 @@
-"""Alta de una empresa con su primer administrador y su estructura mínima
-(matriz 001, punto de emisión 001, bodega, ubicación y terminal). Idempotente.
+"""Alta de una empresa con su primer administrador, su estructura mínima
+(matriz 001, punto de emisión 001, bodega, ubicación y terminal) y su
+suscripción (S8.4: el plan por defecto, o `--plan`; activa, o en prueba con
+`--trial-days`). Idempotente: una empresa que ya tiene suscripción la conserva.
 
 Usage:
     PROVISION_ADMIN_PASSWORD=... python -m src.tenancy.provision \\
         --ruc 1799999990001 --legal-name "Ferretería Ejemplo S.A." \\
         [--trade-name "Ferretería Ejemplo"] \\
         --admin-username ana --admin-email ana@example.com \\
-        [--admin-full-name "Ana Pérez"] [--branch-address "Av. Amazonas N24"]
+        [--admin-full-name "Ana Pérez"] [--branch-address "Av. Amazonas N24"] \\
+        [--plan basico] [--trial-days 30]
 
 The password goes in the environment, never in the arguments (shell history,
 process list). It is only needed when the admin user doesn't exist yet; an
@@ -24,6 +27,10 @@ from src.container import create_wireup_container
 from src.shared.domain.exceptions import BaseError
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.events.scope import create_sync_scope
+from src.subscriptions.app.commands.subscriptions import (
+    EnsureSubscriptionCommand,
+    EnsureSubscriptionCommandHandler,
+)
 from src.tenancy.app.commands.provision_tenant import (
     ProvisionTenantCommand,
     ProvisionTenantCommandHandler,
@@ -37,12 +44,14 @@ logger = structlog.get_logger(__name__)
 
 
 def provision(
-    command: ProvisionTenantCommand, branch_address: str | None = None
+    command: ProvisionTenantCommand,
+    branch_address: str | None = None,
+    subscription: EnsureSubscriptionCommand | None = None,
 ) -> dict:
     """Creates the tenant and its admin in one transaction, then its structure
-    in another one inside the tenant: `SET LOCAL app.tenant_id` (row-level
-    security) only applies when a transaction begins. A rerun completes what
-    a failed one left."""
+    and subscription in another one inside the tenant: `SET LOCAL
+    app.tenant_id` (row-level security) only applies when a transaction
+    begins. A rerun completes what a failed one left."""
     if src.wireup_container is None:
         src.wireup_container = create_wireup_container()
     with create_sync_scope() as scope:
@@ -52,7 +61,10 @@ def provision(
         structure = scope.get(SetUpTenantStructureCommandHandler).handle(
             SetUpTenantStructureCommand(branch_address=branch_address)
         )
-    return {**result, **structure}
+        plan = scope.get(EnsureSubscriptionCommandHandler).handle(
+            subscription or EnsureSubscriptionCommand()
+        )
+    return {**result, **structure, **plan}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--admin-email", required=True)
     parser.add_argument("--admin-full-name")
     parser.add_argument("--branch-address", help="Address of the main branch")
+    parser.add_argument("--plan", help="Code of its plan; the default plan if missing")
+    parser.add_argument(
+        "--trial-days", type=int, help="A trial of that many days instead of active"
+    )
     args = parser.parse_args(argv)
 
     env = Env()
@@ -81,7 +97,13 @@ def main(argv: list[str] | None = None) -> int:
         admin_full_name=args.admin_full_name,
     )
     try:
-        result = provision(command, branch_address=args.branch_address)
+        result = provision(
+            command,
+            branch_address=args.branch_address,
+            subscription=EnsureSubscriptionCommand(
+                plan_code=args.plan, trial_days=args.trial_days
+            ),
+        )
     except BaseError as exc:
         logger.error(
             "tenant_provision_failed", error_code=exc.error_code, error=str(exc)
@@ -97,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         user_created=result["user_created"],
         membership_created=result["membership_created"],
         structure_created=result["structure_created"],
+        subscription_created=result["subscription_created"],
     )
     return 0
 

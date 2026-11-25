@@ -19,7 +19,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from environs import Env
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.auth.seed import LOCAL_TENANT_NAME, LOCAL_TENANT_RUC
@@ -71,6 +71,7 @@ from src.sales.infra.models import PaymentModel, SaleItemModel, SaleModel
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.database import create_session_maker
 from src.shared.infra.tenant import tenant_scope
+from src.subscriptions.infra.models import PlanModel
 from src.suppliers.infra.models import (
     SupplierContactModel,
     SupplierModel,
@@ -146,6 +147,46 @@ def get_session_maker() -> sessionmaker[Session]:
     env = Env()
     env.read_env()
     return create_session_maker(env("DATABASE_URL", "sqlite:///./default.db"))
+
+
+# Example plans (S8.4): limits to try the plans out, no prices. Decision D-5
+# (the real plans) is still open; the seed's tenants keep the default plan
+EXAMPLE_PLANS = [
+    {
+        "code": "basico",
+        "name": "Básico (ejemplo)",
+        "max_branches": 1,
+        "max_terminals": 2,
+        "max_users": 3,
+        "max_integration_clients": 0,
+        "max_webhook_endpoints": 0,
+        "max_monthly_documents": 300,
+        "public_api": False,
+    },
+    {
+        "code": "profesional",
+        "name": "Profesional (ejemplo)",
+        "max_branches": 3,
+        "max_terminals": 10,
+        "max_users": 15,
+        "max_integration_clients": 3,
+        "max_webhook_endpoints": 5,
+        "max_monthly_documents": 2000,
+        "public_api": True,
+    },
+]
+
+
+def seed_example_plans(factory: sessionmaker[Session]) -> None:
+    """The example plans, when missing (the platform changes them with
+    `make plans`)"""
+    with factory() as session:
+        for values in EXAMPLE_PLANS:
+            code = values["code"]
+            if session.scalar(select(PlanModel.id).where(PlanModel.code == code)):
+                continue
+            session.add(PlanModel(**values))
+        session.commit()
 
 
 def provision_tenants() -> list[UUID]:
@@ -2056,8 +2097,9 @@ def seed_tenant(session: Session) -> None:
 
 def main():
     ensure_local_environment()
-    tenant_ids = provision_tenants()
     factory = get_session_maker()
+    seed_example_plans(factory)
+    tenant_ids = provision_tenants()
 
     # One transaction per tenant, each in its own context: its data is replaced
     for tenant_id in tenant_ids:

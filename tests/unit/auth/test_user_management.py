@@ -18,9 +18,11 @@ from src.auth.app.commands.update_user_role import (
 )
 from src.auth.domain.entities import Role, User
 from src.auth.domain.exceptions import LastAdminError
+from src.shared.app.plans import PlanLimitReachedError, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.plans import FakePlanLimits
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -91,6 +93,7 @@ def test_update_user_role_changes_the_membership():
         lambda users, memberships: ActivateUserCommandHandler(
             users,
             memberships,
+            FakePlanLimits(),
             FakeAuditTrail(),
         ).handle(ActivateUserCommand(tenant_id=TENANT, user_id=999)),
     ],
@@ -134,9 +137,9 @@ def test_deactivate_removes_the_user_from_the_tenant_only():
 def test_activate_gives_back_access_to_the_tenant():
     users, memberships = _repos(membership=_membership(active=False))
 
-    result = ActivateUserCommandHandler(users, memberships, FakeAuditTrail()).handle(
-        ActivateUserCommand(tenant_id=TENANT, user_id=1)
-    )
+    result = ActivateUserCommandHandler(
+        users, memberships, FakePlanLimits(), FakeAuditTrail()
+    ).handle(ActivateUserCommand(tenant_id=TENANT, user_id=1))
 
     assert result["is_active"] is True
     assert memberships.update.call_args.args[0].active is True
@@ -190,3 +193,25 @@ def test_only_an_active_admin_counts_for_the_last_admin_rule(user, membership):
     )
 
     memberships.lock_active_admins.assert_not_called()
+
+
+def test_activating_a_user_beyond_the_plan_is_refused():
+    users, memberships = _repos(membership=_membership(active=False))
+    limits = FakePlanLimits(full={PlanResource.USERS})
+
+    with pytest.raises(PlanLimitReachedError):
+        ActivateUserCommandHandler(users, memberships, limits, FakeAuditTrail()).handle(
+            ActivateUserCommand(tenant_id=TENANT, user_id=1)
+        )
+    memberships.update.assert_not_called()
+
+
+def test_activating_an_active_user_takes_no_seat():
+    users, memberships = _repos(membership=_membership(active=True))
+    limits = FakePlanLimits(full={PlanResource.USERS})
+
+    ActivateUserCommandHandler(users, memberships, limits, FakeAuditTrail()).handle(
+        ActivateUserCommand(tenant_id=TENANT, user_id=1)
+    )
+
+    assert limits.checked == []

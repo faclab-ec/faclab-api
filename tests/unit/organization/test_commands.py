@@ -32,8 +32,10 @@ from src.organization.domain.exceptions import (
     LocationOutsideBranchError,
     MainBranchDeletionError,
 )
+from src.shared.app.plans import PlanLimitReachedError, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 from tests.audit import FakeAuditTrail
+from tests.plans import FakePlanLimits
 
 # --- Helpers ---
 
@@ -84,7 +86,9 @@ def _placement(
 
 
 def _create_terminal(placement: TerminalPlacement) -> dict:
-    handler = CreatePosTerminalCommandHandler(_echo_repo(), placement, FakeAuditTrail())
+    handler = CreatePosTerminalCommandHandler(
+        _echo_repo(), placement, FakePlanLimits(), FakeAuditTrail()
+    )
     return handler.handle(
         CreatePosTerminalCommand(
             branch_id=1,
@@ -102,9 +106,9 @@ def _create_terminal(placement: TerminalPlacement) -> dict:
 def test_a_new_branch_is_never_the_main_one():
     repo = _echo_repo()
 
-    result = CreateBranchCommandHandler(repo, FakeAuditTrail()).handle(
-        CreateBranchCommand(establishment_code="002", name="Guayaquil")
-    )
+    result = CreateBranchCommandHandler(
+        repo, FakePlanLimits(), FakeAuditTrail()
+    ).handle(CreateBranchCommand(establishment_code="002", name="Guayaquil"))
 
     assert result["establishment_code"] == "002"
     assert result["is_main"] is False
@@ -113,18 +117,18 @@ def test_a_new_branch_is_never_the_main_one():
 def test_updating_a_branch_keeps_whether_it_is_the_main_one():
     repo = _echo_repo(existing=_branch(is_main=True))
 
-    result = UpdateBranchCommandHandler(repo, FakeAuditTrail()).handle(
-        UpdateBranchCommand(branch_id=1, establishment_code="001", name="Quito")
-    )
+    result = UpdateBranchCommandHandler(
+        repo, FakePlanLimits(), FakeAuditTrail()
+    ).handle(UpdateBranchCommand(branch_id=1, establishment_code="001", name="Quito"))
 
     assert (result["name"], result["is_main"]) == ("Quito", True)
 
 
 def test_updating_a_missing_branch_raises():
     with pytest.raises(NotFoundError):
-        UpdateBranchCommandHandler(_echo_repo(), FakeAuditTrail()).handle(
-            UpdateBranchCommand(branch_id=9, establishment_code="001", name="X")
-        )
+        UpdateBranchCommandHandler(
+            _echo_repo(), FakePlanLimits(), FakeAuditTrail()
+        ).handle(UpdateBranchCommand(branch_id=9, establishment_code="001", name="X"))
 
 
 def test_the_main_branch_cant_be_deleted():
@@ -199,6 +203,7 @@ def test_updating_a_terminal_checks_against_its_own_branch():
     handler = UpdatePosTerminalCommandHandler(
         _echo_repo(existing=existing),
         _placement(warehouse_branch=2),
+        FakePlanLimits(),
         FakeAuditTrail(),
     )
 
@@ -210,5 +215,90 @@ def test_updating_a_terminal_checks_against_its_own_branch():
                 default_location_id=20,
                 code="CAJA-01",
                 name="Caja 1",
+            )
+        )
+
+
+# --- Plan limits (S8.4) ---
+
+
+def test_an_active_branch_beyond_the_plan_is_refused():
+    repo = _echo_repo()
+    limits = FakePlanLimits(full={PlanResource.BRANCHES})
+
+    with pytest.raises(PlanLimitReachedError):
+        CreateBranchCommandHandler(repo, limits, FakeAuditTrail()).handle(
+            CreateBranchCommand(establishment_code="002", name="Guayaquil")
+        )
+    repo.create.assert_not_called()
+
+
+def test_an_inactive_branch_takes_no_seat():
+    limits = FakePlanLimits(full={PlanResource.BRANCHES})
+
+    CreateBranchCommandHandler(_echo_repo(), limits, FakeAuditTrail()).handle(
+        CreateBranchCommand(establishment_code="002", name="Bodega", is_active=False)
+    )
+
+    assert limits.checked == []
+
+
+@pytest.mark.parametrize(
+    ("was_active", "checked"), [(False, [PlanResource.BRANCHES]), (True, [])]
+)
+def test_only_activating_a_branch_again_takes_a_seat(was_active, checked):
+    limits = FakePlanLimits()
+
+    UpdateBranchCommandHandler(
+        _echo_repo(existing=_branch(is_active=was_active)), limits, FakeAuditTrail()
+    ).handle(UpdateBranchCommand(branch_id=1, establishment_code="001", name="X"))
+
+    assert limits.checked == checked
+
+
+def test_a_terminal_beyond_the_plan_is_refused():
+    repo = _echo_repo()
+    limits = FakePlanLimits(
+        full={PlanResource.TERMINALS}, limits={PlanResource.TERMINALS: 2}
+    )
+
+    with pytest.raises(PlanLimitReachedError) as error:
+        CreatePosTerminalCommandHandler(
+            repo, _placement(), limits, FakeAuditTrail()
+        ).handle(
+            CreatePosTerminalCommand(
+                branch_id=1,
+                emission_point_id=10,
+                default_location_id=20,
+                code="CAJA-03",
+                name="Caja 3",
+            )
+        )
+    assert error.value.extra == {"resource": "terminals", "limit": 2}
+    repo.create.assert_not_called()
+
+
+def test_activating_a_terminal_again_takes_a_seat():
+    limits = FakePlanLimits(full={PlanResource.TERMINALS})
+    existing = PosTerminal(
+        id=5,
+        branch_id=1,
+        emission_point_id=10,
+        default_location_id=20,
+        code="CAJA-01",
+        name="Caja",
+        is_active=False,
+    )
+
+    with pytest.raises(PlanLimitReachedError):
+        UpdatePosTerminalCommandHandler(
+            _echo_repo(existing=existing), _placement(), limits, FakeAuditTrail()
+        ).handle(
+            UpdatePosTerminalCommand(
+                terminal_id=5,
+                emission_point_id=10,
+                default_location_id=20,
+                code="CAJA-01",
+                name="Caja",
             )
         )

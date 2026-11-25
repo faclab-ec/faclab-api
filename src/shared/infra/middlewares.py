@@ -40,6 +40,8 @@ ERROR_CODE_TO_STATUS = {
     # An integration's token on the internal API, or without the scope (S6.2)
     "INTEGRATION_NOT_ALLOWED": 403,
     "INSUFFICIENT_SCOPE": 403,
+    # A subscription that isn't active leaves its tenant read-only (S8.4)
+    "SUBSCRIPTION_READ_ONLY": 403,
     "INVALID_BRANCH_HEADER": 422,
     "INVALID_TERMINAL_HEADER": 422,
     "IDEMPOTENCY_KEY_REQUIRED": 422,
