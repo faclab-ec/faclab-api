@@ -219,3 +219,58 @@ def test_new_auth_codes_map_to_their_status():
 
     assert _dispatch(LoginLockedError())[0] == 429
     assert _dispatch(TokenReusedError())[0] == 401
+
+
+# S8.7 (LOPDP): a log never quotes the data a request carried
+
+_CEDULA = "1790012345001"
+_EMAIL = "ana.perez@example.com"
+
+
+def test_integrity_error_log_leaves_out_the_values_of_the_row(json_logs):
+    orig = Exception(
+        'duplicate key value violates unique constraint "uq_customers_tenant_tax_id"\n'
+        f"DETAIL:  Key (tenant_id, tax_id)=(t, {_CEDULA}) already exists."
+    )
+    orig.pgcode = "23505"  # ty: ignore[unresolved-attribute]
+    orig.diag = SimpleNamespace(constraint_name="uq_customers_tenant_tax_id")  # ty: ignore[unresolved-attribute]
+
+    status, _ = _dispatch(IntegrityError(statement="...", params={}, orig=orig))
+
+    lines = json_logs()
+    line = next(line for line in lines if line["event"] == "integrity_error")
+    assert status == 409
+    assert line["pgcode"] == "23505"
+    assert line["constraint"] == "uq_customers_tenant_tax_id"
+    assert _CEDULA not in json.dumps(lines)
+
+
+def test_unexpected_errors_log_their_type_not_their_message(json_logs):
+    status, _ = _dispatch(ValueError(f"bad value {_EMAIL}"))
+    assert status == 422
+    status, _ = _dispatch(RuntimeError(f"boom for {_CEDULA}"))
+    assert status == 500
+
+    lines = json_logs()
+    assert {"value_error", "unhandled_exception"} <= {line["event"] for line in lines}
+    # The traceback of an unexpected error is kept for debugging, but its
+    # event carries no message field of its own
+    unhandled = next(line for line in lines if line["event"] == "unhandled_exception")
+    assert unhandled["error_type"] == "RuntimeError"
+    assert "error" not in unhandled
+    assert _EMAIL not in json.dumps([line for line in lines if line["event"] == "value_error"])
+
+
+def test_invalid_value_errors_do_not_log_the_value(json_logs):
+    from src.shared.domain.value_objects import Email
+
+    try:
+        Email(_EMAIL.replace("@", ""))
+    except ValueError as exc:
+        status, body = _dispatch(exc)
+
+    assert status == 422
+    assert "Invalid email" in body["errors"][0]["message"]
+    lines = json_logs()
+    assert next(line for line in lines if line["event"] == "domain_error")
+    assert _EMAIL.replace("@", "") not in json.dumps(lines)

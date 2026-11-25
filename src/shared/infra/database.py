@@ -60,7 +60,9 @@ def create_session_maker(
     if not connection_string:
         raise ValueError("Database connection string cannot be empty")
 
-    engine = create_engine(connection_string)
+    # hide_parameters: an error's message and the log never carry the values
+    # of the statement, they can be a customer's data (S8.7)
+    engine = create_engine(connection_string, hide_parameters=True)
     if traced:
         OpenTelemetry().instrument_engine(engine)
     watch_pool(engine, pool_name)

@@ -71,20 +71,55 @@ _SENSITIVE_KEYS = frozenset(
         "signature",
     }
 )
+# Personal data of customers, suppliers and users (S8.7, LOPDP): never in a log
+# either. Kept apart from the secrets above because the audit trail drops
+# `_SENSITIVE_KEYS` from its before/after values and must keep these. "name" is
+# not here: a branch or a product has one too.
+_PII_KEYS = frozenset(
+    {
+        "email",
+        "phone",
+        "taxid",
+        "address",
+        "fullname",
+        "identification",
+        "identificationnumber",
+    }
+)
 _REDACTED = "[REDACTED]"
 
 
+def _normalized(key) -> str | None:
+    if not isinstance(key, str):
+        return None
+    return key.lower().replace("_", "").replace("-", "")
+
+
 def is_sensitive_key(key) -> bool:
-    return (
-        isinstance(key, str)
-        and key.lower().replace("_", "").replace("-", "") in _SENSITIVE_KEYS
-    )
+    return _normalized(key) in _SENSITIVE_KEYS
+
+
+def is_pii_key(key) -> bool:
+    return _normalized(key) in _PII_KEYS
+
+
+def mask_identification(value: str | None) -> str | None:
+    """A cédula or RUC for a log that needs to tell two apart: first two and
+    last two characters (`17******01`); anything shorter is hidden whole
+    (OBSERVABILITY.md §4.6)."""
+    if not value:
+        return value
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}{'*' * (len(value) - 4)}{value[-2:]}"
 
 
 def _redact(value):
     if isinstance(value, dict):
         return {
-            key: _REDACTED if is_sensitive_key(key) else _redact(item)
+            key: _REDACTED
+            if is_sensitive_key(key) or is_pii_key(key)
+            else _redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -95,8 +130,9 @@ def _redact(value):
 
 
 def redact_sensitive(logger, method_name, event_dict):
-    """Masks passwords, tokens, secrets, certificates and signed XML in any
-    field of the event, at any depth."""
+    """Masks passwords, tokens, secrets, certificates, signed XML and the
+    personal data of customers and users in any field of the event, at any
+    depth."""
     return _redact(event_dict)
 
 

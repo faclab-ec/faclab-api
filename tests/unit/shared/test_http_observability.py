@@ -239,3 +239,29 @@ def test_queries_are_spans_of_the_request(span_exporter, traced_session_maker):
     assert query.context.trace_id == server.context.trace_id
     assert query.parent is not None
     assert query.parent.span_id == server.context.span_id
+
+
+def test_request_span_url_loses_its_query_string():
+    from src.shared.infra.adapters.telemetry import drop_query_from_url
+
+    class FakeSpan:
+        def __init__(self, attributes):
+            self.attributes = dict(attributes)
+
+        def is_recording(self):
+            return True
+
+        def set_attribute(self, key, value):
+            self.attributes[key] = value
+
+    span = FakeSpan(
+        {
+            "http.url": "http://api/api/admin/customers?q=ana%40example.com&limit=5",
+            "http.target": "/api/admin/customers",
+        }
+    )
+
+    drop_query_from_url(span, {})  # ty: ignore[invalid-argument-type]
+
+    assert span.attributes["http.url"] == "http://api/api/admin/customers"
+    assert "ana" not in str(span.attributes)
