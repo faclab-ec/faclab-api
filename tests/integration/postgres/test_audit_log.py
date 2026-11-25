@@ -947,8 +947,20 @@ def _entries_of_request(db_session: Session, request_id: str) -> list[AuditLogMo
     )
 
 
+# What the platform's operators do from the console (S8.5): signed by the
+# operator, source `task`, no resource id. Their scenarios are in
+# test_platform_console.py
+PLATFORM_ACTIONS = {
+    AuditAction.TENANT_PROVISIONED,
+    AuditAction.TENANT_SUSPENDED,
+    AuditAction.TENANT_ACTIVATED,
+    AuditAction.SUBSCRIPTION_CHANGED,
+}
+
+
 def test_every_action_has_its_scenario():
-    assert set(SCENARIOS) == set(AuditAction)
+    assert set(SCENARIOS) | PLATFORM_ACTIONS == set(AuditAction)
+    assert not set(SCENARIOS) & PLATFORM_ACTIONS
 
 
 @pytest.mark.parametrize("action", list(SCENARIOS), ids=str)

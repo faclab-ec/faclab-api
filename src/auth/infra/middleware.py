@@ -7,7 +7,11 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.app.services.integration_access import IntegrationAccess
-from src.auth.app.services.token_service import ClientTokenClaims, TokenService
+from src.auth.app.services.token_service import (
+    ClientTokenClaims,
+    PlatformTokenClaims,
+    TokenService,
+)
 from src.auth.domain.entities import AuthenticatedUser, Role
 from src.auth.domain.exceptions import (
     InvalidTokenError,
@@ -15,7 +19,11 @@ from src.auth.domain.exceptions import (
     TokenExpiredError,
 )
 from src.auth.domain.permissions import permissions_for
-from src.auth.domain.principals import IntegrationPrincipal, Principal
+from src.auth.domain.principals import (
+    IntegrationPrincipal,
+    PlatformPrincipal,
+    Principal,
+)
 from src.shared.domain.tenant import TenantContext, TenantSource
 from src.shared.infra.tenant import tenant_scope
 
@@ -33,6 +41,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """Reads the Bearer access token into `request.state.current_user` (a
     person) or `request.state.integration` (an integration client, S6.2) and
     runs the rest of the request in the token's tenant (`TenantContext`).
+
+    A platform operator's token (S8.5) has no tenant: it sets
+    `request.state.platform_operator` and the request runs without a
+    `TenantContext`; `/api/platform` routes read it, any other authenticated
+    route answers `PLATFORM_NOT_ALLOWED`.
 
     It never rejects: an invalid token only records why in
     `request.state.auth_error`, and the route's dependencies answer 401/403.
@@ -62,6 +75,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         request.state.current_user = None
         request.state.integration = None
+        request.state.platform_operator = None
         request.state.auth_error = None
         request.state.branch_id = None
         request.state.branch_error = None
@@ -101,6 +115,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         token = header.split(" ", 1)[1].strip()
         try:
             claims = self._token_service.decode_bearer(token)
+            if isinstance(claims, PlatformTokenClaims):
+                request.state.platform_operator = PlatformPrincipal(
+                    user_id=claims.sub, username=claims.username, full_name=claims.name
+                )
+                return None
             if isinstance(claims, ClientTokenClaims):
                 integration = await self._integration(claims, request)
                 if integration is None:

@@ -39,3 +39,18 @@ class IntegrationPrincipal:
 
 # Whoever makes an authenticated request: a person or an integration
 Principal = AuthenticatedUser | IntegrationPrincipal
+
+
+@dataclass(frozen=True)
+class PlatformPrincipal:
+    """An operator of the platform (S8.5): a user with a row in
+    `platform_operators`, authenticated with a `platform` token. It has no
+    tenant: it only reaches `/api/platform`."""
+
+    user_id: int
+    username: str
+    full_name: str | None = None
+
+    @property
+    def display_name(self) -> str:
+        return self.full_name or self.username

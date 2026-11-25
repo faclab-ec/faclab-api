@@ -22,6 +22,8 @@ PLATFORM_TABLES = {
     "api_rate_limits",
     # The plans every tenant reads, written by the platform (S8.4)
     "plans",
+    # Who may log into the platform console (S8.5)
+    "platform_operators",
 }
 # They carry their tenant, but auth, provisioning and the outbox relay read them
 # across tenants, so the base repository doesn't filter them

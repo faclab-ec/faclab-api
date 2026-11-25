@@ -43,6 +43,7 @@ from src.payables.infra.models import (  # noqa: F401
     PayableModel,
     SupplierPaymentModel,
 )
+from src.platform_console.infra.models import PlatformOperatorModel  # noqa: F401
 from src.pos.cash.infra.models import CashMovementModel  # noqa: F401
 from src.pos.refund.infra.models import (  # noqa: F401
     RefundItemModel,

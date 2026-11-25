@@ -48,6 +48,11 @@ class AuthSessionRepository(Repository[AuthSession]):
         given) except `keep_session_id`; return how many were revoked."""
         raise NotImplementedError
 
+    def revoke_all_for_tenant(self, tenant_id: UUID, now: datetime) -> int:
+        """Revoke every active session of the tenant (it was suspended, S8.5);
+        return how many were revoked."""
+        raise NotImplementedError
+
 
 class LoginFailureRepository(ABC):
     """Failed logins, counted per username or per client IP"""

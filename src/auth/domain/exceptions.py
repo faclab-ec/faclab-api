@@ -63,6 +63,25 @@ class IntegrationNotAllowedError(ApplicationError):
         super().__init__(message)
 
 
+class PlatformNotAllowedError(ApplicationError):
+    """A platform operator's token on a route of a company (/api/admin,
+    /api/pos, /api/v1): the console only reaches /api/platform (S8.5)"""
+
+    error_code = "PLATFORM_NOT_ALLOWED"
+
+    def __init__(self, message: str = "platform tokens can't use the companies' API"):
+        super().__init__(message)
+
+
+class PlatformConsoleDisabledError(ApplicationError):
+    """PLATFORM_CONSOLE_ENABLED is off"""
+
+    error_code = "PLATFORM_CONSOLE_DISABLED"
+
+    def __init__(self, message: str = "the platform console is disabled"):
+        super().__init__(message)
+
+
 class InsufficientScopeError(ApplicationError):
     """The integration's token lacks a scope the route needs"""
 

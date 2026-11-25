@@ -42,6 +42,29 @@ class LoginResult:
     tenants: list[TenantAccess] = field(default_factory=list)
 
 
+def is_locked(
+    failures: LoginFailureRepository,
+    policy: LoginLockoutPolicy,
+    now: datetime,
+    *,
+    username: str | None = None,
+    ip_address: str | None = None,
+) -> bool:
+    """Whether that username (or client IP) is locked out by its recent failures"""
+    last = failures.last_failure_at(username=username, ip_address=ip_address)
+    if last is None or now >= last + policy.lockout:
+        return False
+    limit = (
+        policy.max_failures_per_user
+        if username is not None
+        else policy.max_failures_per_ip
+    )
+    count = failures.count_since(
+        last - policy.window, username=username, ip_address=ip_address
+    )
+    return count >= limit
+
+
 @injectable(lifetime="scoped")
 class LoginCommandHandler(CommandHandler[LoginCommand, LoginResult]):
     def __init__(
@@ -123,20 +146,13 @@ class LoginCommandHandler(CommandHandler[LoginCommand, LoginResult]):
         username: str | None = None,
         ip_address: str | None = None,
     ) -> bool:
-        last = self.failure_repo.last_failure_at(
-            username=username, ip_address=ip_address
+        return is_locked(
+            self.failure_repo,
+            self.lockout,
+            now,
+            username=username,
+            ip_address=ip_address,
         )
-        if last is None or now >= last + self.lockout.lockout:
-            return False
-        limit = (
-            self.lockout.max_failures_per_user
-            if username is not None
-            else self.lockout.max_failures_per_ip
-        )
-        failures = self.failure_repo.count_since(
-            last - self.lockout.window, username=username, ip_address=ip_address
-        )
-        return failures >= limit
 
     def _fail(self, command: LoginCommand, now: datetime) -> NoReturn:
         self.failure_repo.add(

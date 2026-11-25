@@ -10,11 +10,16 @@ from src.auth.domain.exceptions import (
     InvalidTokenError,
     PasswordChangeRequiredError,
     PermissionDeniedError,
+    PlatformNotAllowedError,
     TenantRequiredError,
     TokenExpiredError,
 )
 from src.auth.domain.permissions import Permission
-from src.auth.domain.principals import IntegrationPrincipal, Principal
+from src.auth.domain.principals import (
+    IntegrationPrincipal,
+    PlatformPrincipal,
+    Principal,
+)
 from src.auth.domain.scopes import Scope
 
 
@@ -37,6 +42,8 @@ def get_principal(request: Request) -> Principal:
             raise BranchAccessDeniedError()
         return principal
 
+    if getattr(request.state, "platform_operator", None) is not None:
+        raise PlatformNotAllowedError()
     reason = getattr(request.state, "auth_error", None)
     if reason == "token_expired":
         raise TokenExpiredError("access token expired")
@@ -45,6 +52,22 @@ def get_principal(request: Request) -> Principal:
     if reason == "tenant_required":
         raise TenantRequiredError()
     raise PermissionDeniedError("authentication required")
+
+
+def get_platform_principal(request: Request) -> PlatformPrincipal:
+    """The platform operator of the request (S8.5). A company's token, an
+    integration's or none answer like any other route (`PERMISSION_DENIED`,
+    401). That the operator is still active is checked by `require_platform`
+    (`src/platform_console`)."""
+    operator = getattr(request.state, "platform_operator", None)
+    if operator is not None:
+        return operator
+    reason = getattr(request.state, "auth_error", None)
+    if reason == "token_expired":
+        raise TokenExpiredError("access token expired")
+    if reason == "invalid_token":
+        raise InvalidTokenError("invalid access token")
+    raise PermissionDeniedError("platform authentication required")
 
 
 def get_current_user(request: Request) -> AuthenticatedUser:

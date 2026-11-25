@@ -989,6 +989,26 @@ ROUTES: dict[str, Route] = {
         query=_placement, refs=("branch", "terminal")
     ),
     # Platform: no tenant data, or covered elsewhere
+    # The company's own checklist (S8.5): counts of the caller's tenant only
+    "GET /api/admin/onboarding": Route(),
+    # The platform console (S8.5): a token without tenant that reads every
+    # tenant on purpose; its scenarios are in test_platform_console.py
+    "POST /api/platform/auth/login": Route(exempt="a platform operator, no tenant"),
+    "GET /api/platform/tenants": Route(exempt="the console lists every tenant"),
+    "POST /api/platform/tenants": Route(exempt="the console creates a tenant"),
+    "GET /api/platform/tenants/{tenant_id}": Route(
+        exempt="the console reads any tenant"
+    ),
+    "POST /api/platform/tenants/{tenant_id}/suspend": Route(
+        exempt="the console acts on any tenant"
+    ),
+    "POST /api/platform/tenants/{tenant_id}/activate": Route(
+        exempt="the console acts on any tenant"
+    ),
+    "PUT /api/platform/tenants/{tenant_id}/subscription": Route(
+        exempt="the console acts on any tenant"
+    ),
+    "GET /api/platform/plans": Route(exempt="plans are platform data"),
     "POST /api/auth/login": Route(exempt="before any tenant (test_tenancy.py)"),
     "POST /api/auth/select-tenant": Route(
         exempt="checks the membership of the chosen tenant (test_tenancy.py)"
