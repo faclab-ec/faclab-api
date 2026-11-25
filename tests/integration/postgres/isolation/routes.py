@@ -1013,6 +1013,12 @@ ROUTES: dict[str, Route] = {
     "PUT /api/platform/tenants/{tenant_id}/subscription": Route(
         exempt="the console acts on any tenant"
     ),
+    "POST /api/platform/tenants/{tenant_id}/offboarding": Route(
+        exempt="the console starts a company's offboarding"
+    ),
+    "DELETE /api/platform/tenants/{tenant_id}/offboarding": Route(
+        exempt="the console takes a company's offboarding back"
+    ),
     "GET /api/platform/plans": Route(exempt="plans are platform data"),
     "POST /api/auth/login": Route(exempt="before any tenant (test_tenancy.py)"),
     "POST /api/auth/select-tenant": Route(

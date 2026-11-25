@@ -112,6 +112,12 @@ class AuditAction(StrEnum):
     TENANT_SUSPENDED = "tenant.suspended"
     TENANT_ACTIVATED = "tenant.activated"
     SUBSCRIPTION_CHANGED = "subscription.changed"
+    # The termination of a company's contract (S8.7): started (cancelled, grace
+    # period), taken back, anonymized after the grace period. The final purge
+    # deletes the log itself, so it only leaves a line in the worker's logs
+    TENANT_OFFBOARDING_STARTED = "tenant.offboarding_started"
+    TENANT_OFFBOARDING_CANCELLED = "tenant.offboarding_cancelled"
+    TENANT_ANONYMIZED = "tenant.anonymized"
 
     @property
     def resource(self) -> str:

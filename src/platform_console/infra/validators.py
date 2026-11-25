@@ -97,6 +97,20 @@ class TenantStatusResponse(CamelModel):
     revoked_sessions: int | None = None
 
 
+class OffboardingResponse(CamelModel):
+    """The dates of a company's offboarding (S8.7)"""
+
+    status: str
+    offboarding_started_at: datetime | None = None
+    grace_ends_at: datetime | None = Field(
+        None, description="From here its data can be anonymized"
+    )
+    retention_ends_at: datetime | None = Field(
+        None, description="From here everything of it can be deleted"
+    )
+    anonymized_at: datetime | None = None
+
+
 class ChangeSubscriptionRequest(CamelModel):
     plan_code: str | None = Field(default=None, max_length=40)
     status: SubscriptionStatus | None = None

@@ -308,6 +308,18 @@ class BaseConfig:
     DATA_EXPORT_STALE_MINUTES = env.int("DATA_EXPORT_STALE_MINUTES", 30)
 
     #
+    # Offboarding of a company (S8.7): the days it stays read-only before its
+    # data is anonymized, and the years tax law makes us keep what was issued,
+    # counted from its last sale. The 7 years are from secondary sources (art. 41
+    # of the Reglamento de Comprobantes de Venta; docs/data-protection.md): the
+    # accountant confirms them. The worker anonymizes by itself only when
+    # AUTO_ANONYMIZE; the final purge is always by hand
+    #
+    OFFBOARDING_GRACE_DAYS = env.int("OFFBOARDING_GRACE_DAYS", 30)
+    TAX_RETENTION_YEARS = env.int("TAX_RETENTION_YEARS", 7)
+    OFFBOARDING_AUTO_ANONYMIZE = env.bool("OFFBOARDING_AUTO_ANONYMIZE", False)
+
+    #
     # Idempotency-Key (S3.1): the POS routes that create documents or move money
     # require it; false lets a request without it run as is (rollback switch).
     # The purge deletes the keys older than the retention
