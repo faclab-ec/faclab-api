@@ -269,7 +269,8 @@ Del lado de facturación (base `faclab_invoicing`, ver [ADR-0004](ADR/0004-persi
 
 | Entidad actual o nueva | Nivel | Compartida entre sucursales | Notas |
 |---|---|---|---|
-| `tenants`, `plans`, `subscriptions` | Plataforma | — | Nuevas |
+| `tenants`, `plans` | Plataforma | — | `plans` en S8.4, sin RLS |
+| `subscriptions`, `document_usage` | Empresa | — | S8.4: la suscripción y los comprobantes por mes, con RLS; la plataforma las cambia como `faclab_worker` |
 | `users` | Plataforma (identidad global) | — | Usuario y email únicos globalmente |
 | `memberships`, `user_branch_access` | Empresa | — | Nuevas; rol por empresa. Sin RLS: auth las lee entre empresas (S2.4) |
 | `auth_sessions` | Empresa | — | Se agrega `tenant_id`. Sin RLS, como `memberships` |
@@ -479,9 +480,29 @@ CI, obligatorio para `master`:
 
 ## 10. Suscripciones y límites
 
-- `plans` define límites como sucursales, terminales, usuarios, comprobantes por mes y acceso a la API
-  pública.
-- La verificación ocurre en los comandos que crean esos recursos (por ejemplo, `CreateBranchCommand`)
-  con un error de dominio específico (`PLAN_LIMIT_REACHED`, 409).
-- El uso mensual de comprobantes se mide en facturación y se publica como evento agregado. No se
-  bloquea la emisión de una venta ya hecha: se avisa y se gestiona comercialmente (S8.4).
+Implementado en S8.4 (`src/subscriptions/`, migración `a22a34717c3e`; detalle en
+[docs/modules.md](../modules.md), Planes y suscripciones):
+
+- `plans` (tabla de plataforma, sin RLS) define los límites: sucursales activas, terminales activas,
+  usuarios activos, clientes de integración, endpoints de webhook, comprobantes por mes (`NULL` = sin
+  límite) y si incluye la API pública. Un plan por defecto lo reciben las empresas nuevas; la
+  migración crea `ilimitado` y deja a las empresas existentes activas en él. Sin precios: D-5 sigue
+  abierta (GAP_ANALYSIS §5.3).
+- `subscriptions` (una por empresa, con RLS): plan y estado `trial`, `active`, `suspended` o
+  `cancelled`. La plataforma los cambia con su CLI (`python -m src.subscriptions.cli`, como
+  `faclab_worker`); la consola web llega en S8.5.
+- La verificación ocurre en los comandos que crean esos recursos (`CreateBranchCommand`,
+  `CreatePosTerminalCommand`, `CreateUserCommand`, `CreateIntegrationClientCommand`,
+  `CreateWebhookEndpointCommand` y los que reactivan uno) con `PLAN_LIMIT_REACHED` (409), a través del
+  puerto `PlanLimits` (`src/shared/app/plans.py`). La fila de la suscripción se bloquea mientras se
+  cuenta: dos altas concurrentes se turnan.
+- Una suscripción suspendida, cancelada o con la prueba vencida deja a la empresa en solo lectura
+  (`SUBSCRIPTION_READ_ONLY`, 403, en toda escritura de `/api/admin`, `/api/pos` y `/api/v1`, salvo el
+  seguimiento fiscal de lo ya vendido, el cierre del turno abierto y quitar accesos). Es distinto de
+  `tenants.status = suspended`, que impide el login.
+- **Ajuste de S8.4:** el uso mensual de comprobantes se mide en el core, no con un evento agregado de
+  facturación. Facturación solo emite lo que el core le pide, así que cada comprobante autorizado
+  vuelve al core (`SaleInvoiced`, `CreditNoteAuthorized`) y suma uno a `document_usage` (con RLS) en
+  la transacción que aplica el resultado. No se bloquea la emisión de una venta ya hecha: el límite es
+  blando, se avisa (log y web) y se gestiona comercialmente. Si facturación llegara a emitir
+  comprobantes que no nacen en el core, habría que medirlos allá.

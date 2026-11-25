@@ -463,8 +463,9 @@
     un integrador los necesita.
   - ~~Enrutar `/api/v1/invoices*` a faclab-invoicing en Caddy bajo el mismo dominio~~: hecho en S8.1,
     con el resto de las rutas de facturación en `api.<dominio>`.
-  - Límite por cliente en `POST /api/oauth/token` (hoy solo el del proxy por IP) y límites por plan
-    (S8.4). Core y facturación cuentan cada uno sus rutas; no hay un límite compartido.
+  - Límite por cliente en `POST /api/oauth/token` (hoy solo el del proxy por IP) y límites de
+    solicitudes por plan (S8.4 dejó los planes, sin este límite: siguen siendo globales por
+    configuración). Core y facturación cuentan cada uno sus rutas; no hay un límite compartido.
   - Facturación no ve la revocación de un cliente: allí su token vale hasta que vence (15 minutos).
     Si hace falta antes, consultar el estado al core o acortar la vida del token.
   - OpenAPI público unificado (core más facturación) y portal para integradores: hechos en S6.5.
@@ -491,8 +492,8 @@
   - El cuerpo del mensaje en el historial de entregas.
   - Un comando para volver a cifrar los secretos con la clave maestra nueva después de rotarla. Hoy
     se rota poniendo la clave nueva primero y conservando la anterior.
-  - Pantallas de endpoints y entregas en faclab-web: hechas en S6.5. Límites de endpoints por plan
-    (S8.4): hoy son 20 por empresa.
+  - Pantallas de endpoints y entregas en faclab-web: hechas en S6.5. ~~Límites de endpoints por
+    plan~~: hecho en S8.4 (`max_webhook_endpoints`, bajo el tope de 20 de la plataforma).
   - Panel de las entregas por resultado (`faclab.webhooks.deliveries`) en SigNoz (S7.1).
 - **Portal, documentación y sandbox, lo que quedó de S6.5** (2026-11-19):
   - Desplegar el sandbox (`sandbox.<dominio>`, D-9) con su core, facturación y web, y un workflow
@@ -766,6 +767,20 @@
       de WAL (un reinicio), vuelve a levantar las aplicaciones, instala los timers y lanza el primer
       completo.
     - Sin migraciones del core ni de invoicing.
+- **Planes y límites, lo que quedó de S8.4** (2026-11-25):
+  - **Los planes reales y sus precios** (D-5). Se cargan con `make plans` cuando se decidan. Hoy solo
+    existe el plan por defecto `ilimitado`, y el seed local agrega dos de ejemplo.
+  - **Consola web de plataforma** para planes y suscripciones, con su auditoría (S8.5). Hoy un cambio
+    por CLI queda en `status_changed_by` y en el log, no en `audit_log`.
+  - **Límites de solicitudes de la API pública por plan:** siguen globales por configuración.
+  - **Una importación confirmada antes de suspender la empresa** sigue corriendo en el worker.
+  - **El `db` local** (`docker-compose.yml` del core) necesita `init: true`, como el de staging en
+    S8.3. Con la máquina cargada, el `pg_isready` del healthcheck queda huérfano bajo el postmaster
+    y lo reinicia, lo que tumba `make test-integration`.
+  - **Despliegue de esta sesión:**
+    - Primero el core, con la migración `a22a34717c3e`: deja a cada empresa activa en el plan sin
+      límites, así que nada cambia hasta que la plataforma asigne otro. Después faclab-web.
+    - La web tolera un core anterior: sin `subscription` en `/me` no muestra el aviso.
 
 ## 2. Dependencias
 

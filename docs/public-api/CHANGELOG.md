@@ -4,6 +4,15 @@ Los cambios compatibles (endpoints, campos de respuesta, campos opcionales de en
 nuevos de enums extensibles) no cambian de versión. Uno incompatible publica `/api/v2` y v1 se
 mantiene al menos seis meses con `Deprecation` y `Sunset`.
 
+## Planes — 2026-11
+
+Sin cambios incompatibles.
+
+- El plan de la empresa puede no incluir la API pública: entonces los tokens salen sin scopes.
+- Códigos de error nuevos: `PLAN_LIMIT_REACHED` (409, con `resource` y `limit`) al crear algo que
+  el plan de la empresa ya no admite, y `SUBSCRIPTION_READ_ONLY` (403) en toda escritura mientras
+  la suscripción de la empresa no está activa.
+
 ## Documentación — 2026-11
 
 Sin cambios en el contrato.

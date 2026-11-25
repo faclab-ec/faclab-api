@@ -658,6 +658,66 @@ para usuarios en [imports-guide.md](imports-guide.md).
 
 ---
 
+## Planes y suscripciones
+
+Planes, suscripciones y limites de uso (`src/subscriptions/`, S8.4). Un plan (`plans`, tabla de
+plataforma sin RLS) limita lo que una empresa agrega: sucursales activas (`max_branches`), terminales
+activas (`max_terminals`), usuarios activos (`max_users`, membresias activas de usuarios activos),
+clientes de integracion no revocados (`max_integration_clients`), endpoints de webhook
+(`max_webhook_endpoints`, bajo el tope de 20 de la plataforma) y comprobantes por mes
+(`max_monthly_documents`); `NULL` es sin limite. `public_api` dice si incluye la API publica: sin ella
+ningun cliente recibe scopes (`SCOPE_NOT_IN_PLAN` al crearlo, tokens sin scopes). Un solo plan es el
+por defecto (`uq_plans_default`): lo reciben las empresas nuevas. La migracion `a22a34717c3e` crea el
+plan `ilimitado` ("Sin limites") y deja a cada empresa existente activa en el. Los planes no tienen
+precios: la decision D-5 sigue abierta.
+
+**Suscripcion (`subscriptions`, con RLS):** una por empresa, con su plan y su estado: `trial` (hasta
+`trial_ends_at`), `active`, `suspended` o `cancelled`. Una suspendida, cancelada o con la prueba vencida
+deja a la empresa en **solo lectura**: `SubscriptionGuardMiddleware` (`src/subscriptions/infra/guard.py`)
+responde 403 `SUBSCRIPTION_READ_ONLY` a toda solicitud que no sea GET en `/api/admin`, `/api/pos` y
+`/api/v1`, salvo las de `WRITE_ALLOWED`: consultas por POST (`/api/pos/prices/resolve`), el seguimiento
+fiscal de lo ya vendido (reenviar la factura de una venta confirmada, volver a pedir una nota de
+credito, acreditar la factura de una venta anulada), el cierre Z del turno que quedo abierto y quitar
+accesos (desactivar usuarios, revocar clientes de integracion y sus secretos, desactivar o borrar
+endpoints de webhook). Login, refresh, logout, cambio de contrasena y el token OAuth siguen. El worker,
+los consumidores de Kafka y el relay no pasan por HTTP: la facturacion de las ventas ya hechas sigue.
+El estado se lee con `CachedSubscriptionAccess` (faclab_app, en la empresa de la solicitud) y se
+guarda hasta `SUBSCRIPTION_STATUS_CACHE_SECONDS` (30). Una empresa sin fila de suscripcion tiene el plan
+por defecto, activa. El bloqueo total sigue siendo el estado de la empresa (`tenants.status =
+suspended`), que impide el login.
+
+**Limites:** los comandos de alta llaman `PlanLimits.ensure_room(PlanResource.X)` (puerto en
+`src/shared/app/plans.py`; los modulos no importan `src/subscriptions`) antes de agregar: `CreateBranch`
+y `UpdateBranch` que la reactiva, `CreatePosTerminal` y `UpdatePosTerminal` que la reactiva,
+`CreateUser` (con empresa en contexto; el primer administrador de la provision no consulta) y
+`ActivateUser`, `CreateIntegrationClient` y `CreateWebhookEndpoint`. Sin cupo responde 409
+`PLAN_LIMIT_REACHED` con `resource` y `limit`. La verificacion bloquea la suscripcion de la empresa
+(`FOR NO KEY UPDATE`): dos altas concurrentes se turnan y nunca toman el ultimo cupo las dos. Bajar de
+plan no toca lo ya creado: solo impide altas nuevas.
+
+**Comprobantes por mes (`document_usage`, con RLS):** facturacion solo emite lo que el core le pide,
+asi que cada comprobante autorizado vuelve al core: `SaleInvoiced` y `CreditNoteAuthorized` suman uno
+al mes de la empresa (primer dia del mes en hora de Ecuador, UTC-5) en la transaccion que aplica el
+resultado, una vez por comprobante (sus comandos son idempotentes por estado). El limite mensual es
+blando: no bloquea nada; al cruzarlo queda un WARN `plan_documents_limit_exceeded` y la web avisa.
+
+**Rutas:** `GET /api/admin/subscription` (`organization:read`): plan y limites, estado, `readOnly`, uso
+de cada recurso y comprobantes de los ultimos seis meses. `/api/auth/me` agrega `subscription`
+(`planName`, `status`, `trialEndsAt`, `readOnly`, `documentsLimitReached`), que ven todos los roles.
+
+**Plataforma:** `python -m src.subscriptions.cli` (`make plans args="..."`, como `faclab_worker`):
+`plans`, `plan-create`, `plan-update` (`unlimited` quita un limite; el plan por defecto no se desactiva
+ni deja de serlo sin otro), `subscription --ruc` y `subscription-set --ruc [--plan] [--status]
+[--trial-days] --by` (quien lo cambia queda en la fila y en el log). La provision
+(`make provision-tenant`) acepta `--plan` y `--trial-days`; sin ellos, el plan por defecto, activa. El
+seed local agrega los planes de ejemplo `basico` y `profesional`. La consola web de plataforma llega en
+S8.5.
+
+**Rollback:** `PLAN_ENFORCEMENT_ENABLED=false` no verifica limites ni solo lectura y da todos los scopes;
+el uso se sigue midiendo y mostrando.
+
+---
+
 ## Auditoria
 
 Bitacora inmutable de operaciones sensibles por empresa (`src/audit/`, S3.5). Ruta
