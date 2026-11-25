@@ -80,8 +80,11 @@ alcance inicial).
   última IP de origen, sin una fila por solicitud (`GET …/{id}/usage`); el cliente guarda su último
   uso. Cada escritura queda en la bitácora de auditoría (S3.5) con el cliente como actor
   (`actor_integration_id` y su nombre, sin usuario).
-- **Plan:** un scope que el plan de la empresa no incluye se rechaza (`SCOPE_NOT_IN_PLAN`). Hoy todos
-  los planes incluyen todos los scopes; S8.4 implementa los planes en el puerto `IntegrationPlan`.
+- **Plan:** un scope que el plan de la empresa no incluye se rechaza (`SCOPE_NOT_IN_PLAN`). Desde S8.4
+  el puerto `IntegrationPlan` lo implementa el módulo de suscripciones: un plan con la API pública da
+  todos los scopes y uno sin ella, ninguno. Un cliente más allá del plan responde `PLAN_LIMIT_REACHED`
+  (409), y una suscripción que no está activa deja la API en solo lectura (`SUBSCRIPTION_READ_ONLY`,
+  403).
 
 ### 3.3 Token
 
@@ -399,7 +402,8 @@ mensaje que recibe el receptor HTTPS local.
 - Por IP en Caddy (protección básica).
 - Por cliente y por empresa en la aplicación (S6.3): 600 solicitudes por minuto por cliente con
   ráfagas de 50 y 1200 por minuto por empresa con ráfagas de 100 (`PUBLIC_API_RATE_LIMIT_*` y
-  `PUBLIC_API_TENANT_RATE_LIMIT_*`). Son valores iniciales que se ajustarán por plan (S8.4). Cada
+  `PUBLIC_API_TENANT_RATE_LIMIT_*`). Son valores iniciales; S8.4 dejó los planes sin límites de
+  solicitudes propios, que quedan pendientes en el ROADMAP. Cada
   servicio cuenta las solicitudes a sus rutas: core las de su `/api/v1`, facturación las de
   `/api/v1/invoices`.
 - Algoritmo GCRA: cada clave guarda un solo número, el momento en que su balde vuelve a estar vacío.

@@ -12,6 +12,7 @@ from src.auth.domain.exceptions import InsufficientScopeError
 from src.auth.domain.scopes import Scope
 from src.integrations.domain.exceptions import IntegrationClientRevokedError
 from src.shared.app.audit import AuditAction
+from src.shared.app.plans import PlanLimitReachedError, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 from src.webhooks.domain.entities import (
     MAX_ENDPOINTS_PER_TENANT,
@@ -306,3 +307,11 @@ def test_deleting_an_endpoint_deletes_its_deliveries(kit, session):
     assert session.scalars(select(WebhookEndpointModel)).all() == []
     assert session.scalars(select(WebhookDeliveryModel)).all() == []
     assert kit.audit.entries[-1].action is AuditAction.WEBHOOK_ENDPOINT_DELETED
+
+
+def test_an_endpoint_beyond_the_plan_is_refused(kit, session):
+    kit.limits.full = {PlanResource.WEBHOOK_ENDPOINTS}
+
+    with pytest.raises(PlanLimitReachedError):
+        kit.create()
+    assert session.scalars(select(WebhookEndpointModel)).all() == []

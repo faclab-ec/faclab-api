@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from src.shared.infra.validators import QueryParams
+from src.subscriptions.infra.validators import SubscriptionStatusResponse
 
 
 class LoginRequest(BaseModel):
@@ -109,6 +110,9 @@ class AuthenticatedUserResponse(BaseModel):
         description=(
             "The active branches of the tenant the user may enter, for `X-Branch-Id`"
         ),
+    )
+    subscription: SubscriptionStatusResponse = Field(
+        description="The tenant's subscription (S8.4): whether it can only read"
     )
 
 

@@ -35,6 +35,7 @@ from src.integrations.infra.models import (
 )
 from src.organization.infra.models import BranchModel
 from src.shared.app.audit import AuditAction
+from src.shared.app.plans import PlanLimitReachedError, PlanResource
 from src.tenancy.infra.models import TenantModel
 from tests.conftest import TEST_TENANT_ID
 from tests.integrations_kit import Kit
@@ -321,3 +322,11 @@ def test_a_suspended_tenant_gets_no_token(kit, session):
     session.flush()
 
     assert _denied(kit, created).reason == "tenant not active"
+
+
+def test_a_client_beyond_the_plan_is_refused(kit, session):
+    kit.limits.full = {PlanResource.INTEGRATION_CLIENTS}
+
+    with pytest.raises(PlanLimitReachedError):
+        kit.create()
+    assert session.scalars(select(IntegrationClientModel)).all() == []

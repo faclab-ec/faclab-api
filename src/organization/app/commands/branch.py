@@ -7,6 +7,7 @@ from src.organization.domain.entities import Branch
 from src.organization.domain.exceptions import MainBranchDeletionError
 from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.plans import PlanLimits, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 
 AUDITED_FIELDS = (
@@ -29,11 +30,16 @@ class CreateBranchCommand(Command):
 
 @injectable(lifetime="scoped")
 class CreateBranchCommandHandler(CommandHandler[CreateBranchCommand, dict]):
-    def __init__(self, repo: BranchRepository, audit: AuditTrail):
+    """An active branch takes a seat of the plan (S8.4)"""
+
+    def __init__(self, repo: BranchRepository, limits: PlanLimits, audit: AuditTrail):
         self.repo = repo
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: CreateBranchCommand) -> dict:
+        if command.is_active:
+            self.limits.ensure_room(PlanResource.BRANCHES)
         branch = Branch(
             establishment_code=command.establishment_code,
             name=command.name,
@@ -63,14 +69,19 @@ class UpdateBranchCommand(Command):
 
 @injectable(lifetime="scoped")
 class UpdateBranchCommandHandler(CommandHandler[UpdateBranchCommand, dict]):
-    def __init__(self, repo: BranchRepository, audit: AuditTrail):
+    """Activating a branch again takes a seat of the plan (S8.4)"""
+
+    def __init__(self, repo: BranchRepository, limits: PlanLimits, audit: AuditTrail):
         self.repo = repo
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: UpdateBranchCommand) -> dict:
         branch = self.repo.get_by_id(command.branch_id)
         if branch is None:
             raise NotFoundError(f"Branch {command.branch_id} not found")
+        if command.is_active and not branch.is_active:
+            self.limits.ensure_room(PlanResource.BRANCHES)
         previous = snapshot(branch, *AUDITED_FIELDS)
         branch = Branch(
             id=command.branch_id,

@@ -49,6 +49,9 @@ def create_wireup_container():
     from src.shared.infra.mail import mailer
     from src.shared.infra.outbox.writer import OutboxWriter
     from src.shared.infra.tenant import tenant_context
+    from src.subscriptions.infra.container import (
+        INJECTABLES as SUBSCRIPTION_INJECTABLES,
+    )
     from src.suppliers.infra.container import INJECTABLES as SUPPLIER_INJECTABLES
     from src.tenancy.infra.container import INJECTABLES as TENANCY_INJECTABLES
     from src.webhooks.infra.container import INJECTABLES as WEBHOOK_INJECTABLES
@@ -70,6 +73,7 @@ def create_wireup_container():
             *AUDIT_INJECTABLES,
             *AUTH_INJECTABLES,
             *TENANCY_INJECTABLES,
+            *SUBSCRIPTION_INJECTABLES,
             *ORGANIZATION_INJECTABLES,
             *CATALOG_INJECTABLES,
             *UOM_INJECTABLES,
@@ -112,6 +116,7 @@ def create_wireup_container():
     import src.invoicing.infra.event_handlers  # noqa: F401
     import src.pos.infra.event_handlers  # noqa: F401
     import src.purchasing.infra.event_handlers  # noqa: F401
+    import src.subscriptions.infra.event_handlers  # noqa: F401
 
     # After invoicing's: a sale.confirmed already shows its invoice PENDING
     import src.webhooks.infra.event_handlers  # noqa: F401

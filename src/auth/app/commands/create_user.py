@@ -16,6 +16,7 @@ from src.auth.domain.value_objects import PlainPassword
 from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
+from src.shared.app.plans import PlanLimits, PlanResource
 from src.shared.domain.tenant import current_tenant
 from src.shared.domain.value_objects import Email
 from src.tenancy.app.repositories import MembershipRepository
@@ -36,7 +37,9 @@ class CreateUserCommand(Command):
 @injectable(lifetime="scoped")
 class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
     """Crea el usuario (identidad global) y su membresía en la empresa. El
-    usuario y el email son únicos en toda la plataforma."""
+    usuario y el email son únicos en toda la plataforma. Un usuario activo ocupa
+    un cupo del plan (S8.4); el primer administrador de la provisión, fuera de
+    toda empresa, no lo consulta."""
 
     def __init__(
         self,
@@ -44,17 +47,21 @@ class CreateUserCommandHandler(CommandHandler[CreateUserCommand, dict]):
         memberships: MembershipRepository,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
+        limits: PlanLimits,
         audit: AuditTrail,
     ):
         self.repo = repo
         self.memberships = memberships
         self.hasher = hasher
         self.event_publisher = event_publisher
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: CreateUserCommand) -> dict:
         Email(command.email)
         PlainPassword(command.password)
+        if command.is_active:
+            self.limits.ensure_room(PlanResource.USERS)
 
         if self.repo.get_by_username(command.username) is not None:
             raise UsernameAlreadyExistsError(

@@ -64,6 +64,7 @@ from src.webhooks.infra.repositories import (
 from src.webhooks.infra.secrets import FernetSecretBox
 from src.webhooks.infra.urls import DnsUrlGuard
 from tests.audit import FakeAuditTrail
+from tests.plans import FakePlanLimits
 
 WEBHOOK_MODELS = [
     IntegrationClientModel,
@@ -109,6 +110,7 @@ class Kit:
     ):
         self.session = session
         self.audit = FakeAuditTrail()
+        self.limits = FakePlanLimits()
         self.box = box or fernet_box()
         self.guard = guard or DnsUrlGuard(resolver=table_resolver())
         self.settings = settings or WebhookSettings()
@@ -153,7 +155,12 @@ class Kit:
         description: str | None = None,
     ) -> dict:
         return CreateWebhookEndpointCommandHandler(
-            self.endpoints, self.clients, self.guard, self.box, self.audit
+            self.endpoints,
+            self.clients,
+            self.guard,
+            self.box,
+            self.limits,
+            self.audit,
         ).handle(
             CreateWebhookEndpointCommand(
                 url=url,

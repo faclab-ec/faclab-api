@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine, insert, text
 from sqlalchemy.orm import Session
 
 from main import app  # noqa: F401  # registers every event handler
@@ -14,6 +14,7 @@ from src.auth.domain.entities import Role, User
 from src.auth.infra.models import AuthSessionModel, UserModel
 from src.shared.infra.database import Base
 from src.shared.infra.events.event_bus import EventBus
+from src.subscriptions.infra.models import PlanModel
 from src.tenancy.domain.entities import Membership
 from src.tenancy.infra.models import MembershipModel
 from tests.integration.postgres.tenants import ensure_tenant
@@ -29,11 +30,25 @@ _SUBSCRIBERS = {
 _ACCEPTS_SESSION = dict(EventBus._accepts_session)
 
 
+# The default plan migration a22a34717c3e creates (S8.4): provisioning gives it
+DEFAULT_PLAN_CODE = "ilimitado"
+
+
 def truncate_all(engine: Engine) -> None:
-    """Empty every table (as the superuser: TRUNCATE ignores row-level security)"""
+    """Empty every table (as the superuser: TRUNCATE ignores row-level security)
+    and put back the default plan of the migrations"""
     tables = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        conn.execute(
+            insert(PlanModel).values(
+                code=DEFAULT_PLAN_CODE,
+                name="Sin límites",
+                public_api=True,
+                is_default=True,
+                is_active=True,
+            )
+        )
 
 
 def restore_event_bus() -> None:

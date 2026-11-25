@@ -43,6 +43,10 @@ the URL, that doesn't change with the application's frontend.
 - **Limits:** per client and per company; over them, 429 `RATE_LIMITED` with
   `Retry-After`. Every response carries `RateLimit-Limit`,
   `RateLimit-Remaining`, `RateLimit-Reset` and `RateLimit-Policy`.
+- **Plan:** the company's plan may leave out the public API (no scope in the
+  tokens) and limits what it adds (409 `PLAN_LIMIT_REACHED`). A subscription
+  that isn't active leaves it read-only: every write answers 403
+  `SUBSCRIPTION_READ_ONLY`.
 - **Errors:** `{"errors": [{"code", "message", "field"?}], "meta"}` with codes
   of a stable catalog. Clients must ignore fields they don't know: new ones
   are added without a new version.

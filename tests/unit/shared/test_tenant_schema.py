@@ -20,6 +20,8 @@ PLATFORM_TABLES = {
     # The public API's rate limit counters: their key names the client or the
     # tenant, and the middleware checks them before the request's transaction
     "api_rate_limits",
+    # The plans every tenant reads, written by the platform (S8.4)
+    "plans",
 }
 # They carry their tenant, but auth, provisioning and the outbox relay read them
 # across tenants, so the base repository doesn't filter them
@@ -177,7 +179,7 @@ def _pins_the_tenant(table: Table, column: str) -> bool:
 
 def test_the_classification_covers_every_table():
     assert set(TABLES) >= PLATFORM_TABLES | CROSS_TENANT_TABLES
-    assert len(BUSINESS_TABLES) == 63
+    assert len(BUSINESS_TABLES) == 65
 
 
 @pytest.mark.parametrize("name", sorted(set(TABLES) - PLATFORM_TABLES))

@@ -25,6 +25,7 @@ cualquier otro caso responde el código genérico de su estado.
 | 403 | `INSUFFICIENT_SCOPE` | Al cliente le falta el scope de la ruta |
 | 403 | `PERMISSION_DENIED` | No es un token de integración, o la venta es de otro cliente |
 | 403 | `BRANCH_ACCESS_DENIED` | El cliente no opera en esa sucursal |
+| 403 | `SUBSCRIPTION_READ_ONLY` | La suscripción de la empresa no está activa (suspendida, cancelada o con la prueba vencida): solo se puede leer |
 | 404 | `NOT_FOUND` | No existe, o es de otra empresa o de una sucursal que el cliente no ve |
 | 409 | `CONFLICT` | Un conflicto sin código propio en el catálogo |
 | 409 | `CUSTOMER_ALREADY_EXISTS` | Ya hay un cliente con esa identificación; su id va en `existingId` |
@@ -33,6 +34,7 @@ cualquier otro caso responde el código genérico de su estado.
 | 409 | `RECORD_IN_USE` | Otros registros lo usan |
 | 409 | `IDEMPOTENCY_IN_PROGRESS` | La solicitud con esa clave sigue en curso: reintenta |
 | 409 | `WEBHOOK_ENDPOINT_LIMIT_REACHED` | La empresa ya tiene 20 endpoints de webhooks |
+| 409 | `PLAN_LIMIT_REACHED` | El plan de la empresa no admite otro (por ejemplo, endpoints de webhooks); `resource` y `limit` dicen cuál y cuántos |
 | 409 | `WEBHOOK_ENDPOINT_DISABLED` | El endpoint está desactivado: actívalo antes de probar o reenviar |
 | 409 | `WEBHOOK_DELIVERY_PENDING` | La entrega todavía está pendiente: se enviará sola |
 | 409 | `INTEGRATION_CLIENT_REVOKED` | El cliente de integración del endpoint está revocado |

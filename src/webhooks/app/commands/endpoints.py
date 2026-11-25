@@ -14,6 +14,7 @@ from src.integrations.app.repositories import IntegrationClientRepository
 from src.integrations.domain.exceptions import IntegrationClientRevokedError
 from src.shared.app.audit import AuditAction, AuditTrail, changed
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.plans import PlanLimits, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 from src.webhooks.app.outbox import WebhookOutbox
 from src.webhooks.app.ports import SecretBox, WebhookUrlPolicy
@@ -101,7 +102,8 @@ class CreateWebhookEndpointCommand(Command):
 class CreateWebhookEndpointCommandHandler(
     CommandHandler[CreateWebhookEndpointCommand, dict]
 ):
-    """An endpoint with a new secret, read with `GET …/{id}/secret`"""
+    """An endpoint with a new secret, read with `GET …/{id}/secret`. It takes
+    a seat of the plan (S8.4), under the platform's cap of 20"""
 
     def __init__(
         self,
@@ -109,15 +111,19 @@ class CreateWebhookEndpointCommandHandler(
         clients: IntegrationClientRepository,
         policy: WebhookUrlPolicy,
         box: SecretBox,
+        limits: PlanLimits,
         audit: AuditTrail,
     ):
         self.endpoints = endpoints
         self.clients = clients
         self.policy = policy
         self.box = box
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: CreateWebhookEndpointCommand) -> dict:
+        # First: it waits for a concurrent creation of the tenant to end
+        self.limits.ensure_room(PlanResource.WEBHOOK_ENDPOINTS)
         if self.endpoints.count_by() >= MAX_ENDPOINTS_PER_TENANT:
             raise WebhookEndpointLimitReachedError(MAX_ENDPOINTS_PER_TENANT)
         ensure_owner(self.clients, command.integration_client_id, command.event_types)

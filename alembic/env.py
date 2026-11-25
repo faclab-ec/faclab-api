@@ -71,6 +71,11 @@ from src.shared.infra.database import Base
 from src.shared.infra.idempotency.models import IdempotencyKeyModel  # noqa: F401
 from src.shared.infra.kafka.models import DeadLetterModel  # noqa: F401
 from src.shared.infra.outbox.models import OutboxMessageModel  # noqa: F401
+from src.subscriptions.infra.models import (  # noqa: F401
+    DocumentUsageModel,
+    PlanModel,
+    SubscriptionModel,
+)
 from src.suppliers.infra.models import (  # noqa: F401
     SupplierContactModel,
     SupplierModel,

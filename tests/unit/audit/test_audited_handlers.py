@@ -40,6 +40,7 @@ from src.shared.domain.tax import ConstructionMaterialCode, TaxCode
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
 from tests.costs import inventory_costs
+from tests.plans import FakePlanLimits
 from tests.presentations import FakeProductPresentations
 from tests.quantities import FakeProductQuantities
 
@@ -178,7 +179,9 @@ def _create_user(audit: FakeAuditTrail) -> None:
     memberships.create.side_effect = lambda membership: membership
     hasher = Mock()
     hasher.hash.return_value = "hash"
-    CreateUserCommandHandler(users, memberships, hasher, MagicMock(), audit).handle(
+    CreateUserCommandHandler(
+        users, memberships, hasher, MagicMock(), FakePlanLimits(), audit
+    ).handle(
         CreateUserCommand(
             tenant_id=TENANT,
             username="ana",
@@ -244,7 +247,7 @@ def _branch() -> Branch:
 def test_a_branch_update_that_changes_nothing_leaves_no_entry():
     audit = FakeAuditTrail()
 
-    UpdateBranchCommandHandler(_echo(_branch()), audit).handle(
+    UpdateBranchCommandHandler(_echo(_branch()), FakePlanLimits(), audit).handle(
         UpdateBranchCommand(
             branch_id=2, establishment_code="002", name="Norte", address="Av. 1"
         )
@@ -256,7 +259,7 @@ def test_a_branch_update_that_changes_nothing_leaves_no_entry():
 def test_a_branch_records_its_new_price_list():
     audit = FakeAuditTrail()
 
-    UpdateBranchCommandHandler(_echo(_branch()), audit).handle(
+    UpdateBranchCommandHandler(_echo(_branch()), FakePlanLimits(), audit).handle(
         UpdateBranchCommand(
             branch_id=2,
             establishment_code="002",

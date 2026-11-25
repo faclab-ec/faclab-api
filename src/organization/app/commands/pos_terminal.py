@@ -16,6 +16,7 @@ from src.organization.domain.exceptions import (
 )
 from src.shared.app.audit import AuditAction, AuditTrail, changed, snapshot
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.plans import PlanLimits, PlanResource
 from src.shared.domain.exceptions import NotFoundError
 
 AUDITED_FIELDS = (
@@ -74,20 +75,26 @@ class CreatePosTerminalCommand(Command):
 
 @injectable(lifetime="scoped")
 class CreatePosTerminalCommandHandler(CommandHandler[CreatePosTerminalCommand, dict]):
+    """An active terminal takes a seat of the plan (S8.4)"""
+
     def __init__(
         self,
         repo: PosTerminalRepository,
         placement: TerminalPlacement,
+        limits: PlanLimits,
         audit: AuditTrail,
     ):
         self.repo = repo
         self.placement = placement
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: CreatePosTerminalCommand) -> dict:
         self.placement.check(
             command.branch_id, command.emission_point_id, command.default_location_id
         )
+        if command.is_active:
+            self.limits.ensure_room(PlanResource.TERMINALS)
         terminal = PosTerminal(
             branch_id=command.branch_id,
             emission_point_id=command.emission_point_id,
@@ -120,14 +127,18 @@ class UpdatePosTerminalCommand(Command):
 
 @injectable(lifetime="scoped")
 class UpdatePosTerminalCommandHandler(CommandHandler[UpdatePosTerminalCommand, dict]):
+    """Activating a terminal again takes a seat of the plan (S8.4)"""
+
     def __init__(
         self,
         repo: PosTerminalRepository,
         placement: TerminalPlacement,
+        limits: PlanLimits,
         audit: AuditTrail,
     ):
         self.repo = repo
         self.placement = placement
+        self.limits = limits
         self.audit = audit
 
     def _handle(self, command: UpdatePosTerminalCommand) -> dict:
@@ -138,6 +149,8 @@ class UpdatePosTerminalCommandHandler(CommandHandler[UpdatePosTerminalCommand, d
         self.placement.check(
             terminal.branch_id, command.emission_point_id, command.default_location_id
         )
+        if command.is_active and not terminal.is_active:
+            self.limits.ensure_room(PlanResource.TERMINALS)
         terminal = PosTerminal(
             id=command.terminal_id,
             branch_id=terminal.branch_id,

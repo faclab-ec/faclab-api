@@ -303,6 +303,21 @@ class BaseConfig:
     IDEMPOTENCY_KEY_RETENTION_HOURS = env.int("IDEMPOTENCY_KEY_RETENTION_HOURS", 24)
 
     #
+    # Plans and subscriptions (S8.4): the commands that add a limited resource
+    # check the tenant's plan (PLAN_LIMIT_REACHED) and a subscription that
+    # isn't active leaves its tenant read-only (SUBSCRIPTION_READ_ONLY). false
+    # checks neither and gives every scope (rollback switch); the monthly
+    # documents are still counted. The status of a subscription is cached at
+    # most this many seconds: a change applies within it
+    #
+    PLAN_ENFORCEMENT_ENABLED = env.bool("PLAN_ENFORCEMENT_ENABLED", True)
+    SUBSCRIPTION_STATUS_CACHE_SECONDS = env.int(
+        "SUBSCRIPTION_STATUS_CACHE_SECONDS",
+        30,
+        validate=lambda value: 0 <= value <= 60,
+    )
+
+    #
     # Docs config: /docs and the OpenAPI schemas, off unless enabled
     #
     DOCS_ENABLED = env.bool("DOCS_ENABLED", False)
@@ -544,6 +559,19 @@ All errors follow a consistent structure with one or more error entries:
             ),
         },
         {
+            "name": "Subscription",
+            "description": (
+                "The tenant's plan and subscription (S8.4): its limits (branches, "
+                "terminals, users, integration clients, webhook endpoints, "
+                "documents a month, public API), what it uses of each and the "
+                "status of the subscription. A suspended or cancelled one, or a "
+                "trial past its end, leaves the tenant read-only "
+                "(`SUBSCRIPTION_READ_ONLY`, 403); adding a resource beyond the plan "
+                "answers `PLAN_LIMIT_REACHED` (409). The platform changes plans and "
+                "subscriptions."
+            ),
+        },
+        {
             "name": "Audit Log",
             "description": (
                 "Sensitive operations of the tenant (prices, stock, cancellations, "
@@ -775,6 +803,7 @@ All errors follow a consistent structure with one or more error entries:
                 "Users",
                 "Integrations",
                 "Webhooks",
+                "Subscription",
                 "Audit Log",
                 "Imports",
             ],

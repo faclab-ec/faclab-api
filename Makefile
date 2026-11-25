@@ -58,7 +58,7 @@ seed:  ## Seed the database with test data
 seed-admin:  ## Bootstrap the default tenant and its first admin (idempotent)
 	docker compose run --rm api python -m src.auth.seed
 
-provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ..."
+provision-tenant:  ## Create a tenant and its first admin (idempotent): args="--ruc ... --legal-name ... --admin-username ... --admin-email ... [--plan CODE] [--trial-days N]"
 	docker compose run --rm -e PROVISION_ADMIN_PASSWORD api python -m src.tenancy.provision $(args)
 
 sandbox:  ## Sandbox company with made-up data, optionally an integration client (refuses outside the sandbox): args="--ruc ... --legal-name ... --admin-username ... --admin-email ... [--client-name ...] [--reset]"
@@ -69,6 +69,9 @@ purge-idempotency-keys:  ## Delete the Idempotency-Key rows older than IDEMPOTEN
 
 worker:  ## Run the worker (outbox relay, Kafka consumer, purges) in the foreground
 	docker compose rm -sf worker && docker compose run --rm worker
+
+plans:  ## Plans and subscriptions of the platform (S8.4): args="plans" | "plan-create CODE --name ..." | "subscription --ruc ..." | "subscription-set --ruc ... --status suspended --by <who>"
+	docker compose run --rm api python -m src.subscriptions.cli $(args)
 
 outbox-failed:  ## List the outbox messages that failed (every tenant)
 	docker compose run --rm api python -m src.background.cli outbox-failed

@@ -71,6 +71,9 @@ PUBLIC_ERROR_CODES = frozenset(
         "WEBHOOK_ENDPOINT_LIMIT_REACHED",
         "WEBHOOK_URL_NOT_ALLOWED",
         "WEBHOOKS_DISABLED",
+        # The tenant's plan and subscription (S8.4)
+        "PLAN_LIMIT_REACHED",
+        "SUBSCRIPTION_READ_ONLY",
     }
 )
 
