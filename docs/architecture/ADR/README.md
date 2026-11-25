@@ -18,3 +18,4 @@ Cada ADR documenta el contexto, las alternativas, la decisión y sus consecuenci
 | [0010](0010-observabilidad-con-otel-collector-y-signoz.md) | OpenTelemetry, Collector y SigNoz | Propuesto | S1.5, S7.x |
 | [0011](0011-despliegue-en-vps-con-docker-compose.md) | Despliegue en VPS con Docker Compose y Caddy | Propuesto | S1.2, S8.1–S8.3 |
 | [0012](0012-numeracion-de-documentos.md) | Numeración de documentos internos y tributarios | Aceptado | S2.6, S2.8, S3.3 |
+| [0013](0013-operadores-de-plataforma-y-consola.md) | Operadores de plataforma y consola | Aceptado | S8.5 |

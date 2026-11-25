@@ -41,6 +41,24 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
+- **Lo que S8.5 dejó fuera** (consola de plataforma y asistente, 2026-11-25; los puntos de las otras
+  viñetas que dicen «S8.5» siguen pendientes salvo que digan lo contrario aquí):
+  - La consola no tiene los endpoints HTTP del reproceso de mensajes `failed` y `dead_letters` (siguen
+    en la CLI), ni la edición de planes (CRUD por la CLI `make plans`), ni el umbral de justificación
+    del cierre Z por empresa, ni el login por email ni la invitación de usuarios existentes.
+  - La consola no ve el readiness fino de facturación (perfil, certificado) de una empresa: core no
+    llama a faclab-invoicing y este no tiene rutas entre empresas. Mostrarlo pide un token de servicio
+    por empresa o una ruta de plataforma en faclab-invoicing (decisión de seguridad aparte).
+  - El paso a producción queda auditado en `issuer_audit` de faclab-invoicing y no se muestra en la
+    bitácora de la empresa en core (un mensaje nuevo sería un contrato nuevo); falta una ruta para
+    leerlo y mostrarlo.
+  - Los pasos de configuración del asistente (perfil, certificado, sucursales, cajas, usuarios,
+    importación, secuenciales) llevan a su pantalla y el estado vuelve solo al asistente; no se
+    incrustaron los formularios en el asistente.
+  - El operador entra solo con usuario y contraseña (sin segunda verificación) y el token no se renueva.
+  - La factura de prueba usa el primer punto de emisión (`001-001`) o el que se le pase por la API;
+    el asistente no deja elegirlo.
+
 - **Login con email y descartar el nombre de usuario** (detectado en S2.1; diferido a S8.5 por
   decisión del usuario en S2.9). Con identidad global, el
   `username` es único en toda la plataforma. Dos empresas no pueden usar el mismo nombre (`caja1`) y

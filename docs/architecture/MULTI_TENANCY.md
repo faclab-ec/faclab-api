@@ -180,8 +180,8 @@
 - Verificado contra el backend local: dos navegadores vinculados a cajas distintas de la misma
   sucursal abren turno a la vez.
 
-Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) queda para
-S8.5.
+Dos barreras: el filtro de la aplicación y RLS en la base. El rol de plataforma (consola) llegó en S8.5
+(§9 y [ADR-0013](ADR/0013-operadores-de-plataforma-y-consola.md)).
 
 ## 1. Niveles
 
@@ -381,7 +381,9 @@ CREATE POLICY tenant_isolation ON products
     relay del outbox, las `dead_letters` del consumidor, las purgas y el CLI de plataforma
     (`_tenant_of_sale` se retiró en S2.8). El handler de cada mensaje, en cambio, corre en la empresa
     del mensaje como `faclab_app`. Las tareas de plataforma que recorran empresas abren un contexto
-    por empresa o usan este rol.
+    por empresa o usan este rol. Desde S8.5 la consola de plataforma (`/api/platform`) también lo usa
+    dentro de una solicitud: es la única excepción, acotada a ese prefijo, y cada acción sobre una
+    empresa corre en su contexto con el operador como actor (ADR-0013).
   - `faclab_monitor` (S7.4, opcional, con `DATABASE_URL_MONITOR`) es el usuario del OTel Collector de
     faclab-infra. Solo tiene `pg_monitor` (estadísticas del servidor) y `CONNECT`: ninguna tabla, y no
     entra en los privilegios por defecto de `faclab_owner`. `test_rls.py` lo comprueba cuando el fixture
@@ -456,7 +458,12 @@ CI, obligatorio para `master`:
 
 ## 9. Incorporación de empresas y migración de datos
 
-1. **Alta** (comando de plataforma, S2.1; asistente en S8.5):
+1. **Alta** (comando de plataforma, S2.1; consola y asistente desde S8.5):
+   - La consola de plataforma (`/platform` en la web, `/api/platform` en el core) hace el alta con
+     `POST /api/platform/tenants`: el mismo `provision()` de la CLI, la contraseña temporal del
+     administrador mostrada una sola vez y el cambio obligatorio al primer ingreso. Lista, suspende y
+     reactiva empresas y cambia su plan y su suscripción. Guía para operadores en
+     [docs/onboarding-guide.md](../onboarding-guide.md).
    - Crea la empresa con RUC validado (`TaxId` ya existe en `src/shared/domain/value_objects.py`).
      Hecho en S2.1: `ProvisionTenantCommand` y `python -m src.tenancy.provision`, idempotente; un
      usuario existente se une con su contraseña.
@@ -464,7 +471,15 @@ CI, obligatorio para `master`:
      por defecto y una terminal. Hecho en S2.5 (`SetUpTenantStructureCommand`).
    - Crea la membresía del primer administrador.
 2. **Perfil fiscal y certificado** en facturación, con un token de la empresa: primero el perfil (el RUC),
-   después el certificado de ese RUC y su selección; el emisor queda listo según el readiness (S2.8).
+   después el certificado de ese RUC y su selección; el emisor queda listo según el readiness (S2.8). Lo
+   hace el administrador de la empresa en **Configuración → Puesta en marcha** (S8.5): un asistente cuyos
+   pasos salen de lo que la empresa ya tiene (`GET /api/admin/onboarding` en core, el estado de
+   facturación en faclab-invoicing), así que se puede dejar y retomar. Al final, una **factura de prueba**
+   de 1 centavo contra el ambiente de pruebas del SRI (`POST /api/invoicing/test-invoice`, que no se
+   publica a core) y el **paso a producción** (`POST /api/company-config/go-live`): pide el RUC de la
+   empresa escrito de nuevo, un emisor listo y la factura de prueba autorizada, devuelve al contador los
+   números que usó la prueba, y queda en `issuer_audit` (append-only). `PUT /api/company-config` ya no
+   acepta `environment: 2` (`USE_GO_LIVE`).
 3. **Datos iniciales**: importación de productos, presentaciones, precios, clientes, proveedores y
    saldos de inventario. Hecho en S5.8: **Configuración → Importar datos** (`/api/admin/imports`,
    `import:write`, solo ADMIN), con plantillas CSV y XLSX que se validan fila por fila sin escribir
@@ -490,7 +505,7 @@ Implementado en S8.4 (`src/subscriptions/`, migración `a22a34717c3e`; detalle e
   abierta (GAP_ANALYSIS §5.3).
 - `subscriptions` (una por empresa, con RLS): plan y estado `trial`, `active`, `suspended` o
   `cancelled`. La plataforma los cambia con su CLI (`python -m src.subscriptions.cli`, como
-  `faclab_worker`); la consola web llega en S8.5.
+  `faclab_worker`) o con la consola web (S8.5, `PUT /api/platform/tenants/{id}/subscription`).
 - La verificación ocurre en los comandos que crean esos recursos (`CreateBranchCommand`,
   `CreatePosTerminalCommand`, `CreateUserCommand`, `CreateIntegrationClientCommand`,
   `CreateWebhookEndpointCommand` y los que reactivan uno) con `PLAN_LIMIT_REACHED` (409), a través del
