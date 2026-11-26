@@ -144,7 +144,7 @@
 |---|---|---|---|---|---|---|
 | G-75 | Invoicing tiene 31 pruebas y ninguna cubre XML, firma, SOAP, Kafka, JWT ni persistencia | V | `vitest run` | Regresiones tributarias sin detectar | P1 | S1.1, S4.1 (cubre el XML contra el XSD oficial por tipo de emisor, la clave de acceso con casos de la ficha, la autorización y el almacenamiento), S4.2 (cubre la cola en PostgreSQL, los leases, dos workers concurrentes, el reinicio, el consumidor con un SRI lento y la traza del trabajo) |
 | G-76 | No hay pruebas de contrato entre servicios | V | — | Incompatibilidades como G-08 | P0 | S1.6 (resuelta: JSON Schema versionado en `contracts/`, pruebas de contrato en el CI de core e invoicing) |
-| G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1, S9.2 |
+| G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1 (E2E resuelto: suite contra servicios reales en `faclab-infra/e2e`, con simulador del SRI, en CI cada noche si hay cambios), S9.2 (carga) |
 | G-78 | Cobertura del core desconocida (último `.coverage` de abril 2026, ~66,8 %) | P | `.coverage` | — | P3 | S1.1 (resuelta: 95 %, medida en cada run de CI) |
 
 ## 3. Requisitos de ferretería
