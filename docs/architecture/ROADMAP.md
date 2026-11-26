@@ -42,8 +42,6 @@
 ### Pendientes detectados al ejecutar las sesiones
 
 - **Lo que S9.1 dejó fuera** (pruebas de punta a punta, 2026-11-26):
-  - **La regresión inyectada en CI** (`inject_regression` del workflow `E2E`): se lanza a mano con el workflow ya en
-    `master`. La suite pasó en CI en el PR faclab-infra#17.
   - **faclab-web tiene un test intermitente** que tumba el job `checks` (también en `master`): `react-modal` ejecuta su
     temporizador de cierre con jsdom ya desmontado (`CredentialsDialog.test.tsx`).
   - **`celcer`**: el modo está implementado (`--sri celcer`) y sin probar; falta un certificado de pruebas y, en CI, los
