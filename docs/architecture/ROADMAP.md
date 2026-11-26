@@ -41,6 +41,16 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
+- **Lo que S9.1 dejó fuera** (pruebas de punta a punta, 2026-11-26):
+  - **Verla pasar en CI** (workflow `E2E` de faclab-infra), también con `inject_regression`: exige publicar las ramas.
+  - **`celcer`**: el modo está implementado (`--sri celcer`) y sin probar; falta un certificado de pruebas y, en CI, los
+    secretos `SRI_E2E_P12_BASE64`, `SRI_E2E_P12_PASSWORD` y `SRI_E2E_RUC`.
+  - **Versión de web con el arreglo del selector de presentación**: v0.1.0 lo tiene roto; sale con el próximo release.
+  - **Más escenarios**: venta a crédito y abono, cotización cobrada, devolución parcial, factura rechazada por el SRI y
+    reenvío, varias sucursales y un cajero con acceso limitado. Hoy solo se recorre el camino feliz.
+  - **La semilla de core trae ventas `CONFIRMED` nunca enviadas a facturar** y la conciliación las lista; la suite las
+    descarta. Decidir si la semilla debe marcarlas de otra forma.
+  - **El simulador no verifica la firma XAdES ni el XSD** del SRI: eso solo lo comprueba `celcer`.
 - **Lo que S8.7 dejó fuera** (protección de datos personales, 2026-11-25; los puntos de las otras
   viñetas que dicen «S8.7» siguen pendientes salvo que digan lo contrario aquí):
   - **La prueba en staging** del criterio de aceptación: la VM `faclab-staging` está apagada y probarla
