@@ -102,3 +102,9 @@ def test_the_back_office_reads_the_portfolio_and_the_cashier_takes_payments_at_t
     assert readers == {Role.ADMIN, Role.MANAGER, Role.OPERATOR, Role.VIEWER}
     # Payments outside the cash register; the cashier's go through pos:operate
     assert writers == {Role.ADMIN, Role.MANAGER, Role.OPERATOR}
+
+
+def test_only_the_admin_exports_the_company_data():
+    for role in Role:
+        perms = permissions_for(role)
+        assert (Permission.DATA_EXPORT in perms) == (role == Role.ADMIN)

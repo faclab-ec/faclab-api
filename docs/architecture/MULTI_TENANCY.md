@@ -7,7 +7,7 @@
 
 **Implementado (S2.1, 2026-10-15):**
 
-- `tenants` (UUID, RUC validado y único, razón social, nombre comercial, estado `active`/`suspended`) y
+- `tenants` (UUID, RUC validado y único, razón social, nombre comercial, estado `active`/`suspended`; desde S8.7 también `offboarded`, ver §11) y
   `memberships` (usuario, empresa, rol, activo; única por usuario y empresa), en el módulo
   `src/tenancy/`.
 - `users` como identidad global, sin rol. `auth_sessions.tenant_id`.
@@ -521,3 +521,36 @@ Implementado en S8.4 (`src/subscriptions/`, migración `a22a34717c3e`; detalle e
   la transacción que aplica el resultado. No se bloquea la emisión de una venta ya hecha: el límite es
   blando, se avisa (log y web) y se gestiona comercialmente. Si facturación llegara a emitir
   comprobantes que no nacen en el core, habría que medirlos allá.
+
+## 11. Exportación y baja de una empresa
+
+Implementado en S8.7 ([ADR-0014](ADR/0014-baja-de-empresas-y-conservacion-tributaria.md), política en
+[docs/data-protection.md](../data-protection.md), procedimiento en
+[docs/offboarding-runbook.md](../offboarding-runbook.md)):
+
+- **Estados de una empresa:** `active` → `suspended` (sin login, reversible) y `offboarded` (anonimizada,
+  definitiva). La baja es una línea de tiempo aparte, en `tenants`: `offboarding_started_at`,
+  `grace_ends_at`, `retention_ends_at`, `anonymized_at`. `TenantStatus.OFFBOARDED` no se reactiva
+  (`TENANT_OFFBOARDED`).
+- **Exportación:** `POST /api/admin/data-exports` (ADMIN, `data:export`). El worker lee como
+  `faclab_worker` (sin RLS) cada tabla con `tenant_id` filtrando por la empresa y escribe un ZIP con un
+  CSV por tabla; las tablas de plataforma con `tenant_id` y los `users` de sus membresías entran por la
+  misma regla. Quedan fuera `idempotency_keys`, `outbox_messages`, `auth_sessions`, `dead_letters`, el
+  directorio de integraciones y todo hash o secreto cifrado. `tests/unit/shared/test_tenant_schema.py`
+  obliga a que una tabla nueva sea de negocio o de plataforma, y por eso entra o no a la exportación.
+- **Baja:** `StartOffboardingCommand` → `AnonymizeTenantCommand` → `PurgeTenantCommand`
+  (`src/data_protection/app/commands/offboarding.py`), con `make offboard-tenant` y, para los dos
+  primeros pasos de la consola, `POST/DELETE /api/platform/tenants/{id}/offboarding`.
+  - Qué se **borra** al anonimizar: `PURGE_ON_ANONYMIZE` en `src/data_protection/infra/cleaner.py`
+    (sesiones, claves, mensajes, integraciones, webhooks, importaciones, exportaciones, accesos por
+    sucursal, membresías, contactos).
+  - Qué se **anonimiza**: clientes y proveedores (sin `tax_id`), toda columna `*_by`, `*_by_name`,
+    `cashier_name`, `user_name`, los textos libres `notes` y `park_reason`, los usuarios que solo
+    pertenecen a esa empresa, y `audit_log` y los cierres Z a través de las funciones de dueño.
+  - Qué se **conserva**: el resto de las tablas con `tenant_id` (la contabilidad) y la fila de la
+    empresa, hasta `retention_ends_at`.
+  - El filtro por empresa de cada sentencia es explícito (el worker no tiene RLS); las pruebas de
+    `test_offboarding.py` comparan el hash de las filas de otra empresa antes y después.
+- Para una tabla nueva: si es técnica o de acceso, va a `PURGE_ON_ANONYMIZE` o a
+  `EXCLUDED_TABLES` del exportador; si lleva el nombre de quien hizo algo, usa `*_by`; si guarda datos
+  personales con otro nombre, hay que anonimizarlos a mano en `cleaner.py`.

@@ -86,3 +86,43 @@ def test_json_logs_keep_the_traceback(json_logs):
     line = next(line for line in json_logs() if line["event"] == "unexpected_failure")
     assert "ZeroDivisionError" in line["exception"]
     assert line["service.name"] == "faclab-core"
+
+
+def test_personal_data_keys_are_redacted_but_names_of_things_are_not():
+    event = {
+        "event": "customer_imported",
+        "email": "ana@example.com",
+        "tax_id": "1790012345001",
+        "customer": {"phone": "0999999999", "Address": "Av. 1", "fullName": "Ana"},
+        "branch_name": "Matriz",
+        "name": "Matriz",
+    }
+
+    redacted = redact_sensitive(None, "info", event)
+
+    assert redacted["email"] == "[REDACTED]"
+    assert redacted["tax_id"] == "[REDACTED]"
+    assert redacted["customer"] == {
+        "phone": "[REDACTED]",
+        "Address": "[REDACTED]",
+        "fullName": "[REDACTED]",
+    }
+    assert redacted["name"] == "Matriz"
+    assert redacted["branch_name"] == "Matriz"
+
+
+def test_audit_keeps_the_personal_data_the_log_redacts():
+    from src.shared.infra.logging import is_pii_key, is_sensitive_key
+
+    # The audit trail drops is_sensitive_key keys from before/after: email and
+    # tax_id are not among them, only the log hides them
+    assert is_pii_key("tax_id") and not is_sensitive_key("tax_id")
+    assert is_pii_key("email") and not is_sensitive_key("email")
+
+
+def test_mask_identification_keeps_the_ends_only():
+    from src.shared.infra.logging import mask_identification
+
+    assert mask_identification("1790012345001") == "17*********01"
+    assert mask_identification("1234") == "****"
+    assert mask_identification(None) is None

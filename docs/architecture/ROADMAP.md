@@ -41,6 +41,32 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
+- **Lo que S8.7 dejó fuera** (protección de datos personales, 2026-11-25; los puntos de las otras
+  viñetas que dicen «S8.7» siguen pendientes salvo que digan lo contrario aquí):
+  - **La prueba en staging** del criterio de aceptación: la VM `faclab-staging` está apagada y probarla
+    exige publicar las ramas y un prerelease. Hecho en su lugar: las pruebas con PostgreSQL real
+    (roles `faclab_app`, `faclab_worker` y `faclab_owner`, RLS forzada, funciones de dueño) de core y la
+    base de invoicing, con dos empresas.
+  - **Validar con el contador y un abogado** los plazos y las bases legales de `docs/data-protection.md`
+    §8 y el registro de tratamientos (borrador): el plazo de 7 años y desde cuándo cuenta (hoy, desde la
+    última venta), cuáles registros más hay que conservar, el rol de Faclab (responsable o encargado) y
+    la notificación de vulneraciones. **Antes de crear el bucket de producción** (Object Lock).
+  - **Collector** (faclab-infra): `url.query` y `url.full` en `transform/redact` (OBSERVABILITY §4.6).
+  - **Retención y purga de la bitácora** (`audit_log`, `issuer_audit`): hoy se conserva (con actores
+    anonimizados al dar de baja) y solo se borra con la empresa; la política de 7 años es una propuesta.
+  - **La exportación en la interfaz** (faclab-web): botón y estado de `data-exports`; la etiqueta
+    `AUDIT_ACTION_LABELS` de `data_export.requested`, `tenant.offboarding_started`,
+    `tenant.offboarding_cancelled` y `tenant.anonymized` (`check:contract`).
+  - **Anonimizar a un titular concreto** con la empresa activa (supresión u oposición de un cliente):
+    hoy solo se anonimiza una empresa entera al darla de baja.
+  - **Automatizar la baja entre servicios** con un evento de Kafka (ADR-0014): hoy el operador corre la
+    CLI de cada uno con el mismo RUC.
+  - **El XML y el RIDE conservan** nombre, dirección y correo del comprador tal como se firmaron; solo
+    se pueden eliminar al vencer la conservación.
+  - **Los mensajes de la cola `invoices`** pendientes de una empresa bloquean la anonimización; no hay
+    todavía un comando que los reprocese por empresa.
+  - **Retención de datos en respaldos:** una baja tarda ~5 semanas en salir de los respaldos de
+    PostgreSQL; ver `docs/data-protection.md` §6.
 - **Lo que S8.6 dejó fuera** (SigNoz en operación, 2026-11-25; la sesión quedó **en curso**, no terminada;
   los puntos de las otras viñetas que dicen «S8.6» siguen pendientes salvo que digan lo contrario aquí):
   - **Desplegar SigNoz** (VPS aparte o SigNoz Cloud) y encender la telemetría de producción con TLS,

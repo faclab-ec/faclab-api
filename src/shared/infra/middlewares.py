@@ -19,6 +19,7 @@ from src.shared.domain.exceptions import (
     BaseError,
     ConflictError,
     DomainError,
+    InvalidValueError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -95,6 +96,19 @@ def _build_meta(request_id: str) -> dict:
         "requestId": request_id,
         "timestamp": datetime.now(UTC).isoformat(),
     }
+
+
+def _database_error_fields(exc: IntegrityError) -> dict[str, str]:
+    """What a log may say about a database error: its type, SQLSTATE and the
+    name of the constraint, never the driver's message (it quotes values)."""
+    fields = {"error_type": type(exc.orig).__name__}
+    pgcode = getattr(exc.orig, "pgcode", None)
+    if pgcode:
+        fields["pgcode"] = pgcode
+    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    if constraint:
+        fields["constraint"] = constraint
+    return fields
 
 
 def _integrity_error(exc: IntegrityError) -> tuple[int, str, str]:
@@ -257,11 +271,13 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             # its status; only the code is recorded to search by it
             status = _resolve_status(exc)
             trace.get_current_span().set_attribute("faclab.error.code", exc.error_code)
-            logger.warning(
-                "domain_error",
-                error_code=exc.error_code,
-                message=exc.message,
+            # An InvalidValueError quotes the value that failed ("Invalid
+            # email: …", "RUC must have 13 digits: …"): the client gets it, the
+            # log only the code (S8.7)
+            fields = (
+                {} if isinstance(exc, InvalidValueError) else {"message": exc.message}
             )
+            logger.warning("domain_error", error_code=exc.error_code, **fields)
             body = build_error_response(
                 error_code=public_error_code(request, exc.error_code, status),
                 message=exc.message,
@@ -271,7 +287,9 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(status_code=status, content=body)
         except IntegrityError as exc:
-            logger.warning("integrity_error", message=str(exc.orig))
+            # Never the driver's text: a unique violation quotes the row's
+            # key (`Key (tenant_id, tax_id)=(…)`), a cédula or an email
+            logger.warning("integrity_error", **_database_error_fields(exc))
             status, code, message = _integrity_error(exc)
             body = build_error_response(
                 error_code=public_error_code(request, code, status),
@@ -282,7 +300,8 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         except ValueError as exc:
             # The text of an unexpected ValueError is internal: only the log
             # gets it. Expected ones are InvalidValueError (a BaseError above)
-            logger.warning("value_error", message=str(exc))
+            # The text may quote the value that failed (S8.7): the type only
+            logger.warning("value_error", error_type=type(exc).__name__)
             body = build_error_response(
                 error_code="VALIDATION_ERROR",
                 message="Invalid value",
@@ -290,9 +309,11 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(status_code=422, content=body)
         except Exception as exc:
-            logger.exception("unhandled_exception", error=str(exc))
+            # The traceback stays for debugging; the message is left out of the
+            # event, and the span records the type alone (S8.7)
+            logger.exception("unhandled_exception", error_type=type(exc).__name__)
             span = trace.get_current_span()
-            span.record_exception(exc)
+            span.add_event("exception", {"exception.type": type(exc).__qualname__})
             span.set_status(trace.StatusCode.ERROR, type(exc).__name__)
             body = build_error_response(
                 error_code="INTERNAL_ERROR",

@@ -27,6 +27,11 @@ class TenantModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )
+    # The termination of the contract (S8.7)
+    offboarding_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    grace_ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    retention_ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class MembershipModel(Base):

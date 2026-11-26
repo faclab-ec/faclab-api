@@ -295,6 +295,31 @@ class BaseConfig:
     IMPORT_RETENTION_DAYS = env.int("IMPORT_RETENTION_DAYS", 30)
 
     #
+    # Data export of a company (S8.7): the worker writes the ZIP into
+    # DATA_EXPORT_DIR/<tenant id>/ (a volume of the worker and the API: the API
+    # serves the download) and deletes it RETENTION_DAYS after it is ready
+    #
+    DATA_EXPORT_DIR = env.str("DATA_EXPORT_DIR", ".data/exports")
+    DATA_EXPORT_RETENTION_DAYS = env.int("DATA_EXPORT_RETENTION_DAYS", 7)
+    DATA_EXPORT_POLL_INTERVAL_SECONDS = env.float(
+        "DATA_EXPORT_POLL_INTERVAL_SECONDS", 10.0
+    )
+    # A RUNNING export older than this lost its worker: it is picked up again
+    DATA_EXPORT_STALE_MINUTES = env.int("DATA_EXPORT_STALE_MINUTES", 30)
+
+    #
+    # Offboarding of a company (S8.7): the days it stays read-only before its
+    # data is anonymized, and the years tax law makes us keep what was issued,
+    # counted from its last sale. The 7 years are from secondary sources (art. 41
+    # of the Reglamento de Comprobantes de Venta; docs/data-protection.md): the
+    # accountant confirms them. The worker anonymizes by itself only when
+    # AUTO_ANONYMIZE; the final purge is always by hand
+    #
+    OFFBOARDING_GRACE_DAYS = env.int("OFFBOARDING_GRACE_DAYS", 30)
+    TAX_RETENTION_YEARS = env.int("TAX_RETENTION_YEARS", 7)
+    OFFBOARDING_AUTO_ANONYMIZE = env.bool("OFFBOARDING_AUTO_ANONYMIZE", False)
+
+    #
     # Idempotency-Key (S3.1): the POS routes that create documents or move money
     # require it; false lets a request without it run as is (rollback switch).
     # The purge deletes the keys older than the retention

@@ -76,6 +76,9 @@ plans:  ## Plans and subscriptions of the platform (S8.4): args="plans" | "plan-
 platform:  ## Operators of the platform console (S8.5): args="operators" | "operator-add --username ana --by <who>" | "operator-remove --username ana --by <who>"
 	docker compose run --rm api python -m src.platform_console.cli $(args)
 
+offboard-tenant:  ## Termination of a company (S8.7): args="plan|start|cancel --ruc R --by <who>" | "anonymize --ruc R --by <who> [--execute] [--skip-grace]" | "purge --ruc R --by <who> --confirm-ruc R [--execute]"
+	docker compose run --rm api python -m src.data_protection.cli $(args)
+
 outbox-failed:  ## List the outbox messages that failed (every tenant)
 	docker compose run --rm api python -m src.background.cli outbox-failed
 

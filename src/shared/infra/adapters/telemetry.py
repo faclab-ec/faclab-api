@@ -144,6 +144,20 @@ def create_resource(config: OpenTelemetryConfig) -> Resource:
     )
 
 
+def drop_query_from_url(span: trace.Span, scope: dict) -> None:
+    """The request span keeps `http.url` without its query string: a search
+    (`?q=`) carries a customer's name, email or RUC (S8.7, LOPDP)."""
+    if not span.is_recording():
+        return
+    attributes = getattr(span, "attributes", None) or {}
+    for key in ("http.url", "url.full"):
+        url = attributes.get(key)
+        if isinstance(url, str) and "?" in url:
+            span.set_attribute(key, url.split("?", 1)[0])
+    if attributes.get("url.query"):
+        span.set_attribute("url.query", "")
+
+
 def instrument_fastapi(
     app: FastAPI,
     tracer_provider: trace.TracerProvider | None = None,
@@ -157,6 +171,7 @@ def instrument_fastapi(
         tracer_provider=tracer_provider,
         meter_provider=meter_provider,
         excluded_urls=EXCLUDED_URLS,
+        server_request_hook=drop_query_from_url,
     )
 
 

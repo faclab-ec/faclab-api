@@ -650,6 +650,10 @@ def _import_confirmed(w):
     return w.send(w.admin, "POST", f"/api/admin/imports/{uploaded['id']}/confirm")["id"]
 
 
+def _data_export_requested(w):
+    return w.send(w.admin, "POST", "/api/admin/data-exports")["id"]
+
+
 def _shift_opened(w):
     path = "/api/pos/shifts/open"
     return w.send(w.cashier, "POST", path, {"openingBalance": "50.00"})["id"]
@@ -925,6 +929,7 @@ SCENARIOS: dict[AuditAction, Callable[[World], int]] = {
     AuditAction.POS_TERMINAL_UPDATED: _pos_terminal_updated,
     AuditAction.POS_TERMINAL_DELETED: _pos_terminal_deleted,
     AuditAction.IMPORT_CONFIRMED: _import_confirmed,
+    AuditAction.DATA_EXPORT_REQUESTED: _data_export_requested,
     AuditAction.INTEGRATION_CREATED: _integration_created,
     AuditAction.INTEGRATION_UPDATED: _integration_updated,
     AuditAction.INTEGRATION_SECRET_CREATED: _integration_secret_created,
@@ -955,6 +960,9 @@ PLATFORM_ACTIONS = {
     AuditAction.TENANT_SUSPENDED,
     AuditAction.TENANT_ACTIVATED,
     AuditAction.SUBSCRIPTION_CHANGED,
+    AuditAction.TENANT_OFFBOARDING_STARTED,
+    AuditAction.TENANT_OFFBOARDING_CANCELLED,
+    AuditAction.TENANT_ANONYMIZED,
 }
 
 

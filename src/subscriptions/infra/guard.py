@@ -58,6 +58,8 @@ WRITE_ALLOWED: tuple[tuple[str, str], ...] = (
     ("POST", "/api/admin/invoice-discrepancies/{discrepancy_id}/credit-note"),
     # The Z closing of the shift that was open, to balance its cash
     ("POST", "/api/pos/shifts/{shift_id}/close"),
+    # The company's own data out, whatever happens to the subscription (S8.7)
+    ("POST", "/api/admin/data-exports"),
     # Taking access away
     ("POST", "/api/admin/users/{user_id}/deactivate"),
     ("POST", "/api/admin/integrations/{id}/revoke"),

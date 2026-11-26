@@ -8,6 +8,12 @@ from config import config
 from src.auth.domain.exceptions import PlatformConsoleDisabledError
 from src.auth.domain.principals import PlatformPrincipal
 from src.auth.infra.dependencies import get_platform_principal
+from src.data_protection.app.commands.offboarding import (
+    CancelOffboardingCommand,
+    CancelOffboardingCommandHandler,
+    StartOffboardingCommand,
+    StartOffboardingCommandHandler,
+)
 from src.platform_console.app.commands.login import (
     PlatformLoginCommand,
     PlatformLoginCommandHandler,
@@ -31,6 +37,7 @@ from src.platform_console.infra.validators import (
     ChangeSubscriptionRequest,
     CreatedTenantResponse,
     CreateTenantRequest,
+    OffboardingResponse,
     PlatformLoginRequest,
     PlatformTokenResponse,
     SuspendTenantRequest,
@@ -141,6 +148,28 @@ class PlatformRouter:
             responses=RESPONSES_COMMAND,
             dependencies=guard,
         )(self.change_subscription)
+        self.router.post(
+            "/tenants/{tenant_id}/offboarding",
+            response_model=DataResponse[OffboardingResponse],
+            summary="Start the termination of a company's contract",
+            description=(
+                "Cancels its subscription (read-only; it still signs in and "
+                "exports its data) and starts the grace period "
+                "(`OFFBOARDING_GRACE_DAYS`). The end of the tax retention is "
+                "calculated from its last sale. The anonymization and the final "
+                "purge are not over HTTP: `make offboard-tenant` "
+                "(docs/offboarding-runbook.md). Audited in the company's log."
+            ),
+            responses=RESPONSES_COMMAND,
+            dependencies=guard,
+        )(self.start_offboarding)
+        self.router.delete(
+            "/tenants/{tenant_id}/offboarding",
+            response_model=DataResponse[OffboardingResponse],
+            summary="Take the termination back, while its data is whole",
+            responses=RESPONSES_COMMAND,
+            dependencies=guard,
+        )(self.cancel_offboarding)
         self.router.get(
             "/plans",
             response_model=DataResponse[list[PlanResponse]],
@@ -247,6 +276,41 @@ class PlatformRouter:
             tenant_id,
         )
         return DataResponse(data=TenantDetailResponse.model_validate(detail), meta=meta)
+
+    def start_offboarding(
+        self,
+        tenant_id: UUID,
+        console: Injected[PlatformConsole],
+        operator: PlatformPrincipal = Depends(get_platform_principal),
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[OffboardingResponse]:
+        result = console.run(
+            operator,
+            lambda scope: scope.get(StartOffboardingCommandHandler).handle(
+                StartOffboardingCommand(
+                    grace_days=config.OFFBOARDING_GRACE_DAYS,
+                    retention_years=config.TAX_RETENTION_YEARS,
+                )
+            ),
+            tenant_id,
+        )
+        return DataResponse(data=OffboardingResponse.model_validate(result), meta=meta)
+
+    def cancel_offboarding(
+        self,
+        tenant_id: UUID,
+        console: Injected[PlatformConsole],
+        operator: PlatformPrincipal = Depends(get_platform_principal),
+        meta: Meta = Depends(get_meta),
+    ) -> DataResponse[OffboardingResponse]:
+        result = console.run(
+            operator,
+            lambda scope: scope.get(CancelOffboardingCommandHandler).handle(
+                CancelOffboardingCommand()
+            ),
+            tenant_id,
+        )
+        return DataResponse(data=OffboardingResponse.model_validate(result), meta=meta)
 
     def suspend_tenant(
         self,

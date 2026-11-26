@@ -63,6 +63,9 @@ class Permission(StrEnum):
     # Bulk import of initial data (S5.8): catalog, prices, customers,
     # suppliers and opening stock at once
     IMPORT_WRITE = "import:write"
+    # Export of all the company's data (S8.7, LOPDP): a ZIP with everything it
+    # holds, personal data of its customers and users included
+    DATA_EXPORT = "data:export"
     # Integration clients (S6.2): create them, change their scopes, rotate and
     # revoke their secrets, see their usage
     INTEGRATION_MANAGE = "integration:manage"
@@ -94,6 +97,7 @@ _MANAGER_PERMS = frozenset(Permission) - frozenset(
         Permission.ORGANIZATION_WRITE,
         Permission.AUDIT_READ,
         Permission.IMPORT_WRITE,
+        Permission.DATA_EXPORT,
         Permission.INTEGRATION_MANAGE,
     }
 )

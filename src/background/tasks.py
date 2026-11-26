@@ -7,6 +7,11 @@ it, so two workers never run the same batch."""
 from config import config
 from src.auth.infra import session_purge
 from src.background import queue_metrics
+from src.data_protection.infra import (
+    offboarding_task,
+    purge as export_purge,
+    runner as export_runner,
+)
 from src.imports.infra import purge as import_purge, runner as import_runner
 from src.invoicing.infra import reconciliation
 from src.public_api.infra import rate_limit as public_api_rate_limit
@@ -34,6 +39,17 @@ def periodic_tasks() -> list[PeriodicTask]:
             "imports", config.IMPORT_POLL_INTERVAL_SECONDS, import_runner.run_imports
         ),
         PeriodicTask("import_rows_purge", interval, import_purge.purge),
+        # The data export of a company (S8.7): the ZIP is written in a thread
+        # of its own, so the task returns at once; its files expire
+        PeriodicTask(
+            "data_exports",
+            config.DATA_EXPORT_POLL_INTERVAL_SECONDS,
+            export_runner.run_exports,
+        ),
+        PeriodicTask("data_export_files_purge", interval, export_purge.purge),
+        # Companies whose grace period ended (S8.7); only with
+        # OFFBOARDING_AUTO_ANONYMIZE, otherwise it does nothing
+        PeriodicTask("tenant_offboarding", interval, offboarding_task.anonymize_due),
         # The public API's rate limit counters whose bucket is full (S6.3)
         PeriodicTask("api_rate_limits_purge", interval, public_api_rate_limit.purge),
         # The outbox and dead letter gauges (S7.1); also without Kafka: a

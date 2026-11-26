@@ -668,6 +668,11 @@ ROUTES: dict[str, Route] = {
     f"GET {ADMIN}/imports/{{id}}/rows": Route(path=("import",)),
     f"GET {ADMIN}/imports/{{id}}/errors": Route(path=("import",)),
     f"POST {ADMIN}/imports/{{id}}/confirm": Route(path=("import",)),
+    # Export of the company's data (S8.7)
+    f"POST {ADMIN}/data-exports": Route(created=f"{ADMIN}/data-exports/{{}}"),
+    f"GET {ADMIN}/data-exports": Route(),
+    f"GET {ADMIN}/data-exports/{{id}}": Route(path=("data_export",)),
+    f"GET {ADMIN}/data-exports/{{id}}/download": Route(path=("data_export",)),
     f"POST {ADMIN}/users": Route(
         body=lambda ids: {
             "username": f"{ids['marker'].lower()}-new",
@@ -1007,6 +1012,12 @@ ROUTES: dict[str, Route] = {
     ),
     "PUT /api/platform/tenants/{tenant_id}/subscription": Route(
         exempt="the console acts on any tenant"
+    ),
+    "POST /api/platform/tenants/{tenant_id}/offboarding": Route(
+        exempt="the console starts a company's offboarding"
+    ),
+    "DELETE /api/platform/tenants/{tenant_id}/offboarding": Route(
+        exempt="the console takes a company's offboarding back"
     ),
     "GET /api/platform/plans": Route(exempt="plans are platform data"),
     "POST /api/auth/login": Route(exempt="before any tenant (test_tenancy.py)"),

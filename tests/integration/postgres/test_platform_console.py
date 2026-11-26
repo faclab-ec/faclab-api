@@ -226,6 +226,33 @@ def test_suspending_a_company_closes_its_door_and_activating_opens_it(
     assert len(_audit(pg_engine, tenant_id, "tenant.activated")) == 1
 
 
+def test_the_operator_starts_and_takes_back_the_offboarding_of_a_company(
+    client, console, pg_engine
+):
+    created = console.post(TENANTS, NEW_COMPANY)
+    tenant_id = created["tenantId"]
+    credentials = {"username": "clavo-admin", "password": created["adminPassword"]}
+
+    started = console.post(f"{TENANTS}/{tenant_id}/offboarding", {})
+
+    # Read-only with a grace period, and the company still signs in to export
+    assert started["status"] == "active"
+    assert started["offboardingStartedAt"] and started["graceEndsAt"]
+    assert started["retentionEndsAt"] and started["anonymizedAt"] is None
+    assert client.post("/api/auth/login", json=credentials).status_code == 200
+    again = console.error("POST", f"{TENANTS}/{tenant_id}/offboarding", 409, json={})
+    assert again["code"] == "OFFBOARDING_ALREADY_STARTED"
+    entry = _audit(pg_engine, tenant_id, "tenant.offboarding_started")
+    assert len(entry) == 1 and entry[0].actor_name == "Ops"
+
+    back = console.delete(f"{TENANTS}/{tenant_id}/offboarding")
+
+    assert back["offboardingStartedAt"] is None and back["graceEndsAt"] is None
+    assert len(_audit(pg_engine, tenant_id, "tenant.offboarding_cancelled")) == 1
+    nothing = console.error("DELETE", f"{TENANTS}/{tenant_id}/offboarding", 409)
+    assert nothing["code"] == "OFFBOARDING_NOT_STARTED"
+
+
 def test_the_operator_changes_the_plan_and_the_status(console, pg_engine):
     tenant_id = console.post(TENANTS, NEW_COMPANY)["tenantId"]
     with Session(bind=pg_engine) as session:
