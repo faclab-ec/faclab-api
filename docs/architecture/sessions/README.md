@@ -85,5 +85,9 @@ Cada archivo contiene los 15 campos obligatorios y un prompt autocontenido para 
 - [S9.1 — Pruebas E2E del flujo completo](S9.1-e2e-flujo-completo.md) · depende de: S4.5, S8.1
 - [S9.2 — Pruebas de carga y línea base de umbrales](S9.2-carga-y-linea-base.md) · depende de: S8.1, S7.5
 - [S9.3 — Revisión de seguridad y aislamiento](S9.3-revision-de-seguridad.md) · depende de: S6.3, S8.1
-- [S9.4 — Puesta en marcha del piloto](S9.4-puesta-en-marcha-del-piloto.md) · depende de: S9.1, S9.2, S9.3, S8.3, S8.5
-- [S9.5 — Cierre del piloto y siguiente backlog](S9.5-cierre-del-piloto.md) · depende de: S9.4
+- [S9.4 — Sesiones y contraseñas](S9.4-sesiones-y-contrasenas.md) · depende de: S9.3
+- [S9.5 — Segundo factor (TOTP)](S9.5-segundo-factor.md) · depende de: S9.4
+- [S9.6 — Puesta en marcha del piloto](S9.6-puesta-en-marcha-del-piloto.md) · depende de: S9.1, S9.2, S9.3, S9.4, S9.5, S8.3, S8.5
+- [S9.7 — Cierre del piloto y siguiente backlog](S9.7-cierre-del-piloto.md) · depende de: S9.6
+- [S9.8 — Cadena de suministro y secretos](S9.8-cadena-de-suministro-y-secretos.md) · depende de: S9.3, S8.2
+- [S9.9 — Endurecimiento de facturación](S9.9-endurecimiento-de-facturacion.md) · depende de: S9.3

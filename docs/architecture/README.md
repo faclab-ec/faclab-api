@@ -15,6 +15,8 @@ código, esquema ni infraestructura).
 | [MULTI_TENANCY.md](MULTI_TENANCY.md) | Modelo de empresas, sucursales, puntos de emisión y terminales; aislamiento y propagación del contexto |
 | [OBSERVABILITY.md](OBSERVABILITY.md) | Estándar de logs, trazas y métricas; dashboards y alertas para SigNoz |
 | [CARGA.md](CARGA.md) | Pruebas de carga: capacidad medida, línea base, umbrales y dimensionamiento del VPS |
+| [SEGURIDAD.md](SEGURIDAD.md) | Revisión de seguridad (S9.3): hallazgos, escaneos en el CI, pruebas de aislamiento y del borde, plazos de remediación |
+| [ASVS.md](ASVS.md) | OWASP ASVS 5.0 nivel 2, requisito por requisito, con estado y evidencia |
 | [PUBLIC_API.md](PUBLIC_API.md) | API pública `/api/v1`, credenciales de integración, versionado y webhooks |
 | [ROADMAP.md](ROADMAP.md) | 9 etapas y 57 sesiones con dependencias |
 | [sessions/](sessions/README.md) | Una ficha por sesión con los 15 campos y un prompt listo para usar |

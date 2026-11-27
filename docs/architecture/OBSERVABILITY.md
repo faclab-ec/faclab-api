@@ -440,7 +440,7 @@ Cada panel documenta en su descripción: consulta, unidad, umbral y acción.
 
 Los umbrales tienen una línea base de carga desde S9.2 ([CARGA.md](CARGA.md), §10 dice cuáles cambiaron
 y por qué). Siguen siendo de referencia: se midieron en una Mac, y se revisan con el tráfico del piloto
-(S9.5). Cada alerta enlaza a un runbook en `faclab-infra/observability/runbooks/`.
+(S9.7). Cada alerta enlaza a un runbook en `faclab-infra/observability/runbooks/`.
 
 | Alerta | Condición | Severidad | Acción |
 |---|---|---|---|
@@ -512,7 +512,7 @@ respecto de la tabla:
   - La corrección es que cada servicio inicialice esos contadores en 0 al arrancar (pendiente para
     S7.6).
 - **Navegador.** Las alertas de `ui.error` y de web vitals siguen sin existir: la prueba de carga de
-  S9.2 va por la API y no genera tráfico de navegador. Quedan para S9.5.
+  S9.2 va por la API y no genera tráfico de navegador. Quedan para S9.7.
 - **El correo** sale por el SMTP de SigNoz: Mailpit en local, el proveedor real al desplegar SigNoz en producción (S8.6, D-1).
 - **Latencia del POS y percentiles del core.** La primera prueba de `latencia-pos` destapó un defecto
   del core.
