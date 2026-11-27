@@ -224,7 +224,8 @@ class ImportRouter:
                 detail=f"size={size}",
             )
         file_name = file.filename or "archivo"
-        table = read_table(file.file, file_name)
+        # The empty lines count too: twice the rows, plus the header (S9.3)
+        table = read_table(file.file, file_name, 2 * config.IMPORT_MAX_ROWS + 1)
         result = handler.handle(
             CreateImportCommand(
                 kind=kind,
