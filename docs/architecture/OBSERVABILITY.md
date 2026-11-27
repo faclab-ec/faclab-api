@@ -438,20 +438,21 @@ Cada panel documenta en su descripción: consulta, unidad, umbral y acción.
 
 ## 8. Alertas
 
-Los umbrales son **iniciales y provisionales**: hay que fijar una línea base con el tráfico del piloto
-(S9.2) y ajustarlos. Cada alerta enlaza a un runbook en `faclab-infra/observability/runbooks/`.
+Los umbrales tienen una línea base de carga desde S9.2 ([CARGA.md](CARGA.md), §10 dice cuáles cambiaron
+y por qué). Siguen siendo de referencia: se midieron en una Mac, y se revisan con el tráfico del piloto
+(S9.5). Cada alerta enlaza a un runbook en `faclab-infra/observability/runbooks/`.
 
-| Alerta | Condición inicial | Severidad | Acción |
+| Alerta | Condición | Severidad | Acción |
 |---|---|---|---|
 | Servicio no disponible | `/health/ready` falla 2 min seguidos | Crítica | Revisar contenedor, logs de arranque y dependencias |
 | Errores 5xx sostenidos | > 2 % durante 10 min con al menos 20 solicitudes | Advertencia (> 5 %: crítica) | Trazas con error del servicio |
-| Latencia del POS | p95 de rutas `/api/pos/sales*` > 1,5 s durante 10 min | Advertencia | Dashboard 2 y consultas lentas |
-| Outbox atascado | Mensaje pendiente más antiguo > 5 min (crítica > 15 min) | Advertencia | Revisar worker y Kafka; mensajes `failed` |
+| Latencia del POS | p95 de rutas `/api/pos/sales*` > 1 s durante 10 min (S9.2; antes 1,5 s) | Advertencia | Dashboard 2 y consultas lentas |
+| Outbox atascado | Mensaje pendiente más antiguo > 2 min (crítica > 10 min; S9.2, antes 5 y 15) | Advertencia | Revisar worker y Kafka; mensajes `failed` |
 | Consumidor detenido | Lag sin bajar durante 10 min con mensajes nuevos | Crítica | Revisar worker del consumidor |
 | Mensajes fallidos nuevos | Más de 0 en 15 min | Advertencia | Inspeccionar y reprocesar |
 | Facturas atascadas | Comprobantes no finales con más de 30 min | Advertencia | Ver causa (`issue`), estado del SRI y del emisor |
 | SRI no disponible | > 50 % de llamadas fallidas durante 10 min | Advertencia | Confirmar caída del SRI; los reintentos son automáticos |
-| Aumento de rechazos | > 3 rechazos en 1 h o > 5 % | Advertencia | Revisar códigos de rechazo y datos de la empresa |
+| Aumento de rechazos | > 3 transiciones a `rejected` en 1 h (S9.2) | Advertencia | Revisar códigos de rechazo y datos de la empresa |
 | Certificado por vencer | `faclab.certificates.expiring{window=30d}` > 0 (diaria); `7d` crítica | Advertencia o crítica | Avisar a la empresa |
 | Conciliación | Discrepancias > 0 durante 30 min | Advertencia | Listado de conciliación |
 | Disco | > 80 % (crítica > 90 %) | Advertencia | Liberar o ampliar; revisar retención |
@@ -496,8 +497,11 @@ respecto de la tabla:
     alarmas, y no hace falta limitarla al horario comercial.
   - En desarrollo, el worker de facturación lanzado con `npm run dev:worker` se reporta como
     `faclab-invoicing` (pendiente en ROADMAP).
-- **Rechazos.** La alerta es por más de 3 en 1 h. El 5 % queda como umbral del panel hasta tener una
-  línea base (S9.2).
+- **Rechazos.** La alerta es por más de 3 en 1 h. El 5 % queda solo como umbral del panel: con el
+  volumen de un piloto, unos pocos documentos mueven el porcentaje (S9.2).
+  - Desde S9.2 lee `faclab.invoices.transitions` hacia `rejected` y no `faclab.invoices.rejections`:
+    cada código del SRI abría una serie cuyo primer punto `increase` no cuenta. Incluye los rechazos de
+    faclab-invoicing antes de numerar.
 - **Entregas de facturas fallidas.** Es una alerta nueva, que S7.2 dejó pendiente: alguna entrega
   `failed` o `bounced` en 1 h.
 - **Certificados.** Se evalúan cada hora y vuelven a avisar cada 24 h (el aviso diario). Las demás
@@ -507,8 +511,8 @@ respecto de la tabla:
   rechazos y entregas fallidas. En la prueba hizo falta un segundo evento.
   - La corrección es que cada servicio inicialice esos contadores en 0 al arrancar (pendiente para
     S7.6).
-- **Navegador.** Las alertas de `ui.error` y de web vitals quedan para S9.2: sin tráfico real no hay
-  umbral con sentido.
+- **Navegador.** Las alertas de `ui.error` y de web vitals siguen sin existir: la prueba de carga de
+  S9.2 va por la API y no genera tráfico de navegador. Quedan para S9.5.
 - **El correo** sale por el SMTP de SigNoz: Mailpit en local, el proveedor real al desplegar SigNoz en producción (S8.6, D-1).
 - **Latencia del POS y percentiles del core.** La primera prueba de `latencia-pos` destapó un defecto
   del core.
@@ -713,7 +717,8 @@ probada.
   invoicing). Así, la primera falla después de un reinicio ya cuenta como aumento.
   - Hoy son `faclab.auth.login.attempts` y `faclab.invoices.deliveries`.
   - `faclab.invoices.rejections` no se puede inicializar: cada código del SRI abre su propia serie.
-    Queda para S9.2.
+    Desde S9.2 la alerta lee `faclab.invoices.transitions`, que todavía no se inicializa en 0: la
+    primera transición a `rejected` después de reiniciar el worker no cuenta.
 - **Definición de terminado** (plantilla de PR de faclab-core y faclab-invoicing, `.github/pull_request_template.md`):
   - Logs con `event.name`.
   - Métricas de las operaciones nuevas.

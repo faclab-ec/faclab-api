@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from config import config
 from src.integrations.infra.access import integration_access
-from tests.integration.postgres.api import Api, make_branch
+from tests.integration.postgres.api import Api, concurrently, make_branch
 
 TOKEN = "/api/oauth/token"
 CLIENTS = "/api/admin/integrations"
@@ -247,3 +247,20 @@ def test_with_integrations_disabled_there_are_no_tokens(client, api, monkeypatch
 
     assert response.status_code == 503
     assert response.json()["error"] == "temporarily_unavailable"
+
+
+def test_asking_for_tokens_while_using_one_does_not_deadlock(client, api, branches):
+    """Both write the client's usage of the day and its `last_used_at`: in
+    opposite orders they deadlocked, and the token endpoint answered 500
+    (found by the load tests of S9.2)."""
+    created = _create(api)
+    bearer = _bearer(_token(client, created))
+    stock = f"/api/v1/stock?branchId={branches[0]}"
+
+    for _ in range(5):
+        responses = concurrently(
+            *[lambda other: _token(other, created)] * 8,
+            *[lambda other: other.get(stock, headers=bearer)] * 8,
+        )
+
+        assert [r.status_code for r in responses] == [200] * 16

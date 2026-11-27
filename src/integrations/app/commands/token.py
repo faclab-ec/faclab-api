@@ -117,11 +117,13 @@ class IssueClientTokenCommandHandler(
             scopes=scopes,
             branch_ids=client.branch_ids,
         )
+        # The day's usage before the client's row, the order of each request's
+        # usage (`record_request`): the other way round they deadlock (S9.2)
+        self.usage.count(client.require_id(), at=now, ip=command.ip, token_requests=1)
         secret.record_use(now)
         self.secrets.update(secret)
         client.record_use(now)
         self.clients.update(client)
-        self.usage.count(client.require_id(), at=now, ip=command.ip, token_requests=1)
         logger.info(
             "integration_token_issued",
             client_id=client.public_id,
