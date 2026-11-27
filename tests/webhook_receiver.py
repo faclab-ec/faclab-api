@@ -134,6 +134,7 @@ class Receiver:
             cert.write_bytes(self.certificate.cert_pem)
             key.write_bytes(self.certificate.key_pem)
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(cert, key)
         self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
