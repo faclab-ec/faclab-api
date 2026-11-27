@@ -9,7 +9,11 @@ from src.auth.app.repositories import LoginFailureRepository, UserRepository
 from src.auth.app.services.password_hasher import PasswordHasher
 from src.auth.app.services.token_service import PlatformToken, TokenService
 from src.auth.domain.entities import LoginFailure, LoginLockoutPolicy
-from src.auth.domain.exceptions import LoginFailedError, LoginLockedError
+from src.auth.domain.exceptions import (
+    LoginFailedError,
+    LoginLockedError,
+    PasswordChangeRequiredError,
+)
 from src.platform_console.app.repositories import PlatformOperatorRepository
 from src.shared.app.commands import Command, CommandHandler
 
@@ -75,6 +79,12 @@ class PlatformLoginCommandHandler(
             or not operator.is_active
         ):
             self._fail(command, now)
+        if user.must_change_password:
+            # A temporary password (an admin's reset) never opens the console:
+            # the operator changes it first in a company (S9.3)
+            raise PasswordChangeRequiredError(
+                "change the temporary password before entering the console"
+            )
 
         self.failures.clear_for_username(command.username)
         user.record_login(datetime.now(UTC))

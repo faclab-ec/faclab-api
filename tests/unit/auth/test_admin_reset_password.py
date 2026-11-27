@@ -11,9 +11,11 @@ from src.auth.app.commands.admin_reset_password import (
 from src.auth.domain.entities import Role, User
 from src.auth.domain.events import UserPasswordReset
 from src.auth.domain.exceptions import UserInOtherTenantsError
+from src.shared.app.platform import UserIsPlatformOperatorError
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.operators import FakePlatformOperators
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
 
@@ -59,6 +61,7 @@ def test_admin_reset_password_sets_flag_and_rehashes():
         hasher,
         publisher,
         FakeAuditTrail(),
+        FakePlatformOperators(),
     )
     result = handler.handle(
         AdminResetPasswordCommand(
@@ -94,6 +97,7 @@ def test_admin_reset_password_of_a_user_outside_the_tenant_is_not_found():
         Mock(),
         MagicMock(),
         FakeAuditTrail(),
+        FakePlatformOperators(),
     )
 
     with pytest.raises(NotFoundError):
@@ -119,6 +123,7 @@ def test_the_password_of_a_user_who_also_works_elsewhere_cannot_be_reset():
         hasher,
         MagicMock(),
         FakeAuditTrail(),
+        FakePlatformOperators(),
     )
 
     with pytest.raises(UserInOtherTenantsError):
@@ -134,6 +139,38 @@ def test_the_password_of_a_user_who_also_works_elsewhere_cannot_be_reset():
     repo.update.assert_not_called()
 
 
+def test_the_password_of_a_platform_operator_cannot_be_reset():
+    """Its password also opens the console, which reaches every tenant: the
+    admin of the only tenant it belongs to must not set it (S9.3)"""
+    repo = Mock()
+    repo.get_by_id.return_value = _user()
+    hasher = Mock()
+    session_repo = MagicMock()
+
+    handler = AdminResetPasswordCommandHandler(
+        repo,
+        session_repo,
+        _memberships(),
+        hasher,
+        MagicMock(),
+        FakeAuditTrail(),
+        FakePlatformOperators(7),
+    )
+
+    with pytest.raises(UserIsPlatformOperatorError):
+        handler.handle(
+            AdminResetPasswordCommand(
+                tenant_id=TENANT,
+                user_id=7,
+                new_password="TempPass123",
+                reset_by_user_id=1,
+            )
+        )
+    hasher.hash.assert_not_called()
+    repo.update.assert_not_called()
+    session_repo.revoke_all_for_user.assert_not_called()
+
+
 def test_admin_reset_password_rejects_weak_password():
     repo = Mock()
     repo.get_by_id.return_value = _user()
@@ -145,6 +182,7 @@ def test_admin_reset_password_rejects_weak_password():
         Mock(),
         MagicMock(),
         FakeAuditTrail(),
+        FakePlatformOperators(),
     )
 
     with pytest.raises(ValueError):

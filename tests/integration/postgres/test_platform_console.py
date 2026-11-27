@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 
 from config import config
 from src.audit.infra.models import AuditLogModel
+from src.auth.domain.entities import Role
 from src.auth.infra.models import AuthSessionModel, UserModel
 from src.auth.infra.password_hasher import BcryptPasswordHasher
 from src.platform_console.infra.models import PlatformOperatorModel
 from src.subscriptions.infra.guard import subscription_access
 from src.subscriptions.infra.models import PlanModel
+from src.tenancy.infra.models import MembershipModel
 from tests.integration.postgres.api import Api
 from tests.integration.postgres.tenants import OTHER_TENANT_RUC
 
@@ -124,6 +126,62 @@ def test_a_deactivated_operator_cannot_log_in_nor_use_its_token(
 
     assert client.get(TENANTS, headers=operator).status_code == 403
     assert _login(client).status_code == 401
+
+
+# An operator's identity can't be taken from a company (S9.3)
+
+
+def _member_of(engine: Engine, username: str, tenant_id) -> int:
+    with Session(bind=engine) as session:
+        user = session.scalars(
+            select(UserModel).where(UserModel.username == username)
+        ).one()
+        session.add(
+            MembershipModel(
+                tenant_id=tenant_id,
+                user_id=user.id,
+                role=int(Role.VIEWER),
+                active=True,
+            )
+        )
+        session.commit()
+        return user.id
+
+
+def test_a_company_admin_cannot_reset_nor_rename_an_operator(
+    client, pg_engine, tenant, admin
+):
+    """The operator works in one company only, so `USER_IN_OTHER_TENANTS`
+    doesn't stop its admin; the console reaches every company"""
+    _user(pg_engine, "ops", operator=True)
+    user_id = _member_of(pg_engine, "ops", tenant)
+
+    reset = client.post(
+        f"/api/admin/users/{user_id}/reset-password",
+        json={"newPassword": "taken-over-1"},
+        headers=admin,
+    )
+    rename = client.put(
+        f"/api/admin/users/{user_id}/profile",
+        json={"fullName": "Not Ops"},
+        headers=admin,
+    )
+
+    assert (reset.status_code, _code(reset)) == (409, "USER_IS_PLATFORM_OPERATOR")
+    assert (rename.status_code, _code(rename)) == (409, "USER_IS_PLATFORM_OPERATOR")
+    assert _login(client, "ops", "taken-over-1").status_code == 401
+    assert _login(client).status_code == 200
+
+
+def test_a_temporary_password_does_not_open_the_console(client, pg_engine):
+    _user(pg_engine, "ops", operator=True)
+    with Session(bind=pg_engine) as session:
+        session.execute(update(UserModel).values(must_change_password=True))
+        session.commit()
+
+    response = _login(client)
+
+    assert (response.status_code, _code(response)) == (403, "PASSWORD_CHANGE_REQUIRED")
 
 
 # The token only works under /api/platform
