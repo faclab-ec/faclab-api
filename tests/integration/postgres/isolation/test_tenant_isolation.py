@@ -7,13 +7,22 @@ must be the same at the end. Runs in order: the reads first, then the calls
 that change A's data, then the check on B.
 """
 
+from dataclasses import replace
+
 import pytest
 from fastapi.routing import APIRoute
 
 from main import app
 from tests.integration.postgres.isolation.dataset import MISSING
 from tests.integration.postgres.isolation.harness import World, missing, tenant_rows
-from tests.integration.postgres.isolation.routes import ROUTES, Route, keys, with_refs
+from tests.integration.postgres.isolation.routes import (
+    PROBES,
+    ROUTES,
+    Probe,
+    Route,
+    keys,
+    with_refs,
+)
 
 
 def _app_routes() -> set[str]:
@@ -89,6 +98,24 @@ def test_references_to_another_tenant_look_missing(world: World, key: str):
     assert not world.leaks(own), own.text
     for name, seen in seen_by_ref.items():
         assert own != seen, f"{key}: {name} changes nothing"
+
+
+@pytest.mark.parametrize("probe", PROBES, ids=lambda probe: f"{probe.key} {probe.name}")
+def test_more_ids_of_another_tenant_look_missing(world: World, probe: Probe):
+    """An id the route's entry can't send in a call that succeeds (S9.3)"""
+    route = replace(
+        ROUTES[probe.key],
+        body=probe.body or ROUTES[probe.key].body,
+        query=probe.query or ROUTES[probe.key].query,
+    )
+    foreign = {**world.a.ids, probe.name: world.b.ids[probe.name]}
+    absent = {**world.a.ids, probe.name: missing(probe.name, world.a.ids)}
+
+    seen = world.a.call(probe.key, route, foreign)
+
+    _not_a_bad_request(probe.key, seen)
+    assert not world.leaks(seen, sent=foreign[probe.name]), seen.text
+    assert seen == world.a.call(probe.key, route, absent)
 
 
 @pytest.mark.parametrize("key", keys("creates"))

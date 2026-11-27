@@ -16,7 +16,12 @@ A route is checked by what it takes:
   (`created`: the GET B would read it with).
 - `exempt`: why the suite doesn't call it.
 
-A new route without an entry fails `test_every_route_is_covered`.
+A new route without an entry fails `test_every_route_is_covered`. An id the
+route takes (in its body or query) that its entry can't send in a call of its
+own that succeeds (a filter that narrows a listing to nothing, a draft quote
+that can't be charged yet) is tried in `PROBES`: alone, with another tenant's
+value, it must answer exactly as with a missing one. An id field that neither
+tries fails `tests/integration/test_isolation_id_fields.py` (S9.3).
 """
 
 from collections.abc import Callable
@@ -933,7 +938,7 @@ ROUTES: dict[str, Route] = {
             ],
         },
         headers=_in_branch,
-        refs=("wholesale_customer", "product", "presentation", "branch"),
+        refs=("wholesale_customer", "product", "presentation", "product_out", "branch"),
     ),
     f"GET {POS}/quotes": Route(headers=_in_branch, refs=("branch",)),
     f"GET {POS}/quotes/{{id}}": Route(
@@ -1135,6 +1140,170 @@ ROUTES: dict[str, Route] = {
     "GET /openapi/admin.json": Route(exempt="docs"),
     "GET /openapi/pos.json": Route(exempt="docs"),
 }
+
+
+@dataclass(frozen=True)
+class Probe:
+    """One more id of a route, tried alone with another tenant's value"""
+
+    key: str
+    # The dataset key swapped for the other tenant's
+    name: str
+    body: Body | None = None
+    query: Body | None = None
+
+
+def _quick_sale(**extra: Any) -> Body:
+    return lambda ids: {
+        "customerId": ids["customer"],
+        "items": [{"productId": ids["product"], "quantity": 1, **extra}],
+        "payments": [{"amount": "200.00", "paymentMethod": "CASH"}],
+    }
+
+
+PROBES: list[Probe] = [
+    Probe(
+        f"POST {ADMIN}/branches",
+        "price_list",
+        body=lambda ids: {
+            "establishmentCode": "008",
+            "name": f"{ids['marker']} Norte",
+            "priceListId": ids["price_list"],
+        },
+    ),
+    Probe(
+        f"POST {ADMIN}/integrations",
+        "branch",
+        body=lambda ids: {
+            "name": f"{ids['marker']} ERP",
+            "scopes": ["sales:read"],
+            "branchIds": [ids["branch"]],
+        },
+    ),
+    Probe(
+        f"POST {ADMIN}/purchase-order-items",
+        "presentation",
+        body=lambda ids: {
+            "purchaseOrderId": ids["po_draft"],
+            "productId": ids["product"],
+            "presentationId": ids["presentation"],
+            "quantityOrdered": 1,
+            "unitCost": "1.00",
+        },
+    ),
+    # Listing filters: another tenant's id narrows A's listing like a missing one
+    Probe(
+        f"GET {ADMIN}/price-lists/{{id}}/items",
+        "product",
+        query=lambda ids: {"productId": ids["product"]},
+    ),
+    Probe(
+        f"GET {ADMIN}/supplier-returns",
+        "po_received",
+        query=lambda ids: {"purchaseOrderId": ids["po_received"]},
+    ),
+    Probe(
+        f"GET {ADMIN}/payables",
+        "po_sent",
+        query=lambda ids: {"purchaseOrderId": ids["po_sent"]},
+    ),
+    Probe(
+        f"GET {ADMIN}/receivables",
+        "branch",
+        query=lambda ids: {"branchId": ids["branch"]},
+    ),
+    Probe(f"GET {ADMIN}/audit-log", "user", query=lambda ids: {"actorId": ids["user"]}),
+    Probe(
+        f"GET {ADMIN}/audit-log",
+        "integration",
+        query=lambda ids: {"actorIntegrationId": ids["integration"]},
+    ),
+    Probe(
+        f"GET {ADMIN}/audit-log",
+        "branch",
+        query=lambda ids: {"branchId": ids["branch"]},
+    ),
+    Probe(
+        f"GET {ADMIN}/audit-log",
+        "product",
+        query=lambda ids: {"resourceType": "product", "resourceId": ids["product"]},
+    ),
+    Probe(
+        f"GET {V1}/price-lists/{{price_list_id}}/items",
+        "product",
+        query=lambda ids: {"productId": ids["product"]},
+    ),
+    Probe(f"GET {V1}/sales", "branch", query=lambda ids: {"branchId": ids["branch"]}),
+    # The POS: a box of A's product, a quote that is still a draft
+    Probe(
+        f"POST {POS}/sales/quick",
+        "presentation",
+        body=lambda ids: _quick_sale(presentationId=ids["presentation"])(ids),
+    ),
+    Probe(
+        f"POST {POS}/sales/quick",
+        "quote",
+        body=lambda ids: {**_quick_sale()(ids), "quoteId": ids["quote"]},
+    ),
+    Probe(
+        f"POST {POS}/sales/{{sale_id}}/items",
+        "presentation",
+        body=lambda ids: {
+            "productId": ids["product"],
+            "presentationId": ids["presentation"],
+            "quantity": 1,
+        },
+    ),
+    Probe(
+        f"POST {POS}/customer-payments",
+        "receivable",
+        body=lambda ids: {
+            "customerId": ids["credit_customer"],
+            "amount": "1.00",
+            "paymentMethod": "CASH",
+            "applications": [{"receivableId": ids["receivable"], "amount": "1.00"}],
+        },
+    ),
+    # The public API
+    Probe(
+        f"POST {V1}/products",
+        "category",
+        body=lambda ids: {
+            "sku": f"{ids['marker']}-API-2",
+            "name": f"{ids['marker']} Pico",
+            "categoryId": ids["category"],
+            "unitOfMeasureId": ids["uom"],
+            "salePrice": "15.00",
+        },
+    ),
+    Probe(
+        f"POST {V1}/products",
+        "uom",
+        body=lambda ids: {
+            "sku": f"{ids['marker']}-API-3",
+            "name": f"{ids['marker']} Barra",
+            "unitOfMeasureId": ids["uom"],
+            "salePrice": "15.00",
+        },
+    ),
+    Probe(
+        f"POST {V1}/sales",
+        "presentation",
+        body=lambda ids: {
+            "emissionPointId": ids["emission_point"],
+            "locationId": ids["location"],
+            "customer": {"id": ids["customer"]},
+            "items": [
+                {
+                    "productId": ids["product"],
+                    "presentationId": ids["presentation"],
+                    "quantity": "1",
+                }
+            ],
+            "payments": [{"method": "TRANSFER", "amount": "109.25"}],
+        },
+    ),
+]
 
 
 def kind(key: str, route: Route) -> str:
