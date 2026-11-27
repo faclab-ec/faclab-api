@@ -21,10 +21,13 @@ COPY requirements.txt requirements_dev.txt ./
 RUN pip wheel --wheel-dir /wheels -r requirements_dev.txt
 
 
-# Runtime dependencies installed from the builder's wheels, which stay out of the layers
+# Runtime dependencies installed from the builder's wheels, which stay out of the layers.
+# The upgrade brings the security fixes the base image doesn't have yet: the image
+# scan fails on a HIGH or CRITICAL with a fix (S9.3)
 FROM base AS runtime
 
 RUN apt-get update -y && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends libpq5 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -66,9 +69,12 @@ ENV SERVICE_VERSION=${SERVICE_VERSION}
 
 # uvicorn reads both: WEB_CONCURRENCY is the number of workers, and the API is
 # only reachable through the reverse proxy on the internal network (ADR-0011),
-# so its X-Forwarded-* headers are trusted
+# so its X-Forwarded-* headers are trusted. ENVIRONMENT fails closed (S9.3):
+# without it the settings were the local ones, development keys included; a
+# deployment sets staging, and the e2e environment sets local
 ENV WEB_CONCURRENCY=2 \
-    FORWARDED_ALLOW_IPS="*"
+    FORWARDED_ALLOW_IPS="*" \
+    ENVIRONMENT=production
 
 USER app
 
