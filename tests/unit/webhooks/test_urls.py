@@ -33,6 +33,11 @@ guard = DnsUrlGuard(resolver=table_resolver())
         "::ffff:127.0.0.1",  # IPv4-mapped
         "::ffff:10.0.0.1",
         "2002:0a00:0001::1",  # 6to4 of 10.0.0.1
+        "64:ff9b::7f00:1",  # NAT64 of 127.0.0.1 (S9.3)
+        "64:ff9b::a9fe:a9fe",  # NAT64 of 169.254.169.254
+        "64:ff9b:1::808:808",  # local-use NAT64
+        "::7f00:1",  # IPv4-compatible (deprecated)
+        "::808:808",
         "not an address",
     ],
 )
@@ -41,7 +46,14 @@ def test_private_and_local_addresses_are_refused(address):
 
 
 @pytest.mark.parametrize(
-    "address", [PUBLIC_ADDRESS, "8.8.8.8", "2606:4700:4700::1111", "::ffff:8.8.8.8"]
+    "address",
+    [
+        PUBLIC_ADDRESS,
+        "8.8.8.8",
+        "2606:4700:4700::1111",
+        "::ffff:8.8.8.8",
+        "64:ff9b::808:808",  # NAT64 of a public address
+    ],
 )
 def test_public_addresses_are_allowed(address):
     assert address_allowed(address)

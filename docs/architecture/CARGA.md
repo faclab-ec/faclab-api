@@ -233,10 +233,10 @@ Ninguna hace falta para el volumen del piloto.
 | `conexiones-postgresql` | > 80 % | Igual | 20 en el pico y 50 saturado con 2 procesos; 4 procesos (144) sí la dispararían |
 | `errores-5xx` | 2 % / 5 % | Igual | Ningún 5xx en las corridas de capacidad, salvo el defecto de §9.1 |
 | Disco | 80 % / 90 % | Igual | Ver §11 |
-| Navegador (`ui.error`, web vitals) | No existen | No existen | La carga por API no genera tráfico de navegador: S9.5 |
+| Navegador (`ui.error`, web vitals) | No existen | No existen | La carga por API no genera tráfico de navegador: S9.7 |
 
 El resto no depende de la carga. Los valores son de referencia hasta tener el tráfico del piloto
-(S9.5).
+(S9.7).
 
 ### 10.1 Comprobación en SigNoz
 
@@ -270,6 +270,6 @@ servicios, con el Collector descartándola, que es como está producción hoy.
 ## 12. Pendientes
 
 - Repetir la rampa, la API y la facturación en el primer VPS real.
-- Ajustar los umbrales con el tráfico del piloto y crear las alertas del navegador (S9.5).
+- Ajustar los umbrales con el tráfico del piloto y crear las alertas del navegador (S9.7).
 - Corregir la exportación de datos en faclab-infra (§9.2).
 - Medir con muchas empresas en la misma base.

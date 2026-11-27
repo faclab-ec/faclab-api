@@ -10,14 +10,15 @@ Refused: another scheme, a user or password in the URL, a fragment, `localhost`,
 a name that doesn't resolve, and any address that is not global: private,
 loopback, link-local (169.254.169.254, the cloud metadata), shared (100.64/10),
 multicast, reserved or of documentation, also inside an IPv6 address
-(IPv4-mapped, 6to4, Teredo). WEBHOOK_ALLOW_PRIVATE_URLS, local only, lets a
+(IPv4-mapped, 6to4, Teredo, NAT64 64:ff9b::/96), the deprecated IPv4-compatible
+::/96 and the local-use NAT64 64:ff9b:1::/48 (S9.3). WEBHOOK_ALLOW_PRIVATE_URLS, local only, lets a
 development receiver on http://localhost through.
 """
 
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
-from ipaddress import IPv4Address, IPv6Address, ip_address
+from ipaddress import IPv4Address, IPv6Address, IPv6Network, ip_address
 from urllib.parse import urlsplit
 
 from wireup import injectable
@@ -40,7 +41,14 @@ def system_resolver(host: str, port: int) -> list[str]:
     return addresses
 
 
+# Python counts them as global
+_NAT64 = IPv6Network("64:ff9b::/96")
+_NEVER = (IPv6Network("::/96"), IPv6Network("64:ff9b:1::/48"))
+
+
 def _embedded_ipv4(address: IPv6Address) -> IPv4Address | None:
+    if address in _NAT64:
+        return IPv4Address(int(address) & 0xFFFFFFFF)
     if address.ipv4_mapped is not None:
         return address.ipv4_mapped
     if address.sixtofour is not None:
@@ -57,6 +65,8 @@ def address_allowed(text: str) -> bool:
     except ValueError:
         return False
     if isinstance(address, IPv6Address):
+        if any(address in network for network in _NEVER):
+            return False
         embedded = _embedded_ipv4(address)
         if embedded is not None and not address_allowed(str(embedded)):
             return False

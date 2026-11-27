@@ -5,6 +5,7 @@
 !.env.example
 !.dockerignore
 !.github/
+!.trivyignore.yaml
 __pycache__/
 .qodo
 CLAUDE.md

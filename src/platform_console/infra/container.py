@@ -10,11 +10,13 @@ from src.platform_console.app.queries.tenants import (
 )
 from src.platform_console.infra.console import PlatformConsole
 from src.platform_console.infra.mappers import PlatformOperatorMapper
+from src.platform_console.infra.operators import RepositoryPlatformOperators
 from src.platform_console.infra.repositories import SqlAlchemyPlatformOperatorRepository
 
 INJECTABLES = [
     PlatformOperatorMapper,
     SqlAlchemyPlatformOperatorRepository,
+    RepositoryPlatformOperators,
     PlatformConsole,
     PlatformLoginCommandHandler,
     SuspendTenantCommandHandler,

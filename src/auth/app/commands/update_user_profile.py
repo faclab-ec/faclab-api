@@ -8,6 +8,7 @@ from src.auth.app.repositories import UserRepository
 from src.auth.domain.exceptions import UserInOtherTenantsError
 from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
+from src.shared.app.platform import PlatformOperators
 from src.tenancy.app.repositories import MembershipRepository
 
 
@@ -32,10 +33,12 @@ class UpdateUserProfileCommandHandler(CommandHandler[UpdateUserProfileCommand, d
         repo: UserRepository,
         memberships: MembershipRepository,
         audit: AuditTrail,
+        operators: PlatformOperators,
     ):
         self.repo = repo
         self.memberships = memberships
         self.audit = audit
+        self.operators = operators
 
     def _handle(self, command: UpdateUserProfileCommand) -> dict:
         membership = lock_membership(
@@ -43,6 +46,8 @@ class UpdateUserProfileCommandHandler(CommandHandler[UpdateUserProfileCommand, d
         )
         if self.memberships.has_active_elsewhere(command.user_id, command.tenant_id):
             raise UserInOtherTenantsError(command.user_id)
+        # The name is the actor of the platform console's audit entries (S9.3)
+        self.operators.ensure_not_operator(command.user_id)
         user = get_user(self.repo, command.user_id)
 
         before = {"full_name": user.full_name}

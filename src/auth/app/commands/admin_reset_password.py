@@ -13,6 +13,7 @@ from src.auth.domain.value_objects import PlainPassword
 from src.shared.app.audit import AuditAction, AuditTrail
 from src.shared.app.commands import Command, CommandHandler
 from src.shared.app.events import EventPublisher
+from src.shared.app.platform import PlatformOperators
 from src.tenancy.app.repositories import MembershipRepository
 
 
@@ -40,6 +41,7 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         hasher: PasswordHasher,
         event_publisher: EventPublisher,
         audit: AuditTrail,
+        operators: PlatformOperators,
     ):
         self.repo = repo
         self.session_repo = session_repo
@@ -47,6 +49,7 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         self.hasher = hasher
         self.event_publisher = event_publisher
         self.audit = audit
+        self.operators = operators
 
     def _handle(self, command: AdminResetPasswordCommand) -> dict:
         membership = lock_membership(
@@ -54,6 +57,8 @@ class AdminResetPasswordCommandHandler(CommandHandler[AdminResetPasswordCommand,
         )
         if self.memberships.has_active_elsewhere(command.user_id, command.tenant_id):
             raise UserInOtherTenantsError(command.user_id)
+        # The password also opens the platform console (S9.3)
+        self.operators.ensure_not_operator(command.user_id)
         user = get_user(self.repo, command.user_id)
 
         PlainPassword(command.new_password)

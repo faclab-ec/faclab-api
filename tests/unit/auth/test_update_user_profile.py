@@ -15,9 +15,11 @@ from src.auth.domain.entities import AuthenticatedUser, Role, User
 from src.auth.domain.events import UserCreated
 from src.auth.domain.exceptions import UserInOtherTenantsError
 from src.shared.app.plans import PlanLimitReachedError, PlanResource
+from src.shared.app.platform import UserIsPlatformOperatorError
 from src.shared.domain.exceptions import NotFoundError
 from src.tenancy.domain.entities import Membership
 from tests.audit import FakeAuditTrail
+from tests.operators import FakePlatformOperators
 from tests.plans import FakePlanLimits
 
 TENANT = UUID("11111111-1111-4111-8111-111111111111")
@@ -41,7 +43,9 @@ def test_update_profile_sets_and_clears_the_full_name():
     repo = Mock()
     repo.get_by_id.return_value = user
     repo.update.side_effect = lambda u: u
-    handler = UpdateUserProfileCommandHandler(repo, _memberships(), FakeAuditTrail())
+    handler = UpdateUserProfileCommandHandler(
+        repo, _memberships(), FakeAuditTrail(), FakePlatformOperators()
+    )
 
     result = handler.handle(
         UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="Ana Pérez")
@@ -61,9 +65,9 @@ def test_update_profile_of_a_user_outside_the_tenant_raises_not_found():
     memberships.get_for.return_value = None
 
     with pytest.raises(NotFoundError):
-        UpdateUserProfileCommandHandler(repo, memberships, FakeAuditTrail()).handle(
-            UpdateUserProfileCommand(tenant_id=TENANT, user_id=9, full_name="X")
-        )
+        UpdateUserProfileCommandHandler(
+            repo, memberships, FakeAuditTrail(), FakePlatformOperators()
+        ).handle(UpdateUserProfileCommand(tenant_id=TENANT, user_id=9, full_name="X"))
     repo.update.assert_not_called()
 
 
@@ -73,12 +77,25 @@ def test_the_name_of_a_user_who_also_works_elsewhere_cannot_change_here():
     memberships = _memberships(elsewhere=True)
 
     with pytest.raises(UserInOtherTenantsError) as exc:
-        UpdateUserProfileCommandHandler(repo, memberships, FakeAuditTrail()).handle(
-            UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="X")
-        )
+        UpdateUserProfileCommandHandler(
+            repo, memberships, FakeAuditTrail(), FakePlatformOperators()
+        ).handle(UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="X"))
 
     assert exc.value.error_code == "USER_IN_OTHER_TENANTS"
     memberships.has_active_elsewhere.assert_called_once_with(1, TENANT)
+    repo.update.assert_not_called()
+
+
+def test_the_name_of_a_platform_operator_cannot_change_from_a_tenant():
+    repo = Mock()
+    repo.get_by_id.return_value = _user()
+
+    with pytest.raises(UserIsPlatformOperatorError) as exc:
+        UpdateUserProfileCommandHandler(
+            repo, _memberships(), FakeAuditTrail(), FakePlatformOperators(1)
+        ).handle(UpdateUserProfileCommand(tenant_id=TENANT, user_id=1, full_name="X"))
+
+    assert exc.value.error_code == "USER_IS_PLATFORM_OPERATOR"
     repo.update.assert_not_called()
 
 

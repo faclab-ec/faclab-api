@@ -1,0 +1,130 @@
+name: Security
+
+# Known vulnerabilities in what runs in production (S9.3): the runtime dependencies,
+# transitive ones included, as requirements.txt resolves them today, and the
+# production image (Debian packages and Python packages). A HIGH or CRITICAL one with
+# a fix fails the job; an accepted one goes in .trivyignore.yaml with its statement
+# and an expired_at (docs/architecture/SEGURIDAD.md). Every Monday too: advisories
+# arrive without commits
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  schedule:
+    - cron: "23 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned by digest: in March 2026 the tags of aquasec/trivy and of its GitHub actions
+  # were replaced by builds that stole CI secrets (CVE-2026-33634). These jobs hold no
+  # secret, and Trivy reads the image from a file, never from the Docker socket
+  TRIVY_IMAGE: aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb
+  TRIVY_POLICY: --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /src/.trivyignore.yaml --exit-code 1
+
+jobs:
+  dependencies:
+    name: dependencies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # psycopg2 has no wheels and builds against libpq
+      - name: Install the runtime dependencies in an environment of their own
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/pip" install --quiet --upgrade pip
+          "$RUNNER_TEMP/runtime/bin/pip" install --quiet -r requirements.txt
+          # pip isn't the app's: it carries its own copy of setuptools
+          "$RUNNER_TEMP/runtime/bin/python" -m pip uninstall --yes --quiet pip
+
+      - name: Scan them
+        run: |
+          read -ra policy <<< "$TRIVY_POLICY"
+          docker run --rm -v "$RUNNER_TEMP/runtime:/scan:ro" -v "$PWD:/src:ro" \
+            -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+            rootfs --pkg-types library "${policy[@]}" /scan
+
+      - name: Every severity, for the summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '### Runtime dependencies (every severity)'
+            echo '```'
+            docker run --rm -v "$RUNNER_TEMP/runtime:/scan:ro" \
+              -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+              rootfs --pkg-types library --scanners vuln --quiet /scan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Builds the production image without publishing it (a tag publishes it, release.yml)
+  image-scan:
+    name: image-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the production image
+        run: docker build --target production --build-arg SERVICE_VERSION=${{ github.sha }} -t faclab-api:ci .
+
+      # ENVIRONMENT defaults to production in the image (S9.3): without settings it
+      # stops instead of running with the local ones and their development keys
+      - name: Refuse to start without settings
+        run: |
+          if docker run --rm faclab-api:ci > startup.log 2>&1; then
+            echo "The image started without DATABASE_URL, CORS_ORIGINS and the keys"
+            exit 1
+          fi
+          cat startup.log
+          grep -q 'Missing required settings for production' startup.log
+
+      - name: Scan the image
+        run: |
+          docker save faclab-api:ci -o "$RUNNER_TEMP/image.tar"
+          read -ra policy <<< "$TRIVY_POLICY"
+          docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" -v "$PWD:/src:ro" \
+            -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+            image --input /image.tar "${policy[@]}"
+
+      # The inventory of what the image carries (ASVS 15.1.2), CycloneDX
+      - name: Software bill of materials
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sbom"
+          docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" -v "$RUNNER_TEMP/sbom:/out" \
+            -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+            image --input /image.tar --format cyclonedx --output /out/faclab-api.cdx.json
+          {
+            echo '### Production image (every severity)'
+            echo '```'
+            docker run --rm -v "$RUNNER_TEMP/image.tar:/image.tar:ro" \
+              -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+              image --input /image.tar --scanners vuln --format table --quiet \
+              --table-mode summary
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom/
+          retention-days: 90

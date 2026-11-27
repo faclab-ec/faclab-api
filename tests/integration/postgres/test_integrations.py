@@ -13,8 +13,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from config import config
+from src.auth.domain.entities import Role
 from src.integrations.infra.access import integration_access
 from tests.integration.postgres.api import Api, concurrently, make_branch
+from tests.integration.postgres.tenants import OTHER_TENANT_RUC, ensure_tenant
 
 TOKEN = "/api/oauth/token"
 CLIENTS = "/api/admin/integrations"
@@ -134,6 +136,26 @@ def test_an_unknown_client_gets_no_token(client):
 
     assert response.status_code == 401
     assert response.json()["error"] == "invalid_client"
+
+
+def test_a_client_of_one_company_with_the_secret_of_another_gets_no_token(
+    client, api, auth_headers, pg_engine
+):
+    """The tenant comes from the client_id; the secret is looked up in it (S9.3)"""
+    ours = _create(api)
+    other_tenant = ensure_tenant(pg_engine, OTHER_TENANT_RUC)
+    theirs = _create(
+        Api(
+            client,
+            auth_headers(Role.ADMIN, tenant_id=other_tenant, username="other-admin"),
+        )
+    )
+
+    response = _token(client, ours, secret=theirs["clientSecret"])
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_client"
+    assert _token(client, theirs).status_code == 200
 
 
 def test_the_routes_of_the_frontend_reject_an_integration(client, api):

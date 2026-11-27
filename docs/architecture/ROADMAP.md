@@ -41,6 +41,25 @@
 
 ### Pendientes detectados al ejecutar las sesiones
 
+- **Lo que S9.3 dejó fuera** (revisión de seguridad, 2026-11-27, [SEGURIDAD.md](SEGURIDAD.md)):
+  - **Al hacer merge de los PR:** volver checks requeridos de `master` los jobs `dependencies` e `image-scan` (en infra,
+    `image-scan (caddy)` e `image-scan (postgres)`) y activar las actualizaciones de seguridad de Dependabot en los cuatro
+    repos.
+  - **Exigir 2FA en la organización de GitHub** (S-44): lo activa su dueño.
+  - **Los tags `rc` viejos** (`v0.2.0-rc.1` a `rc.9` y los de prueba de S8.2) solo se pueden borrar desactivando un momento
+    el ruleset «Tags de versión inmutables».
+  - **Un `.env` local de faclab-infra con `KAFKA_VERSION=7.9.0`** sigue en esa versión: cambiarlo a 7.9.11.
+  - Bajas sin sesión (SEGURIDAD.md §3.2):
+    - S-30: fórmulas en los CSV y XLSX exportados.
+    - S-31: un `X-Branch-Id` de otra empresa queda en la bitácora.
+    - S-32: el alta de usuarios dice si un username o un email existe.
+    - S-33: puertos y errores de entrega de webhooks.
+    - S-34: LIKE sin escapar.
+    - S-36: el API redirige HTTP a HTTPS en lugar de rechazarlo.
+    - S-42: `miragejs` en el bundle de web.
+  - Excepciones con vencimiento:
+    - GO-2026-6860 en el Caddy de la imagen web, hasta el 2027-01-31 (S-37);
+    - el reemplazo de `golang.org/x/net` en faclab-caddy, hasta que Caddy traiga la 0.62.
 - **Lo que S9.1 dejó fuera** (pruebas de punta a punta, 2026-11-26):
   - **faclab-web tiene un test intermitente** que tumba el job `checks` (también en `master`): `react-modal` ejecuta su
     temporizador de cierre con jsdom ya desmontado (`CredentialsDialog.test.tsx`).
@@ -471,8 +490,9 @@
     facturación (`authorizationNumber`, `authorizedAt`) para descargar y reenviar.
   - ~~Servicio compatible con S3 del VPS (S8.1)~~: Garage, en S8.1. ~~La copia de los XML autorizados
     fuera del servidor, con su retención~~: S8.3, cifrada, en un bucket con versionado y Object Lock.
-  - `npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
-    `@scalar/*` y otras), ninguna de las agregadas en S4.1. Revisarlas en una sesión de dependencias.
+  - ~~`npm audit` de faclab-invoicing reporta vulnerabilidades en dependencias que ya estaban (zod,
+    `@scalar/*` y otras), ninguna de las agregadas en S4.1~~: S9.3 dejó el árbol sin altas ni críticas (8 medias) y
+    un escaneo semanal en el CI.
 - **Facturación, lo que quedó de S4.2** (2026-10-29):
   - ~~Métricas de la cola de facturas (vencidas, edad de la más antigua, leases vencidos, duración de
     cada paso)~~: hechas en S7.2 (`faclab.invoices.due`, `oldest_age`, `expired_leases` y
@@ -629,7 +649,7 @@
     - las llamadas anteriores a la carga del chunk del SDK, como el `/me` inicial, no se trazan;
     - no hay spans de interacción del usuario, porque necesitarían `zone.js`.
   - ~~**Paneles** de `ui.error` y `faclab.web_vitals.*`~~: hechos en S7.5 (*Ecosistema*, fila
-    Navegador). Sus **alertas**, en S9.5: la carga de S9.2 va por la API y no genera tráfico de
+    Navegador). Sus **alertas**, en S9.7: la carga de S9.2 va por la API y no genera tráfico de
     navegador.
   - **Invoicing toma el `x-request-id` entrante sin validarlo y no lo devuelve en la respuesta.** Su
     envelope de error ya trae `meta.requestId`, así que la web lo muestra igual.
@@ -678,7 +698,7 @@
       `SIGNOZ_EXTERNAL_URL`;
     - la service account de `sync` y su llave como secretos del despliegue;
     - la retención y los respaldos.
-  - ~~**Umbrales con línea base (S9.2)**~~: hecho ([CARGA.md](CARGA.md) §10). Pasan a S9.5 las alertas
+  - ~~**Umbrales con línea base (S9.2)**~~: hecho ([CARGA.md](CARGA.md) §10). Pasan a S9.7 las alertas
     del navegador (`ui.error`, web vitals); el 5 % de rechazos se queda solo en el panel.
   - ~~**Contadores inicializados en 0 (S7.6).**~~ El primer punto de un contador que aparece después de
     arrancar el proceso no da `increase`, así que la primera falla no avisa. S7.6 inicializa
@@ -777,16 +797,17 @@
     Se probó todo lo que corre el workflow (`deploy.sh`, la llave restringida y `remote.sh`), desde la
     Mac contra la VM de OrbStack, que no tiene IP pública.
   - **El sandbox desplegado** y su workflow de ejemplos (arriba, S6.5).
-  - **Un job `image` en el CI del core,** como el de invoicing y web: hoy solo el release construye la
-    imagen del core, así que un Dockerfile roto se ve al etiquetar.
+  - ~~**Un job `image` en el CI del core,** como el de invoicing y web~~: S9.3, el job `image-scan` de
+    `security.yml` construye la imagen de producción en cada PR, comprueba que se niega a arrancar sin configuración y la
+    escanea.
   - **El PR de cada release es a mano** (`scripts/release.sh`). Para automatizarlo, release-please con
     el token de una GitHub App: con `GITHUB_TOKEN`, los PR y los tags que crea un workflow no disparan
     otros workflows, ni el CI que exige `master`.
   - **La reversión siempre baja el esquema** a lo que conoce la versión anterior, y pierde lo que la
     versión nueva escribió en sus tablas o columnas nuevas. Con migraciones aditivas, un `rollback
     --keep-schema` podría conservarlo.
-  - **Firmar las imágenes** (cosign, procedencia de build) y un SBOM: para la revisión de seguridad
-    (S9.3). Hoy el servidor fija cada imagen por digest.
+  - **Firmar las imágenes** (cosign, procedencia de build): pasa a S9.8, con la verificación en `deploy.sh`. El SBOM
+    de cada imagen ya lo genera el CI (S9.3). Hoy el servidor fija cada imagen por digest.
   - **Una restauración de prueba (`restore-predeploy`) tardó 411 s,** sin horas en la salida para saber
     dónde. Con las horas que se agregaron después, repetida, tardó 109 s.
   - **Despliegue de esta sesión:**
@@ -915,7 +936,7 @@ flowchart LR
     S27 --> S42[S4.2 SRI desacoplado]
     S41 --> S45[S4.5 Nota de crédito]
     S41 --> S46[S4.6 Materiales de construcción]
-    S46 --> S94
+    S46 --> S96
     S42 --> S45
     S33 --> S45
     S33 --> S51[S5.1 Decimales] --> S52[S5.2 Presentaciones]
@@ -924,9 +945,10 @@ flowchart LR
     S81 --> S83[S8.3 Respaldos]
     S45 --> S91[S9.1 E2E]
     S81 --> S91
-    S91 --> S94[S9.4 Piloto]
-    S83 --> S94
-    S58 --> S94
+    S91 --> S96[S9.6 Piloto]
+    S93[S9.3 Seguridad] --> S94[S9.4 Sesiones] --> S95[S9.5 Segundo factor] --> S96
+    S83 --> S96
+    S58 --> S96
 ```
 
 ## 3. Sesiones
@@ -989,8 +1011,12 @@ flowchart LR
 | [S9.1](sessions/S9.1-e2e-flujo-completo.md) | E2E del flujo completo | Venta → factura → nota de crédito con servicios reales | S4.5, S8.1 | todos | G-77 | M |
 | [S9.2](sessions/S9.2-carga-y-linea-base.md) | Carga y línea base | Capacidad del POS y umbrales de alertas | S8.1, S7.5 | core | G-77 | M |
 | [S9.3](sessions/S9.3-revision-de-seguridad.md) | Revisión de seguridad | Revisión de seguridad, dependencias y aislamiento | S6.3, S8.1 | todos | — | M |
-| [S9.4](sessions/S9.4-puesta-en-marcha-del-piloto.md) | Puesta en marcha del piloto | Primer cliente en producción | S9.1, S9.2, S9.3, S8.3, S8.5 | todos | — | L |
-| [S9.5](sessions/S9.5-cierre-del-piloto.md) | Cierre del piloto | Lecciones, ajustes y backlog siguiente | S9.4 | docs | — | S |
+| [S9.4](sessions/S9.4-sesiones-y-contrasenas.md) | Sesiones y contraseñas | Access token revocable, vida máxima, contraseñas comunes, sin caché | S9.3 | core, web, invoicing | G-85 | M |
+| [S9.5](sessions/S9.5-segundo-factor.md) | Segundo factor | TOTP para ADMIN y operadores de plataforma | S9.4 | core, web | G-86 | M |
+| [S9.6](sessions/S9.6-puesta-en-marcha-del-piloto.md) | Puesta en marcha del piloto | Primer cliente en producción | S9.1, S9.2, S9.3, S9.4, S9.5, S8.3, S8.5 | todos | — | L |
+| [S9.7](sessions/S9.7-cierre-del-piloto.md) | Cierre del piloto | Lecciones, ajustes y backlog siguiente | S9.6 | docs | — | S |
+| [S9.8](sessions/S9.8-cadena-de-suministro-y-secretos.md) | Cadena de suministro y secretos | Imágenes firmadas y verificadas, bases por digest, secretos como archivos, TLS interno | S9.3, S8.2 | todos | G-87, G-49 | L |
+| [S9.9](sessions/S9.9-endurecimiento-de-facturacion.md) | Endurecimiento de facturación | RLS y bitácora en invoicing, cabeceras, errores, rotación de llaves | S9.3 | invoicing, infra | G-88 | M |
 
 ## 4. Primera sesión recomendada
 
