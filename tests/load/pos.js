@@ -15,11 +15,13 @@ import {
     BASE_URL,
     commonOptions,
     fixtures,
+    openSessions,
     perName,
     pick,
     randomInt,
     summary,
     tokenOf,
+    useSessions,
     uuid,
 } from './lib/common.js'
 
@@ -69,7 +71,10 @@ function basket(source) {
     return [...chosen.values()]
 }
 
-export default function () {
+export const setup = () => ({ sessions: openSessions(tills) })
+
+export default function (data) {
+    useSessions(data.sessions)
     const pool = MODE === 'contention' ? contentionTills : tills
     const till = pool[exec.vu.idInTest % pool.length]
     const token = tokenOf(till)

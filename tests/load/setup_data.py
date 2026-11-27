@@ -139,11 +139,11 @@ class Api:
         found = next((item for item in self.every(path) if item[key] == value), None)
         return found or self.data("POST", path, json=body)
 
-    def run_import(self, kind: str, content: bytes) -> None:
+    def run_import(self, kind: str, content: bytes, mode: str = "SKIP") -> None:
         job = self.data(
             "POST",
             "/api/admin/imports",
-            data={"kind": kind, "mode": "SKIP"},
+            data={"kind": kind, "mode": mode},
             files={"file": (f"{kind.lower()}.csv", content, "text/csv")},
         )
         if job["status"] != "VALIDATED":
@@ -354,6 +354,17 @@ def set_up_catalog(
     )
 
 
+def reprice(api: Api, size: int) -> None:
+    """A price change of the whole catalog, the bulk import that can run while the tills sell."""
+    factor = 1 + random.Random().randint(1, 99) / 1000
+    rows = (
+        (f"SKU-{item['sku'][4:]}", f"{float(item['salePrice']) * factor:.2f}")
+        for item in api.every("/api/admin/products")[:size]
+        if item["sku"].startswith("SKU-")
+    )
+    api.run_import("PRODUCTS", csv_file(("sku", "precio_venta"), rows), mode="UPDATE")
+
+
 def set_up_cashiers(api: Api, branches: list[dict[str, Any]], password: str) -> None:
     """Throwaway cashiers with the admin's password, so running it again needs no reset."""
     users = {u["username"] for u in api.every("/api/admin/users")}
@@ -491,7 +502,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument("--fixtures", required=True, type=Path)
+    parser.add_argument("--fixtures", type=Path)
+    parser.add_argument(
+        "--reprice",
+        action="store_true",
+        help="only change the price of --products products with a bulk import",
+    )
     parser.add_argument("--products", type=int, default=10_000)
     parser.add_argument("--customers", type=int, default=500)
     args = parser.parse_args()
@@ -504,6 +520,12 @@ def main() -> None:
         os.environ["LOAD_ADMIN_USERNAME"],
         os.environ["LOAD_ADMIN_PASSWORD"],
     )
+
+    if args.reprice:
+        reprice(admin, args.products)
+        return
+    if args.fixtures is None:
+        parser.error("--fixtures is required")
 
     branches = set_up_structure(admin)
     set_up_catalog(admin, branches, args.products, args.customers)

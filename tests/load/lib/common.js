@@ -35,6 +35,18 @@ export function uuid() {
 
 let sessions = {}
 
+/** Sessions opened once in setup(), so a ramp of virtual users doesn't become a ramp of logins
+ * (each one costs a bcrypt check). */
+export function openSessions(users) {
+    return users.map((user) => ({ username: user.username, token: tokenOf(user), at: Date.now() }))
+}
+
+export function useSessions(opened) {
+    for (const session of opened) {
+        if (!sessions[session.username]) sessions[session.username] = session
+    }
+}
+
 /** The access token of a user, renewed before its 15 minutes end. One cache per virtual user. */
 export function tokenOf(user) {
     const cached = sessions[user.username]

@@ -4,7 +4,7 @@
 #   sample.sh <output folder>      until it is killed (or the file <output folder>/stop appears)
 #
 # Every 5 s: PostgreSQL connections, lock waits and what waits, the outbox and the invoices by status.
-# Every 10 s: CPU and memory of each container and of the host. Every 30 s: Kafka consumer lag.
+# Every 10 s: CPU and memory of each container and of the host. Every 60 s: Kafka consumer lag (its CLI starts a JVM, so no more often).
 set -euo pipefail
 
 OUT=${1:?output folder}
@@ -38,7 +38,7 @@ while [[ ! -e "$OUT/stop" ]]; do
     awk -v now="$now" '/^MemAvailable/ {print now "," $2}' /proc/meminfo >> "$OUT/host-mem.csv"
     echo "$now,$(cut -d' ' -f1-3 /proc/loadavg | tr ' ' ,)" >> "$OUT/load.csv"
   fi
-  if ((tick % 6 == 0)); then
+  if ((tick % 12 == 0)); then
     docker exec -e KAFKA_HEAP_OPTS=-Xmx64m "$PROJECT-kafka-1" kafka-consumer-groups \
       --bootstrap-server localhost:9092 --describe --all-groups < /dev/null 2> /dev/null |
       awk '$6 ~ /^[0-9]+$/ {lag[$1 "," $2] += $6} END {for (k in lag) print k "," lag[k]}' |

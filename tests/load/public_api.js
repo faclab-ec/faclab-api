@@ -5,6 +5,9 @@
 //   SALES_RATE  sales per minute (default 4)
 //   DURATION    default 5m
 //
+// The token is asked once, in setup(), and shared: a run lasts less than its 15 minutes, and asking
+// for tokens while using them is a different problem (docs/architecture/CARGA.md).
+//
 // 429s are counted apart (rate_limited): with the default limits (600/min and a burst of 50 per
 // client) they are the expected answer past them, and each must carry Retry-After.
 import { check, fail } from 'k6'
@@ -53,10 +56,7 @@ export const options = {
     thresholds: perName(['v1_products', 'v1_products_since', 'v1_stock', 'v1_sale']),
 }
 
-let cached = null
-
-function token() {
-    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.token
+export function setup() {
     const response = http.post(
         `${BASE_URL}/api/oauth/token`,
         {
@@ -69,8 +69,7 @@ function token() {
     if (!check(response, { 'token 200': (r) => r.status === 200 })) {
         fail(`token: ${response.status} ${response.body}`)
     }
-    cached = { token: response.json('access_token'), at: Date.now() }
-    return cached.token
+    return { token: response.json('access_token') }
 }
 
 function isLimited(response) {
@@ -80,9 +79,9 @@ function isLimited(response) {
     return true
 }
 
-export function sync() {
+export function sync(data) {
     const params = (name) => ({
-        headers: { Authorization: `Bearer ${token()}` },
+        headers: { Authorization: `Bearer ${data.token}` },
         tags: { name },
     })
     const kind = Math.random()
@@ -110,7 +109,7 @@ export function sync() {
     if (!isLimited(response)) check(response, { 'read 200': (r) => r.status === 200 })
 }
 
-export function store() {
+export function store(data) {
     const branch = pick(fixtures.branches)
     const items = []
     let subtotal = 0
@@ -133,7 +132,7 @@ export function store() {
         }),
         {
             headers: {
-                Authorization: `Bearer ${token()}`,
+                Authorization: `Bearer ${data.token}`,
                 'Content-Type': 'application/json',
                 'X-Branch-Id': String(branch.id),
                 'Idempotency-Key': uuid(),

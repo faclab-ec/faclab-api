@@ -7,6 +7,7 @@
 #   LOAD_RESULTS   where each run leaves <name>/ (outside the repository)
 #   LOAD_VM        OrbStack machine of the environment (default faclab-load)
 #   K6_IMAGE       default grafana/k6:1.3.0
+#   LOAD_NO_SAMPLE only k6: another run is already sampling the server
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -27,7 +28,9 @@ args=()
 for pair in "$@"; do args+=(-e "$pair"); done
 
 SINCE=$(date -u '+%Y-%m-%d %H:%M:%S')
-vm bash -c "rm -rf /tmp/sample && mkdir -p /tmp/sample && nohup bash /opt/load/sample.sh /tmp/sample > /tmp/sample/log 2>&1 &" < /dev/null
+if [[ -z "${LOAD_NO_SAMPLE:-}" ]]; then
+  vm bash -c "rm -rf /tmp/sample && mkdir -p /tmp/sample && nohup bash /opt/load/sample.sh /tmp/sample > /tmp/sample/log 2>&1 &" < /dev/null
+fi
 
 status=0
 docker run --rm -i --user "$(id -u):$(id -g)" \
@@ -36,6 +39,7 @@ docker run --rm -i --user "$(id -u):$(id -g)" \
   "$K6_IMAGE" run --quiet --log-output=file=/results/k6.log \
   -e SUMMARY=/results/summary.json "${args[@]+"${args[@]}"}" "/scripts/$SCENARIO" |
   tee "$OUT/summary.txt" || status=$?
+[[ -z "${LOAD_NO_SAMPLE:-}" ]] || exit "$status"
 
 # Let the queues drain before measuring what the run left
 sleep "${SETTLE_SECONDS:-20}"
