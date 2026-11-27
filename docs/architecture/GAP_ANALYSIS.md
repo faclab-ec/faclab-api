@@ -144,7 +144,7 @@
 |---|---|---|---|---|---|---|
 | G-75 | Invoicing tiene 31 pruebas y ninguna cubre XML, firma, SOAP, Kafka, JWT ni persistencia | V | `vitest run` | Regresiones tributarias sin detectar | P1 | S1.1, S4.1 (cubre el XML contra el XSD oficial por tipo de emisor, la clave de acceso con casos de la ficha, la autorización y el almacenamiento), S4.2 (cubre la cola en PostgreSQL, los leases, dos workers concurrentes, el reinicio, el consumidor con un SRI lento y la traza del trabajo) |
 | G-76 | No hay pruebas de contrato entre servicios | V | — | Incompatibilidades como G-08 | P0 | S1.6 (resuelta: JSON Schema versionado en `contracts/`, pruebas de contrato en el CI de core e invoicing) |
-| G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1 (E2E resuelto: suite contra servicios reales en `faclab-infra/e2e`, con simulador del SRI, en CI cada noche si hay cambios), S9.2 (carga) |
+| G-77 | No hay E2E contra servicios reales ni pruebas de carga | V | — | Sin línea base para umbrales | P2 | S9.1 (E2E resuelto: suite contra servicios reales en `faclab-infra/e2e`, con simulador del SRI, en CI cada noche si hay cambios), S9.2 (resuelta: escenarios k6 en `tests/load`, línea base y umbrales en [CARGA.md](CARGA.md); medida en una copia local de staging, falta repetirla en el primer VPS) |
 | G-78 | Cobertura del core desconocida (último `.coverage` de abril 2026, ~66,8 %) | P | `.coverage` | — | P3 | S1.1 (resuelta: 95 %, medida en cada run de CI) |
 
 ## 3. Requisitos de ferretería
@@ -198,7 +198,8 @@
 ### 5.2 Costos operativos (estimaciones de dimensionamiento, sin precios)
 
 - **VPS de aplicación** (piloto): 4 vCPU y 8 GB de RAM para core (API y worker), invoicing, PostgreSQL,
-  Kafka y Caddy. PV: medir en S9.2.
+  Kafka y Caddy. Medido en S9.2 ([CARGA.md](CARGA.md) §11): alcanza con mucho margen (unas 600 ventas
+  por minuto y 2,3 GB de memoria bajo carga, en una copia local; repetir en el primer VPS).
 - **VPS de observabilidad**: SigNoz autogestionado necesita al menos 4 GB; guías de terceros recomiendan
   8 GB para producción pequeña y 16 GB o más con más volumen. PV.
 - **Almacenamiento de objetos** compatible con S3 para XML y RIDE, con respaldo fuera del servidor.

@@ -146,7 +146,8 @@
   alcanza.
 - **Índices que empiezan por `tenant_id`** (detectado en S2.4). Cada tabla de negocio tiene un índice
   simple en `tenant_id` y las únicas por empresa lo incluyen; los listados grandes pueden necesitar
-  índices compuestos `(tenant_id, …)`. Medir en S9.2 (carga y línea base).
+  índices compuestos `(tenant_id, …)`. Medido en S9.2 con 110.000 ventas de una empresa: no hacen falta
+  ([CARGA.md](CARGA.md) §7). Queda medir con muchas empresas en la misma base.
 - ~~**Bodegas sin sucursal en faclab-web**~~ (detectado en S2.5; resuelto en S2.9: el formulario elige
   la sucursal al crear, entre las de la sesión). `POST /api/admin/warehouses` exige
   `branchId` (decisión del usuario) y el formulario de bodegas de faclab-web todavía no lo envía: crear
@@ -628,7 +629,8 @@
     - las llamadas anteriores a la carga del chunk del SDK, como el `/me` inicial, no se trazan;
     - no hay spans de interacción del usuario, porque necesitarían `zone.js`.
   - ~~**Paneles** de `ui.error` y `faclab.web_vitals.*`~~: hechos en S7.5 (*Ecosistema*, fila
-    Navegador). Sus **alertas**, en S9.2: sin tráfico real no hay umbral con sentido.
+    Navegador). Sus **alertas**, en S9.5: la carga de S9.2 va por la API y no genera tráfico de
+    navegador.
   - **Invoicing toma el `x-request-id` entrante sin validarlo y no lo devuelve en la respuesta.** Su
     envelope de error ya trae `meta.requestId`, así que la web lo muestra igual.
   - **El muestreo descarta también los errores.** Con `OTEL_SAMPLING_RATE` menor que 1 se pierde esa
@@ -676,14 +678,13 @@
       `SIGNOZ_EXTERNAL_URL`;
     - la service account de `sync` y su llave como secretos del despliegue;
     - la retención y los respaldos.
-  - **Umbrales con línea base (S9.2):** todos son provisionales. Pendientes también:
-    - las alertas del navegador (`ui.error`, web vitals);
-    - el 5 % de rechazos, que hoy está solo en el panel.
+  - ~~**Umbrales con línea base (S9.2)**~~: hecho ([CARGA.md](CARGA.md) §10). Pasan a S9.5 las alertas
+    del navegador (`ui.error`, web vitals); el 5 % de rechazos se queda solo en el panel.
   - ~~**Contadores inicializados en 0 (S7.6).**~~ El primer punto de un contador que aparece después de
     arrancar el proceso no da `increase`, así que la primera falla no avisa. S7.6 inicializa
-    `faclab.auth.login.attempts` y `faclab.invoices.deliveries`. **Queda `faclab.invoices.rejections`**
-    (S9.2): cada `faclab.sri.message.code` abre su propia serie, así que no se puede inicializar. La
-    alerta podría usar `faclab.invoices.transitions` hacia el rechazo, que tiene atributos acotados.
+    `faclab.auth.login.attempts` y `faclab.invoices.deliveries`. ~~`faclab.invoices.rejections`~~: desde
+    S9.2 la alerta lee `faclab.invoices.transitions` hacia `rejected`. Falta que invoicing inicialice
+    esa serie en 0.
   - **El worker de facturación en desarrollo** (`npm run dev:worker`, con `ts-node-dev`) se reporta como
     `faclab-invoicing` y no como `faclab-invoicing-worker`. `serviceNameFor` no ve el *entry point* en
     `process.argv`. No se verificó con la imagen (`node dist/worker.js`).
@@ -712,7 +713,7 @@
     imagen publicada es de S8.2.
   - **`event.name` en el resto de los logs de facturación** y la línea `http.request.completed` del
     core (§4.4, pendiente desde S1.5): para una sesión de logs.
-  - **La alerta de rechazos del SRI** no puede arrancar en 0 (arriba, S7.5): S9.2.
+  - ~~**La alerta de rechazos del SRI** no puede arrancar en 0~~: cambiada en S9.2 (arriba, S7.5).
   - **Los nombres de los spans del core** quedaron como están (`command.<Nombre>`,
     `event.publish.<Tipo>`), y §5.2 se corrigió para documentarlos. Tampoco llevan `faclab.operation`:
     la empresa y la sucursal van en el span raíz.
@@ -853,6 +854,19 @@
     - Primero el core, con la migración `a22a34717c3e`: deja a cada empresa activa en el plan sin
       límites, así que nada cambia hasta que la plataforma asigne otro. Después faclab-web.
     - La web tolera un core anterior: sin `subscription` en `/me` no muestra el aviso.
+
+- **Carga y línea base, lo que quedó de S9.2** (2026-11-26, [CARGA.md](CARGA.md)):
+  - **La exportación de datos falla en el stack de producción** (S8.7): `POST /api/admin/data-exports`
+    termina en `FAILED` con `OSError`. El compose de faclab-infra no define `DATA_EXPORT_DIR` ni un
+    volumen compartido entre `core-api` y `core-worker`, y su sistema de archivos es de solo lectura.
+    **Antes del piloto.**
+  - **Repetir la medición en el primer VPS** (las cifras son de una Mac con 4 vCPU para la VM).
+  - Mejoras de capacidad, ninguna necesaria para el piloto ([CARGA.md](CARGA.md) §9.3): número de venta
+    más cerca del commit, CPU de la venta rápida, pool de SQLAlchemy configurable (con la máquina asfixiada se agota y responde 500),
+    `INVOICE_WORKER_CONCURRENCY` en el compose de producción, uso de integraciones sin una fila por
+    cliente, stock del dashboard agregado en SQL y valoración y rotación paginadas.
+  - `faclab.invoices.transitions` hacia `rejected` sin inicializar en 0 (faclab-invoicing).
+  - Medir los índices con muchas empresas en la misma base.
 
 ## 2. Dependencias
 
